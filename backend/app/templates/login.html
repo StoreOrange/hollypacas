@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="h-screen bg-surface overflow-hidden">
+  <div class="h-screen grid lg:grid-cols-[1.05fr_0.95fr]">
+    <section class="relative overflow-hidden px-10 pt-6 pb-8 text-white bg-gradient-to-br from-[#071a3a] via-[#0b2a5b] to-[#1b4fa3] flex items-start">
+      <div class="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-white/10 blur-3xl"></div>
+      <div class="absolute -bottom-32 -left-24 w-96 h-96 rounded-full bg-[#7cc4ff]/20 blur-3xl"></div>
+      <div class="relative z-10 max-w-2xl text-left space-y-6">
+        <div class="flex items-center gap-4">
+          <div class="w-14 h-14 rounded-2xl bg-white/15 ring-1 ring-white/20 flex items-center justify-center font-bold tracking-[0.2em]">
+            HP
+          </div>
+          <div>
+            <div class="text-3xl font-semibold">Hollywood Pacas</div>
+            <div class="text-base uppercase tracking-[0.25em] text-white/70">ERP Comercial</div>
+          </div>
+        </div>
+
+        <h1 class="text-[clamp(2.4rem,3.2vw,3.5rem)] font-semibold leading-tight drop-shadow-sm max-w-[560px]">
+          <span id="phrase-rotator">Tecnologia que ordena, acelera y protege tu negocio.</span>
+        </h1>
+        <p class="text-[clamp(1rem,1.5vw,1.5rem)] text-white/85 max-w-[520px]">
+          Controla inventario, ventas y finanzas con una plataforma segura y elegante.
+        </p>
+
+        <div class="rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/10 mx-auto max-w-[640px]">
+          <video src="/static/main_video.mp4" autoplay loop muted playsinline class="w-full h-[clamp(220px,24vh,320px)] object-cover"></video>
+        </div>
+        <div class="text-white/70 text-sm mt-4">
+          Copyright 2025 - Autorizado a Hollywood Pacas
+          <div class="text-white/90 font-semibold mt-1">Version {{ version }}</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="px-10 py-8 bg-gradient-to-br from-white via-[#f7f9ff] to-[#eef3ff] flex items-center text-[16px]">
+      <div class="w-full max-w-md mx-auto">
+        <div class="bg-white/90 backdrop-blur rounded-3xl shadow-2xl border border-slate-200/60 p-8">
+          <div class="text-center">
+            <div class="mx-auto w-56 h-56 bg-white rounded-3xl flex items-center justify-center shadow-lg ring-1 ring-slate-200/60">
+              <img src="/static/logo_hollywood.png" alt="Hollywood Pacas" class="max-h-[85%] max-w-[85%] object-contain" />
+            </div>
+            <div class="mt-4 text-sm uppercase tracking-[0.2em] text-brand font-semibold">Acceso seguro</div>
+            <h2 class="mt-2 text-3xl font-semibold text-ink">Inicia sesion</h2>
+            <p class="text-slate text-[15px]">Ingresa con tu usuario o correo.</p>
+          </div>
+
+          <form class="mt-6 space-y-4" method="post" action="/login">
+            <label class="block text-[15px] font-semibold text-ink">
+              Usuario o correo
+              <input
+                name="username"
+                type="text"
+                class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand/40"
+                placeholder="Usuario"
+                required
+              />
+            </label>
+            <label class="block text-[15px] font-semibold text-ink">
+              Contrasena
+              <input
+                name="password"
+                type="password"
+                class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand/40"
+                placeholder="Contrasena"
+                required
+              />
+            </label>
+            <div class="flex items-center justify-between text-[15px] text-slate">
+              <label class="inline-flex items-center gap-2">
+                <input class="accent-brand" type="checkbox" name="remember" value="1" checked />
+                Mantener sesion
+              </label>
+              <span class="text-brand font-semibold">Soporte TI</span>
+            </div>
+            <button class="w-full rounded-xl bg-gradient-to-r from-brand to-brandDeep text-white py-3 text-[15px] font-semibold shadow-sm">
+              Ingresar
+            </button>
+            {% if error %}
+            <p class="text-red-600 text-center text-[15px]">{{ error }}</p>
+            {% endif %}
+          </form>
+        </div>
+
+        <div class="mt-6 text-center text-slate text-[15px] hidden">
+          Copyright 2025 - Autorizado a Hollywood Pacas
+          <div class="text-brand font-semibold mt-2">Version {{ version }}</div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+<script>
+  const phrases = [
+    "Innovacion constante para una operacion eficiente.",
+    "Procesos claros para decisiones mas rapidas.",
+    "Control total del inventario en tiempo real.",
+    "Finanzas ordenadas para crecer con confianza.",
+    "Tecnologia que impulsa productividad diaria.",
+    "Trazabilidad completa de productos y costos.",
+    "Seguridad y respaldo en cada transaccion.",
+    "Datos confiables para una gestion inteligente.",
+    "Operaciones agiles con menos errores.",
+    "Visibilidad total de compras y ventas.",
+    "Mejora continua en cada flujo de trabajo.",
+    "Reportes listos para decisiones estrategicas.",
+    "Estandares claros para cada area.",
+    "Eficiencia operacional sin fricciones.",
+    "Inventario alineado con la demanda real.",
+    "Centraliza informacion en un solo lugar.",
+    "Reduce tiempos y mejora la rentabilidad.",
+    "Orden administrativo con enfoque empresarial.",
+    "Automatiza tareas para ganar tiempo.",
+    "Gestion moderna para equipos en crecimiento.",
+    "Precison en costos y precios actualizados.",
+    "Escalable para nuevas sucursales.",
+    "Calidad operativa que se siente cada dia.",
+    "Enfoque en resultados y servicio.",
+    "Informacion clara para todo el equipo."
+  ];
+  const rotator = document.getElementById("phrase-rotator");
+  let phraseIndex = 0;
+  if (rotator) {
+    setInterval(() => {
+      phraseIndex = (phraseIndex + 1) % phrases.length;
+      rotator.textContent = phrases[phraseIndex];
+    }, 5000);
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Reportes</li>
+                <li class="breadcrumb-item active" aria-current="page">Informes</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Centro de informes</div>
+            <div class="odoo-subtitle mt-1 text-sm">Reportes detallados y analisis por modulo.</div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link active" href="/reports">Informes</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/ventas">Ventas detallado</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="odoo-card">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+          <div class="odoo-section-title">Reportes disponibles</div>
+          <span class="odoo-pill primary">
+            <i class="bi bi-bar-chart"></i>
+            Analisis
+          </span>
+        </div>
+        <div class="row g-4">
+          <div class="col-md-6 col-xl-4">
+            <a class="text-decoration-none" href="/reports/ventas">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Ventas detallado</div>
+                  <span class="odoo-pill primary">
+                    <i class="bi bi-receipt"></i>
+                    Detalle
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Factura, cliente, vendedor y productos con filtros avanzados.</p>
+              </div>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

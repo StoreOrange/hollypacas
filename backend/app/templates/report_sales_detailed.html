@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Informes</li>
+                <li class="breadcrumb-item active" aria-current="page">Ventas detallado</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Reporte de ventas detallado</div>
+            <div class="odoo-subtitle mt-1 text-sm">Detalle por factura, cliente, vendedor y producto.</div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="odoo-pill primary">
+              <i class="bi bi-cash-stack"></i>
+              Total USD: $ {{ "%.2f"|format(total_usd or 0) }}
+            </div>
+            <div class="odoo-pill">
+              <i class="bi bi-currency-exchange"></i>
+              Total C$: C$ {{ "%.2f"|format(total_cs or 0) }}
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/reports">Informes</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/reports/ventas">Ventas detallado</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="odoo-card">
+        <form id="ventas-report-form" class="row g-2 align-items-end" method="get" action="/reports/ventas">
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+            <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+            <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm">
+              <option value="">Todas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>
+                {{ branch.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor</label>
+            <select name="vendedor_id" class="form-select form-select-sm">
+              <option value="">Todos</option>
+              {% for vendedor in vendedores %}
+              <option value="{{ vendedor.id }}" {% if selected_vendedor == vendedor.id|string %}selected{% endif %}>
+                {{ vendedor.nombre }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto</label>
+            <input id="producto-filter" name="producto" class="form-control form-control-sm" placeholder="Codigo o descripcion" value="{{ producto_q }}">
+          </div>
+          <div class="col-12 col-md-auto">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">
+              <i class="bi bi-search"></i>
+              Filtrar
+            </button>
+            <a class="btn btn-outline-success btn-sm" href="/reports/ventas/export?format=xlsx&start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&vendedor_id={{ selected_vendedor }}&producto={{ producto_q }}">
+              <i class="bi bi-file-earmark-excel"></i>
+              Excel
+            </a>
+            <a class="btn btn-outline-secondary btn-sm" href="/reports/ventas">
+              <i class="bi bi-eraser"></i>
+              Hoy
+            </a>
+          </div>
+          <div class="col-12 col-lg-auto ms-auto">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Moneda">
+              <button type="button" class="btn btn-outline-secondary currency-toggle" data-currency="USD">
+                <i class="bi bi-currency-dollar"></i>
+                USD
+              </button>
+              <button type="button" class="btn btn-outline-secondary currency-toggle active" data-currency="CS">
+                <i class="bi bi-currency-exchange"></i>
+                C$
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="odoo-card text-sm">
+        <div class="odoo-section-title mb-3 text-base">Detalle de ventas</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Fecha</th>
+                <th>Factura</th>
+                <th>Cliente</th>
+                <th>Vendedor</th>
+                <th>Sucursal</th>
+                <th>Producto</th>
+                <th class="text-end">Cantidad</th>
+                <th class="text-end">Precio</th>
+                <th class="text-end">Subtotal</th>
+                <th class="text-end">Total</th>
+                <th class="text-center">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr class="{% if row.anulada %}text-danger{% endif %}">
+                <td>{{ row.fecha }}</td>
+                <td class="fw-semibold">{{ row.factura }}</td>
+                <td>{{ row.cliente }}</td>
+                <td>{{ row.vendedor }}</td>
+                <td>{{ row.sucursal }}</td>
+                <td>{{ row.producto }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
+                <td class="text-end">
+                  <span class="money-cell" data-usd="{{ row.precio_usd }}" data-cs="{{ row.precio_cs }}">C$ {{ "%.2f"|format(row.precio_cs or 0) }}</span>
+                </td>
+                <td class="text-end">
+                  <span class="money-cell" data-usd="{{ row.subtotal_usd }}" data-cs="{{ row.subtotal_cs }}">C$ {{ "%.2f"|format(row.subtotal_cs or 0) }}</span>
+                </td>
+                <td class="text-end">
+                  <span class="money-cell" data-usd="{{ row.total_factura_usd }}" data-cs="{{ row.total_factura_cs }}">C$ {{ "%.2f"|format(row.total_factura_cs or 0) }}</span>
+                </td>
+                <td class="text-center">
+                  {% if row.anulada %}
+                    <span class="badge bg-danger">Anulada</span>
+                  {% else %}
+                    <span class="badge bg-success">Activa</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              {% if rows|length == 0 %}
+              <tr>
+                <td colspan="11" class="text-center text-slate py-3">Sin resultados.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+            <tfoot>
+              <tr class="table-light">
+                <th colspan="6" class="text-end">Totales</th>
+                <th class="text-end">{{ "%.2f"|format(total_items or 0) }}</th>
+                <th class="text-end">-</th>
+                <th class="text-end">
+                  <span id="totals-subtotal" class="fw-semibold">C$ {{ "%.2f"|format(total_cs or 0) }}</span>
+                </th>
+                <th class="text-end">
+                  <span id="totals-total" class="fw-semibold">C$ {{ "%.2f"|format(total_cs or 0) }}</span>
+                </th>
+                <th class="text-center">
+                  <span class="badge bg-secondary">Facturas: {{ total_facturas or 0 }}</span>
+                </th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const reportForm = document.getElementById("ventas-report-form");
+  const productoFilter = document.getElementById("producto-filter");
+  const currencyButtons = document.querySelectorAll(".currency-toggle");
+  const totalsSubtotal = document.getElementById("totals-subtotal");
+  const totalsTotal = document.getElementById("totals-total");
+  let debounceTimer = null;
+
+  const formatMoney = (value, currency) => {
+    const amount = Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return currency === "USD" ? `$ ${amount}` : `C$ ${amount}`;
+  };
+
+  const setCurrency = (currency) => {
+    currencyButtons.forEach((btn) => btn.classList.toggle("active", btn.dataset.currency === currency));
+    document.querySelectorAll(".money-cell").forEach((cell) => {
+      const value = currency === "USD" ? cell.dataset.usd : cell.dataset.cs;
+      cell.textContent = formatMoney(value, currency);
+    });
+    const total = currency === "USD" ? "{{ total_usd or 0 }}" : "{{ total_cs or 0 }}";
+    totalsSubtotal.textContent = formatMoney(total, currency);
+    totalsTotal.textContent = formatMoney(total, currency);
+  };
+
+  currencyButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setCurrency(btn.dataset.currency);
+    });
+  });
+
+  if (productoFilter && reportForm) {
+    productoFilter.addEventListener("input", () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        reportForm.submit();
+      }, 450);
+    });
+  }
+
+  setCurrency("CS");
+</script>
+{% endblock %}

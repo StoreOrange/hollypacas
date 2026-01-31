@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Ventas</li>
+                <li class="breadcrumb-item active" aria-current="page">Depositos</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Registro de depositos</div>
+            <div class="odoo-subtitle mt-1 text-sm">Registro rapido y seguro de depositos de clientes.</div>
+          </div>
+          <div class="d-flex align-items-center gap-3">
+            <div class="odoo-pill primary">
+              <i class="bi bi-diagram-3"></i>
+              {{ branch.name if branch else 'Sucursal' }}
+            </div>
+            <div class="odoo-pill">
+              <i class="bi bi-boxes"></i>
+              {{ bodega.name if bodega else 'Bodega' }}
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/sales">Ventas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cobranza">Cobranza</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/utilitario">Utilitario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/sales/depositos">Depositos</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/roc">ROC</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cierre">Cierre</a>
+          </li>
+        </ul>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success">{{ success }}</div>
+      {% endif %}
+
+      <div class="odoo-kpis">
+        <div class="odoo-kpi border-0 shadow-lg" style="background: linear-gradient(130deg, #ffffff 0%, #f4f6ff 60%, #eef2ff 100%);">
+          <div class="text-xs uppercase tracking-[0.2em] text-slate">Total C$</div>
+          <strong class="d-block mt-2 text-brand">C$ {{ "%.2f"|format(total_cs) }}</strong>
+        </div>
+        <div class="odoo-kpi border-0 shadow-lg" style="background: linear-gradient(130deg, #ffffff 0%, #f0fdf4 60%, #dcfce7 100%);">
+          <div class="text-xs uppercase tracking-[0.2em] text-slate">Total USD</div>
+          <strong class="d-block mt-2 text-success">$ {{ "%.2f"|format(total_usd) }}</strong>
+        </div>
+        <div class="odoo-kpi border-0 shadow-lg" style="background: linear-gradient(130deg, #ffffff 0%, #fdf2f8 60%, #fce7f3 100%);">
+          <div class="text-xs uppercase tracking-[0.2em] text-slate">Depositos</div>
+          <strong class="d-block mt-2 text-ink">{{ depositos|length }}</strong>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-lg-5">
+          <div class="odoo-card odoo-elevated odoo-plate">
+            <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+              <i class="bi bi-bank text-brand"></i>
+              Nuevo deposito
+            </div>
+            <form class="row g-3" method="post" action="/sales/depositos">
+              <input type="hidden" name="deposito_id" id="deposito-id" value="">
+              <div class="col-md-6">
+                <label class="odoo-field-label d-flex align-items-center gap-2">
+                  <i class="bi bi-calendar-date text-brand"></i>
+                  Fecha *
+                </label>
+                <input class="form-control odoo-input" type="date" name="fecha" id="deposito-fecha" value="{{ today }}">
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label d-flex align-items-center gap-2">
+                  <i class="bi bi-person-badge text-brand"></i>
+                  Vendedor *
+                </label>
+                <select class="form-select odoo-input" name="vendedor_id" id="deposito-vendedor" required>
+                  <option value="">Selecciona</option>
+                  {% for vendedor in vendedores %}
+                  <option value="{{ vendedor.id }}">{{ vendedor.nombre }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label d-flex align-items-center gap-2">
+                  <i class="bi bi-bank text-brand"></i>
+                  Banco *
+                </label>
+                <select class="form-select odoo-input" name="banco_id" id="deposito-banco" required>
+                  <option value="">Selecciona</option>
+                  {% for banco in bancos %}
+                  <option value="{{ banco.id }}">{{ banco.nombre }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label d-flex align-items-center gap-2">
+                  <i class="bi bi-journal-text text-brand"></i>
+                  Cuenta
+                </label>
+                <select class="form-select odoo-input" name="cuenta_id" id="deposito-cuenta">
+                  <option value="">Selecciona</option>
+                  {% for cuenta in cuentas %}
+                  <option value="{{ cuenta.id }}" data-banco="{{ cuenta.banco_id }}">{{ cuenta.banco.nombre }} - {{ cuenta.moneda }} {{ cuenta.cuenta or 'Pendiente' }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label d-flex align-items-center gap-2">
+                  <i class="bi bi-currency-exchange text-brand"></i>
+                  Moneda *
+                </label>
+                <select class="form-select odoo-input" name="moneda" id="deposito-moneda">
+                  <option value="CS">Cordobas</option>
+                  <option value="USD">Dolares</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label d-flex align-items-center gap-2">
+                  <i class="bi bi-cash-coin text-brand"></i>
+                  Monto depositado *
+                </label>
+                <input class="form-control odoo-input" type="text" name="monto" id="deposito-monto" placeholder="0.00" required>
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label d-flex align-items-center gap-2">
+                  <i class="bi bi-chat-left-text text-brand"></i>
+                  Observacion
+                </label>
+                <textarea class="form-control odoo-input" name="observacion" id="deposito-observacion" rows="2" placeholder="Detalle del deposito"></textarea>
+              </div>
+              <div class="col-12">
+                <button class="btn btn-primary" type="submit">
+                  <i class="bi bi-save2"></i>
+                  Registrar / actualizar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="col-lg-7">
+          <div class="odoo-card odoo-elevated odoo-plate">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+              <div class="odoo-section-title d-flex align-items-center gap-2">
+                <i class="bi bi-clipboard-check text-brand"></i>
+                Depositos del dia / historico
+              </div>
+              <form class="d-flex flex-wrap align-items-end gap-2" method="get" action="/sales/depositos">
+                <div>
+                  <label class="odoo-field-label text-xs text-slate">Desde</label>
+                  <input class="form-control form-control-sm odoo-input" type="date" name="start_date" value="{{ start_date }}">
+                </div>
+                <div>
+                  <label class="odoo-field-label text-xs text-slate">Hasta</label>
+                  <input class="form-control form-control-sm odoo-input" type="date" name="end_date" value="{{ end_date }}">
+                </div>
+                <div>
+                  <label class="odoo-field-label text-xs text-slate">Vendedor</label>
+                  <select class="form-select form-select-sm odoo-input" name="vendedor_id">
+                    <option value="">Todos</option>
+                    {% for vendedor in vendedores %}
+                    <option value="{{ vendedor.id }}" {% if vendedor_q == vendedor.id|string %}selected{% endif %}>{{ vendedor.nombre }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="odoo-field-label text-xs text-slate">Banco</label>
+                  <select class="form-select form-select-sm odoo-input" name="banco_id">
+                    <option value="">Todos</option>
+                    {% for banco in bancos %}
+                    <option value="{{ banco.id }}" {% if banco_q == banco.id|string %}selected{% endif %}>{{ banco.nombre }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="odoo-field-label text-xs text-slate">Moneda</label>
+                  <select class="form-select form-select-sm odoo-input" name="moneda">
+                    <option value="">Todas</option>
+                    <option value="CS" {% if moneda_q == "CS" %}selected{% endif %}>C$</option>
+                    <option value="USD" {% if moneda_q == "USD" %}selected{% endif %}>USD</option>
+                  </select>
+                </div>
+                <div class="pt-3">
+                  <button class="btn btn-sm btn-outline-primary" type="submit">
+                    <i class="bi bi-filter"></i>
+                    Filtrar
+                  </button>
+                </div>
+                <div class="pt-3 d-flex gap-2">
+                  <a class="btn btn-sm btn-outline-success" href="/sales/depositos/export?format=xlsx&start_date={{ start_date }}&end_date={{ end_date }}&vendedor_id={{ vendedor_q }}&banco_id={{ banco_q }}&moneda={{ moneda_q }}">
+                    <i class="bi bi-file-earmark-excel"></i>
+                    Excel
+                  </a>
+                  <a class="btn btn-sm btn-outline-danger" href="/sales/depositos/export?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}&vendedor_id={{ vendedor_q }}&banco_id={{ banco_q }}&moneda={{ moneda_q }}">
+                    <i class="bi bi-file-earmark-pdf"></i>
+                    PDF
+                  </a>
+                </div>
+              </form>
+            </div>
+            <div class="text-xs text-slate mb-2">
+              Mostrando del {{ start_date }} al {{ end_date }}
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table text-sm">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Vendedor</th>
+                    <th>Banco</th>
+                    <th>Moneda</th>
+                    <th class="text-end">Monto depositado</th>
+                    <th>Obs.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for dep in depositos %}
+                  <tr data-id="{{ dep.id }}"
+                      data-fecha="{{ dep.fecha }}"
+                      data-vendedor="{{ dep.vendedor_id }}"
+                      data-banco="{{ dep.banco_id }}"
+                      data-cuenta="{{ dep.cuenta_id or '' }}"
+                      data-moneda="{{ dep.moneda }}"
+                      data-monto="{{ dep.monto_usd if dep.moneda == 'USD' else dep.monto_cs }}"
+                      data-observacion="{{ dep.observacion or '' }}">
+                    <td>{{ dep.fecha }}</td>
+                    <td>{{ dep.vendedor.nombre if dep.vendedor else '-' }}</td>
+                    <td>{{ dep.banco.nombre if dep.banco else '-' }}</td>
+                    <td>{{ dep.moneda }}</td>
+                    <td class="text-end">{{ "%.2f"|format(dep.monto_usd if dep.moneda == 'USD' else dep.monto_cs) }}</td>
+                    <td>{{ dep.observacion or "-" }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th colspan="4" class="text-end">Total C$</th>
+                    <th class="text-end">C$ {{ "%.2f"|format(total_cs) }}</th>
+                    <th></th>
+                  </tr>
+                  <tr>
+                    <th colspan="4" class="text-end">Total USD</th>
+                    <th class="text-end">$ {{ "%.2f"|format(total_usd) }}</th>
+                    <th></th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div class="odoo-card odoo-elevated-soft odoo-plate mt-3">
+            <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+              <i class="bi bi-graph-up text-brand"></i>
+              Totales por banco y moneda
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table text-sm">
+                <thead>
+                  <tr>
+                    <th>Banco</th>
+                    <th>Moneda</th>
+                    <th class="text-end">Cantidad</th>
+                    <th class="text-end">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for group in summary_grouped_rows %}
+                    {% for row in group.rows %}
+                    <tr>
+                      {% if loop.first %}
+                      <td rowspan="{{ group.rows | length }}" class="fw-semibold text-ink align-middle">{{ group.banco }}</td>
+                      {% endif %}
+                      <td>{{ row.moneda }}</td>
+                      <td class="text-end">{{ row.count }}</td>
+                      <td class="text-end">{{ "%.2f"|format(row.total) }}</td>
+                    </tr>
+                    {% endfor %}
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const formatMoney = (value, currency) => {
+    const number = Number(value || 0);
+    const formatted = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(number);
+    return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
+  };
+
+  const parseMoneyValue = (value) => {
+    if (!value) return 0;
+    const raw = value.toString().replace(/[^0-9.,-]/g, "");
+    const hasComma = raw.includes(",");
+    const hasDot = raw.includes(".");
+    let normalized = raw;
+    if (hasComma && hasDot) {
+      const lastComma = raw.lastIndexOf(",");
+      const lastDot = raw.lastIndexOf(".");
+      if (lastComma > lastDot) {
+        normalized = raw.replace(/\./g, "").replace(",", ".");
+      } else {
+        normalized = raw.replace(/,/g, "");
+      }
+    } else if (hasComma && !hasDot) {
+      const parts = raw.split(",");
+      if (parts[1] && parts[1].length === 2) {
+        normalized = raw.replace(",", ".");
+      } else {
+        normalized = raw.replace(/,/g, "");
+      }
+    } else if (hasDot && !hasComma) {
+      const parts = raw.split(".");
+      if (parts[1] && parts[1].length === 2) {
+        normalized = raw;
+      } else {
+        normalized = raw.replace(/\./g, "");
+      }
+    }
+    return parseFloat(normalized) || 0;
+  };
+
+  const focusOrder = [
+    "deposito-fecha",
+    "deposito-vendedor",
+    "deposito-banco",
+    "deposito-cuenta",
+    "deposito-moneda",
+    "deposito-monto",
+    "deposito-observacion",
+  ];
+  focusOrder.forEach((id, index) => {
+    const field = document.getElementById(id);
+    if (!field) return;
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const nextId = focusOrder[index + 1];
+        const nextField = nextId ? document.getElementById(nextId) : null;
+        if (nextField) {
+          nextField.focus();
+          if (nextField.select) nextField.select();
+        }
+      }
+    });
+  });
+
+  const bancoSelect = document.getElementById("deposito-banco");
+  const cuentaSelect = document.getElementById("deposito-cuenta");
+  const depositoId = document.getElementById("deposito-id");
+  const depositoFecha = document.getElementById("deposito-fecha");
+  const depositoVendedor = document.getElementById("deposito-vendedor");
+  const depositoMoneda = document.getElementById("deposito-moneda");
+  const depositoMonto = document.getElementById("deposito-monto");
+  const depositoObservacion = document.getElementById("deposito-observacion");
+
+  document.querySelectorAll("table tbody tr[data-id]").forEach((row) => {
+    row.addEventListener("click", () => {
+      if (depositoId) depositoId.value = row.dataset.id || "";
+      if (depositoFecha) depositoFecha.value = row.dataset.fecha || "";
+      if (depositoVendedor) depositoVendedor.value = row.dataset.vendedor || "";
+      if (bancoSelect) bancoSelect.value = row.dataset.banco || "";
+      if (cuentaSelect) cuentaSelect.value = row.dataset.cuenta || "";
+      if (depositoMoneda) depositoMoneda.value = row.dataset.moneda || "CS";
+      if (depositoMonto) depositoMonto.value = formatMoney(row.dataset.monto || 0, row.dataset.moneda || "CS");
+      if (depositoObservacion) depositoObservacion.value = row.dataset.observacion || "";
+      if (bancoSelect) bancoSelect.dispatchEvent(new Event("change"));
+    });
+  });
+
+  if (depositoMonto) {
+    depositoMonto.addEventListener("blur", () => {
+      const currency = depositoMoneda?.value || "CS";
+      depositoMonto.value = formatMoney(parseMoneyValue(depositoMonto.value || 0), currency);
+    });
+    depositoMonto.addEventListener("focus", () => {
+      depositoMonto.select();
+    });
+  }
+  if (bancoSelect && cuentaSelect) {
+    bancoSelect.addEventListener("change", () => {
+      const bancoId = bancoSelect.value;
+      cuentaSelect.querySelectorAll("option").forEach((opt) => {
+        if (!opt.value) return;
+        opt.hidden = opt.dataset.banco !== bancoId;
+      });
+    });
+  }
+  const layout = document.getElementById("layout");
+  const toggles = document.querySelectorAll(".toggle-sidebar");
+  if (layout && toggles.length) {
+    toggles.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        layout.classList.toggle("sidebar-collapsed");
+      });
+    });
+  }
+</script>
+{% endblock %}

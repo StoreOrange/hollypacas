@@ -1,0 +1,2517 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .combo-parent-badge {
+    background: #e0f2fe;
+    color: #1d4ed8;
+  }
+  .combo-gift-badge {
+    background: #dcfce7;
+    color: #15803d;
+  }
+  .combo-parent .text-brand {
+    color: #1d4ed8;
+  }
+  .combo-gift .text-brand {
+    color: #16a34a;
+  }
+  .cash-qty-input {
+    max-width: 110px;
+  }
+</style>
+<div id="layout" x-data="{ clienteOpen: false, vendedorOpen: false }" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px] relative">
+    <div class="pointer-events-none absolute -top-24 right-10 h-80 w-80 rounded-full bg-[rgba(113,75,103,0.10)] blur-3xl"></div>
+    <div class="pointer-events-none absolute top-48 left-4 h-72 w-72 rounded-full bg-[rgba(93,129,168,0.14)] blur-3xl"></div>
+    <div class="odoo-page space-y-2">
+      <section class="sticky top-0 z-30 rounded-[30px] border border-slate-200 bg-white shadow-2xl px-8 py-2 relative overflow-hidden bg-white/95 backdrop-blur">
+        <div class="absolute inset-0 bg-gradient-to-br from-[#f6eef6] via-white to-[#eef6ff] opacity-95"></div>
+        <div class="relative z-10 grid gap-4 lg:grid-cols-[1.2fr_1fr] items-start">
+          <div class="space-y-1">
+            <div class="inline-flex items-center gap-2">
+              <button class="toggle-sidebar inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-white/90 text-ink hover:bg-slate-50" type="button" aria-label="Ocultar menu">
+                <i class="bi bi-list"></i>
+              </button>
+              <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                  <li class="breadcrumb-item">Ecommerce</li>
+                  <li class="breadcrumb-item active" aria-current="page">Ventas</li>
+                </ol>
+              </nav>
+            </div>
+            <div class="text-xl font-semibold text-ink leading-tight">Terminal de Venta Empresarial</div>
+            <p class="text-xs text-slate max-w-xl">Gestiona ventas, inventario y pagos con un flujo rapido para atencion al cliente.</p>
+          </div>
+          <div class="grid grid-cols-3 gap-2 lg:grid-cols-3">
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Tasa</div>
+              <div class="text-sm font-semibold text-ink">
+                {% if rate_today %}
+                  C$ {{ "%.4f"|format(rate_today.rate) }}
+                {% else %}
+                  Sin tasa
+                {% endif %}
+              </div>
+            </div>
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Factura</div>
+              <div class="text-sm font-semibold text-ink">{{ next_invoice or "Auto" }}</div>
+            </div>
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Sucursal</div>
+              <div class="text-sm font-semibold text-ink">{{ user.default_branch.name if user.default_branch else "-" }}</div>
+            </div>
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Bodega</div>
+              <div class="text-sm font-semibold text-ink">{{ user.default_bodega.name if user.default_bodega else "-" }}</div>
+            </div>
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Items</div>
+              <div id="sales-items-count" class="text-sm font-semibold text-ink">0</div>
+            </div>
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total</div>
+              <div id="sales-total-display" class="text-sm font-semibold text-brand">C$ 0.00</div>
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link active" href="/sales">Ventas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cobranza">Cobranza</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/utilitario">Utilitario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/depositos">Depositos</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cierre">Cierre</a>
+          </li>
+        </ul>
+      </section>
+
+      {% if error %}
+      <div class="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-2" data-error-banner>
+        {{ error }}
+      </div>
+      {% endif %}
+      {% if success %}
+      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2" data-success-banner>
+        {{ success }}
+      </div>
+      {% endif %}
+
+      <form id="sales-form" class="rounded-[30px] border border-slate-200 bg-white/90 shadow-2xl p-7 space-y-6 backdrop-blur -mt-4" method="post" action="/sales">
+        <div class="grid xl:grid-cols-[1.1fr_0.9fr] gap-6">
+          <div class="space-y-5">
+            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
+              <div class="flex items-center justify-between mb-2">
+                <div>
+                  <div class="text-lg font-semibold text-ink">Facturacion Virtual</div>
+                  <div class="text-sm text-slate">Vista virtual del ticket actual.</div>
+                </div>
+                <span class="rounded-full bg-[#efe7f0] text-brand text-xs uppercase tracking-[0.2em] font-semibold px-3 py-1">
+                  Items seleccionados
+                </span>
+              </div>
+              <div class="odoo-table-wrap overflow-x-auto max-h-80 overflow-y-auto rounded-2xl border border-slate-100">
+                <table class="table table-sm table-hover align-middle mb-0 odoo-table text-base">
+                  <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]" style="background:#efe4f3;color:#5a2f6b;">
+                    <tr>
+                      <th class="text-left px-3 py-2" style="background:#efe4f3;color:#5a2f6b;">Detalle del producto</th>
+                      <th class="text-center px-3 py-2" style="background:#efe4f3;color:#5a2f6b;">Quitar</th>
+                    </tr>
+                  </thead>
+                  <tbody id="items-table" class="odoo-muted">
+                    <tr id="empty-items">
+                      <td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="mt-4 flex flex-wrap items-center gap-4 text-base">
+                <div class="flex items-center gap-2">
+                  <span class="text-slate">Total USD</span>
+                  <span id="total-usd" class="font-semibold text-brand">$ 0.00</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-slate">Total C$</span>
+                  <span id="total-cs" class="font-semibold text-brand">C$ 0.00</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-slate">Items</span>
+                  <span id="total-items" class="font-semibold text-ink">0</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-slate">Bultos</span>
+                  <span id="total-bultos" class="font-semibold text-ink">0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="text-lg font-semibold text-ink">Resumen de venta</div>
+                  <div class="text-xs uppercase tracking-[0.24em] text-slate font-semibold">Datos principales</div>
+                </div>
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#party-modal">
+                  Editar
+                </button>
+              </div>
+              <div class="mt-3 grid gap-2 text-sm">
+                <div class="flex items-center justify-between">
+                  <span class="text-slate">Cliente</span>
+                  <span id="cliente-summary" class="font-semibold text-ink">Consumidor final</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate">Vendedor</span>
+                  <span id="vendedor-summary" class="font-semibold text-ink">Sin asignar</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate">Fecha</span>
+                  <span id="fecha-summary" class="font-semibold text-ink">--</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate">Hora</span>
+                  <span id="hora-summary" class="font-semibold text-ink">--</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
+              <div class="text-lg font-semibold text-ink">Observacion</div>
+              <input name="observacion" class="mt-3 w-full odoo-input form-control" placeholder="Detalle o nota de venta" />
+            </div>
+
+            <div class="flex items-center justify-end gap-3">
+              <button id="clear-sale" class="btn btn-outline-secondary btn-md" type="button">
+                Limpiar venta
+              </button>
+              <button class="btn btn-primary btn-md d-inline-flex align-items-center gap-2 shadow-lg" type="button" data-bs-toggle="modal" data-bs-target="#payment-modal">
+                <i class="bi bi-check2-circle"></i>
+                Registrar venta
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-5">
+            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
+              <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div class="text-lg font-semibold text-ink d-flex align-items-center gap-2">
+                    Catalogo de productos
+                    <button id="open-combo-modal" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
+                      <i class="bi bi-boxes"></i>
+                      Combos
+                    </button>
+                  </div>
+                  <div class="text-sm text-slate">Busca para cargar articulos al ticket.</div>
+                </div>
+                <div class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm w-full md:w-[420px]">
+                  <i class="bi bi-search text-brand"></i>
+                  <input id="product-search" class="flex-grow text-sm font-semibold uppercase border-0 bg-transparent focus:outline-none" type="text" placeholder="BUSCAR PRODUCTO" />
+                </div>
+              </div>
+              <div id="product-list-panel" class="odoo-table-wrap mt-4 max-h-[320px] lg:max-h-[360px] overflow-y-auto rounded-2xl border border-slate-100" tabindex="0" role="listbox" aria-label="Resultados de productos">
+                <div class="flex items-center justify-between px-3 py-2 text-xs uppercase tracking-[0.2em] font-semibold" style="background:#efe4f3;color:#5a2f6b;">
+                  <span>Producto</span>
+                  <span>Cargar</span>
+                </div>
+                <div id="product-list" class="odoo-muted divide-y">
+                  <div id="product-empty" class="text-center py-3 text-slate">Escribe para buscar productos.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </main>
+</div>
+
+<div class="modal fade" id="payment-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg pay-modal">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Procesar pago</div>
+          <div class="text-2xl font-semibold text-ink d-flex align-items-center gap-2">
+            <i class="bi bi-credit-card-2-front text-brand"></i>
+            Resumen y formas de pago
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <div class="row g-4">
+          <div class="col-lg-5">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-receipt text-brand"></i>
+                Resumen de venta
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-person text-brand"></i>
+                  Cliente
+                </span>
+                <strong id="pay-cliente">--</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-person-badge text-brand"></i>
+                  Vendedor
+                </span>
+                <strong id="pay-vendedor">--</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-hash text-brand"></i>
+                  Factura
+                </span>
+                <strong>{{ next_invoice or "Auto" }}</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-calendar-event text-brand"></i>
+                  Fecha
+                </span>
+                <strong id="pay-fecha">--</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-3">
+                <span class="text-slate fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-clock text-brand"></i>
+                  Hora
+                </span>
+                <strong id="pay-hora">--</strong>
+              </div>
+              <div class="rounded-3xl border border-slate-200 p-3">
+                <div class="d-flex justify-content-between mb-2">
+                  <span class="fw-semibold text-slate d-flex align-items-center gap-2">
+                    <i class="bi bi-currency-dollar text-brand"></i>
+                    Total USD
+                  </span>
+                  <strong id="pay-total-usd">$ 0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <span class="fw-semibold text-slate d-flex align-items-center gap-2">
+                    <i class="bi bi-cash-coin text-brand"></i>
+                    Total C$
+                  </span>
+                  <strong id="pay-total-cs">C$ 0.00</strong>
+                </div>
+              </div>
+              <div class="mt-3">
+                <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-currency-exchange text-brand"></i>
+                  Moneda de la factura *
+                </label>
+                <select id="venta-moneda" name="moneda" class="mt-2 w-full odoo-input form-select select2" form="sales-form" required>
+                  <option value="CS" selected>C$</option>
+                  <option value="USD">USD</option>
+                </select>
+              </div>
+              <div class="mt-4">
+                <div class="odoo-section-title mb-2 d-flex align-items-center gap-2">
+                  <i class="bi bi-calculator text-brand"></i>
+                  Balance de la venta
+                </div>
+                <div class="rounded-3xl border border-slate-200 p-3">
+                  <div class="d-flex justify-content-between mb-2">
+                    <span class="fw-semibold text-slate">Total venta</span>
+                    <strong id="pay-total-invoice" class="text-ink">C$ 0.00</strong>
+                  </div>
+                  <div class="d-flex justify-content-between mb-2">
+                    <span class="fw-semibold text-slate">Pagado</span>
+                    <strong id="pay-total-aplicado">0.00</strong>
+                  </div>
+                  <div class="d-flex justify-content-between">
+                    <span class="fw-semibold text-slate">Saldo / Vuelto</span>
+                    <strong id="pay-balance" class="balance-status">0.00</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-7">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-wallet2 text-brand"></i>
+                Agregar pago
+              </div>
+              <div class="row g-3">
+                <div class="col-12">
+                  <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-grid-3x3-gap text-brand"></i>
+                    Metodos rapidos
+                  </label>
+                  <div class="pay-methods-row">
+                    {% for forma in formas_pago %}
+                    <button type="button" class="pay-method-btn {% if 'credito' in forma.nombre|lower %}disabled opacity-50{% endif %}" data-forma-id="{{ forma.id }}" data-disabled="{% if 'credito' in forma.nombre|lower %}1{% else %}0{% endif %}">
+                      <span class="pay-method-icon">
+                        {% if "efectivo" in forma.nombre|lower %}
+                        <i class="bi bi-cash-coin"></i>
+                        {% elif "tarjeta" in forma.nombre|lower %}
+                        <i class="bi bi-credit-card"></i>
+                        {% elif "credito" in forma.nombre|lower %}
+                        <i class="bi bi-shield-check"></i>
+                        {% elif "banco" in forma.nombre|lower or "transferencia" in forma.nombre|lower or "deposito" in forma.nombre|lower %}
+                        <i class="bi bi-bank"></i>
+                        {% else %}
+                        <i class="bi bi-wallet2"></i>
+                        {% endif %}
+                      </span>
+                      <span class="pay-method-text">{{ forma.nombre }}</span>
+                    </button>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-currency-exchange text-brand"></i>
+                    Moneda
+                  </label>
+                  <select id="pago-moneda" class="form-select odoo-input">
+                    <option value="CS">C$</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-cash-stack text-brand"></i>
+                    Monto
+                  </label>
+                  <input id="pago-monto" type="text" inputmode="decimal" class="form-control odoo-input" placeholder="C$ 0.00" />
+                </div>
+                <div class="col-md-3">
+                  <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-bank text-brand"></i>
+                    Banco
+                  </label>
+                  <select id="banco-select" class="form-select odoo-input select2">
+                    <option value="">Selecciona</option>
+                    {% for banco in bancos %}
+                    <option value="{{ banco.id }}">{{ banco.nombre }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-journal-text text-brand"></i>
+                    Cuenta
+                  </label>
+                  <select id="cuenta-select" class="form-select odoo-input select2">
+                    <option value="">Selecciona</option>
+                    {% for cuenta in cuentas %}
+                    <option value="{{ cuenta.id }}" data-banco="{{ cuenta.banco_id }}" data-moneda="{{ cuenta.moneda }}">{{ cuenta.banco.nombre }} - {{ cuenta.moneda }} {{ cuenta.cuenta or 'Pendiente' }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12 text-end">
+                  <button class="btn btn-outline-secondary me-2" type="button" data-bs-toggle="modal" data-bs-target="#cash-count-modal">
+                    <i class="bi bi-calculator"></i>
+                    Arqueo efectivo
+                  </button>
+                  <button id="add-payment" class="btn btn-primary" type="button">
+                    <i class="bi bi-plus-lg"></i>
+                    Agregar pago
+                  </button>
+                </div>
+              </div>
+              <div class="d-none">
+                <select id="forma-pago" class="form-select odoo-input">
+                  <option value="">Selecciona</option>
+                  {% for forma in formas_pago %}
+                  <option value="{{ forma.id }}" data-cash="{% if 'efectivo' in forma.nombre|lower %}1{% else %}0{% endif %}">{{ forma.nombre }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <div class="odoo-card mt-3">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-check2-circle text-brand"></i>
+                Pagos aplicados
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover odoo-table">
+                  <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                    <tr>
+                      <th>Forma</th>
+                      <th>Moneda</th>
+                      <th class="text-end">Monto</th>
+                      <th class="text-end">Banco</th>
+                      <th class="text-end">Accion</th>
+                    </tr>
+                  </thead>
+                  <tbody id="payment-list">
+                    <tr id="payment-empty">
+                      <td colspan="5" class="text-center text-slate py-2">Sin pagos agregados</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div id="payment-hidden" class="d-none"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="confirm-sale" type="button" class="btn btn-primary">
+          Confirmar y registrar factura
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="cash-count-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <h5 class="modal-title d-flex align-items-center gap-2">
+          <i class="bi bi-cash-stack text-brand"></i>
+          Arqueo de efectivo
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="odoo-section-title mb-2">Cordobas</div>
+            <div class="table-responsive rounded-3xl border border-slate-200">
+              <table class="table table-sm odoo-table mb-0 align-middle">
+                <thead>
+                  <tr>
+                    <th>Denominacion</th>
+                    <th class="text-end">Cantidad</th>
+                    <th class="text-end">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody id="cash-count-cs"></tbody>
+                <tfoot>
+                  <tr>
+                    <th colspan="2" class="text-end">Total C$</th>
+                    <th class="text-end fw-semibold text-brand" id="cash-total-cs">0.00</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="odoo-section-title mb-2">Dolares</div>
+            <div class="table-responsive rounded-3xl border border-slate-200">
+              <table class="table table-sm odoo-table mb-0 align-middle">
+                <thead>
+                  <tr>
+                    <th>Denominacion</th>
+                    <th class="text-end">Cantidad</th>
+                    <th class="text-end">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody id="cash-count-usd"></tbody>
+                <tfoot>
+                  <tr>
+                    <th colspan="2" class="text-end">Total USD</th>
+                    <th class="text-end fw-semibold text-brand" id="cash-total-usd">0.00</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 text-sm text-slate">
+          Digita la cantidad de billetes/monedas para calcular el total efectivo contado.
+        </div>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="combo-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Combos y ofertas</div>
+          <div class="text-2xl font-semibold text-ink d-flex align-items-center gap-2">
+            <i class="bi bi-boxes text-brand"></i>
+            Armar combo
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <div class="row g-4">
+          <div class="col-lg-5">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-star text-brand"></i>
+                Producto oferta (padre)
+              </div>
+              <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
+                <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
+                <input id="combo-parent-search" class="form-control border-0" type="text" placeholder="Buscar oferta" />
+              </div>
+              <div id="combo-parent-results" class="mt-3 space-y-2 text-sm"></div>
+              <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div class="text-xs uppercase tracking-[0.2em] text-slate">Oferta seleccionada</div>
+                <div id="combo-parent-selected" class="mt-2 text-sm text-ink">Sin seleccionar</div>
+                <div class="mt-2 d-flex align-items-center gap-2">
+                  <label class="text-xs uppercase tracking-[0.2em] text-slate">Cantidad</label>
+                  <input id="combo-parent-qty" type="number" min="1" step="1" class="form-control form-control-sm w-24" value="1" />
+                </div>
+                <div class="mt-2 text-xs text-slate d-flex align-items-center gap-2">
+                  <i class="bi bi-exclamation-triangle text-amber-500"></i>
+                  Saldo disponible: <strong id="combo-parent-available">0</strong>
+                </div>
+                <div class="mt-2 text-sm text-slate">
+                  Precio combo: <strong id="combo-parent-price">C$ 0.00</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-7">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-gift text-brand"></i>
+                Regalias (hijas)
+              </div>
+              <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
+                <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
+                <input id="combo-gift-search" class="form-control border-0" type="text" placeholder="Buscar regalia" />
+              </div>
+              <div id="combo-gift-results" class="mt-3 space-y-2 text-sm"></div>
+              <div class="mt-3">
+                <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold">Regalias seleccionadas</div>
+                <div id="combo-gift-list" class="mt-2 space-y-2 text-sm"></div>
+              </div>
+            </div>
+            <div class="odoo-card mt-3">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-eye text-brand"></i>
+                Vista previa del combo
+              </div>
+              <div id="combo-preview" class="text-sm text-slate">Sin datos para mostrar.</div>
+            </div>
+            <div class="d-flex justify-content-end mt-3 gap-2">
+              <button id="combo-apply" class="btn btn-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
+                <i class="bi bi-check2-circle"></i>
+                Agregar combo
+              </button>
+            </div>
+            <div class="text-sm text-slate mt-2" id="combo-status"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="party-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Datos de venta</div>
+          <div class="text-2xl font-semibold text-ink">Cliente, vendedor y fecha</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <div class="grid gap-3">
+          <div>
+          <label class="block text-sm font-semibold text-ink d-flex align-items-center gap-2">
+            <i class="bi bi-person text-brand"></i>
+            Cliente
+          </label>
+            <ul class="nav nav-pills mt-2" id="clienteTabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="cliente-select-tab" data-bs-toggle="pill" data-bs-target="#cliente-select-pane" type="button" role="tab" aria-controls="cliente-select-pane" aria-selected="true">
+                  Seleccionar
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="cliente-new-tab" data-bs-toggle="pill" data-bs-target="#cliente-new-pane" type="button" role="tab" aria-controls="cliente-new-pane" aria-selected="false">
+                  Nuevo cliente
+                </button>
+              </li>
+            </ul>
+            <div class="tab-content mt-3">
+              <div class="tab-pane fade show active" id="cliente-select-pane" role="tabpanel" aria-labelledby="cliente-select-tab">
+                <div class="flex items-center gap-2">
+                  <select id="cliente-select" name="cliente_id" class="form-select odoo-input select2 flex-grow-1" form="sales-form">
+                    <option value="">Consumidor final</option>
+                    {% for cliente in clientes %}
+                    <option value="{{ cliente.id }}">{{ cliente.nombre }}</option>
+                    {% endfor %}
+                  </select>
+                  <button id="cliente-default" type="button" class="btn btn-outline-secondary btn-sm" title="Consumidor final">
+                    <i class="bi bi-person-check"></i>
+                  </button>
+                </div>
+                <div class="text-xs text-slate mt-1">Por defecto: Consumidor final.</div>
+              </div>
+              <div class="tab-pane fade" id="cliente-new-pane" role="tabpanel" aria-labelledby="cliente-new-tab">
+                <form id="cliente-form" class="space-y-3">
+                  <label class="text-sm font-semibold text-ink">Nombre *</label>
+                  <input name="nombre" class="w-full odoo-input form-control" placeholder="Nombre del cliente" required />
+                  <label class="text-sm font-semibold text-ink">Identificacion R/C (opcional)</label>
+                  <input name="identificacion" class="w-full odoo-input form-control" placeholder="Cedula o RUC" />
+                  <label class="text-sm font-semibold text-ink">Telefono (opcional)</label>
+                  <input name="telefono" type="tel" class="w-full odoo-input form-control" placeholder="Numero de telefono" />
+                  <label class="text-sm font-semibold text-ink">Correo (opcional)</label>
+                  <input name="email" type="email" class="w-full odoo-input form-control" placeholder="Correo" />
+                  <label class="text-sm font-semibold text-ink">Direccion (opcional)</label>
+                  <input name="direccion" class="w-full odoo-input form-control" placeholder="Direccion" />
+                  <button class="btn btn-primary w-full">Guardar cliente</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          <label class="block text-sm font-semibold text-ink d-flex align-items-center gap-2">
+            <i class="bi bi-person-badge text-brand"></i>
+            Vendedor *
+            <div class="mt-2 flex items-center gap-2">
+              <select id="vendedor-select" name="vendedor_id" class="form-select odoo-input select2 flex-grow-1" form="sales-form" required>
+                <option value="">Selecciona</option>
+                {% for vendedor in vendedores %}
+                <option value="{{ vendedor.id }}">{{ vendedor.nombre }}</option>
+                {% endfor %}
+              </select>
+              <button id="open-vendedor-modal" type="button" class="btn btn-outline-secondary btn-sm" @click="vendedorOpen = true">
+                <i class="bi bi-person-plus"></i>
+              </button>
+            </div>
+          </label>
+          <label class="block text-sm font-semibold text-ink d-flex align-items-center gap-2">
+            <i class="bi bi-calendar-event text-brand"></i>
+            Fecha *
+            <input id="venta-fecha" type="text" class="mt-2 w-full odoo-input form-control" readonly />
+            <input id="venta-fecha-hidden" name="fecha" type="hidden" form="sales-form" required />
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="vendedor-modal" class="fixed inset-0 bg-slate-900/40 hidden items-center justify-center p-4 z-50" x-show="vendedorOpen" x-cloak>
+  <div class="bg-white rounded-3xl shadow-xl w-full max-w-md p-6">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="odoo-modal-title">Nuevo vendedor</div>
+      <button id="close-vendedor-modal" class="btn btn-sm btn-outline-secondary" type="button" @click="vendedorOpen = false">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <form id="vendedor-form" class="space-y-3">
+      <input name="nombre" class="w-full odoo-input form-control" placeholder="Nombre del vendedor *" required />
+      <input name="telefono" class="w-full odoo-input form-control" placeholder="Telefono" />
+      <button class="btn btn-primary w-full">Guardar vendedor</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  const layout = document.getElementById("layout");
+  const toggles = document.querySelectorAll(".toggle-sidebar");
+  if (layout && toggles.length) {
+    toggles.forEach((toggle) => {
+      toggle.addEventListener("click", () => {
+        layout.classList.toggle("sidebar-collapsed");
+      });
+    });
+  }
+
+  const productList = document.getElementById("product-list");
+  const productSearch = document.getElementById("product-search");
+  const itemsTable = document.getElementById("items-table");
+  const emptyItems = document.getElementById("empty-items");
+  const totalUsd = document.getElementById("total-usd");
+  const totalCs = document.getElementById("total-cs");
+  const totalItems = document.getElementById("total-items");
+  const totalBultos = document.getElementById("total-bultos");
+  const itemsCount = document.getElementById("sales-items-count");
+  const totalDisplay = document.getElementById("sales-total-display");
+  const monedaField = document.getElementById("venta-moneda");
+  const formaPagoField = document.getElementById("forma-pago");
+  const bancoSelect = document.getElementById("banco-select");
+  const cuentaSelect = document.getElementById("cuenta-select");
+  const pagoMonto = document.getElementById("pago-monto");
+  const pagoMoneda = document.getElementById("pago-moneda");
+  const paymentList = document.getElementById("payment-list");
+  const paymentHidden = document.getElementById("payment-hidden");
+  const payTotalAplicado = document.getElementById("pay-total-aplicado");
+  const payBalance = document.getElementById("pay-balance");
+  const payTotalInvoice = document.getElementById("pay-total-invoice");
+  const payCliente = document.getElementById("pay-cliente");
+  const payVendedor = document.getElementById("pay-vendedor");
+  const payFecha = document.getElementById("pay-fecha");
+  const payHora = document.getElementById("pay-hora");
+  const payTotalUsd = document.getElementById("pay-total-usd");
+  const payTotalCs = document.getElementById("pay-total-cs");
+  const confirmSale = document.getElementById("confirm-sale");
+  const addPayment = document.getElementById("add-payment");
+  const productListPanel = document.getElementById("product-list-panel");
+  const openComboModal = document.getElementById("open-combo-modal");
+  const comboModal = document.getElementById("combo-modal");
+  const comboParentSearch = document.getElementById("combo-parent-search");
+  const comboParentResults = document.getElementById("combo-parent-results");
+  const comboParentSelected = document.getElementById("combo-parent-selected");
+  const comboParentQty = document.getElementById("combo-parent-qty");
+  const comboParentPrice = document.getElementById("combo-parent-price");
+  const comboParentAvailable = document.getElementById("combo-parent-available");
+  const comboGiftSearch = document.getElementById("combo-gift-search");
+  const comboGiftResults = document.getElementById("combo-gift-results");
+  const comboGiftList = document.getElementById("combo-gift-list");
+  const comboApply = document.getElementById("combo-apply");
+  const comboStatus = document.getElementById("combo-status");
+  const comboPreview = document.getElementById("combo-preview");
+  const rateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
+  let currentTotals = { usd: 0, cs: 0 };
+  let paymentItems = [];
+  let paymentEnterStage = 0;
+  let activeProductIndex = -1;
+  let activeProductRows = [];
+  let productNavMode = "search";
+
+  const formatMoney = (value, currency) => {
+    const number = Number(value || 0);
+    const formatted = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(number);
+    return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
+  };
+
+  const parseMoneyValue = (value) => {
+    if (!value) return 0;
+    const raw = value.toString().replace(/[^0-9.,-]/g, "");
+    const hasComma = raw.includes(",");
+    const hasDot = raw.includes(".");
+    let normalized = raw;
+    if (hasComma && hasDot) {
+      const lastComma = raw.lastIndexOf(",");
+      const lastDot = raw.lastIndexOf(".");
+      if (lastComma > lastDot) {
+        normalized = raw.replace(/\./g, "").replace(",", ".");
+      } else {
+        normalized = raw.replace(/,/g, "");
+      }
+    } else if (hasComma && !hasDot) {
+      const parts = raw.split(",");
+      if (parts[1] && parts[1].length === 2) {
+        normalized = raw.replace(",", ".");
+      } else {
+        normalized = raw.replace(/,/g, "");
+      }
+    } else if (hasDot && !hasComma) {
+      const parts = raw.split(".");
+      if (parts[1] && parts[1].length === 2) {
+        normalized = raw;
+      } else {
+        normalized = raw.replace(/\./g, "");
+      }
+    }
+    return parseFloat(normalized) || 0;
+  };
+
+  const formatMoneyInput = (value, currency) => {
+    const number = parseMoneyValue(value);
+    const formatted = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(number);
+    return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
+  };
+
+  const getRemainingByCurrency = (targetCurrency) => {
+    const invoiceCurrency = monedaField?.value || "CS";
+    const totalDue = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
+    const totalPaid = paymentItems.reduce((acc, item) => {
+      return acc + (invoiceCurrency === "USD" ? toUsd(item.monto, item.moneda) : toCs(item.monto, item.moneda));
+    }, 0);
+    const remaining = Math.max(totalDue - totalPaid, 0);
+    if (targetCurrency === invoiceCurrency) return remaining;
+    if (!rateToday) return 0;
+    return targetCurrency === "USD" ? remaining / rateToday : remaining * rateToday;
+  };
+
+  const setPaymentAmountDefault = () => {
+    if (!pagoMonto) return;
+    const currency = pagoMoneda?.value || "CS";
+    const remainingValue = getRemainingByCurrency(currency);
+    pagoMonto.value = formatMoneyInput(remainingValue, currency);
+    pagoMonto.focus();
+    pagoMonto.select();
+  };
+
+  const updatePayMethodButtons = (selectedId) => {
+    document.querySelectorAll(".pay-method-btn").forEach((btn) => {
+      if (btn.dataset.formaId === selectedId) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
+    });
+  };
+
+  const updateTotals = () => {
+    let sumUsd = 0;
+    let sumCs = 0;
+    let sumQty = 0;
+    const rows = itemsTable.querySelectorAll("tr[data-item-row]");
+    rows.forEach((row) => {
+      sumUsd += parseFloat(row.dataset.subtotalUsd || 0);
+      sumCs += parseFloat(row.dataset.subtotalCs || 0);
+      const qtyValue = row.querySelector("input[name='item_cantidad']")?.value;
+      sumQty += parseFloat(qtyValue || 0);
+    });
+    totalUsd.textContent = formatMoney(sumUsd, "USD");
+    totalCs.textContent = formatMoney(sumCs, "CS");
+    currentTotals = { usd: sumUsd, cs: sumCs };
+    if (itemsCount) {
+      itemsCount.textContent = rows.length.toString();
+    }
+    if (totalItems) {
+      totalItems.textContent = rows.length.toString();
+    }
+    if (totalBultos) {
+      totalBultos.textContent = sumQty.toFixed(0);
+    }
+    if (totalDisplay) {
+      totalDisplay.textContent = monedaField?.value === "USD"
+        ? formatMoney(sumUsd, "USD")
+        : formatMoney(sumCs, "CS");
+    }
+    if (payTotalUsd) {
+      payTotalUsd.textContent = formatMoney(sumUsd, "USD");
+    }
+    if (payTotalCs) {
+      payTotalCs.textContent = formatMoney(sumCs, "CS");
+    }
+  };
+
+  const toUsd = (monto, moneda) => {
+    if (moneda === "USD") return monto;
+    return rateToday ? monto / rateToday : 0;
+  };
+
+  const toCs = (monto, moneda) => {
+    if (moneda === "CS") return monto;
+    return rateToday ? monto * rateToday : 0;
+  };
+
+  const isCashPayment = (formaId, formaLabel) => {
+    const label = (formaLabel || "").toLowerCase();
+    if (label.includes("efectivo")) return true;
+    if (formaPagoField) {
+      const option = Array.from(formaPagoField.options).find((opt) => opt.value === formaId);
+      if (option && option.dataset.cash === "1") return true;
+    }
+    return false;
+  };
+
+  const updatePaymentSummary = () => {
+    const totalPaidUsd = paymentItems.reduce((acc, item) => acc + toUsd(item.monto, item.moneda), 0);
+    const totalPaidCs = paymentItems.reduce((acc, item) => acc + toCs(item.monto, item.moneda), 0);
+    const invoiceCurrency = monedaField?.value || "USD";
+    const due = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
+    const paid = invoiceCurrency === "USD" ? totalPaidUsd : totalPaidCs;
+    const balance = paid - due;
+    if (payTotalAplicado) {
+      payTotalAplicado.textContent = formatMoney(paid, invoiceCurrency === "USD" ? "USD" : "CS");
+    }
+    if (payBalance) {
+      payBalance.textContent = formatMoney(Math.abs(balance), invoiceCurrency === "USD" ? "USD" : "CS");
+      payBalance.classList.remove("balance-negative", "balance-positive");
+      if (balance < 0) {
+        payBalance.classList.add("balance-negative");
+      } else if (balance > 0) {
+        payBalance.classList.add("balance-positive");
+      }
+    }
+    if (payTotalInvoice) {
+      payTotalInvoice.textContent = formatMoney(due, invoiceCurrency === "USD" ? "USD" : "CS");
+    }
+  };
+
+  const syncPaymentHidden = () => {
+    if (!paymentHidden) return;
+    paymentHidden.innerHTML = paymentItems
+      .map((item) => {
+        return `
+          <input type="hidden" form="sales-form" name="pago_forma_id" value="${item.formaId}" />
+          <input type="hidden" form="sales-form" name="pago_moneda" value="${item.moneda}" />
+          <input type="hidden" form="sales-form" name="pago_monto" value="${item.monto.toFixed(2)}" />
+          <input type="hidden" form="sales-form" name="pago_banco_id" value="${item.bancoId || ""}" />
+          <input type="hidden" form="sales-form" name="pago_cuenta_id" value="${item.cuentaId || ""}" />
+        `;
+      })
+      .join("");
+  };
+
+  const renderPaymentList = () => {
+    if (!paymentList) return;
+    if (!paymentItems.length) {
+      paymentList.innerHTML = `<tr id="payment-empty"><td colspan="5" class="text-center text-slate py-2">Sin pagos agregados</td></tr>`;
+      paymentEnterStage = 0;
+      updatePaymentSummary();
+      syncPaymentHidden();
+      return;
+    }
+    paymentList.innerHTML = paymentItems
+      .map((item, index) => {
+        return `
+          <tr>
+            <td>${item.formaLabel}</td>
+            <td>${item.moneda}</td>
+            <td class="text-end">${formatMoney(item.monto, item.moneda)}</td>
+            <td class="text-end">${item.bancoLabel || "-"}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-danger" type="button" data-remove-payment="${index}">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+    paymentEnterStage = 1;
+    updatePaymentSummary();
+    syncPaymentHidden();
+  };
+
+  const addItemRow = (payload) => {
+    if (emptyItems) {
+      emptyItems.remove();
+    }
+    if (layout && !layout.classList.contains("sidebar-collapsed")) {
+      layout.classList.add("sidebar-collapsed");
+    }
+    const row = document.createElement("tr");
+    row.dataset.itemRow = "1";
+    row.dataset.productId = payload.productId;
+    row.dataset.subtotalUsd = payload.subtotalUsd.toFixed(2);
+    row.dataset.subtotalCs = payload.subtotalCs.toFixed(2);
+    row.dataset.maxQty = payload.maxQty.toFixed(2);
+    row.classList.add("sales-item-row");
+    if (payload.role === "parent") {
+      row.classList.add("combo-parent");
+    }
+    if (payload.role === "gift") {
+      row.classList.add("combo-gift");
+    }
+    if (payload.comboGroup) {
+      row.dataset.comboGroup = payload.comboGroup;
+    }
+    const badgeLabel = payload.role === "parent" ? "Oferta" : payload.role === "gift" ? "Regalia" : "";
+    const badgeClass = payload.role === "parent" ? "combo-parent-badge" : payload.role === "gift" ? "combo-gift-badge" : "";
+    const badgeIcon = payload.role === "parent" ? "bi-boxes" : payload.role === "gift" ? "bi-gift" : "";
+    const badgeHtml = badgeLabel
+      ? `<span class="ms-2 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] font-semibold ${badgeClass}">
+          <i class="bi ${badgeIcon}"></i> ${badgeLabel}
+        </span>`
+      : "";
+    row.innerHTML = `
+      <td class="px-3 py-0.5">
+        <div class="text-xs uppercase tracking-[0.2em] text-brand font-semibold d-flex align-items-center">
+          ${payload.code}
+          ${badgeHtml}
+        </div>
+        <div class="font-semibold text-ink text-base">${payload.name}</div>
+        <div class="mt-0.5 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate uppercase tracking-[0.18em]">Cantidad</span>
+            <input class="row-qty w-20 text-left border-0 bg-transparent focus:outline-none font-semibold text-ink" type="text" inputmode="numeric" value="${payload.qtyValueDisplay}" />
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-right">
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate uppercase tracking-[0.18em]">Precio</span>
+              <input class="row-price w-24 text-right border-0 bg-transparent focus:outline-none font-semibold text-ink" type="text" inputmode="decimal" value="${payload.priceValue}" name="item_precio" ${payload.lockPrice ? "readonly" : ""} />
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate uppercase tracking-[0.18em]">Desc.</span>
+              <span class="discount-cell font-semibold text-ink">0.00</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate uppercase tracking-[0.18em]">Subtotal</span>
+              <span class="subtotal-cell font-semibold text-brand">${payload.subtotalLabel}</span>
+            </div>
+          </div>
+        </div>
+      </td>
+      <td class="px-3 py-0.5 text-center align-middle">
+        <button class="remove-item text-brand" type="button" aria-label="Eliminar item">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </td>
+      <input type="hidden" name="item_producto_id" value="${payload.productId}" />
+      <input type="hidden" name="item_cantidad" value="${payload.qtyValue}" />
+      <input type="hidden" name="item_role" value="${payload.role || ""}" />
+      <input type="hidden" name="item_combo_group" value="${payload.comboGroup || ""}" />
+    `;
+    itemsTable.appendChild(row);
+    updateTotals();
+    const qtyInput = row.querySelector(".row-qty");
+    if (qtyInput) {
+      qtyInput.focus();
+      qtyInput.select();
+    }
+  };
+
+  const parseQty = (value) => {
+    const raw = parseFloat(value || 0);
+    return Math.max(1, Math.round(raw));
+  };
+
+  const pauseNavForAlert = (config) => {
+    if (typeof Swal === "undefined") return;
+    productNavMode = "paused";
+    Swal.fire(config).then(() => {
+      productNavMode = "panel";
+      if (productListPanel) {
+        productListPanel.focus();
+      }
+    });
+  };
+
+  const handleAddItem = (button) => {
+    const row = button.closest(".product-pick-row");
+    if (!row) return false;
+    const qtyInput = row.querySelector(".qty-input");
+    const qty = parseQty(qtyInput.value);
+    const maxQty = parseFloat(button.dataset.existencia || 0);
+    if (qty <= 0) return false;
+    if (!maxQty || maxQty <= 0) {
+      pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "No hay saldo disponible." });
+      return false;
+    }
+    if (qty > maxQty) {
+      pauseNavForAlert({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible: ${maxQty}` });
+      return false;
+    }
+    const productId = button.dataset.productId;
+    const existingRow = itemsTable.querySelector(`tr[data-item-row][data-product-id="${productId}"]`);
+    if (existingRow) {
+      const qtyHidden = existingRow.querySelector("input[name='item_cantidad']");
+      const currentQty = parseFloat(qtyHidden?.value || 0);
+      const newQty = currentQty + qty;
+      if (newQty > maxQty) {
+        pauseNavForAlert({
+          icon: "warning",
+          title: "Saldo insuficiente",
+          text: `Disponible: ${maxQty} | En factura: ${currentQty}`,
+        });
+        return false;
+      }
+      const qtyInputRow = existingRow.querySelector(".row-qty");
+      if (qtyInputRow && qtyHidden) {
+        qtyInputRow.value = Math.trunc(newQty).toString();
+        qtyHidden.value = Math.trunc(newQty).toFixed(2);
+      }
+      const priceInputRow = existingRow.querySelector(".row-price");
+      const priceValue = parseFloat(priceInputRow?.value || 0);
+      const moneda = monedaField.value || "USD";
+      const subtotal = priceValue * newQty;
+      existingRow.dataset.subtotalUsd = moneda === "USD" ? subtotal.toFixed(2) : (rateToday ? (subtotal / rateToday).toFixed(2) : "0.00");
+      existingRow.dataset.subtotalCs = moneda === "USD" ? (subtotal * rateToday).toFixed(2) : subtotal.toFixed(2);
+      const subtotalCell = existingRow.querySelector(".subtotal-cell");
+      if (subtotalCell) {
+        subtotalCell.textContent = formatMoney(subtotal, moneda === "USD" ? "USD" : "CS");
+      }
+      updateTotals();
+      return true;
+    }
+
+    const moneda = monedaField.value || "USD";
+    const priceUsd = parseFloat(button.dataset.priceUsd || 0);
+    const priceCs = parseFloat(button.dataset.priceCs || 0);
+    const price = moneda === "USD" ? priceUsd : priceCs;
+    const subtotal = price * qty;
+    const subtotalUsd = moneda === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
+    const subtotalCs = moneda === "USD" ? subtotal * rateToday : subtotal;
+    addItemRow({
+      productId: button.dataset.productId,
+      code: button.dataset.code,
+      name: button.dataset.name,
+      qtyValue: Math.trunc(qty).toFixed(2),
+      qtyValueDisplay: Math.trunc(qty).toString(),
+      qtyStep: "1",
+      maxQty: maxQty,
+      priceValue: price.toFixed(2),
+      subtotalLabel: formatMoney(subtotal, moneda === "USD" ? "USD" : "CS"),
+      subtotalUsd,
+      subtotalCs,
+    });
+    return true;
+  };
+
+  let comboParent = null;
+  let comboGifts = [];
+
+  const resetComboModal = () => {
+    comboParent = null;
+    comboGifts = [];
+    if (comboParentSearch) comboParentSearch.value = "";
+    if (comboParentResults) comboParentResults.innerHTML = "";
+    if (comboParentSelected) comboParentSelected.textContent = "Sin seleccionar";
+    if (comboParentQty) comboParentQty.value = "1";
+    if (comboParentPrice) comboParentPrice.textContent = formatMoney(0, monedaField?.value || "CS");
+    if (comboParentAvailable) comboParentAvailable.textContent = "0";
+    if (comboGiftSearch) comboGiftSearch.value = "";
+    if (comboGiftResults) comboGiftResults.innerHTML = "";
+    if (comboGiftList) comboGiftList.innerHTML = "";
+    if (comboPreview) comboPreview.innerHTML = "Sin datos para mostrar.";
+    if (comboStatus) comboStatus.textContent = "";
+  };
+
+  const renderComboGifts = () => {
+    if (!comboGiftList) return;
+    if (!comboGifts.length) {
+      comboGiftList.innerHTML = `<div class="text-slate text-sm">Sin regalias seleccionadas.</div>`;
+      return;
+    }
+    comboGiftList.innerHTML = comboGifts
+      .map((gift, index) => {
+        return `
+          <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
+            <div>
+              <div class="font-semibold text-ink">${gift.codigo} - ${gift.descripcion}</div>
+              <div class="text-xs text-slate">Existencia: ${gift.existencia}</div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <input class="form-control form-control-sm w-20 gift-qty" type="number" min="1" step="1" value="${gift.cantidad}" data-index="${index}" />
+              <button class="btn btn-outline-danger btn-sm gift-remove" type="button" data-index="${index}">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+  };
+
+  const renderComboPrice = () => {
+    if (!comboParentPrice) return;
+    const currency = monedaField?.value || "CS";
+    const parentPrice = comboParent ? (currency === "USD" ? comboParent.precioUsd : comboParent.precioCs) : 0;
+    const giftTotal = comboGifts.reduce((acc, gift) => {
+      const price = currency === "USD" ? gift.precioUsd : gift.precioCs;
+      return acc + price * gift.cantidad;
+    }, 0);
+    comboParentPrice.textContent = formatMoney(parentPrice + giftTotal, currency);
+    renderComboPreview();
+  };
+
+  const renderComboPreview = () => {
+    if (!comboPreview) return;
+    if (!comboParent) {
+      comboPreview.innerHTML = "Sin datos para mostrar.";
+      return;
+    }
+    const currency = monedaField?.value || "CS";
+    const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+    if (comboParentAvailable) {
+      comboParentAvailable.textContent = getAvailableQty(comboParent.id, comboParent.existencia).toFixed(0);
+    }
+    const parentUnit = currency === "USD" ? comboParent.precioUsd : comboParent.precioCs;
+    const giftsTotal = comboGifts.reduce((acc, gift) => {
+      const price = currency === "USD" ? gift.precioUsd : gift.precioCs;
+      return acc + price * gift.cantidad;
+    }, 0);
+    const comboUnit = parentUnit + giftsTotal;
+    const comboTotal = comboUnit * comboQty;
+    const giftsHtml = comboGifts.length
+      ? comboGifts
+          .map((gift) => {
+            const giftPrice = currency === "USD" ? gift.precioUsd : gift.precioCs;
+            return `
+              <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-gift text-emerald-600"></i>
+                  <span class="font-semibold text-ink">${gift.codigo} - ${gift.descripcion}</span>
+                </div>
+                <div class="text-end">
+                  <div class="text-slate">x${gift.cantidad * comboQty}</div>
+                  <div class="text-slate text-[11px]" style="opacity:0.3;">${formatMoney(giftPrice, currency)}</div>
+                </div>
+              </div>
+            `;
+          })
+          .join("")
+      : `<div class="text-slate">Sin regalias.</div>`;
+    comboPreview.innerHTML = `
+      <div class="rounded-2xl border border-slate-200 bg-white p-3 mb-3">
+        <div class="d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-boxes text-blue-600"></i>
+            <span class="font-semibold text-ink">${comboParent.codigo} - ${comboParent.descripcion}</span>
+          </div>
+          <span class="text-slate">x${comboQty}</span>
+        </div>
+        <div class="text-[11px] text-slate mt-2" style="opacity:0.35;">Precio oferta: ${formatMoney(parentUnit, currency)}</div>
+        <div class="text-sm text-slate mt-2">Precio combo: <strong class="text-ink">${formatMoney(comboUnit, currency)}</strong></div>
+        <div class="text-sm text-slate">Total combo: <strong class="text-ink">${formatMoney(comboTotal, currency)}</strong></div>
+      </div>
+      <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold mb-2">Regalias</div>
+      <div class="space-y-2">${giftsHtml}</div>
+    `;
+  };
+
+  const getAvailableQty = (productId, existencia) => {
+    const used = getInvoiceQty(productId);
+    return Math.max(0, (existencia || 0) - used);
+  };
+
+  const validateComboStock = () => {
+    if (!comboParent) return true;
+    const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+    const required = [];
+    required.push({
+      id: comboParent.id,
+      codigo: comboParent.codigo,
+      perUnit: 1,
+      existencia: comboParent.existencia || 0,
+    });
+    comboGifts.forEach((gift) => {
+      required.push({
+        id: gift.id,
+        codigo: gift.codigo,
+        perUnit: gift.cantidad,
+        existencia: gift.existencia || 0,
+      });
+    });
+    for (const item of required) {
+      const available = getAvailableQty(item.id, item.existencia);
+      if (available < item.perUnit * comboQty) {
+        pauseNavForAlert({
+          icon: "warning",
+          title: "Saldo insuficiente",
+          text: `Producto ${item.codigo} disponible: ${available}`,
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const clampComboQty = () => {
+    if (!comboParent) return;
+    const perUnitList = [
+      { id: comboParent.id, perUnit: 1, existencia: comboParent.existencia || 0 },
+      ...comboGifts.map((gift) => ({
+        id: gift.id,
+        perUnit: gift.cantidad,
+        existencia: gift.existencia || 0,
+      })),
+    ];
+    let maxQty = Infinity;
+    perUnitList.forEach((item) => {
+      const available = getAvailableQty(item.id, item.existencia);
+      const limit = item.perUnit > 0 ? Math.floor(available / item.perUnit) : 0;
+      maxQty = Math.min(maxQty, limit);
+    });
+    if (!isFinite(maxQty) || maxQty <= 0) {
+      maxQty = 1;
+    }
+    if (comboParentQty) {
+      const current = Math.max(1, Math.round(parseFloat(comboParentQty.value || 1)));
+      if (current > maxQty) {
+        comboParentQty.value = String(maxQty);
+      }
+    }
+  };
+
+  const renderComboParentResults = (items) => {
+    if (!comboParentResults) return;
+    if (!items.length) {
+      comboParentResults.innerHTML = `<div class="text-slate text-sm">Sin resultados.</div>`;
+      return;
+    }
+    comboParentResults.innerHTML = items
+      .map((item) => {
+        const disabled = (item.existencia || 0) <= 0;
+        return `
+          <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
+            <div>
+              <div class="font-semibold text-ink">${item.cod_producto} - ${item.descripcion}</div>
+              <div class="text-xs text-slate">Existencia: ${item.existencia}</div>
+            </div>
+            <button
+              class="btn btn-outline-primary btn-sm combo-parent-pick"
+              type="button"
+              data-id="${item.id}"
+              data-code="${item.cod_producto}"
+              data-desc="${item.descripcion}"
+              data-price-usd="${item.precio_venta1_usd}"
+              data-price-cs="${item.precio_venta1}"
+              data-existencia="${item.existencia}"
+              ${disabled ? "disabled" : ""}
+            >
+              <i class="bi bi-check2-circle"></i>
+              Seleccionar
+            </button>
+          </div>
+        `;
+      })
+      .join("");
+  };
+
+  const renderComboGiftResults = (items) => {
+    if (!comboGiftResults) return;
+    if (!items.length) {
+      comboGiftResults.innerHTML = `<div class="text-slate text-sm">Sin resultados.</div>`;
+      return;
+    }
+    comboGiftResults.innerHTML = items
+      .map((item) => {
+        const disabled = (item.existencia || 0) <= 0;
+        return `
+          <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
+            <div>
+              <div class="font-semibold text-ink">${item.cod_producto} - ${item.descripcion}</div>
+              <div class="text-xs text-slate">Existencia: ${item.existencia}</div>
+            </div>
+            <button
+              class="btn btn-outline-secondary btn-sm combo-gift-pick"
+              type="button"
+              data-id="${item.id}"
+              data-code="${item.cod_producto}"
+              data-desc="${item.descripcion}"
+              data-price-usd="${item.precio_venta1_usd}"
+              data-price-cs="${item.precio_venta1}"
+              data-existencia="${item.existencia}"
+              ${disabled ? "disabled" : ""}
+            >
+              <i class="bi bi-plus-circle"></i>
+              Agregar
+            </button>
+          </div>
+        `;
+      })
+      .join("");
+  };
+
+  const fetchComboItems = async (parentId) => {
+    const response = await fetch(`/inventory/product/${parentId}/combo`);
+    const payload = await response.json().catch(() => null);
+    if (!payload || !payload.ok) return [];
+    return payload.items || [];
+  };
+
+  const loadComboFromCatalog = async () => {
+    if (!comboParent) return;
+    const items = await fetchComboItems(comboParent.id);
+    comboGifts = items.map((item) => ({
+      id: item.child_id,
+      codigo: item.cod_producto,
+      descripcion: item.descripcion,
+      cantidad: Math.max(1, Math.round(item.cantidad || 1)),
+      precioUsd: item.precio_venta1_usd || 0,
+      precioCs: item.precio_venta1 || 0,
+      existencia: item.existencia || 0,
+    }));
+    renderComboGifts();
+    renderComboPrice();
+  };
+
+  const getInvoiceQty = (productId) => {
+    let sum = 0;
+    itemsTable.querySelectorAll("tr[data-item-row]").forEach((row) => {
+      if (row.dataset.productId !== String(productId)) return;
+      const qtyValue = row.querySelector("input[name='item_cantidad']")?.value;
+      sum += parseFloat(qtyValue || 0);
+    });
+    return sum;
+  };
+
+  if (openComboModal) {
+    openComboModal.addEventListener("click", () => {
+      resetComboModal();
+      if (window.bootstrap) {
+        const modal = new bootstrap.Modal(comboModal);
+        modal.show();
+      }
+    });
+  }
+
+  if (comboParentSearch) {
+    comboParentSearch.addEventListener("input", async (event) => {
+      const value = event.target.value.trim();
+      if (value.length < 2) {
+        comboParentResults.innerHTML = "";
+        return;
+      }
+      try {
+        const response = await fetch(`/sales/products/search?q=${encodeURIComponent(value)}`);
+        const payload = await response.json().catch(() => null);
+        renderComboParentResults(payload?.items || []);
+      } catch (error) {
+        if (comboParentResults) {
+          comboParentResults.innerHTML = `<div class="text-danger text-sm">Error al buscar productos.</div>`;
+        }
+      }
+    });
+  }
+
+  const ensureComboSearchActive = () => {
+    if (comboParentSearch) {
+      comboParentSearch.value = "";
+      comboParentSearch.focus();
+    }
+    if (comboParentResults) {
+      comboParentResults.innerHTML = "";
+    }
+    if (comboGiftResults) {
+      comboGiftResults.innerHTML = "";
+    }
+  };
+
+  if (comboGiftSearch) {
+    comboGiftSearch.addEventListener("input", async (event) => {
+      const value = event.target.value.trim();
+      if (value.length < 2) {
+        comboGiftResults.innerHTML = "";
+        return;
+      }
+      try {
+        const response = await fetch(`/sales/products/search?q=${encodeURIComponent(value)}`);
+        const payload = await response.json().catch(() => null);
+        const items = payload?.items || [];
+        renderComboGiftResults(items);
+      } catch (error) {
+        if (comboGiftResults) {
+          comboGiftResults.innerHTML = `<div class="text-danger text-sm">Error al buscar productos.</div>`;
+        }
+      }
+    });
+  }
+
+  if (comboParentResults) {
+    comboParentResults.addEventListener("click", async (event) => {
+      const button = event.target.closest(".combo-parent-pick");
+      if (!button) return;
+      if (parseFloat(button.dataset.existencia || 0) <= 0) {
+        pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Este producto no tiene saldo." });
+        return;
+      }
+      comboParent = {
+        id: button.dataset.id,
+        codigo: button.dataset.code || "",
+        descripcion: button.dataset.desc || "",
+        precioUsd: parseFloat(button.dataset.priceUsd || 0),
+        precioCs: parseFloat(button.dataset.priceCs || 0),
+        existencia: parseFloat(button.dataset.existencia || 0),
+      };
+      if (comboParentSelected) {
+        comboParentSelected.textContent = `${comboParent.codigo} - ${comboParent.descripcion}`;
+      }
+      await loadComboFromCatalog();
+      clampComboQty();
+      renderComboPrice();
+    });
+  }
+
+  if (comboGiftResults) {
+    comboGiftResults.addEventListener("click", (event) => {
+      const button = event.target.closest(".combo-gift-pick");
+      if (!button) return;
+      const id = button.dataset.id;
+      const existencia = parseFloat(button.dataset.existencia || 0);
+      if (existencia <= 0) {
+        pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Esta regalia no tiene saldo." });
+        return;
+      }
+      const existing = comboGifts.find((gift) => String(gift.id) === String(id));
+      if (existing) {
+        const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+        const available = getAvailableQty(existing.id, existencia);
+        if ((existing.cantidad + 1) * comboQty > available) {
+          pauseNavForAlert({
+            icon: "warning",
+            title: "Saldo insuficiente",
+            text: `Disponible: ${available}`,
+          });
+          return;
+        }
+        existing.cantidad += 1;
+      } else {
+        comboGifts.push({
+          id: id,
+          codigo: button.dataset.code || id,
+          descripcion: button.dataset.desc || "",
+          cantidad: 1,
+          precioUsd: parseFloat(button.dataset.priceUsd || 0),
+          precioCs: parseFloat(button.dataset.priceCs || 0),
+          existencia: existencia,
+        });
+      }
+      clampComboQty();
+      renderComboGifts();
+      renderComboPreview();
+      renderComboPrice();
+    });
+  }
+
+  if (comboGiftList) {
+    comboGiftList.addEventListener("input", (event) => {
+      const qtyInput = event.target.closest(".gift-qty");
+      if (!qtyInput) return;
+      if (event.inputType === "insertText") {
+        return;
+      }
+      const index = parseInt(qtyInput.dataset.index || "0", 10);
+      const qty = Math.max(1, Math.round(parseFloat(qtyInput.value || 1)));
+      const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+      const gift = comboGifts[index];
+      const available = getAvailableQty(gift.id, gift.existencia);
+      const maxQty = Math.max(1, Math.floor(available / comboQty));
+      if (qty > maxQty) {
+        gift.cantidad = maxQty;
+        qtyInput.value = String(maxQty);
+        pauseNavForAlert({
+          icon: "warning",
+          title: "Saldo insuficiente",
+          text: `Disponible: ${available}`,
+        });
+      } else {
+        gift.cantidad = qty;
+      }
+      clampComboQty();
+      renderComboPreview();
+      renderComboPrice();
+    });
+    comboGiftList.addEventListener("click", (event) => {
+      const button = event.target.closest(".gift-remove");
+      if (!button) return;
+      const index = parseInt(button.dataset.index || "0", 10);
+      comboGifts.splice(index, 1);
+      renderComboGifts();
+      renderComboPreview();
+      renderComboPrice();
+    });
+  }
+
+  if (comboParentQty) {
+    comboParentQty.addEventListener("input", () => {
+      clampComboQty();
+      renderComboPreview();
+      renderComboPrice();
+    });
+  }
+
+  if (comboApply) {
+    comboApply.addEventListener("click", () => {
+      if (!comboParent) {
+        if (comboStatus) comboStatus.textContent = "Selecciona un producto oferta.";
+        return;
+      }
+      if (!validateComboStock()) {
+        return;
+      }
+      const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+      const requiredMap = new Map();
+      const addRequired = (id, qty) => {
+        const current = requiredMap.get(id) || 0;
+        requiredMap.set(id, current + qty);
+      };
+      addRequired(comboParent.id, comboQty);
+      comboGifts.forEach((gift) => {
+        addRequired(gift.id, gift.cantidad * comboQty);
+      });
+      for (const [id, qty] of requiredMap.entries()) {
+        const producto = id === comboParent.id ? comboParent : comboGifts.find((g) => String(g.id) === String(id));
+        const existencia = producto?.existencia || 0;
+        const existingQty = getInvoiceQty(id);
+        if (!existencia || existingQty + qty > existencia) {
+          pauseNavForAlert({
+            icon: "warning",
+            title: "Saldo insuficiente",
+            text: `Producto ${producto?.codigo || ""} disponible: ${existencia}`,
+          });
+          return;
+        }
+      }
+      const currency = monedaField?.value || "CS";
+      const parentUnitPrice = currency === "USD" ? comboParent.precioUsd : comboParent.precioCs;
+      const giftTotal = comboGifts.reduce((acc, gift) => {
+        const price = currency === "USD" ? gift.precioUsd : gift.precioCs;
+        return acc + price * gift.cantidad;
+      }, 0);
+      const comboPrice = parentUnitPrice + giftTotal;
+      const subtotal = comboPrice * comboQty;
+      const subtotalUsd = currency === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
+      const subtotalCs = currency === "USD" ? subtotal * rateToday : subtotal;
+      const comboGroupId = `combo-${Date.now()}-${comboParent.id}`;
+      addItemRow({
+        productId: comboParent.id,
+        code: comboParent.codigo,
+        name: comboParent.descripcion,
+        qtyValue: comboQty.toFixed(2),
+        qtyValueDisplay: comboQty.toString(),
+        qtyStep: "1",
+        maxQty: comboParent.existencia || comboQty,
+        priceValue: comboPrice.toFixed(2),
+        subtotalLabel: formatMoney(subtotal, currency),
+        subtotalUsd,
+        subtotalCs,
+        role: "parent",
+        comboGroup: comboGroupId,
+      });
+      comboGifts.forEach((gift) => {
+        const giftQty = gift.cantidad * comboQty;
+        const giftSubtotal = 0;
+        const giftSubtotalUsd = currency === "USD" ? 0 : 0;
+        const giftSubtotalCs = currency === "USD" ? 0 : 0;
+        addItemRow({
+          productId: gift.id,
+          code: gift.codigo,
+          name: gift.descripcion,
+          qtyValue: giftQty.toFixed(2),
+          qtyValueDisplay: giftQty.toString(),
+          qtyStep: "1",
+          maxQty: gift.existencia || giftQty,
+          priceValue: "0.00",
+          subtotalLabel: formatMoney(0, currency),
+          subtotalUsd: giftSubtotalUsd,
+          subtotalCs: giftSubtotalCs,
+          role: "gift",
+          lockPrice: true,
+          comboGroup: comboGroupId,
+        });
+      });
+      resetComboModal();
+      if (window.bootstrap) {
+        const modal = bootstrap.Modal.getInstance(comboModal);
+        if (modal) modal.hide();
+      }
+      setTimeout(ensureComboSearchActive, 200);
+    });
+  }
+
+  if (comboModal) {
+    comboModal.addEventListener("shown.bs.modal", () => {
+      productNavMode = "paused";
+      ensureComboSearchActive();
+    });
+    comboModal.addEventListener("hidden.bs.modal", () => {
+      productNavMode = "search";
+    });
+  }
+
+  const productEmptyRow = document.getElementById("product-empty");
+  let searchTimer = null;
+
+  const refreshActiveRows = () => {
+    activeProductRows = Array.from(productList.querySelectorAll(".product-pick-row"));
+  };
+
+  const setActiveProduct = (index) => {
+    refreshActiveRows();
+    if (!activeProductRows.length) {
+      activeProductIndex = -1;
+      return;
+    }
+    if (index < 0) {
+      activeProductIndex = activeProductRows.length - 1;
+    } else if (index >= activeProductRows.length) {
+      activeProductIndex = 0;
+    } else {
+      activeProductIndex = index;
+    }
+    activeProductRows.forEach((row, idx) => {
+      row.classList.toggle("product-active", idx === activeProductIndex);
+    });
+    const activeRow = activeProductRows[activeProductIndex];
+    if (activeRow && productListPanel) {
+      activeRow.scrollIntoView({ block: "nearest" });
+    }
+  };
+
+  const renderProducts = (items) => {
+    if (!productList) return;
+    const visibleItems = items || [];
+    if (!visibleItems.length) {
+      productList.innerHTML = `<div id="product-empty" class="text-center py-3 text-slate">Sin resultados.</div>`;
+      activeProductRows = [];
+      activeProductIndex = -1;
+      return;
+    }
+    productList.innerHTML = visibleItems
+      .map((item) => {
+        return `
+          <div class="product-pick-row px-3 py-2 flex items-center justify-between gap-3" data-name="${item.descripcion}" data-code="${item.cod_producto}" role="option">
+            <div class="flex-1">
+              <div class="text-xs uppercase tracking-[0.2em] text-brand font-semibold">${item.cod_producto}</div>
+              <div class="font-semibold text-ink text-base">${item.descripcion}</div>
+              <div class="mt-1 flex flex-wrap items-center justify-between gap-3 text-sm">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs uppercase tracking-[0.18em] text-slate">Saldo</span>
+                  <span class="font-semibold text-red-600">${item.existencia}</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-3 text-right">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs uppercase tracking-[0.18em] text-slate">USD</span>
+                    <span class="font-semibold text-brand">${formatMoney(item.precio_venta1_usd, "USD")}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs uppercase tracking-[0.18em] text-slate">C$</span>
+                    <span class="font-semibold text-brand">${formatMoney(item.precio_venta1, "CS")}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs uppercase tracking-[0.18em] text-slate">Cantidad</span>
+                    <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" max="${item.existencia}" value="1" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button
+              class="add-item inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 bg-white text-brand hover:bg-slate-50 shadow-sm"
+              type="button"
+              data-product-id="${item.id}"
+              data-code="${item.cod_producto}"
+              data-name="${item.descripcion}"
+              data-existencia="${item.existencia}"
+              data-price-usd="${item.precio_venta1_usd.toFixed(2)}"
+              data-price-cs="${item.precio_venta1.toFixed(2)}"
+              aria-label="Agregar producto"
+            >
+              <i class="bi bi-plus-lg"></i>
+            </button>
+          </div>`;
+      })
+      .join("");
+    refreshActiveRows();
+    setActiveProduct(0);
+  };
+
+  const fetchProducts = async (query) => {
+    if (!query || query.length < 2) {
+      if (productList && productEmptyRow) {
+        productList.innerHTML = productEmptyRow.outerHTML;
+      }
+      return;
+    }
+    const response = await fetch(`/sales/products/search?q=${encodeURIComponent(query)}`);
+    const payload = await response.json().catch(() => null);
+    if (!payload || !payload.ok) {
+      renderProducts([]);
+      return;
+    }
+    renderProducts(payload.items || []);
+    productNavMode = "panel";
+  };
+
+  if (productList) {
+    productList.addEventListener("click", (event) => {
+      const button = event.target.closest(".add-item");
+      if (!button) return;
+      handleAddItem(button);
+    });
+  }
+
+  if (productSearch) {
+    productSearch.addEventListener("input", (event) => {
+      const value = event.target.value.toUpperCase();
+      event.target.value = value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => fetchProducts(value), 250);
+    });
+    productSearch.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        setActiveProduct(0);
+        productNavMode = "panel";
+        if (productListPanel) {
+          setTimeout(() => productListPanel.focus(), 0);
+        }
+      }
+    });
+  }
+
+  let lastNavAt = 0;
+  const NAV_DELAY = 80;
+
+  const addActiveProduct = () => {
+    refreshActiveRows();
+    if (activeProductIndex < 0 || !activeProductRows[activeProductIndex]) return;
+    const button = activeProductRows[activeProductIndex].querySelector(".add-item");
+    if (button) {
+      const added = handleAddItem(button);
+      if (added && productSearch) {
+        productSearch.value = "";
+        if (productList && productEmptyRow) {
+          productList.innerHTML = productEmptyRow.outerHTML;
+        }
+        if (productListPanel) {
+          productListPanel.scrollTop = 0;
+        }
+        activeProductIndex = -1;
+        activeProductRows = [];
+        productNavMode = "search";
+        setTimeout(() => {
+          productSearch.focus();
+          productSearch.select();
+        }, 0);
+      }
+    }
+  };
+
+  const handleProductNav = (event) => {
+    if (productNavMode === "paused") return;
+    refreshActiveRows();
+    if (!activeProductRows.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      const now = Date.now();
+      if (now - lastNavAt < NAV_DELAY) return;
+      lastNavAt = now;
+      setActiveProduct(activeProductIndex + 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      const now = Date.now();
+      if (now - lastNavAt < NAV_DELAY) return;
+      lastNavAt = now;
+      setActiveProduct(activeProductIndex - 1);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      addActiveProduct();
+    }
+  };
+
+  if (productListPanel) {
+    productListPanel.addEventListener("keydown", handleProductNav, { passive: false });
+    productListPanel.addEventListener("click", (event) => {
+      const row = event.target.closest(".product-pick-row");
+      if (!row) return;
+      refreshActiveRows();
+      const index = activeProductRows.indexOf(row);
+      if (index >= 0) {
+        setActiveProduct(index);
+        productNavMode = "panel";
+        productListPanel.focus();
+      }
+    });
+    productListPanel.addEventListener("dblclick", (event) => {
+      const row = event.target.closest(".product-pick-row");
+      if (!row) return;
+      const button = row.querySelector("[data-add-item]");
+      if (!button) return;
+      const added = handleAddItem(button);
+      if (added) {
+        setTimeout(() => {
+          productSearchInput?.focus();
+          productSearchInput?.select();
+        }, 10);
+      }
+    });
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (comboModal && comboModal.classList.contains("show")) {
+      return;
+    }
+    if (productNavMode !== "panel") return;
+    if (document.activeElement === productSearch) return;
+    if (!productListPanel || !productListPanel.contains(document.activeElement)) {
+      productListPanel?.focus();
+    }
+    if (["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) {
+      if (event.repeat) return;
+      if (document.activeElement === productListPanel) return;
+      handleProductNav(event);
+    }
+  });
+
+  if (addPayment) {
+    addPayment.addEventListener("click", () => {
+      const formaId = formaPagoField?.value;
+      const formaOption = formaPagoField?.selectedOptions[0];
+      const formaLabel = formaOption?.textContent || "";
+      const moneda = pagoMoneda?.value || "USD";
+      const monto = parseMoneyValue(pagoMonto?.value || 0);
+      const bancoId = bancoSelect?.value || "";
+      const cuentaId = cuentaSelect?.value || "";
+      const bancoLabel = bancoSelect?.selectedOptions[0]?.textContent || "";
+      if (!formaId || monto <= 0) {
+        pauseNavForAlert({ icon: "warning", title: "Pago incompleto", text: "Selecciona forma y monto valido." });
+        return;
+      }
+      const invoiceCurrency = monedaField?.value || "CS";
+      const paidSoFar = paymentItems.reduce((acc, item) => {
+        return acc + (invoiceCurrency === "USD" ? toUsd(item.monto, item.moneda) : toCs(item.monto, item.moneda));
+      }, 0);
+      const due = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
+      const remaining = Math.max(due - paidSoFar, 0);
+      const montoInvoice = invoiceCurrency === "USD" ? toUsd(monto, moneda) : toCs(monto, moneda);
+      const isCash = isCashPayment(formaId, formaLabel);
+      if (!isCash && montoInvoice > remaining + 0.01) {
+        pauseNavForAlert({ icon: "warning", title: "Pago excede el saldo", text: "Solo efectivo permite vuelto." });
+        return;
+      }
+      paymentItems.push({
+        formaId,
+        formaLabel,
+        moneda,
+        monto,
+        bancoId,
+        cuentaId,
+        bancoLabel,
+      });
+      if (pagoMonto) {
+        pagoMonto.value = "";
+      }
+      renderPaymentList();
+      setPaymentAmountDefault();
+    });
+  }
+
+  if (pagoMonto) {
+    pagoMonto.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const entered = parseMoneyValue(pagoMonto.value || 0);
+        if (entered > 0) {
+          addPayment?.click();
+        } else {
+          confirmSale?.click();
+        }
+      }
+    });
+    pagoMonto.addEventListener("blur", () => {
+      const currency = pagoMoneda?.value || "CS";
+      pagoMonto.value = formatMoneyInput(pagoMonto.value, currency);
+    });
+    pagoMonto.addEventListener("focus", () => {
+      pagoMonto.select();
+    });
+  }
+
+  if (pagoMoneda) {
+    pagoMoneda.addEventListener("change", () => {
+      if (pagoMonto) {
+        setPaymentAmountDefault();
+        pagoMonto.select();
+      }
+    });
+  }
+
+  document.querySelectorAll(".pay-method-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.disabled === "1") {
+        pauseNavForAlert({ icon: "info", title: "Forma de pago no habilitada", text: "Opcion en configuracion." });
+        return;
+      }
+      if (!formaPagoField) return;
+      const targetId = button.dataset.formaId;
+      formaPagoField.value = targetId || "";
+      if (window.$ && $.fn.select2) {
+        $(formaPagoField).trigger("change.select2");
+      } else {
+        formaPagoField.dispatchEvent(new Event("change"));
+      }
+      updatePayMethodButtons(targetId);
+      syncPaymentFields();
+    });
+  });
+
+  if (paymentList) {
+    paymentList.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-remove-payment]");
+      if (!button) return;
+      const index = Number(button.dataset.removePayment);
+      if (Number.isNaN(index)) return;
+      paymentItems.splice(index, 1);
+      renderPaymentList();
+      setPaymentAmountDefault();
+    });
+  }
+
+  if (itemsTable) {
+    itemsTable.addEventListener("click", (event) => {
+      const button = event.target.closest(".remove-item");
+      if (!button) return;
+      const row = button.closest("tr");
+      const comboGroup = row.dataset.comboGroup;
+      if (comboGroup) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({
+            icon: "warning",
+            title: "Eliminar combo",
+            text: "Este item pertenece a un combo. Debes eliminar todo el combo.",
+            showCancelButton: true,
+            confirmButtonText: "Eliminar combo",
+            cancelButtonText: "Cancelar",
+          }).then((result) => {
+            if (!result.isConfirmed) {
+              return;
+            }
+            itemsTable.querySelectorAll(`tr[data-combo-group="${comboGroup}"]`).forEach((itemRow) => {
+              itemRow.remove();
+            });
+            if (itemsTable.querySelectorAll("tr[data-item-row]").length === 0) {
+              itemsTable.innerHTML = `<tr id="empty-items"><td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
+            }
+            updateTotals();
+          });
+        }
+        return;
+      }
+      row.remove();
+      if (itemsTable.querySelectorAll("tr[data-item-row]").length === 0) {
+        itemsTable.innerHTML = `<tr id="empty-items"><td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
+      }
+      updateTotals();
+    });
+    itemsTable.addEventListener("input", (event) => {
+      const row = event.target.closest("tr");
+      if (!row) return;
+      const qtyInput = row.querySelector(".row-qty");
+      const priceInput = row.querySelector(".row-price");
+      const qtyHidden = row.querySelector("input[name='item_cantidad']");
+      let qty = parseFloat(qtyInput ? qtyInput.value : (qtyHidden ? qtyHidden.value : 0));
+      const maxQty = parseFloat(row.dataset.maxQty || 0);
+      if (maxQty && qty > maxQty && qtyInput) {
+        qty = Math.trunc(maxQty);
+        qtyInput.value = Math.trunc(maxQty).toString();
+        if (qtyHidden) {
+          qtyHidden.value = Math.trunc(maxQty).toFixed(2);
+        }
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible: ${maxQty}` });
+        }
+      }
+      if (qtyHidden && qtyInput) {
+        qtyHidden.value = Math.trunc(qty).toFixed(2);
+        qtyInput.value = Math.trunc(qty).toString();
+      }
+      const price = parseFloat(priceInput ? priceInput.value : 0);
+      const moneda = monedaField.value || "USD";
+      const subtotal = price * qty;
+      row.dataset.subtotalUsd = moneda === "USD" ? subtotal.toFixed(2) : (rateToday ? (subtotal / rateToday).toFixed(2) : "0.00");
+      row.dataset.subtotalCs = moneda === "USD" ? (subtotal * rateToday).toFixed(2) : subtotal.toFixed(2);
+      const subtotalCell = row.querySelector(".subtotal-cell");
+      if (subtotalCell) {
+        subtotalCell.textContent = formatMoney(subtotal, moneda === "USD" ? "USD" : "CS");
+      }
+      updateTotals();
+    });
+  }
+
+  const syncPaymentFields = () => {
+    const label = (formaPagoField?.selectedOptions[0]?.textContent || "").toLowerCase();
+    const isTarjeta = label.includes("tarjeta");
+    const isBanco = label.includes("banco") || label.includes("transferencia") || label.includes("deposito") || isTarjeta;
+    if (bancoSelect) {
+      bancoSelect.disabled = !isBanco;
+      if (!isBanco) {
+        bancoSelect.value = "";
+      } else if (isTarjeta) {
+        const bacOption = Array.from(bancoSelect.options).find((opt) =>
+          (opt.textContent || "").toLowerCase().includes("bac")
+        );
+        if (bacOption) {
+          bancoSelect.value = bacOption.value;
+        }
+      }
+    }
+    if (cuentaSelect) {
+      cuentaSelect.disabled = !isBanco;
+      if (!isBanco) {
+        cuentaSelect.value = "";
+      }
+    }
+    if (bancoSelect) {
+      bancoSelect.dispatchEvent(new Event("change"));
+    }
+  };
+
+  if (formaPagoField) {
+    formaPagoField.addEventListener("change", syncPaymentFields);
+  }
+
+  if (bancoSelect && cuentaSelect) {
+    bancoSelect.addEventListener("change", () => {
+      const bancoId = bancoSelect.value;
+      const moneda = monedaField?.value || "USD";
+      cuentaSelect.querySelectorAll("option").forEach((option) => {
+        if (!option.value) return;
+        const matches = option.dataset.banco === bancoId && option.dataset.moneda === moneda;
+        option.hidden = !matches;
+      });
+    });
+  }
+
+  if (monedaField) {
+    monedaField.addEventListener("change", () => {
+      if (bancoSelect) {
+        bancoSelect.dispatchEvent(new Event("change"));
+      }
+      updateTotals();
+    });
+  }
+
+  if (confirmSale) {
+    confirmSale.addEventListener("click", () => {
+      if (!paymentItems.length) {
+        if (pagoMonto && parseMoneyValue(pagoMonto.value || 0) > 0 && formaPagoField?.value) {
+          addPayment?.click();
+        }
+      }
+      if (!paymentItems.length) {
+        pauseNavForAlert({ icon: "warning", title: "Sin pagos", text: "Agrega al menos un pago." });
+        return;
+      }
+      const invoiceCurrency = monedaField?.value || "USD";
+      if (!rateToday && paymentItems.some((item) => item.moneda !== invoiceCurrency)) {
+        pauseNavForAlert({ icon: "warning", title: "Tasa requerida", text: "Configura la tasa de cambio." });
+        return;
+      }
+      const totalPaid = paymentItems.reduce((acc, item) => {
+        return acc + (invoiceCurrency === "USD" ? toUsd(item.monto, item.moneda) : toCs(item.monto, item.moneda));
+      }, 0);
+      const due = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
+      const EPS = 0.01;
+      if (totalPaid + EPS < due) {
+        pauseNavForAlert({
+          icon: "warning",
+          title: "Pago incompleto",
+          text: `Faltan ${formatMoney(due - totalPaid, invoiceCurrency === "USD" ? "USD" : "CS")}`,
+        });
+        return;
+      }
+      syncPaymentHidden();
+      document.getElementById("sales-form").submit();
+    });
+  }
+
+  const cashCountCsBody = document.getElementById("cash-count-cs");
+  const cashCountUsdBody = document.getElementById("cash-count-usd");
+  const cashTotalCs = document.getElementById("cash-total-cs");
+  const cashTotalUsd = document.getElementById("cash-total-usd");
+  const cashCsDenoms = [0.5, 1, 5, 10, 20, 50, 100, 200, 500, 1000];
+  const cashUsdDenoms = [1, 2, 5, 10, 20, 50, 100];
+
+  const renderCashRows = (body, denoms, currency) => {
+    if (!body) return;
+    body.innerHTML = denoms
+      .map((denom) => {
+        return `
+          <tr>
+            <td>${currency === "CS" ? "C$" : "$"} ${denom}</td>
+            <td class="text-end">
+              <input type="number" min="0" step="1" class="form-control form-control-sm text-end cash-qty cash-qty-input" data-denom="${denom}" data-currency="${currency}" value="0" />
+            </td>
+            <td class="text-end cash-subtotal fw-semibold" data-denom="${denom}" data-currency="${currency}">0.00</td>
+          </tr>
+        `;
+      })
+      .join("");
+  };
+
+  const formatCashValue = (value) => {
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+
+  const updateCashTotals = (currency) => {
+    const body = currency === "CS" ? cashCountCsBody : cashCountUsdBody;
+    const totalLabel = currency === "CS" ? cashTotalCs : cashTotalUsd;
+    if (!body || !totalLabel) return;
+    let total = 0;
+    body.querySelectorAll(".cash-qty").forEach((input) => {
+      const denom = parseFloat(input.dataset.denom || 0);
+      const qty = parseFloat(input.value || 0);
+      const subtotal = denom * qty;
+      total += subtotal;
+      const subtotalCell = body.querySelector(`.cash-subtotal[data-denom="${denom}"][data-currency="${currency}"]`);
+      if (subtotalCell) {
+        subtotalCell.textContent = formatCashValue(subtotal);
+      }
+    });
+    totalLabel.textContent = formatCashValue(total);
+  };
+
+  if (cashCountCsBody && cashCountUsdBody) {
+    renderCashRows(cashCountCsBody, cashCsDenoms, "CS");
+    renderCashRows(cashCountUsdBody, cashUsdDenoms, "USD");
+    cashCountCsBody.addEventListener("input", (event) => {
+      if (event.target.classList.contains("cash-qty")) {
+        updateCashTotals("CS");
+      }
+    });
+    cashCountUsdBody.addEventListener("input", (event) => {
+      if (event.target.classList.contains("cash-qty")) {
+        updateCashTotals("USD");
+      }
+    });
+  }
+
+  const salesForm = document.getElementById("sales-form");
+  if (salesForm) {
+    salesForm.addEventListener("submit", (event) => {
+      if (itemsTable.querySelectorAll("tr[data-item-row]").length === 0) {
+        event.preventDefault();
+      }
+    });
+  }
+
+  const clearSale = document.getElementById("clear-sale");
+  if (clearSale) {
+    clearSale.addEventListener("click", () => {
+      if (itemsTable) {
+        itemsTable.innerHTML = `<tr id="empty-items"><td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
+      }
+      updateTotals();
+    });
+  }
+
+  const clienteForm = document.getElementById("cliente-form");
+  if (clienteForm) {
+    clienteForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const response = await fetch("/sales/cliente", {
+        method: "POST",
+        headers: { "X-Requested-With": "fetch" },
+        body: new FormData(clienteForm),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!payload || !payload.ok) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: payload?.message || "No se pudo guardar" });
+        }
+        return;
+      }
+      const option = new Option(payload.nombre, payload.id, true, true);
+      const select = document.getElementById("cliente-select");
+      if (select) {
+        select.append(option);
+        select.dispatchEvent(new Event("change"));
+      }
+      clienteForm.reset();
+      const tabButton = document.getElementById("cliente-select-tab");
+      if (tabButton && window.bootstrap) {
+        const tab = new bootstrap.Tab(tabButton);
+        tab.show();
+      }
+    });
+  }
+
+  const vendedorForm = document.getElementById("vendedor-form");
+  if (vendedorForm) {
+    vendedorForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const response = await fetch("/sales/vendedor", {
+        method: "POST",
+        headers: { "X-Requested-With": "fetch" },
+        body: new FormData(vendedorForm),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!payload || !payload.ok) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: payload?.message || "No se pudo guardar" });
+        }
+        return;
+      }
+      const option = new Option(payload.nombre, payload.id, true, true);
+      const select = document.getElementById("vendedor-select");
+      if (select) {
+        select.append(option);
+        select.dispatchEvent(new Event("change"));
+      }
+      vendedorForm.reset();
+      document.querySelector("[x-data]").__x.$data.vendedorOpen = false;
+    });
+  }
+
+  const clienteSummary = document.getElementById("cliente-summary");
+  const vendedorSummary = document.getElementById("vendedor-summary");
+  const fechaSummary = document.getElementById("fecha-summary");
+  const horaSummary = document.getElementById("hora-summary");
+  const clienteSelect = document.getElementById("cliente-select");
+  const vendedorSelect = document.getElementById("vendedor-select");
+  const fechaInput = document.getElementById("venta-fecha");
+  const fechaHidden = document.getElementById("venta-fecha-hidden");
+
+  const updatePartySummary = () => {
+    if (clienteSummary && clienteSelect) {
+      clienteSummary.textContent = clienteSelect.selectedOptions[0]?.textContent || "Consumidor final";
+    }
+    if (vendedorSummary && vendedorSelect) {
+      vendedorSummary.textContent = vendedorSelect.selectedOptions[0]?.textContent || "Sin asignar";
+    }
+    if (fechaSummary && fechaInput) {
+      fechaSummary.textContent = fechaInput.value || "--";
+      if (fechaHidden) {
+        fechaHidden.value = fechaInput.value || "";
+      }
+    }
+  };
+
+  const formatLocalDate = () => {
+    const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Managua" });
+    return formatter.format(new Date());
+  };
+
+  const updateClock = () => {
+    const now = new Date();
+    const timeLabel = now.toLocaleTimeString("es-NI", { hour: "2-digit", minute: "2-digit" });
+    if (horaSummary) {
+      horaSummary.textContent = timeLabel;
+    }
+    const payHora = document.getElementById("pay-hora");
+    if (payHora) {
+      payHora.textContent = timeLabel;
+    }
+  };
+
+  if (clienteSelect) {
+    clienteSelect.addEventListener("change", updatePartySummary);
+  }
+  const clienteDefault = document.getElementById("cliente-default");
+  if (clienteDefault && clienteSelect) {
+    clienteDefault.addEventListener("click", () => {
+      clienteSelect.value = "";
+      if (window.$ && $.fn.select2) {
+        $(clienteSelect).trigger("change.select2");
+      } else {
+        clienteSelect.dispatchEvent(new Event("change"));
+      }
+      updatePartySummary();
+    });
+  }
+  if (vendedorSelect) {
+    vendedorSelect.addEventListener("change", updatePartySummary);
+  }
+  if (fechaInput) {
+    fechaInput.addEventListener("change", updatePartySummary);
+  }
+
+  window.addEventListener("load", () => {
+    if (fechaInput && !fechaInput.value) {
+      const today = formatLocalDate();
+      fechaInput.value = today;
+      if (fechaHidden) {
+        fechaHidden.value = today;
+      }
+    }
+    if (vendedorSelect && !vendedorSelect.value) {
+      const firstOption = Array.from(vendedorSelect.options).find((opt) => opt.value);
+      if (firstOption) {
+        vendedorSelect.value = firstOption.value;
+        if (window.$ && $.fn.select2) {
+          $(vendedorSelect).trigger("change.select2");
+        } else {
+          vendedorSelect.dispatchEvent(new Event("change"));
+        }
+      }
+    }
+    if (window.$ && $.fn.select2) {
+      $("#party-modal .select2").select2({
+        width: "100%",
+        placeholder: "Selecciona",
+        allowClear: true,
+        dropdownParent: $("#party-modal"),
+        selectionCssClass: "odoo-select2",
+        dropdownCssClass: "odoo-select2",
+      });
+      $("#payment-modal .select2").select2({
+        width: "100%",
+        placeholder: "Selecciona",
+        allowClear: true,
+        dropdownParent: $("#payment-modal"),
+        selectionCssClass: "odoo-select2",
+        dropdownCssClass: "odoo-select2",
+      });
+    }
+    syncPaymentFields();
+    updatePartySummary();
+    updateTotals();
+    updateClock();
+    setInterval(updateClock, 60000);
+  });
+
+  const paymentModal = document.getElementById("payment-modal");
+  if (paymentModal) {
+    paymentModal.addEventListener("show.bs.modal", () => {
+      paymentEnterStage = 0;
+      updatePartySummary();
+      if (payCliente) payCliente.textContent = clienteSummary?.textContent || "--";
+      if (payVendedor) payVendedor.textContent = vendedorSummary?.textContent || "--";
+      if (payFecha) payFecha.textContent = fechaSummary?.textContent || "--";
+      if (payHora && horaSummary) payHora.textContent = horaSummary.textContent || "--";
+      if (payTotalUsd) payTotalUsd.textContent = formatMoney(currentTotals.usd, "USD");
+      if (payTotalCs) payTotalCs.textContent = formatMoney(currentTotals.cs, "CS");
+      renderPaymentList();
+      if (monedaField) monedaField.value = "CS";
+      if (pagoMoneda) pagoMoneda.value = "CS";
+      if (formaPagoField) {
+        const efectivoOption = Array.from(formaPagoField.options).find((opt) =>
+          opt.textContent?.toLowerCase().includes("efectivo")
+        );
+        if (efectivoOption) {
+          formaPagoField.value = efectivoOption.value;
+          if (window.$ && $.fn.select2) {
+            $(formaPagoField).trigger("change.select2");
+          }
+        }
+        updatePayMethodButtons(formaPagoField.value);
+        syncPaymentFields();
+      }
+      setPaymentAmountDefault();
+    });
+    paymentModal.addEventListener("shown.bs.modal", () => {
+      if (pagoMonto) {
+        pagoMonto.focus();
+        pagoMonto.select();
+      }
+    });
+  }
+
+  {% if error %}
+  if (typeof Swal !== "undefined") {
+    Swal.fire({
+      icon: "error",
+      title: "Atencion",
+      text: "{{ error }}",
+      confirmButtonText: "Entendido",
+    });
+  }
+  {% endif %}
+  {% if success %}
+  if (typeof Swal !== "undefined") {
+    Swal.fire({
+      icon: "success",
+      title: "Venta registrada",
+      text: "{{ success }}",
+      timer: 1800,
+      showConfirmButton: false,
+    });
+  }
+  {% endif %}
+  {% if print_id %}
+  const autoPrint = {{ "true" if pos_print and pos_print.auto_print else "false" }};
+  if (!autoPrint) {
+    window.open("/sales/{{ print_id }}/ticket", "pos_ticket");
+  }
+  {% endif %}
+</script>
+{% endblock %}

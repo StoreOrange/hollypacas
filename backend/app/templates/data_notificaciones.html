@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+              <li class="breadcrumb-item"><a href="/data">Datos</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Notificaciones</li>
+            </ol>
+          </nav>
+          <h1 class="h5 mb-1">Notificaciones por correo</h1>
+          <p class="text-muted mb-0">Define emisor y destinatarios para reversiones.</p>
+        </div>
+        <div class="d-none d-md-block">
+          <a class="btn btn-outline-secondary btn-sm" href="/data">
+            <i class="bi bi-grid"></i>
+            Catalogos
+          </a>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-2">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2">{{ success }}</div>
+      {% endif %}
+
+      <div class="row g-4">
+        <div class="col-lg-6">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Correo emisor</div>
+            <form class="row g-3" method="post" action="/data/notificaciones/config">
+              <div class="col-12">
+                <label class="odoo-field-label">Correo emisor *</label>
+                <input class="form-control odoo-input" name="sender_email" value="{{ config.sender_email if config else '' }}" placeholder="orangetectec@zohomail.com" required />
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label">Nombre visible</label>
+                <input class="form-control odoo-input" name="sender_name" value="{{ config.sender_name if config else '' }}" placeholder="Hollywood Pacas" />
+              </div>
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="active" id="email_active" {% if config and config.active %}checked{% endif %} />
+                  <label class="form-check-label" for="email_active">Activar envio de correos</label>
+                </div>
+              </div>
+              <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary">Guardar</button>
+                <a class="btn btn-outline-secondary" href="/data">Volver a datos</a>
+              </div>
+              <div class="col-12 text-sm text-slate">
+                SMTP se configura con variables: SMTP_USER, SMTP_PASSWORD, SMTP_HOST, SMTP_PORT.
+              </div>
+            </form>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Destinatarios</div>
+            <form class="row g-3" method="post" action="/data/notificaciones/recipients">
+              <div class="col-md-7">
+                <label class="odoo-field-label">Correo *</label>
+                <input class="form-control odoo-input" name="email" placeholder="correo@dominio.com" required />
+              </div>
+              <div class="col-md-5">
+                <label class="odoo-field-label">Nombre</label>
+                <input class="form-control odoo-input" name="name" placeholder="Propietario" />
+              </div>
+              <div class="col-12 d-flex gap-2">
+                <button class="btn btn-outline-primary" type="submit">
+                  <i class="bi bi-plus-circle"></i>
+                  Agregar
+                </button>
+              </div>
+            </form>
+
+            <div class="d-flex flex-column gap-2 mt-4">
+              {% for recipient in recipients %}
+              <form class="border border-slate-200 rounded-3xl p-3 bg-white" method="post" action="/data/notificaciones/recipients/{{ recipient.id }}/update">
+                <div class="row g-2 align-items-center">
+                  <div class="col-md-5">
+                    <label class="odoo-field-label">Correo</label>
+                    <input class="form-control form-control-sm odoo-input" name="email" value="{{ recipient.email }}" />
+                  </div>
+                  <div class="col-md-4">
+                    <label class="odoo-field-label">Nombre</label>
+                    <input class="form-control form-control-sm odoo-input" name="name" value="{{ recipient.name or '' }}" />
+                  </div>
+                  <div class="col-md-2">
+                    <label class="odoo-field-label">Activo</label>
+                    <div class="form-check mt-1">
+                      <input class="form-check-input" type="checkbox" name="active" {% if recipient.active %}checked{% endif %} />
+                    </div>
+                  </div>
+                  <div class="col-md-1 d-flex align-items-end">
+                    <button class="btn btn-sm btn-outline-secondary w-100" type="submit">Guardar</button>
+                  </div>
+                </div>
+              </form>
+              {% endfor %}
+              {% if recipients|length == 0 %}
+              <div class="text-center py-3 text-slate">Sin destinatarios.</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

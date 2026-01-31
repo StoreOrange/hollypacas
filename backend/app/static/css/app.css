@@ -1,0 +1,911 @@
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/Inter-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/static/fonts/Inter-Medium.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/static/fonts/Inter-SemiBold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/static/fonts/Inter-Bold.woff2") format("woff2");
+}
+
+:root {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  color: #1f2937;
+  --bs-body-font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f7f5f9;
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+}
+
+[x-cloak] {
+  display: none !important;
+}
+
+.odoo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.odoo-breadcrumb {
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.odoo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.odoo-pill.primary {
+  border-color: #d7c3d1;
+  background: #f3e9f0;
+  color: #5f3f59;
+}
+
+.odoo-pill.success {
+  border-color: #bbf7d0;
+  background: #ecfdf3;
+  color: #166534;
+}
+
+.table > :not(caption) > * > * {
+  padding: 0.5rem 0.75rem;
+}
+
+.dataTables_wrapper .dataTables_filter {
+  margin-bottom: 0.5rem;
+}
+
+.dataTables_wrapper .dataTables_filter input,
+.dataTables_wrapper .dataTables_length select {
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.dataTables_wrapper .dt-buttons .btn {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.dataTables_wrapper .dataTables_info,
+.dataTables_wrapper .dataTables_paginate {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.inventory-table {
+  width: 100%;
+}
+
+.inventory-table mark.hl {
+  background: #fff3bf;
+  padding: 0 2px;
+  border-radius: 4px;
+}
+
+.odoo-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.odoo-header {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.1rem 1.5rem;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.odoo-header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(113, 75, 103, 0.1), rgba(157, 122, 142, 0.08), rgba(248, 250, 252, 0));
+  pointer-events: none;
+}
+
+.odoo-title {
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.odoo-subtitle {
+  color: #64748b;
+  font-size: 0.95rem;
+}
+
+.odoo-kpis {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.odoo-kpi {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  background: #ffffff;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.04);
+}
+
+.odoo-kpi strong {
+  font-size: 1.15rem;
+  color: #0f172a;
+}
+
+.odoo-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.odoo-elevated {
+  border-color: #e6e0ea;
+  box-shadow: 0 14px 28px rgba(20, 24, 39, 0.12);
+}
+
+.odoo-elevated-soft {
+  border-color: #ece7f0;
+  box-shadow: 0 10px 20px rgba(20, 24, 39, 0.08);
+}
+
+.odoo-plate {
+  background: linear-gradient(180deg, #ffffff 0%, #f8f7fb 100%);
+}
+
+.odoo-section-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.odoo-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.odoo-table thead {
+  background: #f8fafc;
+}
+
+.odoo-table th {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+}
+
+.odoo-table tbody tr:hover,
+.table-hover > tbody > tr:hover,
+.table-hover > tbody > tr > td:hover,
+.table-hover > tbody > tr > th:hover {
+  background: #f0e6f7 !important;
+}
+
+.odoo-table tbody td {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.pay-modal .modal-header {
+  background: linear-gradient(120deg, #fff2e7 0%, #ffffff 70%);
+  border-bottom: 1px solid #f2d9cc;
+}
+
+.pay-modal {
+  font-size: 0.98rem;
+}
+
+.pay-modal .odoo-section-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.pay-modal .text-sm {
+  font-size: 0.98rem;
+}
+
+.pay-modal .modal-body {
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding-bottom: 1rem;
+}
+
+.pay-modal .modal-header,
+.pay-modal .modal-footer {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.pay-modal .modal-body .row.g-4 {
+  --bs-gutter-y: 1rem;
+  --bs-gutter-x: 1rem;
+}
+
+.pay-modal .odoo-card {
+  padding: 1rem;
+}
+
+.pay-methods-row {
+  display: flex;
+  gap: 0.6rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.pay-methods-row .pay-method-btn {
+  flex: 0 0 auto;
+  min-width: 108px;
+}
+
+.pay-modal .pay-method-btn {
+  padding: 0.7rem 0.75rem;
+  border-radius: 14px;
+}
+
+.pay-modal .pay-method-icon {
+  width: 32px;
+  height: 32px;
+  font-size: 0.95rem;
+}
+
+.pay-modal.modal-dialog-centered {
+  align-items: flex-start;
+}
+
+.pay-modal.modal-dialog-centered .modal-dialog {
+  margin-top: 1.25rem;
+}
+
+.pay-methods-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.pay-method-btn {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 0.85rem 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 600;
+  color: #1f2937;
+  transition: all 0.2s ease;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.pay-method-btn:hover {
+  border-color: #c9d8f5;
+  background: #f0f6ff;
+  color: #1d4ed8;
+}
+
+.pay-method-btn.active {
+  border-color: #7fb2ff;
+  background: #eaf2ff;
+  color: #1d4ed8;
+  box-shadow: 0 10px 20px rgba(59, 130, 246, 0.18);
+}
+
+.pay-method-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  color: #2563eb;
+}
+
+.pay-method-btn.active .pay-method-icon {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.balance-positive {
+  color: #1d4ed8;
+}
+
+.balance-negative {
+  color: #dc2626;
+}
+
+.pay-modal #pay-total-invoice,
+.pay-modal #pay-total-aplicado,
+.pay-modal #pay-balance {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+
+.odoo-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.sales-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: 16px;
+  border: 1px solid #e7dbe5;
+  background: linear-gradient(120deg, #f6edf4, #fdf7fb 60%, #ffffff);
+  box-shadow: 0 10px 24px rgba(91, 59, 84, 0.08);
+}
+
+.sales-hero-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #1f1b24;
+}
+
+.sales-hero-subtitle {
+  font-size: 0.9rem;
+  color: #6b5a6b;
+}
+
+.sales-hero-stats {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.sales-stat {
+  border-radius: 12px;
+  border: 1px solid #e9dbe8;
+  background: #ffffff;
+  padding: 0.65rem 0.9rem;
+  min-width: 140px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+.sales-stat .label {
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8c7a8c;
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.sales-stat strong {
+  font-size: 1.2rem;
+  color: #2d1f2f;
+}
+
+.sales-panel {
+  border: 1px solid #e7dbe5;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 10px 22px rgba(91, 59, 84, 0.08);
+}
+
+.sales-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.sales-search .form-control {
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.sales-table thead {
+  background: #f6eef6;
+}
+
+.sales-table tbody tr:hover {
+  background: #fbf7fb;
+}
+
+.sales-summary {
+  border: 1px dashed #e2cfe0;
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  background: #fff9fd;
+}
+
+.sales-actions .btn {
+  min-width: 160px;
+}
+
+.odoo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.odoo-badge.success {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.odoo-badge.danger {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.odoo-actions .btn {
+  border-radius: 10px;
+}
+
+.odoo-tabs .btn {
+  border-radius: 999px;
+}
+
+.odoo-sidebar {
+  background: #ffffff;
+  border-right: 1px solid #e5e7eb;
+  box-shadow: 4px 0 12px rgba(15, 23, 42, 0.04);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.odoo-modal {
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+}
+
+.odoo-modal-header {
+  background: linear-gradient(90deg, #f4e9f1, #f7f2f7);
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0.6rem 1.25rem;
+}
+
+.odoo-modal-tabs .btn {
+  border-radius: 999px;
+  font-size: 0.82rem;
+}
+
+.odoo-modal-body {
+  background: #ffffff;
+}
+
+.odoo-modal-section {
+  border: 1px solid #eadbe6;
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: #ffffff;
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.04);
+}
+
+.odoo-table-wrap {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #ffffff;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.odoo-table-head,
+.odoo-table thead,
+.table thead {
+  background: #e6eefb !important;
+  color: #1e3a8a !important;
+}
+
+.odoo-table tbody tr:nth-child(even) {
+  background: #fcfbfd;
+}
+
+.odoo-table tbody tr:hover {
+  background: #f5eef5;
+}
+
+.odoo-table td,
+.odoo-table th {
+  vertical-align: middle;
+}
+
+.odoo-muted {
+  color: #64748b;
+}
+
+.sales-item-row {
+  border-bottom: 2px solid #5a8bff !important;
+}
+
+.sales-item-row > td {
+  border-bottom: 2px solid #5a8bff !important;
+}
+
+.product-pick-row {
+  border-bottom: 2px solid rgba(90, 139, 255, 0.75) !important;
+}
+
+.product-active {
+  background: rgba(145, 104, 199, 0.32) !important;
+  box-shadow: 0 0 0 2px rgba(120, 74, 177, 0.65) inset, 0 0 10px rgba(154, 113, 210, 0.45);
+  animation: pulse-select 1.2s ease-in-out infinite;
+}
+
+#product-list-panel:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+@keyframes pulse-select {
+  0% {
+    box-shadow: 0 0 0 2px rgba(120, 74, 177, 0.45) inset, 0 0 6px rgba(154, 113, 210, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(120, 74, 177, 0.65) inset, 0 0 12px rgba(154, 113, 210, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 2px rgba(120, 74, 177, 0.45) inset, 0 0 6px rgba(154, 113, 210, 0.25);
+  }
+}
+
+.row-active {
+  background: #fff7cc !important;
+  box-shadow: inset 0 0 0 1px #f5e48b;
+}
+
+.odoo-modal-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.odoo-field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.odoo-help {
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+.odoo-accent {
+  color: #714b67;
+  font-weight: 700;
+}
+
+.odoo-input {
+  border-radius: 10px !important;
+  border: 1px solid #e6e0e8 !important;
+  padding: 0.45rem 0.7rem !important;
+}
+
+.odoo-select2 .select2-selection--single {
+  height: 34px !important;
+  border-radius: 10px !important;
+  border: 1px solid #e6e0e8 !important;
+  padding: 2px 8px !important;
+}
+
+.odoo-select2 .select2-selection__rendered {
+  line-height: 28px !important;
+  color: #1f2937;
+}
+
+.odoo-select2 .select2-selection__arrow {
+  height: 32px !important;
+}
+
+.odoo-tint {
+  background: #fbf7fb;
+  border-color: #eadbe6;
+}
+
+.odoo-tint-header {
+  background: #efe4ec !important;
+  color: #5f3f59;
+}
+
+.odoo-modal-compact .odoo-modal-tabs .btn {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  border-color: #e5e7eb;
+}
+
+.odoo-modal-compact .btn-primary {
+  background: #714b67;
+  border-color: #714b67;
+}
+
+.odoo-modal-compact .btn-outline-secondary {
+  color: #5f3f59;
+  border-color: #dac7d3;
+}
+
+.odoo-modal-compact .btn-outline-secondary:hover {
+  background: #f3e9f0;
+  border-color: #c9a9bd;
+}
+
+.odoo-modal-compact .input-group-text {
+  color: #5f3f59;
+}
+
+.odoo-table-head {
+  background: #efe4ec;
+  color: #4b2f45;
+}
+
+.odoo-action-bar {
+  background: #f8fafc;
+  border-top: 1px solid #e5e7eb;
+  padding: 0.85rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.odoo-compact-card {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 0.9rem;
+}
+
+.odoo-compact-card .odoo-modal-title {
+  font-size: 0.9rem;
+}
+
+.odoo-compact-card .form-control,
+.odoo-compact-card .form-select {
+  font-size: 0.85rem;
+}
+
+.datepicker-dropdown {
+  z-index: 1060;
+}
+
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  overflow: hidden;
+}
+
+.sidebar .nav-link {
+  color: #0f172a;
+  position: relative;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.sidebar .nav-link:hover {
+  background: #eaf2ff;
+}
+
+.sidebar .nav-link::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 6px;
+  height: 1px;
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.sidebar-collapsed-bs {
+  grid-template-columns: 84px 1fr !important;
+}
+
+.sidebar-collapsed-bs .sidebar {
+  width: 84px;
+  min-width: 84px;
+}
+
+.sidebar-collapsed-bs .sidebar .nav-text,
+.sidebar-collapsed-bs .sidebar .sidebar-brand,
+.sidebar-collapsed-bs .sidebar .sidebar-user .nav-text,
+.sidebar-collapsed-bs .sidebar .sidebar-user .text-muted,
+.sidebar-collapsed-bs .sidebar .sidebar-user .fw-semibold {
+  display: none;
+}
+
+.sidebar-collapsed-bs .sidebar .nav-link {
+  justify-content: center;
+}
+
+.sidebar-collapsed-bs .sidebar .nav-link i {
+  margin-right: 0;
+}
+
+@media (max-width: 1199px) {
+  .odoo-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+  .sales-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .sales-hero-stats {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .sales-stat {
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 991px) {
+  #layout {
+    display: block;
+  }
+  .sidebar {
+    position: relative;
+    height: auto;
+    max-height: none;
+  }
+  .sales-panel,
+  .odoo-header,
+  .odoo-card {
+    border-radius: 12px;
+  }
+  .odoo-header {
+    padding: 0.9rem 1.1rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .odoo-title {
+    font-size: 1.25rem;
+  }
+  .odoo-subtitle {
+    font-size: 0.85rem;
+  }
+  .odoo-kpi strong {
+    font-size: 1rem;
+  }
+  .sales-hero-title {
+    font-size: 1.15rem;
+  }
+  .sales-stat strong {
+    font-size: 1rem;
+  }
+  .sales-actions .btn {
+    min-width: 120px;
+  }
+  .pay-modal .modal-dialog,
+  .modal-dialog {
+    max-width: 95vw;
+    margin: 0.5rem auto;
+  }
+  .pay-modal .modal-body {
+    max-height: calc(100vh - 160px);
+  }
+  .dataTables_wrapper .dataTables_filter,
+  .dataTables_wrapper .dataTables_length {
+    float: none;
+    text-align: left;
+  }
+  .dataTables_wrapper .dataTables_filter input,
+  .dataTables_wrapper .dataTables_length select {
+    width: 100%;
+  }
+  .odoo-table th,
+  .odoo-table td {
+    white-space: nowrap;
+  }
+}
+
+:root {
+  --hp-primary: #0b3b6f;
+  --hp-primary-600: #0a3564;
+  --hp-primary-100: #e6f0fb;
+}
+
+
+.text-primary {
+  color: var(--hp-primary) !important;
+}
+
+.bg-primary {
+  background-color: var(--hp-primary) !important;
+}
+
+.bg-primary-subtle {
+  background-color: var(--hp-primary-100) !important;
+  color: var(--hp-primary) !important;
+}
+
+.btn-primary {
+  background-color: var(--hp-primary) !important;
+  border-color: var(--hp-primary) !important;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background-color: var(--hp-primary-600) !important;
+  border-color: var(--hp-primary-600) !important;
+}
+
+.btn-outline-primary {
+  color: var(--hp-primary) !important;
+  border-color: var(--hp-primary) !important;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+  background-color: var(--hp-primary-100) !important;
+  color: var(--hp-primary) !important;
+}
+
+.badge.text-bg-primary {
+  background-color: var(--hp-primary) !important;
+}
+
+.nav-tabs .nav-link.active {
+  color: var(--hp-primary) !important;
+}
+
+.sidebar .nav-link:hover,
+.sidebar .nav-link:focus {
+  background: var(--hp-primary-100);
+}

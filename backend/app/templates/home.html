@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[18px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Panel</li>
+                <li class="breadcrumb-item active" aria-current="page">Home</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2">Centro de operaciones</div>
+            <div class="odoo-subtitle mt-1">Gestion integral para ventas, inventario y finanzas.</div>
+          </div>
+          <div class="odoo-toolbar">
+            <a class="btn btn-primary btn-sm shadow-sm d-inline-flex align-items-center gap-2" href="/inventory">
+              <i class="bi bi-box-seam"></i>
+              Catalogo de productos
+            </a>
+            <a class="btn btn-outline-secondary btn-sm shadow-sm d-inline-flex align-items-center gap-2" href="/inventory/ingresos">
+              <i class="bi bi-box-arrow-in-down"></i>
+              Ingresos de inventario
+            </a>
+            <a class="btn btn-outline-secondary btn-sm shadow-sm d-inline-flex align-items-center gap-2" href="/inventory/egresos">
+              <i class="bi bi-box-arrow-up"></i>
+              Egresos de inventario
+            </a>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link active" href="/home">Panel</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/ventas-caliente">Ventas en Caliente</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports">Informes</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="odoo-kpis">
+        <div class="odoo-kpi">
+          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
+            <i class="bi bi-activity text-blue-600"></i>
+            Estado operativo
+          </div>
+          <strong>Estable</strong>
+        </div>
+        <div class="odoo-kpi">
+          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
+            <i class="bi bi-geo-alt text-emerald-600"></i>
+            Sucursal activa
+          </div>
+          <strong>Central</strong>
+        </div>
+        <div class="odoo-kpi">
+          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
+            <i class="bi bi-shield-check text-violet-600"></i>
+            Seguridad
+          </div>
+          <strong>Control total</strong>
+        </div>
+        <div class="odoo-kpi">
+          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
+            <i class="bi bi-graph-up-arrow text-rose-600"></i>
+            Operaciones
+          </div>
+          <strong>En linea</strong>
+        </div>
+      </div>
+
+      <div class="odoo-card">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+          <div class="odoo-section-title">Modulos principales</div>
+          <span class="odoo-pill primary">
+            <i class="bi bi-grid-3x3-gap"></i>
+            Accesos rapidos
+          </span>
+        </div>
+        <div class="row g-4">
+          <div class="col-md-6 col-xl-4">
+            <a class="text-decoration-none" href="/sales/ventas-caliente">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Ventas en Caliente</div>
+                  <span class="odoo-pill primary">
+                    <i class="bi bi-fire"></i>
+                    Reporte
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Totales por sucursal y tendencia del mes actual.</p>
+              </div>
+            </a>
+          </div>
+          <div class="col-md-6 col-xl-4">
+            <a class="text-decoration-none" href="/reports">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Informes</div>
+                  <span class="odoo-pill primary">
+                    <i class="bi bi-bar-chart"></i>
+                    Analisis
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Reportes detallados con filtros por fechas y sucursales.</p>
+              </div>
+            </a>
+          </div>
+          <div class="col-md-6 col-xl-4">
+            <a class="text-decoration-none" href="/inventory">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Inventarios</div>
+                  <span class="odoo-pill success">
+                    <i class="bi bi-box-seam"></i>
+                    Activo
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Catalogo, costos, movimientos y existencias.</p>
+              </div>
+            </a>
+          </div>
+          <div class="col-md-6 col-xl-4">
+            <a class="text-decoration-none" href="/inventory/ingresos">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Ingresos</div>
+                  <span class="odoo-pill primary">
+                    <i class="bi bi-box-arrow-in-down"></i>
+                    Flujo
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Compras locales, importaciones y ajustes.</p>
+              </div>
+            </a>
+          </div>
+          <div class="col-md-6 col-xl-4">
+            <a class="text-decoration-none" href="/inventory/egresos">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Egresos</div>
+                  <span class="odoo-pill">
+                    <i class="bi bi-box-arrow-up"></i>
+                    Salidas
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Bajas por ajustes, mermas y devoluciones.</p>
+              </div>
+            </a>
+          </div>
+          <div class="col-md-6 col-xl-4">
+            <a class="text-decoration-none" href="/finance">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Finanzas</div>
+                  <span class="odoo-pill">
+                    <i class="bi bi-cash-stack"></i>
+                    Control
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Tasas, conversiones y flujo financiero.</p>
+              </div>
+            </a>
+          </div>
+          <div class="col-md-6 col-xl-4">
+            <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="odoo-section-title">Contabilidad</div>
+                <span class="odoo-pill">
+                  <i class="bi bi-journal-text"></i>
+                  Proximo
+                </span>
+              </div>
+              <p class="text-slate mt-2">Libros contables y conciliaciones.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-xl-4">
+            <a class="text-decoration-none" href="/data">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Datos maestros</div>
+                  <span class="odoo-pill">
+                    <i class="bi bi-cpu"></i>
+                    Admin
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Usuarios, roles, bancos, formas de pago y catalogos.</p>
+              </div>
+            </a>
+          </div>
+          <div class="col-md-6 col-xl-4">
+            <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="odoo-section-title">Ecommerce</div>
+                <span class="odoo-pill">
+                  <i class="bi bi-globe2"></i>
+                  Proximo
+                </span>
+              </div>
+              <p class="text-slate mt-2">Ventas online y catalogo digital.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-end text-slate text-sm mt-4">Version {{ version }}</div>
+    </div>
+  </main>
+</div>
+{% endblock %}

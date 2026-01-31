@@ -1,0 +1,85 @@
+<div class="row g-3">
+  {% for item in productos %}
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body py-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="text-uppercase text-muted small">{{ item.codigo }}</div>
+            <div class="fw-semibold">{{ item.descripcion }}</div>
+          </div>
+          {% if item.existencias is defined %}
+          <span class="badge text-bg-light text-primary fs-6">
+            <i class="bi bi-box-seam"></i>
+            {{ "%.2f"|format(item.existencia_total or 0) }}
+          </span>
+          {% else %}
+          <span class="badge text-bg-light text-primary fs-6">
+            <i class="bi bi-box-seam"></i>
+            {{ "%.2f"|format(item.existencia) }}
+          </span>
+          {% endif %}
+        </div>
+        <div class="mt-3 d-flex align-items-center justify-content-between">
+          <div class="price-usd">
+            <div class="text-muted small">Precio USD</div>
+            <div class="fw-semibold text-primary">$ {{ "%.2f"|format(item.precio_usd) }}</div>
+          </div>
+          <div class="price-cs d-none">
+            <div class="text-muted small">Precio C$</div>
+            <div class="fw-semibold text-primary">C$ {{ "%.2f"|format(item.precio_cs) }}</div>
+          </div>
+          {% if item.existencias is defined %}
+          <div class="text-muted small">
+            <i class="bi bi-diagram-3"></i>
+            Ambas
+          </div>
+          {% else %}
+            {% if item.existencia >= 1 %}
+            <div class="text-muted small">
+              <i class="bi bi-activity"></i>
+              Disponible
+            </div>
+            {% else %}
+            <div class="small text-danger opacity-75">
+              <i class="bi bi-exclamation-triangle"></i>
+              No disponible
+            </div>
+            {% endif %}
+            {% if item.scope_label %}
+            <div class="text-muted small">
+              <i class="bi bi-building"></i>
+              {{ item.scope_label }}
+            </div>
+            {% endif %}
+          {% endif %}
+        </div>
+        {% if item.existencias is defined %}
+        <div class="mt-3 d-grid gap-2">
+          {% for row in item.existencias %}
+          <div class="d-flex justify-content-between align-items-center border rounded-3 px-2 py-1">
+            <div class="small text-muted">
+              <i class="bi bi-building"></i>
+              {{ row.label }}
+            </div>
+            {% if row.existencia >= 1 %}
+            <div class="fw-semibold text-primary">{{ "%.2f"|format(row.existencia) }}</div>
+            {% else %}
+            <div class="fw-semibold text-danger opacity-75">No disponible</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% if productos|length == 0 %}
+  <div class="col-12">
+    <div class="alert alert-light border text-muted text-center">
+      Sin resultados.
+    </div>
+  </div>
+  {% endif %}
+</div>

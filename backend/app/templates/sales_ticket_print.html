@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ factura.numero }} - Ticket</title>
+    <style>
+      @page { size: 80mm auto; margin: 4mm; }
+      html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; color: #111; }
+      .ticket { width: 72mm; margin: 0 auto; font-size: 12px; }
+      .center { text-align: center; }
+      .bold { font-weight: 700; }
+      .line { border-top: 1px dashed #444; margin: 4px 0; }
+      .row { display: flex; justify-content: space-between; gap: 6px; }
+      .small { font-size: 11px; }
+      .logo { display: block; margin: 0 auto 6px; width: 65mm; height: auto; }
+      .items { margin-top: 4px; }
+      .item-block { margin-bottom: 6px; }
+      .item-desc { font-weight: 600; }
+      .footer { margin-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="ticket">
+      <img src="/static/logopos.png" alt="Hollywood Pacas" class="logo" />
+      <div class="center bold">{{ company_name.upper() }}</div>
+      <div class="center small">RUC: {{ ruc }}</div>
+      <div class="center small">Tel: {{ telefono }}</div>
+      {% for line in direccion_lines %}
+      <div class="center small">{{ line }}</div>
+      {% endfor %}
+      <div class="center bold">Sucursal: {{ sucursal }}</div>
+      <div class="line"></div>
+      <div class="row"><span class="bold">Factura:</span><span>{{ factura.numero }}</span></div>
+      <div class="row"><span>Fecha:</span><span>{{ fecha_str }} {{ hora_str }}</span></div>
+      <div class="row"><span>Cliente:</span><span>{{ cliente }}</span></div>
+      <div class="row"><span>Identificacion R/C:</span><span>{{ cliente_id }}</span></div>
+      <div class="row"><span>Vendedor:</span><span>{{ vendedor }}</span></div>
+      <div class="line"></div>
+
+      <div class="items">
+        {% for item in items %}
+        <div class="item-block">
+          <div class="bold">Codigo: {{ item.codigo }}</div>
+          <div class="item-desc">{{ item.descripcion }}</div>
+          <div class="row small">
+            <span>Cant: {{ "%.2f"|format(item.cantidad) }}</span>
+            <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }}</span>
+          </div>
+          <div class="row small">
+            <span>Desc: {{ currency_label }} 0.00</span>
+            <span>Subtotal: {{ currency_label }} {{ format_amount(item.subtotal) }}</span>
+          </div>
+          <div class="line"></div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="row bold"><span>Subtotal</span><span>{{ currency_label }} {{ format_amount(subtotal_amount) }}</span></div>
+      <div class="row"><span>Descuentos</span><span>{{ currency_label }} 0.00</span></div>
+      <div class="row bold"><span>Total</span><span>{{ currency_label }} {{ format_amount(total_amount) }}</span></div>
+
+      {% if pagos %}
+      <div class="line"></div>
+      <div class="bold">Pagos aplicados</div>
+      {% for pago in pagos %}
+      <div class="row"><span>{{ pago.label }}</span><span>{{ currency_label }} {{ format_amount(pago.monto) }}</span></div>
+      {% endfor %}
+      {% endif %}
+
+      {% if saldo >= 0 %}
+      <div class="row bold"><span>Vuelto</span><span>{{ currency_label }} {{ format_amount(saldo) }}</span></div>
+      {% else %}
+      <div class="row bold"><span>Saldo</span><span>{{ currency_label }} {{ format_amount(saldo * -1) }}</span></div>
+      {% endif %}
+
+      <div class="footer center small">
+        <div class="bold">Gracias por su compra</div>
+        <div>Revise su mercaderia antes de salir.</div>
+        <div>No se aceptan cambios ni devoluciones</div>
+        <div>de mercaderia ni de dinero.</div>
+      </div>
+    </div>
+    <script>
+      window.addEventListener("load", () => {
+        window.print();
+        window.onafterprint = () => window.close();
+      });
+    </script>
+  </body>
+</html>

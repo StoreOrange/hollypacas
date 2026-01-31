@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Ventas</li>
+                <li class="breadcrumb-item active" aria-current="page">Cierre</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Arqueo y cierre diario</div>
+            <div class="odoo-subtitle mt-1 text-sm">Registro de efectivo fisico y conciliacion.</div>
+          </div>
+          <div class="d-flex align-items-center gap-3">
+            <div class="odoo-pill primary">
+              <i class="bi bi-diagram-3"></i>
+              {{ branch.name if branch else 'Sucursal' }}
+            </div>
+            <div class="odoo-pill">
+              <i class="bi bi-boxes"></i>
+              {{ bodega.name if bodega else 'Bodega' }}
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/sales">Ventas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cobranza">Cobranza</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/utilitario">Utilitario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/depositos">Depositos</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/roc">ROC</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/sales/cierre">Cierre</a>
+          </li>
+        </ul>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success">{{ success }}</div>
+      {% endif %}
+
+      <div class="odoo-card odoo-elevated-soft odoo-plate mb-3">
+        <div class="d-flex flex-wrap align-items-end gap-2">
+          <div>
+            <label class="odoo-field-label text-xs text-slate">Fecha de cierre</label>
+            <input class="form-control form-control-sm odoo-input" type="date" value="{{ fecha }}" id="cierre-fecha">
+          </div>
+          <div class="pt-3">
+            <button class="btn btn-sm btn-outline-primary" type="button" id="cierre-filtrar">
+              <i class="bi bi-filter"></i>
+              Ver fecha
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <form class="row g-4" method="post" action="/sales/cierre">
+        <input type="hidden" name="fecha" value="{{ fecha }}">
+        <div class="col-lg-7">
+          <div class="odoo-card odoo-elevated odoo-plate">
+            <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+              <div class="odoo-section-title d-flex align-items-center gap-2 text-lg">
+                <i class="bi bi-cash-coin text-brand"></i>
+                Conteo de efectivo
+              </div>
+              <div class="text-sm text-slate">
+                Tasa: <strong>{{ rate_today.rate if rate_today else "N/D" }}</strong>
+              </div>
+            </div>
+
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div class="odoo-section-title text-base mb-2">Cordobas</div>
+                <div class="table-responsive">
+                  <table class="table table-sm odoo-table text-base">
+                    <thead>
+                      <tr>
+                        <th class="text-start">Denom</th>
+                        <th class="text-end">Cantidad</th>
+                        <th class="text-end">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody id="cs-rows">
+                      {% for denom in denominaciones_cs|reverse %}
+                      <tr>
+                        <td class="d-flex align-items-center gap-2 denom-cell">
+                          <span class="denom-symbol">C$</span>
+                          <span class="denom-value">{{ "%.2f"|format(denom) }}</span>
+                        </td>
+                        <td class="text-end">
+                          <input class="form-control form-control-sm odoo-input text-end denom-input" name="cs_{{ denom|string|replace('.', '_') }}" data-denom="{{ denom }}" data-currency="CS" value="0" />
+                        </td>
+                        <td class="text-end text-slate"><span class="denom-total" data-currency="CS" data-denom="{{ denom }}">0.00</span></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="col-md-6">
+                <div class="odoo-section-title text-base mb-2">Dolares</div>
+                <div class="table-responsive">
+                  <table class="table table-sm odoo-table text-base">
+                    <thead>
+                      <tr>
+                        <th class="text-start">Denom</th>
+                        <th class="text-end">Cantidad</th>
+                        <th class="text-end">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody id="usd-rows">
+                      {% for denom in denominaciones_usd|reverse %}
+                      <tr>
+                        <td class="d-flex align-items-center gap-2 denom-cell">
+                          <span class="denom-symbol">$</span>
+                          <span class="denom-value">{{ "%.2f"|format(denom) }}</span>
+                        </td>
+                        <td class="text-end">
+                          <input class="form-control form-control-sm odoo-input text-end denom-input" name="usd_{{ denom|string|replace('.', '_') }}" data-denom="{{ denom }}" data-currency="USD" value="0" />
+                        </td>
+                        <td class="text-end text-slate"><span class="denom-total" data-currency="USD" data-denom="{{ denom }}">0.00</span></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-3 mt-3 text-base">
+              <div class="odoo-pill primary">Total C$: <span id="total-cs">0.00</span></div>
+              <div class="odoo-pill">Total USD: <span id="total-usd">0.00</span></div>
+              <div class="odoo-pill success">Total USD equiv: <span id="total-usd-equivalent">0.00</span></div>
+            </div>
+            <div class="mt-3">
+              <button class="btn btn-primary" type="submit">
+                <i class="bi bi-shield-check"></i>
+                Registrar cierre
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-5">
+          <div class="odoo-card odoo-elevated odoo-plate">
+            <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+              <div class="odoo-section-title d-flex align-items-center gap-2 text-lg">
+                <i class="bi bi-clipboard-data text-brand"></i>
+                Resumen de arqueo
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <label class="text-xs text-slate mb-0">Moneda</label>
+                <select class="form-select form-select-sm odoo-input" id="cierre-moneda">
+                  <option value="USD">USD</option>
+                  <option value="CS">C$</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm odoo-table text-base">
+                <tbody>
+                  <tr>
+                    <td>Ventas del dia</td>
+                    <td class="text-end">
+                      <span class="resumen-amount" data-usd="{{ "%.6f"|format(total_ventas_usd) }}" data-sign="+"></span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Ingresos</td>
+                    <td class="text-end text-success">
+                      <span class="resumen-amount" data-usd="{{ "%.6f"|format(total_ingresos_usd) }}" data-sign="+"></span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Egresos</td>
+                    <td class="text-end text-danger">
+                      <span class="resumen-amount" data-usd="{{ "%.6f"|format(total_egresos_usd) }}" data-sign="-"></span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Depositos</td>
+                    <td class="text-end text-danger">
+                      <span class="resumen-amount" data-usd="{{ "%.6f"|format(total_depositos_usd) }}" data-sign="-"></span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Creditos pendientes</td>
+                    <td class="text-end text-danger">
+                      <span class="resumen-amount" data-usd="{{ "%.6f"|format(total_creditos_usd) }}" data-sign="-"></span>
+                    </td>
+                  </tr>
+                  <tr class="odoo-tint">
+                    <td class="fw-semibold">Total esperado</td>
+                    <td class="text-end fw-semibold">
+                      <span class="resumen-amount" data-usd="{{ "%.6f"|format(total_calculado_usd) }}" data-sign="+"></span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-3 text-sm text-slate">
+              Fecha del cierre: <strong>{{ fecha }}</strong>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </main>
+</div>
+
+<style>
+  .denom-input:focus,
+  .denom-input.denom-focus {
+    background: #ffe4e6;
+    border-color: #fb7185;
+    box-shadow: 0 0 0 0.2rem rgba(244, 114, 182, 0.25);
+  }
+  .denom-cell {
+    min-width: 110px;
+    font-variant-numeric: tabular-nums;
+  }
+  .denom-symbol {
+    width: 22px;
+    text-align: right;
+    color: #475569;
+    font-weight: 600;
+  }
+  .denom-value {
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+
+<script>
+  const tasa = Number("{{ tasa }}") || 0;
+  const formatAmount = (value) => {
+    return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  };
+
+  const updateTotals = () => {
+    let totalCs = 0;
+    let totalUsd = 0;
+    document.querySelectorAll(".denom-input").forEach((input) => {
+      const denom = Number(input.dataset.denom || 0);
+      const qty = Number(input.value || 0);
+      const subtotal = denom * qty;
+      const currency = input.dataset.currency;
+      const totalEl = document.querySelector(`.denom-total[data-currency="${currency}"][data-denom="${denom}"]`);
+      if (totalEl) totalEl.textContent = formatAmount(subtotal);
+      if (currency === "CS") totalCs += subtotal;
+      if (currency === "USD") totalUsd += subtotal;
+    });
+    document.getElementById("total-cs").textContent = formatAmount(totalCs);
+    document.getElementById("total-usd").textContent = formatAmount(totalUsd);
+    const usdEquiv = totalUsd + (tasa ? totalCs / tasa : 0);
+    document.getElementById("total-usd-equivalent").textContent = formatAmount(usdEquiv);
+  };
+
+  const denomInputs = Array.from(document.querySelectorAll(".denom-input"));
+  denomInputs.forEach((input, idx) => {
+    input.addEventListener("input", updateTotals);
+    input.addEventListener("focus", () => {
+      input.classList.add("denom-focus");
+      input.select();
+    });
+    input.addEventListener("blur", () => {
+      input.classList.remove("denom-focus");
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const next = denomInputs[idx + 1];
+        if (next) {
+          next.focus();
+          next.select();
+        }
+      }
+    });
+  });
+  updateTotals();
+
+  const filterBtn = document.getElementById("cierre-filtrar");
+  if (filterBtn) {
+    filterBtn.addEventListener("click", () => {
+      const value = document.getElementById("cierre-fecha").value;
+      const params = new URLSearchParams();
+      if (value) params.set("fecha", value);
+      window.location.href = `/sales/cierre?${params.toString()}`;
+    });
+  }
+
+  const layout = document.getElementById("layout");
+  const toggles = document.querySelectorAll(".toggle-sidebar");
+  if (layout && toggles.length) {
+    toggles.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        layout.classList.toggle("sidebar-collapsed");
+      });
+    });
+  }
+
+  const resumenSelect = document.getElementById("cierre-moneda");
+  const resumenAmounts = Array.from(document.querySelectorAll(".resumen-amount"));
+  const renderResumen = () => {
+    const moneda = resumenSelect ? resumenSelect.value : "USD";
+    const symbol = moneda === "CS" ? "C$" : "$";
+    resumenAmounts.forEach((el) => {
+      const usdValue = Number(el.dataset.usd || 0);
+      const sign = el.dataset.sign || "";
+      const value = moneda === "CS" ? usdValue * tasa : usdValue;
+      el.textContent = `${sign} ${symbol} ${formatAmount(value)}`.trim();
+    });
+  };
+  if (resumenSelect) {
+    resumenSelect.addEventListener("change", renderResumen);
+  }
+  renderResumen();
+
+  const cierrePrintId = "{{ print_id or '' }}";
+  if (cierrePrintId) {
+    window.open(`/sales/cierre/${cierrePrintId}/pdf`, "_blank", "noopener");
+  }
+</script>
+{% endblock %}

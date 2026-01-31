@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Ventas</li>
+                <li class="breadcrumb-item active" aria-current="page">Utilitario</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Utilitario de ventas</div>
+            <div class="odoo-subtitle mt-1 text-sm">Facturas del dia y busqueda historica.</div>
+          </div>
+          <form class="d-flex flex-wrap align-items-center gap-2" method="get" action="/sales/utilitario">
+            <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
+              <span class="input-group-text bg-white border-0"><i class="bi bi-calendar-range text-brand"></i></span>
+              <input name="start_date" type="date" class="form-control border-0" value="{{ start_date }}" />
+              <span class="input-group-text bg-white border-0">a</span>
+              <input name="end_date" type="date" class="form-control border-0" value="{{ end_date }}" />
+            </div>
+            <input name="cliente" class="form-control form-control-sm rounded-pill border-slate-200 w-32" placeholder="Cliente" value="{{ cliente_q }}" />
+            <select name="vendedor" class="form-select form-select-sm rounded-pill border-slate-200 w-40">
+              <option value="">Vendedor</option>
+              {% for vendedor in vendedores %}
+              <option value="{{ vendedor.nombre }}" {% if vendedor_q == vendedor.nombre %}selected{% endif %}>
+                {{ vendedor.nombre }}
+              </option>
+              {% endfor %}
+            </select>
+            <input name="producto" class="form-control form-control-sm rounded-pill border-slate-200 w-40" placeholder="Producto o codigo" value="{{ producto_q }}" />
+            <button class="btn btn-outline-secondary btn-sm" type="submit">
+              <i class="bi bi-search"></i>
+              Filtrar
+            </button>
+            <a class="btn btn-outline-secondary btn-sm" href="/sales/utilitario">
+              <i class="bi bi-eraser"></i>
+              Hoy
+            </a>
+          </form>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/sales">Ventas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cobranza">Cobranza</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/sales/utilitario">Utilitario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/depositos">Depositos</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/roc">ROC</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cierre">Cierre</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="odoo-card text-sm">
+        <div class="odoo-section-title mb-3 text-base">Facturas registradas</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Fecha</th>
+                <th>Hora</th>
+                <th>Factura</th>
+                <th>Cliente</th>
+                <th>Vendedor</th>
+                <th>Sucursal</th>
+                <th>Bodega</th>
+                <th class="text-end">Monto</th>
+                <th class="text-center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for venta in ventas %}
+              <tr>
+                <td>{{ venta.fecha }}</td>
+                <td>{{ venta.created_at.strftime("%H:%M") if venta.created_at else "-" }}</td>
+                <td class="fw-semibold">{{ venta.numero }}</td>
+                <td>{{ venta.cliente.nombre if venta.cliente else "Consumidor final" }}</td>
+                <td>{{ venta.vendedor.nombre if venta.vendedor else "-" }}</td>
+                <td>{{ venta.bodega.branch.name if venta.bodega and venta.bodega.branch else "-" }}</td>
+                <td>{{ venta.bodega.name if venta.bodega else "-" }}</td>
+                <td class="text-end">
+                  {% if venta.moneda == "USD" %}
+                    $ {{ "%.2f"|format(venta.total_usd or 0) }}
+                  {% else %}
+                    C$ {{ "%.2f"|format(venta.total_cs or 0) }}
+                  {% endif %}
+                </td>
+                <td class="text-center">
+                  <button class="btn btn-outline-secondary btn-sm view-sale" data-id="{{ venta.id }}" type="button">
+                    <i class="bi bi-eye"></i>
+                    Detalle
+                  </button>
+                  <button class="btn btn-outline-secondary btn-sm reprint-sale" data-id="{{ venta.id }}" type="button">
+                    <i class="bi bi-printer"></i>
+                    Reimprimir
+                  </button>
+                  {% if venta.estado == "ANULADA" %}
+                  <button class="btn btn-outline-danger btn-sm" type="button" disabled>
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                    Anulada
+                  </button>
+                  {% else %}
+                  <button class="btn btn-outline-danger btn-sm reversion-sale" data-id="{{ venta.id }}" data-numero="{{ venta.numero }}" type="button">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                    Reversion
+                  </button>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              {% if ventas|length == 0 %}
+              <tr>
+                <td colspan="9" class="text-center py-3 text-slate">Sin ventas registradas.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal fade" id="sale-detail-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs uppercase tracking-[0.2em] text-slate">Detalle de venta</div>
+          <div class="text-xl font-semibold text-ink" id="sale-detail-title">Factura</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0 text-sm">
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3">Resumen</div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate">Cliente</span>
+                <strong id="detail-cliente">-</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate">Vendedor</span>
+                <strong id="detail-vendedor">-</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate">Sucursal</span>
+                <strong id="detail-sucursal">-</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate">Bodega</span>
+                <strong id="detail-bodega">-</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate">Fecha</span>
+                <strong id="detail-fecha">-</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm">
+                <span class="text-slate">Total</span>
+                <strong id="detail-total">-</strong>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-8">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3">Items vendidos</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover odoo-table">
+                  <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                    <tr>
+                      <th>Codigo</th>
+                      <th>Descripcion</th>
+                      <th class="text-end">Cantidad</th>
+                      <th class="text-end">Precio</th>
+                      <th class="text-end">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sale-detail-items">
+                    <tr><td colspan="5" class="text-center text-slate py-3">Sin items</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="sale-reversion-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs uppercase tracking-[0.2em] text-slate d-flex align-items-center gap-2">
+            <i class="bi bi-shield-exclamation text-brand"></i>
+            Reversion de factura
+          </div>
+          <div class="text-xl font-semibold text-ink d-flex align-items-center gap-2" id="reversion-title">
+            <i class="bi bi-receipt text-brand"></i>
+            Factura
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0 text-sm">
+        <div class="odoo-card mb-3">
+          <div class="odoo-section-title mb-2 d-flex align-items-center gap-2">
+            <i class="bi bi-chat-left-text text-brand"></i>
+            Motivo de reversion *
+          </div>
+          <textarea class="form-control odoo-input" id="reversion-motivo" rows="3" placeholder="Describe el motivo para anular la factura"></textarea>
+          <div class="d-flex justify-content-end mt-3">
+            <button class="btn btn-outline-secondary" id="reversion-send-code" type="button">
+              <i class="bi bi-envelope-at"></i>
+              Enviar codigo
+            </button>
+          </div>
+        </div>
+        <div class="odoo-card">
+          <div class="odoo-section-title mb-2 d-flex align-items-center gap-2">
+            <i class="bi bi-key text-brand"></i>
+            Codigo de autorizacion
+          </div>
+          <input class="form-control odoo-input" id="reversion-token" placeholder="Ingresa el codigo recibido" />
+          <div class="d-flex justify-content-end mt-3">
+            <button class="btn btn-danger" id="reversion-confirm" type="button">
+              <i class="bi bi-shield-check"></i>
+              Confirmar reversion
+            </button>
+          </div>
+        </div>
+        <div class="text-sm text-slate mt-3" id="reversion-status"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const detailModal = document.getElementById("sale-detail-modal");
+  const detailTitle = document.getElementById("sale-detail-title");
+  const detailCliente = document.getElementById("detail-cliente");
+  const detailVendedor = document.getElementById("detail-vendedor");
+  const detailSucursal = document.getElementById("detail-sucursal");
+  const detailBodega = document.getElementById("detail-bodega");
+  const detailFecha = document.getElementById("detail-fecha");
+  const detailTotal = document.getElementById("detail-total");
+  const detailItems = document.getElementById("sale-detail-items");
+  const reversionModal = document.getElementById("sale-reversion-modal");
+  const reversionTitle = document.getElementById("reversion-title");
+  const reversionMotivo = document.getElementById("reversion-motivo");
+  const reversionToken = document.getElementById("reversion-token");
+  const reversionStatus = document.getElementById("reversion-status");
+  const reversionSendCode = document.getElementById("reversion-send-code");
+  const reversionConfirm = document.getElementById("reversion-confirm");
+  let currentReversionId = null;
+
+  const formatMoney = (value, currency) => {
+    const amount = Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return currency === "USD" ? `$ ${amount}` : `C$ ${amount}`;
+  };
+
+  document.querySelectorAll(".view-sale").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const ventaId = button.dataset.id;
+      const response = await fetch(`/sales/${ventaId}/detail`);
+      const payload = await response.json();
+      if (!payload.ok) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: payload.message || "No se pudo cargar" });
+        }
+        return;
+      }
+      const factura = payload.factura;
+      detailTitle.textContent = factura.numero || "Factura";
+      detailCliente.textContent = factura.cliente || "-";
+      detailVendedor.textContent = factura.vendedor || "-";
+      detailSucursal.textContent = factura.sucursal || "-";
+      detailBodega.textContent = factura.bodega || "-";
+      detailFecha.textContent = `${factura.fecha || ""} ${factura.hora || ""}`.trim();
+      detailTotal.textContent = formatMoney(
+        factura.moneda === "USD" ? factura.total_usd : factura.total_cs,
+        factura.moneda
+      );
+      detailItems.innerHTML = (factura.items || []).map((item) => {
+        const price = factura.moneda === "USD" ? item.precio_usd : item.precio_cs;
+        const subtotal = factura.moneda === "USD" ? item.subtotal_usd : item.subtotal_cs;
+        return `
+          <tr>
+            <td>${item.codigo}</td>
+            <td>${item.descripcion}</td>
+            <td class="text-end">${item.cantidad.toFixed(2)}</td>
+            <td class="text-end">${formatMoney(price, factura.moneda)}</td>
+            <td class="text-end">${formatMoney(subtotal, factura.moneda)}</td>
+          </tr>
+        `;
+      }).join("") || `<tr><td colspan="5" class="text-center text-slate py-3">Sin items</td></tr>`;
+      if (window.bootstrap) {
+        const modal = new bootstrap.Modal(detailModal);
+        modal.show();
+      }
+    });
+  });
+
+  document.querySelectorAll(".reprint-sale").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const ventaId = button.dataset.id;
+      const response = await fetch(`/sales/${ventaId}/reprint`, { method: "POST" });
+      const payload = await response.json().catch(() => null);
+      if (!payload || !payload.ok) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: payload?.message || "No se pudo reimprimir" });
+        }
+        return;
+      }
+      if (typeof Swal !== "undefined") {
+        Swal.fire({ icon: "success", title: "Reimpresion enviada", timer: 1500, showConfirmButton: false });
+      }
+    });
+  });
+
+  const showReversionStatus = (message, isError) => {
+    reversionStatus.textContent = message || "";
+    reversionStatus.classList.toggle("text-danger", Boolean(isError));
+    reversionStatus.classList.toggle("text-success", !isError && Boolean(message));
+  };
+
+  document.querySelectorAll(".reversion-sale").forEach((button) => {
+    button.addEventListener("click", () => {
+      currentReversionId = button.dataset.id;
+      const numero = button.dataset.numero || "Factura";
+      reversionTitle.textContent = numero;
+      reversionMotivo.value = "";
+      reversionToken.value = "";
+      showReversionStatus("", false);
+      if (window.bootstrap) {
+        const modal = new bootstrap.Modal(reversionModal);
+        modal.show();
+      }
+    });
+  });
+
+  reversionSendCode.addEventListener("click", async () => {
+    if (!currentReversionId) {
+      return;
+    }
+    const motivo = reversionMotivo.value.trim();
+    if (!motivo) {
+      showReversionStatus("Motivo requerido.", true);
+      return;
+    }
+    const payload = new FormData();
+    payload.append("motivo", motivo);
+    const response = await fetch(`/sales/${currentReversionId}/reversion/request`, {
+      method: "POST",
+      body: payload,
+    });
+    const data = await response.json().catch(() => null);
+    if (!data || !data.ok) {
+      showReversionStatus(data?.message || "No se pudo enviar el codigo.", true);
+      return;
+    }
+    showReversionStatus("Codigo enviado. Revisa tu correo.", false);
+  });
+
+  reversionConfirm.addEventListener("click", async () => {
+    if (!currentReversionId) {
+      return;
+    }
+    const token = reversionToken.value.trim();
+    if (!token) {
+      showReversionStatus("Codigo requerido.", true);
+      return;
+    }
+    const payload = new FormData();
+    payload.append("token", token);
+    const response = await fetch(`/sales/${currentReversionId}/reversion/confirm`, {
+      method: "POST",
+      body: payload,
+    });
+    const data = await response.json().catch(() => null);
+    if (!data || !data.ok) {
+      showReversionStatus(data?.message || "No se pudo revertir.", true);
+      return;
+    }
+    if (typeof Swal !== "undefined") {
+      Swal.fire({ icon: "success", title: "Factura revertida", timer: 1800, showConfirmButton: false });
+    }
+    window.location.reload();
+  });
+</script>
+{% endblock %}

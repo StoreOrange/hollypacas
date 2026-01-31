@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+              <li class="breadcrumb-item"><a href="/data">Datos</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Impresion POS</li>
+            </ol>
+          </nav>
+          <h1 class="h5 mb-1">Configuracion de impresion POS</h1>
+          <p class="text-muted mb-0">Define impresoras y copias por sucursal.</p>
+        </div>
+        <div class="d-none d-md-block">
+          <a class="btn btn-outline-secondary btn-sm" href="/data">
+            <i class="bi bi-grid"></i>
+            Catalogos
+          </a>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-2">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2">{{ success }}</div>
+      {% endif %}
+
+      <div class="row g-4">
+        <div class="col-lg-8">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">{{ "Editar configuracion" if edit_item else "Nueva configuracion" }}</div>
+            <form class="row g-3" method="post" action="{{ '/data/pos-print/' ~ edit_item.id ~ '/update' if edit_item else '/data/pos-print' }}">
+              <div class="col-md-6">
+                <label class="odoo-field-label">Sucursal *</label>
+                <select class="form-select odoo-input" name="branch_id" required>
+                  <option value="">Selecciona</option>
+                  {% for branch in branches %}
+                  <option value="{{ branch.id }}" {% if edit_item and edit_item.branch_id == branch.id %}selected{% endif %}>
+                    {{ branch.name }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label">Impresora *</label>
+                <input class="form-control odoo-input" name="printer_name" required value="{{ edit_item.printer_name if edit_item else 'HP Receipt' }}" />
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label">Impresora ROC</label>
+                <input class="form-control odoo-input" name="roc_printer_name" value="{{ edit_item.roc_printer_name if edit_item else '' }}" placeholder="HP Receipt" />
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label">Impresora Cierre</label>
+                <input class="form-control odoo-input" name="cierre_printer_name" value="{{ edit_item.cierre_printer_name if edit_item else '' }}" placeholder="HP Receipt" />
+              </div>
+              <div class="col-md-12">
+                <label class="odoo-field-label">Ruta SumatraPDF (opcional)</label>
+                <input class="form-control odoo-input" name="sumatra_path" placeholder="C:\\Users\\USER\\AppData\\Local\\SumatraPDF\\SumatraPDF.exe" value="{{ edit_item.sumatra_path if edit_item else '' }}" />
+              </div>
+              <div class="col-md-3">
+                <label class="odoo-field-label">Copias *</label>
+                <input class="form-control odoo-input" type="number" min="1" name="copies" value="{{ edit_item.copies if edit_item else 1 }}" />
+              </div>
+              <div class="col-md-3">
+                <label class="odoo-field-label">Copias ROC</label>
+                <input class="form-control odoo-input" type="number" min="1" name="roc_copies" value="{{ edit_item.roc_copies if edit_item and edit_item.roc_copies else 1 }}" />
+              </div>
+              <div class="col-md-3">
+                <label class="odoo-field-label">Copias Cierre</label>
+                <input class="form-control odoo-input" type="number" min="1" name="cierre_copies" value="{{ edit_item.cierre_copies if edit_item and edit_item.cierre_copies else 1 }}" />
+              </div>
+              <div class="col-md-3 d-flex align-items-end">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="auto_print" id="auto_print" {% if edit_item and edit_item.auto_print %}checked{% endif %} />
+                  <label class="form-check-label" for="auto_print">Impresion automatica</label>
+                </div>
+              </div>
+              <div class="col-md-3 d-flex align-items-end">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="roc_auto_print" id="roc_auto_print" {% if edit_item and edit_item.roc_auto_print %}checked{% endif %} />
+                  <label class="form-check-label" for="roc_auto_print">Auto ROC</label>
+                </div>
+              </div>
+              <div class="col-md-3 d-flex align-items-end">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="cierre_auto_print" id="cierre_auto_print" {% if edit_item and edit_item.cierre_auto_print %}checked{% endif %} />
+                  <label class="form-check-label" for="cierre_auto_print">Auto Cierre</label>
+                </div>
+              </div>
+              <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary">Guardar</button>
+                {% if edit_item %}
+                <a class="btn btn-outline-secondary" href="/data/pos-print">Cancelar</a>
+                {% endif %}
+              </div>
+              <div class="col-12 text-sm text-slate">
+                Nota: la impresion automatica usa la impresora configurada en Windows.
+              </div>
+            </form>
+          </div>
+
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Configuraciones registradas</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr>
+                    <th>Sucursal</th>
+                    <th>Impresora</th>
+                    <th>Impresora ROC</th>
+                    <th>Impresora Cierre</th>
+                    <th>Ruta Sumatra</th>
+                    <th>Copias</th>
+                    <th>Copias ROC</th>
+                    <th>Copias Cierre</th>
+                    <th>Auto</th>
+                    <th>Auto ROC</th>
+                    <th>Auto Cierre</th>
+                    <th class="text-end">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item in items %}
+                  <tr>
+                    <td class="fw-semibold">{{ item.branch.name if item.branch else "-" }}</td>
+                    <td>{{ item.printer_name }}</td>
+                    <td>{{ item.roc_printer_name or "-" }}</td>
+                    <td>{{ item.cierre_printer_name or "-" }}</td>
+                    <td class="text-slate text-sm">{{ item.sumatra_path or "-" }}</td>
+                    <td>{{ item.copies }}</td>
+                    <td>{{ item.roc_copies or "-" }}</td>
+                    <td>{{ item.cierre_copies or "-" }}</td>
+                    <td>
+                      <span class="odoo-pill {{ 'success' if item.auto_print else '' }}">{{ "Si" if item.auto_print else "No" }}</span>
+                    </td>
+                    <td>
+                      <span class="odoo-pill {{ 'success' if item.roc_auto_print else '' }}">{{ "Si" if item.roc_auto_print else "No" }}</span>
+                    </td>
+                    <td>
+                      <span class="odoo-pill {{ 'success' if item.cierre_auto_print else '' }}">{{ "Si" if item.cierre_auto_print else "No" }}</span>
+                    </td>
+                    <td class="text-end">
+                      <a class="btn btn-sm btn-outline-secondary" href="/data/pos-print?edit_id={{ item.id }}">Editar</a>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Catalogos</div>
+            <div class="d-grid gap-2">
+              <a class="btn btn-outline-secondary" href="/data">Panel de datos</a>
+              <a class="btn btn-outline-secondary" href="/data/usuarios">Usuarios</a>
+              <a class="btn btn-outline-secondary" href="/data/sucursales">Sucursales</a>
+              <a class="btn btn-outline-secondary" href="/data/bodegas">Bodegas</a>
+              <a class="btn btn-outline-secondary" href="/data/clientes">Clientes</a>
+              <a class="btn btn-outline-secondary" href="/data/vendedores">Vendedores</a>
+              <a class="btn btn-outline-secondary" href="/data/bancos">Bancos</a>
+              <a class="btn btn-outline-secondary" href="/data/formas-pago">Formas de pago</a>
+              <a class="btn btn-outline-secondary" href="/data/notificaciones">Notificaciones correo</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-end text-muted small mt-4">
+        <a class="btn btn-outline-secondary btn-sm" href="/data">
+          <i class="bi bi-grid"></i>
+          Volver a catalogos
+        </a>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

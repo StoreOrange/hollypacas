@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+              <li class="breadcrumb-item"><a href="/data">Datos</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Usuarios</li>
+            </ol>
+          </nav>
+          <h1 class="h5 mb-1">Catalogo de usuarios</h1>
+          <p class="text-muted mb-0">Crear, editar y desactivar usuarios.</p>
+        </div>
+        <div class="d-none d-md-block">
+          <a class="btn btn-outline-secondary btn-sm" href="/data">
+            <i class="bi bi-grid"></i>
+            Catalogos
+          </a>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-2">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2">{{ success }}</div>
+      {% endif %}
+
+      <div class="row g-4">
+        <div class="col-lg-8">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">{{ "Editar usuario" if edit_item else "Nuevo usuario" }}</div>
+            <form class="row g-3" method="post" action="{{ '/data/usuarios/' ~ edit_item.id ~ '/update' if edit_item else '/data/usuarios' }}">
+              <div class="col-md-6">
+                <label class="odoo-field-label">Nombre completo *</label>
+                <input class="form-control odoo-input" name="full_name" required value="{{ edit_item.full_name if edit_item else '' }}" />
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label">Email *</label>
+                <input class="form-control odoo-input" name="email" required value="{{ edit_item.email if edit_item else '' }}" />
+              </div>
+              {% if edit_item %}
+              <div class="col-md-6">
+                <label class="odoo-field-label">Nueva contraseña</label>
+                <input class="form-control odoo-input" name="new_password" type="password" />
+              </div>
+              <div class="col-md-2 d-flex align-items-end">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if edit_item.is_active %}checked{% endif %} />
+                  <label class="form-check-label" for="is_active">Activo</label>
+                </div>
+              </div>
+              {% else %}
+              <div class="col-md-6">
+                <label class="odoo-field-label">Contraseña *</label>
+                <input class="form-control odoo-input" name="password" type="password" required />
+              </div>
+              {% endif %}
+              <div class="col-md-6">
+                <label class="odoo-field-label">Sucursal *</label>
+                <select class="form-select odoo-input" name="branch_id" required>
+                  <option value="">Selecciona</option>
+                  {% for branch in branches %}
+                  <option value="{{ branch.id }}" {% if edit_item and edit_item.default_branch_id == branch.id %}selected{% endif %}>
+                    {{ branch.name }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label">Bodega operativa *</label>
+                <select class="form-select odoo-input" name="bodega_id" required>
+                  <option value="">Selecciona</option>
+                  {% for bodega in bodegas %}
+                  <option value="{{ bodega.id }}" {% if edit_item and edit_item.default_bodega_id == bodega.id %}selected{% endif %}>
+                    {{ bodega.name }}
+                  </option>
+                  {% endfor %}
+                </select>
+                <div class="text-xs text-slate mt-1">La bodega debe pertenecer a la sucursal seleccionada.</div>
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label">Roles *</label>
+                <div class="row g-2">
+                  {% for role in roles %}
+                  <div class="col-md-3">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="role_ids" value="{{ role.id }}"
+                        {% if edit_item and role in edit_item.roles %}checked{% endif %} />
+                      <label class="form-check-label">{{ role.name }}</label>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary">Guardar</button>
+                {% if edit_item %}
+                <a class="btn btn-outline-secondary" href="/data/usuarios">Cancelar</a>
+                {% endif %}
+              </div>
+            </form>
+          </div>
+
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Listado de usuarios</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Email</th>
+                    <th>Sucursal</th>
+                    <th>Bodega</th>
+                    <th>Roles</th>
+                    <th>Estado</th>
+                    <th class="text-end">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item in items %}
+                  <tr>
+                    <td class="fw-semibold">{{ item.full_name }}</td>
+                    <td>{{ item.email }}</td>
+                    <td>{{ item.default_branch.name if item.default_branch else "-" }}</td>
+                    <td>{{ item.default_bodega.name if item.default_bodega else "-" }}</td>
+                    <td>
+                      {% for role in item.roles %}
+                      <span class="odoo-pill">{{ role.name }}</span>
+                      {% endfor %}
+                    </td>
+                    <td>
+                      <span class="odoo-pill {{ 'success' if item.is_active else '' }}">{{ "Activo" if item.is_active else "Inactivo" }}</span>
+                    </td>
+                    <td class="text-end">
+                      <a class="btn btn-sm btn-outline-secondary" href="/data/usuarios?edit_id={{ item.id }}">Editar</a>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Catalogos</div>
+            <div class="d-grid gap-2">
+              <a class="btn btn-outline-secondary" href="/data">Panel de datos</a>
+              <a class="btn btn-outline-secondary" href="/data/roles">Roles</a>
+              <a class="btn btn-outline-secondary" href="/data/vendedores">Vendedores</a>
+              <a class="btn btn-outline-secondary" href="/data/clientes">Clientes</a>
+              <a class="btn btn-outline-secondary" href="/data/sucursales">Sucursales</a>
+              <a class="btn btn-outline-secondary" href="/data/bodegas">Bodegas</a>
+              <a class="btn btn-outline-secondary" href="/data/bancos">Bancos</a>
+              <a class="btn btn-outline-secondary" href="/data/formas-pago">Formas de pago</a>
+              <a class="btn btn-outline-secondary" href="/data/pos-print">Impresion POS</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-end text-muted small mt-4">
+        <a class="btn btn-outline-secondary btn-sm" href="/data">
+          <i class="bi bi-grid"></i>
+          Volver a catalogos
+        </a>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+

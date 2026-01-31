@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Ventas</li>
+                <li class="breadcrumb-item active" aria-current="page">ROC</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Recibo oficial de caja</div>
+            <div class="odoo-subtitle mt-1 text-sm">Registro de ingresos y egresos por sucursal.</div>
+          </div>
+          <div class="d-flex align-items-center gap-3">
+            <div class="odoo-pill primary">
+              <i class="bi bi-diagram-3"></i>
+              {{ branch.name if branch else 'Sucursal' }}
+            </div>
+            <div class="odoo-pill">
+              <i class="bi bi-boxes"></i>
+              {{ bodega.name if bodega else 'Bodega' }}
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/sales">Ventas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cobranza">Cobranza</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/utilitario">Utilitario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/depositos">Depositos</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/sales/roc">ROC</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cierre">Cierre</a>
+          </li>
+        </ul>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success">{{ success }}</div>
+      {% endif %}
+
+      <div class="row g-4">
+        <div class="col-lg-5">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Nuevo recibo</div>
+            <form class="row g-3" method="post" action="/sales/roc">
+              <div class="col-md-6">
+                <label class="odoo-field-label">Tipo *</label>
+                <select class="form-select odoo-input" name="tipo" id="roc-tipo" required>
+                  <option value="EGRESO" selected>Egreso</option>
+                  <option value="INGRESO">Ingreso</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label">Fecha *</label>
+                <input class="form-control odoo-input" type="date" name="fecha" value="{{ today }}">
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label">Rubro *</label>
+                <select class="form-select odoo-input" name="rubro_id" id="roc-rubro" required>
+                  <option value="">Selecciona</option>
+                  {% for rubro in rubros %}
+                  <option value="{{ rubro.id }}" data-codigo="{{ rubro.cuenta.codigo if rubro.cuenta else '9999' }}">{{ rubro.nombre }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label">Motivo *</label>
+                <select class="form-select odoo-input" name="motivo_id" id="roc-motivo" required>
+                  <option value="">Selecciona</option>
+                  {% for motivo in motivos %}
+                  <option value="{{ motivo.id }}" data-tipo="{{ motivo.tipo }}">{{ motivo.nombre }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label">Observacion</label>
+                <textarea class="form-control odoo-input" name="descripcion" rows="2" placeholder="Detalle del recibo"></textarea>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label">Moneda *</label>
+                <select class="form-select odoo-input" name="moneda" id="roc-moneda">
+                  <option value="CS">Cordobas</option>
+                  <option value="USD">Dolares</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label">Monto *</label>
+                <input class="form-control odoo-input" type="text" name="monto" id="roc-monto" placeholder="0.00" required>
+              </div>
+              <div class="col-12">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                  <div class="text-sm text-slate">
+                    Tasa de cambio: <strong>{{ rate_today.rate if rate_today else 'Sin configurar' }}</strong>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="afecta_caja" id="roc-afecta" checked>
+                    <label class="form-check-label" for="roc-afecta">Afecta arqueo de caja</label>
+                  </div>
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="d-flex flex-wrap gap-2 text-sm">
+                  <div class="odoo-pill primary">Total C$: <span id="roc-total-cs">0.00</span></div>
+                  <div class="odoo-pill">Total USD: <span id="roc-total-usd">0.00</span></div>
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="odoo-card p-3 border border-slate-200 rounded-3xl bg-white">
+                  <div class="odoo-section-title mb-2 d-flex align-items-center gap-2 text-sm">
+                    <i class="bi bi-journal-text text-brand"></i>
+                    Mini asiento contable
+                  </div>
+                  <div class="table-responsive">
+                    <table class="table table-sm odoo-table mb-0 text-sm">
+                      <thead>
+                        <tr>
+                          <th>Cuenta</th>
+                          <th>Debe</th>
+                          <th>Haber</th>
+                        </tr>
+                      </thead>
+                      <tbody id="roc-asiento-body">
+                        <tr>
+                          <td colspan="3" class="text-center text-slate">Completa el recibo para ver el asiento.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              <div class="col-12">
+                <button class="btn btn-primary" type="submit">
+                  <i class="bi bi-save2"></i>
+                  Registrar recibo
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="col-lg-7">
+          <div class="odoo-card">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+              <div class="odoo-section-title">Recibos del dia / historico</div>
+              <form class="d-flex flex-wrap align-items-center gap-2" method="get" action="/sales/roc">
+                <div>
+                  <label class="odoo-field-label text-xs text-slate">Desde</label>
+                  <input class="form-control form-control-sm odoo-input" type="date" name="start_date" value="{{ start_date }}">
+                </div>
+                <div>
+                  <label class="odoo-field-label text-xs text-slate">Hasta</label>
+                  <input class="form-control form-control-sm odoo-input" type="date" name="end_date" value="{{ end_date }}">
+                </div>
+                <div class="pt-3">
+                  <button class="btn btn-sm btn-outline-primary" type="submit">
+                    <i class="bi bi-filter"></i>
+                    Filtrar
+                  </button>
+                </div>
+              </form>
+            </div>
+            <div class="text-xs text-slate mb-2">
+              Mostrando del {{ start_date }} al {{ end_date }}
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table text-sm">
+                <thead>
+                  <tr>
+                    <th>No.</th>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Rubro</th>
+                    <th>Motivo</th>
+                    <th class="text-end">Monto CS</th>
+                    <th class="text-end">Monto USD</th>
+                    <th>Arqueo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for rec in recibos %}
+                  <tr>
+                    <td>{{ rec.numero }}</td>
+                    <td>{{ rec.fecha }}</td>
+                    <td>{{ rec.tipo }}</td>
+                    <td>{{ rec.rubro.nombre if rec.rubro else '-' }}</td>
+                    <td>{{ rec.motivo.nombre if rec.motivo else '-' }}</td>
+                    <td class="text-end">{{ "%.2f"|format(rec.monto_cs or 0) }}</td>
+                    <td class="text-end">{{ "%.2f"|format(rec.monto_usd or 0) }}</td>
+                    <td>{{ "Si" if rec.afecta_caja else "No" }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th colspan="5" class="text-end">Total C$</th>
+                    <th class="text-end">{{ "%.2f"|format(recibos|sum(attribute='monto_cs') or 0) }}</th>
+                    <th class="text-end">{{ "%.2f"|format(recibos|sum(attribute='monto_usd') or 0) }}</th>
+                    <th></th>
+                  </tr>
+                  <tr>
+                    <th colspan="5" class="text-end">Total USD (convertido)</th>
+                    {% set total_cs = recibos|sum(attribute='monto_cs') or 0 %}
+                    {% set total_usd = recibos|sum(attribute='monto_usd') or 0 %}
+                    {% if rate_today %}
+                    <th class="text-end" colspan="2">{{ "%.2f"|format((total_cs / rate_today.rate) + total_usd) }}</th>
+                    {% else %}
+                    <th class="text-end" colspan="2">0.00</th>
+                    {% endif %}
+                    <th></th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const rocTipo = document.getElementById("roc-tipo");
+  const rocMotivo = document.getElementById("roc-motivo");
+  const rocRubro = document.getElementById("roc-rubro");
+  const rocMoneda = document.getElementById("roc-moneda");
+  const rocMonto = document.getElementById("roc-monto");
+  const rocTotalCs = document.getElementById("roc-total-cs");
+  const rocTotalUsd = document.getElementById("roc-total-usd");
+  const rocAsientoBody = document.getElementById("roc-asiento-body");
+  const rate = {{ rate_today.rate if rate_today else "null" }};
+
+  const updateMotivos = () => {
+    if (!rocMotivo || !rocTipo) return;
+    const tipo = rocTipo.value;
+    rocMotivo.querySelectorAll("option").forEach((opt) => {
+      if (!opt.value) return;
+      const ok = opt.dataset.tipo === tipo;
+      opt.hidden = !ok;
+      if (!ok && opt.selected) {
+        opt.selected = false;
+      }
+    });
+  };
+
+  const parseAmount = (value) => {
+    if (!value) return 0;
+    const cleaned = value.replace(/[^0-9.]/g, "");
+    const parsed = parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const formatAmount = (value) => {
+    return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  };
+
+  const updateTotals = () => {
+    if (!rocMonto || !rocTotalCs || !rocTotalUsd) return;
+    const monto = parseAmount(rocMonto.value);
+    const moneda = rocMoneda?.value || "CS";
+    let totalCs = moneda === "CS" ? monto : rate ? monto * rate : 0;
+    let totalUsd = moneda === "USD" ? monto : rate ? monto / rate : 0;
+    rocTotalCs.textContent = formatAmount(totalCs);
+    rocTotalUsd.textContent = formatAmount(totalUsd);
+    updateAsiento(totalCs);
+  };
+
+  const rubroCodes = {};
+
+  const updateAsiento = (totalCs) => {
+    if (!rocAsientoBody || !rocTipo || !rocRubro) return;
+    const tipo = rocTipo.value || "EGRESO";
+    const rubroOption = rocRubro.selectedOptions[0];
+    const rubroName = rubroOption?.textContent || "";
+    const rubroCode = rubroOption?.dataset.codigo || "9999";
+    if (!totalCs || totalCs <= 0) {
+      rocAsientoBody.innerHTML = `
+        <tr>
+          <td colspan="3" class="text-center text-slate">Completa el recibo para ver el asiento.</td>
+        </tr>
+      `;
+      return;
+    }
+    const cajaCuenta = "1101 Caja";
+    const rubroCuenta = `${rubroCode} ${rubroName || "Rubro"}`;
+    if (tipo === "EGRESO") {
+      rocAsientoBody.innerHTML = `
+        <tr>
+          <td>${rubroCuenta}</td>
+          <td class="text-end">C$ ${formatAmount(totalCs)}</td>
+          <td class="text-end">-</td>
+        </tr>
+        <tr>
+          <td>${cajaCuenta}</td>
+          <td class="text-end">-</td>
+          <td class="text-end">C$ ${formatAmount(totalCs)}</td>
+        </tr>
+      `;
+      return;
+    }
+    rocAsientoBody.innerHTML = `
+      <tr>
+        <td>${cajaCuenta}</td>
+        <td class="text-end">C$ ${formatAmount(totalCs)}</td>
+        <td class="text-end">-</td>
+      </tr>
+      <tr>
+        <td>${rubroCuenta}</td>
+        <td class="text-end">-</td>
+        <td class="text-end">C$ ${formatAmount(totalCs)}</td>
+      </tr>
+    `;
+  };
+
+  if (rocTipo) {
+    rocTipo.addEventListener("change", updateMotivos);
+    updateMotivos();
+  }
+  if (rocMoneda) {
+    rocMoneda.addEventListener("change", updateTotals);
+  }
+  if (rocMonto) {
+    rocMonto.addEventListener("input", updateTotals);
+  }
+  if (rocRubro) {
+    rocRubro.addEventListener("change", updateTotals);
+  }
+  if (rocTipo) {
+    rocTipo.addEventListener("change", updateTotals);
+  }
+  updateTotals();
+
+  const rocPrintId = "{{ print_id or '' }}";
+  if (rocPrintId) {
+    const url = `/sales/roc/${rocPrintId}/pdf`;
+    window.open(url, "_blank", "noopener");
+  }
+</script>
+{% endblock %}

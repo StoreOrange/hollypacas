@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title or "ERP Hollywood Pacas" }}</title>
+    <script src="/static/vendor/tailwind.min.js?v={{ version }}"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              ink: "#0f172a",
+              slate: "#5b6b88",
+              brand: "#2563eb",
+              brandDeep: "#1e40af",
+              lilac: "#c4b5fd",
+              surface: "#f8fafc",
+              night: "#0b0b10",
+            },
+          },
+        },
+      };
+    </script>
+    <link rel="stylesheet" href="/static/vendor/bootstrap.min.css?v={{ version }}" />
+    <link rel="stylesheet" href="/static/vendor/bootstrap-icons.css?v={{ version }}" />
+    <link rel="stylesheet" href="/static/vendor/bootstrap-datepicker3.min.css?v={{ version }}" />
+    <link rel="stylesheet" href="/static/vendor/dataTables.bootstrap5.min.css?v={{ version }}" />
+    <link rel="stylesheet" href="/static/vendor/buttons.bootstrap5.min.css?v={{ version }}" />
+    <link rel="stylesheet" href="/static/vendor/select2.min.css?v={{ version }}" />
+    <link rel="stylesheet" href="/static/vendor/sweetalert2.min.css?v={{ version }}" />
+    <link rel="stylesheet" href="/static/css/app.css?v={{ version }}" />
+  </head>
+  <body>
+    {% block content %}{% endblock %}
+    <div class="hidden lg:grid-cols-[260px_1fr] lg:grid-cols-[84px_1fr] w-64 w-20 px-6 px-2 text-white bg-slate-900 dark:bg-slate-900"></div>
+    <script src="/static/vendor/htmx.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/alpine.min.js?v={{ version }}" defer></script>
+    <script src="/static/vendor/jquery.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/bootstrap.bundle.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/bootstrap-datepicker.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/bootstrap-datepicker.es.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/dataTables.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/dataTables.bootstrap5.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/jszip.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/pdfmake.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/vfs_fonts.js?v={{ version }}"></script>
+    <script src="/static/vendor/dataTables.buttons.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/buttons.bootstrap5.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/buttons.html5.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/buttons.print.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/select2.min.js?v={{ version }}"></script>
+    <script src="/static/vendor/sweetalert2.min.js?v={{ version }}"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!window.$ || !$.fn.datepicker) return;
+        const inputs = document.querySelectorAll('input[type="date"], input.datepicker');
+        inputs.forEach((input) => {
+          if (input.type === "date") {
+            input.type = "text";
+          }
+          input.classList.add("datepicker");
+        });
+        $(".datepicker").datepicker({
+          format: "yyyy-mm-dd",
+          language: "es",
+          autoclose: true,
+          todayHighlight: true,
+        });
+      });
+    </script>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const layout = document.getElementById("layout");
+        const sidebar = document.querySelector("[data-bs-sidebar]");
+        if (!layout || !sidebar) return;
+
+        const toggle = sidebar.querySelector("[data-bs-sidebar-toggle]");
+
+        const applyCollapsed = (collapsed) => {
+          layout.classList.toggle("sidebar-collapsed-bs", collapsed);
+          const icon = toggle?.querySelector("i");
+          if (icon) {
+            icon.className = collapsed ? "bi bi-list" : "bi bi-layout-sidebar-inset";
+          }
+        };
+
+        const stored = localStorage.getItem("sidebarCollapsed") === "1";
+        applyCollapsed(stored);
+
+        if (toggle) {
+          toggle.addEventListener("click", () => {
+            const next = !layout.classList.contains("sidebar-collapsed-bs");
+            applyCollapsed(next);
+            localStorage.setItem("sidebarCollapsed", next ? "1" : "0");
+          });
+        }
+      });
+    </script>
+  </body>
+</html>

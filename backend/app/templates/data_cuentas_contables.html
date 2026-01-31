@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+              <li class="breadcrumb-item"><a href="/data">Datos</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Contabilidad</li>
+            </ol>
+          </nav>
+          <h1 class="h5 mb-1">Plan de cuentas</h1>
+          <p class="text-muted mb-0">Cuentas contables hasta 4 niveles.</p>
+        </div>
+        <div class="d-none d-md-block">
+          <a class="btn btn-outline-secondary btn-sm" href="/data">
+            <i class="bi bi-grid"></i>
+            Catalogos
+          </a>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success">{{ success }}</div>
+      {% endif %}
+
+      <div class="row g-4">
+        <div class="col-lg-4">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">
+              {% if edit_item %}Editar cuenta{% else %}Nueva cuenta{% endif %}
+            </div>
+            <form class="row g-3" method="post" action="{{ '/data/cuentas-contables/' ~ edit_item.id ~ '/update' if edit_item else '/data/cuentas-contables' }}">
+              <div class="col-12">
+                <label class="odoo-field-label">Codigo *</label>
+                <input class="form-control odoo-input" name="codigo" value="{{ edit_item.codigo if edit_item else '' }}" required />
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label">Nombre *</label>
+                <input class="form-control odoo-input" name="nombre" value="{{ edit_item.nombre if edit_item else '' }}" required />
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label">Tipo *</label>
+                <select class="form-select odoo-input" name="tipo" required>
+                  <option value="BALANCE" {% if edit_item and edit_item.tipo == "BALANCE" %}selected{% endif %}>Balance</option>
+                  <option value="RESULTADO" {% if edit_item and edit_item.tipo == "RESULTADO" %}selected{% endif %}>Resultado</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label">Naturaleza *</label>
+                <select class="form-select odoo-input" name="naturaleza" required>
+                  <option value="DEBE" {% if edit_item and edit_item.naturaleza == "DEBE" %}selected{% endif %}>Debe</option>
+                  <option value="HABER" {% if edit_item and edit_item.naturaleza == "HABER" %}selected{% endif %}>Haber</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label">Cuenta padre</label>
+                <select class="form-select odoo-input" name="parent_id">
+                  <option value="">Sin padre</option>
+                  {% for cuenta in cuentas %}
+                  <option value="{{ cuenta.id }}" {% if edit_item and edit_item.parent_id == cuenta.id %}selected{% endif %}>
+                    {{ cuenta.codigo }} - {{ cuenta.nombre }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="activo" id="activo" {% if edit_item is none or edit_item.activo %}checked{% endif %}>
+                  <label class="form-check-label" for="activo">Activo</label>
+                </div>
+              </div>
+              <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary" type="submit">
+                  <i class="bi bi-save2"></i>
+                  Guardar
+                </button>
+                <a class="btn btn-outline-secondary" href="/data/cuentas-contables">Cancelar</a>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="col-lg-8">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Cuentas registradas</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table">
+                <thead>
+                  <tr>
+                    <th>Codigo</th>
+                    <th>Nombre</th>
+                    <th>Tipo</th>
+                    <th>Naturaleza</th>
+                    <th>Nivel</th>
+                    <th class="text-center">Activo</th>
+                    <th class="text-end">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item in items %}
+                  <tr>
+                    <td>{{ item.codigo }}</td>
+                    <td>{{ item.nombre }}</td>
+                    <td>{{ item.tipo }}</td>
+                    <td>{{ item.naturaleza }}</td>
+                    <td>{{ item.nivel }}</td>
+                    <td class="text-center">{{ "Si" if item.activo else "No" }}</td>
+                    <td class="text-end">
+                      <a class="btn btn-sm btn-outline-secondary" href="/data/cuentas-contables?edit_id={{ item.id }}">Editar</a>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-3 d-flex flex-wrap gap-2">
+              <a class="btn btn-outline-secondary" href="/data/recibos-rubros">Rubros</a>
+              <a class="btn btn-outline-secondary" href="/data/recibos-motivos">Motivos</a>
+              <a class="btn btn-outline-secondary" href="/data">Catalogos</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

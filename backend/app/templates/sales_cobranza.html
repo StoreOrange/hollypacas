@@ -1,0 +1,491 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Ventas</li>
+                <li class="breadcrumb-item active" aria-current="page">Cobranza</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Gestion de cobranza</div>
+            <div class="odoo-subtitle mt-1 text-sm">Control de saldos y abonos de clientes.</div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/sales">Ventas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/sales/cobranza">Cobranza</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/utilitario">Utilitario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/depositos">Depositos</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/roc">ROC</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cierre">Cierre</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="odoo-card odoo-elevated odoo-plate mt-3">
+        <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
+          <div>
+            <label class="odoo-field-label text-xs text-slate">Desde</label>
+            <input class="form-control form-control-sm odoo-input" type="date" id="cobranza-start" value="{{ start_date }}">
+          </div>
+          <div>
+            <label class="odoo-field-label text-xs text-slate">Hasta</label>
+            <input class="form-control form-control-sm odoo-input" type="date" id="cobranza-end" value="{{ end_date }}">
+          </div>
+          <div>
+            <label class="odoo-field-label text-xs text-slate">Vendedor</label>
+            <select class="form-select form-select-sm odoo-input" id="cobranza-vendedor">
+              <option value="">Todos</option>
+              {% for vendedor in vendedores %}
+              <option value="{{ vendedor.id }}" {% if vendedor_q and vendedor_q|int == vendedor.id %}selected{% endif %}>
+                {{ vendedor.nombre }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="flex-grow-1">
+            <label class="odoo-field-label text-xs text-slate">Producto</label>
+            <input class="form-control form-control-sm odoo-input" type="text" id="cobranza-product" value="{{ producto_q }}" placeholder="Codigo o descripcion">
+          </div>
+          <div class="pt-3">
+            <button class="btn btn-sm btn-outline-primary" type="button" id="cobranza-filter">
+              <i class="bi bi-filter"></i>
+              Filtrar
+            </button>
+          </div>
+          <div class="pt-3">
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="cobranza-export">
+              <i class="bi bi-file-earmark-pdf"></i>
+              Exportar
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm">
+            <thead>
+              <tr>
+                <th>Factura</th>
+                <th>Cliente</th>
+                <th>Vendedor</th>
+                <th>Fecha</th>
+                <th class="text-end">Total</th>
+                <th class="text-end">Abonos</th>
+                <th class="text-end">Saldo</th>
+                <th>Estado</th>
+                <th>Reversion</th>
+                <th class="text-end">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in ventas %}
+              {% set factura = row.factura %}
+              <tr>
+                <td>{{ factura.numero }}</td>
+                <td>{{ factura.cliente.nombre if factura.cliente else 'Consumidor final' }}</td>
+                <td>{{ factura.vendedor.nombre if factura.vendedor else '-' }}</td>
+                <td>{{ factura.fecha.date() if factura.fecha else '-' }}</td>
+                <td class="text-end">
+                  {{ "C$" if factura.moneda != "USD" else "$" }} {{ "%.2f"|format(factura.total_cs if factura.moneda != "USD" else factura.total_usd) }}
+                </td>
+                <td class="text-end">
+                  {{ "C$" if factura.moneda != "USD" else "$" }} {{ "%.2f"|format(row.abonos_cs if factura.moneda != "USD" else row.abonos_usd) }}
+                </td>
+                <td class="text-end">
+                  {{ "C$" if factura.moneda != "USD" else "$" }} {{ "%.2f"|format(row.saldo_cs if factura.moneda != "USD" else row.saldo_usd) }}
+                </td>
+                <td>
+                  <span class="badge {% if factura.estado_cobranza == 'PAGADA' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+                    {{ factura.estado_cobranza }}
+                  </span>
+                </td>
+                <td>
+                  <span class="badge {% if factura.estado == 'ANULADA' %}bg-danger{% else %}bg-secondary{% endif %}">
+                    {{ factura.estado }}
+                  </span>
+                </td>
+                <td class="text-end">
+                  <button class="btn btn-sm btn-outline-primary" type="button" data-detail="{{ factura.id }}">
+                    <i class="bi bi-eye"></i>
+                  </button>
+                  <button class="btn btn-sm btn-outline-success" type="button" data-abono="{{ factura.id }}" data-moneda="{{ factura.moneda }}" data-saldo="{{ row.saldo_cs if factura.moneda != 'USD' else row.saldo_usd }}" data-estado="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" {% if factura.estado_cobranza == 'PAGADA' or factura.estado == 'ANULADA' %}disabled title="Factura no disponible"{% endif %}>
+                    <i class="bi bi-plus-circle"></i>
+                  </button>
+                  <button class="btn btn-sm btn-outline-secondary" type="button" data-estado="{{ factura.id }}" data-current="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" {% if factura.estado == 'ANULADA' %}disabled title="Factura anulada"{% endif %}>
+                    <i class="bi bi-check2-circle"></i>
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-3 d-flex flex-wrap gap-3">
+          <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[200px]">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Total pendiente C$</div>
+            <div class="fw-bold text-ink">{{ "C$ {:,.2f}".format(total_saldo_cs) }}</div>
+          </div>
+          <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[200px]">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Total pendiente USD</div>
+            <div class="fw-bold text-ink">{{ "$ {:,.2f}".format(total_saldo_usd) }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal fade" id="cobranza-detail-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content odoo-modal">
+      <div class="odoo-modal-header d-flex align-items-center justify-content-between">
+        <div class="odoo-modal-title">Detalle de factura</div>
+        <button class="btn-close" data-bs-dismiss="modal" type="button"></button>
+      </div>
+      <div class="odoo-modal-body p-4">
+        <div id="cobranza-detail-body" class="text-sm text-slate">Cargando...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="cobranza-abono-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content odoo-modal">
+      <div class="odoo-modal-header d-flex align-items-center justify-content-between">
+        <div class="odoo-modal-title">Registrar abono</div>
+        <button class="btn-close" data-bs-dismiss="modal" type="button"></button>
+      </div>
+      <div class="odoo-modal-body p-4">
+        <input type="hidden" id="abono-factura-id">
+        <input type="hidden" id="abono-id">
+        <div class="mb-3 p-2 rounded-lg bg-slate-50 border border-slate-200">
+          <div class="text-xs uppercase tracking-[0.2em] text-slate">Saldo pendiente</div>
+          <div class="fs-5 fw-bold text-ink" id="abono-saldo">--</div>
+        </div>
+        <div class="row g-3">
+          <div class="col-6">
+            <label class="odoo-field-label">Moneda</label>
+            <select class="form-select odoo-input" id="abono-moneda">
+              <option value="CS">Cordobas</option>
+              <option value="USD">Dolares</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="odoo-field-label">Monto</label>
+            <input class="form-control odoo-input" id="abono-monto" type="text" placeholder="0.00">
+          </div>
+          <div class="col-12">
+            <label class="odoo-field-label">Observacion</label>
+            <textarea class="form-control odoo-input" id="abono-observacion" rows="2"></textarea>
+          </div>
+          <div class="col-12">
+            <button class="btn btn-primary" id="abono-submit" type="button">
+              <i class="bi bi-save2"></i>
+              Guardar abono
+            </button>
+          </div>
+        </div>
+        <div class="mt-4">
+          <div class="odoo-section-title mb-2">Recibos aplicados</div>
+          <div class="table-responsive">
+            <table class="table table-sm odoo-table text-sm">
+              <thead>
+                <tr>
+                  <th>Recibo</th>
+                  <th>Fecha</th>
+                  <th>Moneda</th>
+                  <th class="text-end">Monto</th>
+                  <th>Obs.</th>
+                  <th class="text-end">Accion</th>
+                </tr>
+              </thead>
+              <tbody id="abono-list">
+                <tr>
+                  <td colspan="6" class="text-center text-slate py-2">Sin abonos</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const formatMoney = (value, currency) => {
+      const number = Number(value || 0);
+      const formatted = new Intl.NumberFormat("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(number);
+      return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
+    };
+
+    const parseMoneyValue = (value) => {
+      if (!value) return 0;
+      const raw = value.toString().replace(/[^0-9.,-]/g, "");
+      const hasComma = raw.includes(",");
+      const hasDot = raw.includes(".");
+      let normalized = raw;
+      if (hasComma && hasDot) {
+        if (raw.lastIndexOf(",") > raw.lastIndexOf(".")) {
+          normalized = raw.replace(/\./g, "").replace(",", ".");
+        } else {
+          normalized = raw.replace(/,/g, "");
+        }
+      } else if (hasComma && !hasDot) {
+        const parts = raw.split(",");
+        if (parts[1] && parts[1].length === 2) {
+          normalized = raw.replace(",", ".");
+        } else {
+          normalized = raw.replace(/,/g, "");
+        }
+      } else if (hasDot && !hasComma) {
+        const parts = raw.split(".");
+        if (!parts[1] || parts[1].length !== 2) {
+          normalized = raw.replace(/\./g, "");
+        }
+      }
+      return parseFloat(normalized) || 0;
+    };
+
+    const filterBtn = document.getElementById("cobranza-filter");
+    if (filterBtn) {
+      filterBtn.addEventListener("click", () => {
+        const start = document.getElementById("cobranza-start").value;
+        const end = document.getElementById("cobranza-end").value;
+        const prod = document.getElementById("cobranza-product").value;
+        const vendedor = document.getElementById("cobranza-vendedor").value;
+        const params = new URLSearchParams();
+        if (start) params.set("start_date", start);
+        if (end) params.set("end_date", end);
+        if (prod) params.set("producto", prod);
+        if (vendedor) params.set("vendedor_id", vendedor);
+        window.location.href = `/sales/cobranza?${params.toString()}`;
+      });
+    }
+
+    const exportBtn = document.getElementById("cobranza-export");
+    if (exportBtn) {
+      exportBtn.addEventListener("click", () => {
+        const start = document.getElementById("cobranza-start").value;
+        const end = document.getElementById("cobranza-end").value;
+        const prod = document.getElementById("cobranza-product").value;
+        const vendedor = document.getElementById("cobranza-vendedor").value;
+        const params = new URLSearchParams();
+        if (start) params.set("start_date", start);
+        if (end) params.set("end_date", end);
+        if (prod) params.set("producto", prod);
+        if (vendedor) params.set("vendedor_id", vendedor);
+        params.set("format", "pdf");
+        window.open(`/sales/cobranza/export?${params.toString()}`, "_blank", "noopener");
+      });
+    }
+
+    const detailModalEl = document.getElementById("cobranza-detail-modal");
+    const abonoModalEl = document.getElementById("cobranza-abono-modal");
+    const getBootstrapModal = (el) => {
+      if (!el) return null;
+      if (!window.bootstrap || !window.bootstrap.Modal) return null;
+      return window.bootstrap.Modal.getOrCreateInstance(el);
+    };
+
+    const handleFetchJson = async (url, options) => {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        return { ok: false, message: `Error ${response.status}` };
+      }
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        return { ok: false, message: "Respuesta no valida" };
+      }
+      return response.json().catch(() => ({ ok: false, message: "Respuesta invalida" }));
+    };
+
+    document.addEventListener("click", async (event) => {
+      const detailBtn = event.target.closest("[data-detail]");
+      if (detailBtn) {
+        const detailModal = getBootstrapModal(detailModalEl);
+        if (!detailModal) {
+          alert("Bootstrap no disponible");
+          return;
+        }
+        const id = detailBtn.dataset.detail;
+        const target = document.getElementById("cobranza-detail-body");
+        target.textContent = "Cargando...";
+        detailModal.show();
+        const payload = await handleFetchJson(`/sales/${id}/detail`);
+        if (!payload || !payload.ok) {
+          target.textContent = payload?.message || "No se pudo cargar el detalle.";
+          return;
+        }
+        const items = payload.factura.items
+          .map((item) => `<tr><td>${item.codigo}</td><td>${item.descripcion}</td><td class="text-end">${item.cantidad}</td><td class="text-end">${item.subtotal_cs.toFixed(2)}</td></tr>`)
+          .join("");
+        target.innerHTML = `
+          <div class="mb-3">
+            <strong>${payload.factura.numero}</strong> - ${payload.factura.cliente}
+          </div>
+          <table class="table table-sm odoo-table">
+            <thead><tr><th>Codigo</th><th>Descripcion</th><th class="text-end">Cant</th><th class="text-end">Subtotal</th></tr></thead>
+            <tbody>${items}</tbody>
+          </table>
+        `;
+        return;
+      }
+
+      const abonoBtn = event.target.closest("[data-abono]");
+      if (abonoBtn) {
+        if (abonoBtn.dataset.facturaEstado === "ANULADA") {
+          alert("Factura anulada");
+          return;
+        }
+        if (abonoBtn.dataset.estado === "PAGADA") {
+          alert("Factura ya pagada");
+          return;
+        }
+        const abonoModal = getBootstrapModal(abonoModalEl);
+        if (!abonoModal) {
+          alert("Bootstrap no disponible");
+          return;
+        }
+        document.getElementById("abono-factura-id").value = abonoBtn.dataset.abono;
+        document.getElementById("abono-id").value = "";
+        const moneda = abonoBtn.dataset.moneda || "CS";
+        const saldo = parseFloat(abonoBtn.dataset.saldo || 0);
+        document.getElementById("abono-moneda").value = moneda;
+        document.getElementById("abono-saldo").textContent = formatMoney(saldo, moneda);
+        const montoField = document.getElementById("abono-monto");
+        montoField.value = formatMoney(saldo, moneda);
+        montoField.focus();
+        montoField.select();
+        document.getElementById("abono-observacion").value = "";
+        abonoModal.show();
+        const listBody = document.getElementById("abono-list");
+      listBody.innerHTML = `<tr><td colspan="6" class="text-center text-slate py-2">Cargando...</td></tr>`;
+      const payload = await handleFetchJson(`/sales/cobranza/${abonoBtn.dataset.abono}/abonos`);
+      if (!payload || !payload.ok) {
+        listBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-2">No se pudo cargar</td></tr>`;
+        return;
+      }
+      if (!payload.items.length) {
+        listBody.innerHTML = `<tr><td colspan="6" class="text-center text-slate py-2">Sin abonos</td></tr>`;
+        return;
+      }
+      listBody.innerHTML = payload.items
+        .map((item) => `
+          <tr data-abono-row="${item.id}">
+            <td class="fw-semibold">${item.numero}</td>
+            <td>${item.fecha}</td>
+            <td>${item.moneda}</td>
+            <td class="text-end">${formatMoney(item.monto, item.moneda)}</td>
+            <td>${item.observacion || "-"}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-danger" type="button" data-abono-delete="${item.id}">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        `)
+        .join("");
+      listBody.querySelectorAll("tr[data-abono-row]").forEach((row) => {
+        row.addEventListener("click", () => {
+          const id = row.dataset.abonoRow;
+          const item = payload.items.find((i) => String(i.id) === String(id));
+          if (!item) return;
+          document.getElementById("abono-id").value = item.id;
+          document.getElementById("abono-moneda").value = item.moneda;
+          document.getElementById("abono-monto").value = formatMoney(item.monto, item.moneda);
+          document.getElementById("abono-observacion").value = item.observacion || "";
+        });
+      });
+      listBody.querySelectorAll("[data-abono-delete]").forEach((btn) => {
+        btn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          const abonoId = btn.dataset.abonoDelete;
+          if (!confirm("Eliminar este recibo de abono?")) {
+            return;
+          }
+          const facturaId = document.getElementById("abono-factura-id").value;
+          const payload = await handleFetchJson(`/sales/cobranza/${facturaId}/abono/${abonoId}/delete`, { method: "POST" });
+          if (!payload || !payload.ok) {
+            alert(payload?.message || "No se pudo eliminar");
+            return;
+          }
+          window.location.reload();
+        });
+      });
+      return;
+    }
+
+      const estadoBtn = event.target.closest("[data-estado]");
+      if (estadoBtn) {
+        if (estadoBtn.dataset.facturaEstado === "ANULADA") {
+          alert("Factura anulada");
+          return;
+        }
+        const facturaId = estadoBtn.dataset.estado;
+        const current = estadoBtn.dataset.current;
+        const next = current === "PAGADA" ? "PENDIENTE" : "PAGADA";
+        const body = new URLSearchParams({ estado: next });
+        const payload = await handleFetchJson(`/sales/cobranza/${facturaId}/estado`, { method: "POST", body });
+        if (!payload || !payload.ok) {
+          alert(payload?.message || "No se pudo actualizar");
+          return;
+        }
+        window.location.reload();
+      }
+    });
+
+    document.getElementById("abono-submit")?.addEventListener("click", async () => {
+      const facturaId = document.getElementById("abono-factura-id").value;
+      const abonoId = document.getElementById("abono-id").value;
+      const moneda = document.getElementById("abono-moneda").value;
+      const monto = parseMoneyValue(document.getElementById("abono-monto").value).toFixed(2);
+      const observacion = document.getElementById("abono-observacion").value;
+      const body = new URLSearchParams({ moneda, monto, observacion });
+      const endpoint = abonoId
+        ? `/sales/cobranza/${facturaId}/abono/${abonoId}`
+        : `/sales/cobranza/${facturaId}/abono`;
+      const payload = await handleFetchJson(endpoint, { method: "POST", body });
+      if (!payload || !payload.ok) {
+        alert(payload?.message || "No se pudo registrar el abono");
+        return;
+      }
+      window.location.reload();
+    });
+
+    const layout = document.getElementById("layout");
+    const toggles = document.querySelectorAll(".toggle-sidebar");
+    if (layout && toggles.length) {
+      toggles.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          layout.classList.toggle("sidebar-collapsed");
+        });
+      });
+    }
+  });
+</script>
+{% endblock %}

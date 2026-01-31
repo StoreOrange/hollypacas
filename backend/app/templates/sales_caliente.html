@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Ventas</li>
+                <li class="breadcrumb-item active" aria-current="page">Ventas en caliente</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Ventas en Caliente</div>
+            <div class="odoo-subtitle mt-1 text-sm">Resumen inmediato por sucursal y tendencia del mes actual.</div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Moneda">
+              <button class="hot-currency-toggle btn btn-outline-secondary" data-currency="USD">USD</button>
+              <button class="hot-currency-toggle btn btn-outline-secondary" data-currency="CS">C$</button>
+            </div>
+            <a class="btn btn-outline-secondary btn-sm" href="/sales">
+              <i class="bi bi-arrow-left"></i>
+              Volver a ventas
+            </a>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/sales">Ventas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/sales/ventas-caliente">Ventas en caliente</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports">Informes</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="mt-4">
+        <div class="text-xs uppercase tracking-[0.3em] text-slate font-semibold mb-2">Ventas del dia ({{ today_label }})</div>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del dia</div>
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="text-base font-semibold text-ink">Central</div>
+                <span class="badge bg-primary-subtle text-primary">
+                  <i class="bi bi-geo-alt"></i>
+                  Central
+                </span>
+              </div>
+              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(total_central_day) }}"></div>
+              <div class="text-xs text-slate mt-1">Total de hoy</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del dia</div>
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="text-base font-semibold text-ink">Esteli</div>
+                <span class="badge bg-success-subtle text-success">
+                  <i class="bi bi-geo-alt"></i>
+                  Esteli
+                </span>
+              </div>
+              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(total_esteli_day) }}"></div>
+              <div class="text-xs text-slate mt-1">Total de hoy</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del dia</div>
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="text-base font-semibold text-ink">Total general</div>
+                <span class="badge bg-dark-subtle text-dark">
+                  <i class="bi bi-graph-up-arrow"></i>
+                  Total
+                </span>
+              </div>
+              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(total_day_all) }}"></div>
+              <div class="text-xs text-slate mt-1">Suma diaria</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <div class="text-xs uppercase tracking-[0.3em] text-slate font-semibold mb-2">Ventas acumuladas del mes ({{ month_label }})</div>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del mes</div>
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="text-base font-semibold text-ink">Central</div>
+                <span class="badge bg-primary-subtle text-primary">
+                  <i class="bi bi-geo-alt"></i>
+                  Central
+                </span>
+              </div>
+              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(total_central) }}"></div>
+              <div class="text-xs text-slate mt-1">Acumulado del mes</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del mes</div>
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="text-base font-semibold text-ink">Esteli</div>
+                <span class="badge bg-success-subtle text-success">
+                  <i class="bi bi-geo-alt"></i>
+                  Esteli
+                </span>
+              </div>
+              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(total_esteli) }}"></div>
+              <div class="text-xs text-slate mt-1">Acumulado del mes</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+              <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del mes</div>
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="text-base font-semibold text-ink">Total general</div>
+                <span class="badge bg-dark-subtle text-dark">
+                  <i class="bi bi-graph-up-arrow"></i>
+                  Total
+                </span>
+              </div>
+              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(total_all) }}"></div>
+              <div class="text-xs text-slate mt-1">Acumulado total</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+        <div class="d-flex align-items-center justify-content-between gap-3 mb-3 flex-wrap">
+          <div>
+            <div class="text-base font-semibold text-ink">Tendencia del mes</div>
+            <div class="text-xs text-slate">Ventas diarias acumuladas por sucursal.</div>
+          </div>
+          <span class="badge bg-light text-slate">Actualizado</span>
+        </div>
+        <div class="hot-chart w-100" style="height:260px" data-series='{{ chart_points|tojson }}'></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const tasaCambio = Number("{{ tasa or 0 }}");
+  const formatMoney = (value, currency) => {
+    const amount = Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return currency === "USD" ? `$ ${amount}` : `C$ ${amount}`;
+  };
+
+  const applyCurrency = (currency) => {
+    document.querySelectorAll(".hot-amount").forEach((el) => {
+      const usd = Number(el.dataset.usd || 0);
+      const value = currency === "USD" ? usd : (tasaCambio ? usd * tasaCambio : 0);
+      el.textContent = formatMoney(value, currency);
+    });
+  };
+
+  document.querySelectorAll(".hot-currency-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".hot-currency-toggle").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      applyCurrency(btn.dataset.currency);
+    });
+  });
+
+  const renderChart = () => {
+    const container = document.querySelector(".hot-chart");
+    if (!container) return;
+    const series = JSON.parse(container.dataset.series || "[]");
+    if (!series.length) {
+      container.innerHTML = "<div class='text-muted small'>Sin datos</div>";
+      return;
+    }
+    const width = container.clientWidth || 600;
+    const height = container.clientHeight || 260;
+    const padding = 24;
+    const values = series.map((p) => p.value || 0);
+    const maxVal = Math.max(...values, 1);
+
+    const points = series.map((p, idx) => {
+      const x = padding + (idx * (width - padding * 2)) / (series.length - 1 || 1);
+      const y = height - padding - ((p.value || 0) / maxVal) * (height - padding * 2);
+      return `${x},${y}`;
+    });
+
+    const svg = `
+      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+        <defs>
+          <linearGradient id="lineGradient" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%" stop-color="#2563eb" />
+            <stop offset="100%" stop-color="#60a5fa" />
+          </linearGradient>
+        </defs>
+        <polyline fill="none" stroke="url(#lineGradient)" stroke-width="3" points="${points.join(" ")}" />
+        ${series
+          .map((p, idx) => {
+            const x = padding + (idx * (width - padding * 2)) / (series.length - 1 || 1);
+            const y = height - padding - ((p.value || 0) / maxVal) * (height - padding * 2);
+            return `<circle cx="${x}" cy="${y}" r="3" fill="#2563eb" />`;
+          })
+          .join("")}
+      </svg>`;
+    container.innerHTML = svg;
+  };
+
+  window.addEventListener("resize", renderChart);
+  applyCurrency("USD");
+  renderChart();
+</script>
+{% endblock %}

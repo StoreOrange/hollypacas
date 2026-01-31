@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+              <li class="breadcrumb-item"><a href="/data">Datos</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Roles</li>
+            </ol>
+          </nav>
+          <h1 class="h5 mb-1">Catalogo de roles</h1>
+          <p class="text-muted mb-0">Define perfiles de acceso al sistema.</p>
+        </div>
+        <div class="d-none d-md-block">
+          <a class="btn btn-outline-secondary btn-sm" href="/data">
+            <i class="bi bi-grid"></i>
+            Catalogos
+          </a>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-2">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2">{{ success }}</div>
+      {% endif %}
+
+      <div class="row g-4">
+        <div class="col-lg-8">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">{{ "Editar rol" if edit_item else "Nuevo rol" }}</div>
+            <form class="row g-3" method="post" action="{{ '/data/roles/' ~ edit_item.id ~ '/update' if edit_item else '/data/roles' }}">
+              <div class="col-md-6">
+                <label class="odoo-field-label">Nombre *</label>
+                <input class="form-control odoo-input" name="nombre" required value="{{ edit_item.name if edit_item else '' }}" />
+              </div>
+              <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary">Guardar</button>
+                {% if edit_item %}
+                <a class="btn btn-outline-secondary" href="/data/roles">Cancelar</a>
+                {% endif %}
+              </div>
+            </form>
+          </div>
+
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Listado de roles</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr>
+                    <th>Rol</th>
+                    <th class="text-end">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item in items %}
+                  <tr>
+                    <td class="fw-semibold">{{ item.name }}</td>
+                    <td class="text-end">
+                      <a class="btn btn-sm btn-outline-secondary" href="/data/roles?edit_id={{ item.id }}">Editar</a>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Catalogos</div>
+            <div class="d-grid gap-2">
+              <a class="btn btn-outline-secondary" href="/data">Panel de datos</a>
+              <a class="btn btn-outline-secondary" href="/data/usuarios">Usuarios</a>
+              <a class="btn btn-outline-secondary" href="/data/vendedores">Vendedores</a>
+              <a class="btn btn-outline-secondary" href="/data/clientes">Clientes</a>
+              <a class="btn btn-outline-secondary" href="/data/sucursales">Sucursales</a>
+              <a class="btn btn-outline-secondary" href="/data/bodegas">Bodegas</a>
+              <a class="btn btn-outline-secondary" href="/data/bancos">Bancos</a>
+              <a class="btn btn-outline-secondary" href="/data/formas-pago">Formas de pago</a>
+              <a class="btn btn-outline-secondary" href="/data/pos-print">Impresion POS</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-end text-muted small mt-4">
+        <a class="btn btn-outline-secondary btn-sm" href="/data">
+          <i class="bi bi-grid"></i>
+          Volver a catalogos
+        </a>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+

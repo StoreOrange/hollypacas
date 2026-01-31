@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+              <li class="breadcrumb-item">Datos</li>
+              <li class="breadcrumb-item active" aria-current="page">Catalogos</li>
+            </ol>
+          </nav>
+          <h1 class="h5 mb-1">Catalogos maestros</h1>
+          <p class="text-muted mb-0">Administra usuarios, roles y referencias clave del ERP.</p>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="row g-4">
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/home">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Panel principal</div>
+                    <span class="badge text-bg-success">
+                      <i class="bi bi-speedometer2"></i>
+                      Home
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Volver al menu principal del ERP.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/usuarios">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Usuarios</div>
+                    <span class="badge text-bg-success">
+                      <i class="bi bi-person-badge"></i>
+                      Gestion
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Crear, editar y desactivar usuarios del sistema.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/clientes">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Clientes</div>
+                    <span class="badge text-bg-secondary">
+                      <i class="bi bi-people"></i>
+                      CRM
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Registro de clientes e identificacion.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/sucursales">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Sucursales</div>
+                    <span class="badge text-bg-primary">
+                      <i class="bi bi-diagram-3"></i>
+                      Operacion
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Gestiona sedes y puntos de venta.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/bodegas">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Bodegas</div>
+                    <span class="badge text-bg-primary">
+                      <i class="bi bi-boxes"></i>
+                      Stock
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Bodegas asociadas a cada sucursal.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/roles">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Roles</div>
+                    <span class="badge text-bg-primary">
+                      <i class="bi bi-shield-lock"></i>
+                      Seguridad
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Perfiles de acceso y permisos base.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/permisos">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Permisos</div>
+                    <span class="badge text-bg-primary">
+                      <i class="bi bi-diagram-3"></i>
+                      Acceso
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Visibilidad de menus y accesos por rol.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/vendedores">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Vendedores</div>
+                    <span class="badge text-bg-secondary">
+                      <i class="bi bi-person-lines-fill"></i>
+                      Ventas
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Catalogo de vendedores y estado activo.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/bancos">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Bancos</div>
+                    <span class="badge text-bg-secondary">
+                      <i class="bi bi-bank"></i>
+                      Finanzas
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Listado oficial de bancos y cuentas.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/formas-pago">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Formas de pago</div>
+                    <span class="badge text-bg-secondary">
+                      <i class="bi bi-credit-card-2-front"></i>
+                      Cobros
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Efectivo, tarjeta, banco y credito.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/recibos-rubros">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Rubros de recibo</div>
+                    <span class="badge text-bg-secondary">
+                      <i class="bi bi-bookmark-star"></i>
+                      ROC
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Clasificacion de gastos e ingresos.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/recibos-motivos">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Motivos de recibo</div>
+                    <span class="badge text-bg-secondary">
+                      <i class="bi bi-list-check"></i>
+                      ROC
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Motivos de ingreso y egreso.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/pos-print">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Impresion POS</div>
+                    <span class="badge text-bg-secondary">
+                      <i class="bi bi-printer"></i>
+                      Ticket
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Configura impresoras y copias por sucursal.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/cuentas-contables">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Plan de cuentas</div>
+                    <span class="badge text-bg-secondary">
+                      <i class="bi bi-journal-bookmark"></i>
+                      PCGA
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Cuentas contables y niveles.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/data/notificaciones">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Notificaciones</div>
+                    <span class="badge text-bg-secondary">
+                      <i class="bi bi-envelope-at"></i>
+                      Correo
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Emisor y destinatarios para alertas.</p>
+                </div>
+              </a>
+            </div>
+            <div class="col-md-6 col-xl-4">
+              <a class="text-decoration-none" href="/inventory">
+                <div class="border rounded-3 p-4 h-100">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div class="fw-semibold">Productos</div>
+                    <span class="badge text-bg-secondary">
+                      <i class="bi bi-box-seam"></i>
+                      Catalogo
+                    </span>
+                  </div>
+                  <p class="text-muted mt-2 mb-0">Productos, lineas y segmentos.</p>
+                </div>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

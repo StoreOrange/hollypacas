@@ -1,49 +1,35 @@
 from fastapi import FastAPI
-from .routers import auth
-from .database import Base, engine
-from .database import SessionLocal
-from .models.user import User
-from .core.security import hash_password
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+
+from .core.init_db import init_db
+from .routers import auth, inventory, web
 
 
 app = FastAPI(title="ERP System Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permitir peticiones desde cualquier origen
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Aceptar TODOS los métodos, incluyendo OPTIONS
-    allow_headers=["*"],  # Aceptar todos los headers (Content-Type, Authorization, etc.)
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-Base.metadata.create_all(bind=engine)
-
 app.include_router(auth.router)
+app.include_router(inventory.router)
+app.include_router(web.router)
+
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.state.templates = Jinja2Templates(directory="app/templates")
+
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
+
 
 @app.get("/")
 def root():
-    return {"message": "API ERP lista 🔥"}
-
-
-def create_initial_admin():
-    db = SessionLocal()
-    admin_email = "admin@erp.com"
-
-    existing = db.query(User).filter(User.email == admin_email).first()
-
-    if not existing:
-        admin = User(
-            full_name="Administrador",
-            email=admin_email,
-            hashed_password=hash_password("1234"),
-            is_active=True
-        )
-        db.add(admin)
-        db.commit()
-        db.refresh(admin)
-        print(">>> Usuario admin creado (admin@erp.com / 1234)")
-    else:
-        print(">>> Usuario admin ya existe")
-
-create_initial_admin()
+    return {"message": "API ERP lista"}
