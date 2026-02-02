@@ -88,6 +88,30 @@
         </div>
       </div>
 
+      <div class="odoo-kpis">
+        <div class="odoo-kpi">
+          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
+            <i class="bi bi-building text-sky-600"></i>
+            Central (items / saldo)
+          </div>
+          <strong>{{ central_items }} / {{ "%.2f"|format(central_qty) }}</strong>
+        </div>
+        <div class="odoo-kpi">
+          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
+            <i class="bi bi-geo-alt text-indigo-600"></i>
+            Esteli (items / saldo)
+          </div>
+          <strong>{{ esteli_items }} / {{ "%.2f"|format(esteli_qty) }}</strong>
+        </div>
+        <div class="odoo-kpi">
+          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
+            <i class="bi bi-diagram-2 text-emerald-600"></i>
+            Global (items / saldo)
+          </div>
+          <strong>{{ global_items }} / {{ "%.2f"|format(global_qty) }}</strong>
+        </div>
+      </div>
+
     {% if error %}
     <div class="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-2" data-error-banner>
       {{ error }}
@@ -98,6 +122,29 @@
       {{ success }}
     </div>
     {% endif %}
+
+    <div class="odoo-card mt-4">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <div class="odoo-section-title">Carga masiva (Excel)</div>
+          <div class="text-sm text-slate">Importa productos y saldos por bodega usando la plantilla oficial.</div>
+        </div>
+        <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2" href="/inventory/import/template">
+          <i class="bi bi-download"></i>
+          Descargar plantilla
+        </a>
+      </div>
+      <form class="d-flex flex-wrap align-items-center gap-3" method="post" action="/inventory/import" enctype="multipart/form-data">
+        <input name="file" type="file" accept=".xlsx" class="form-control form-control-sm" required />
+        <button class="btn btn-primary btn-sm d-inline-flex align-items-center gap-2" type="submit">
+          <i class="bi bi-upload"></i>
+          Importar Excel
+        </button>
+      </form>
+      <div class="text-xs text-slate mt-2">
+        Columnas: codigo, descripcion, linea, segmento, costo_usd, precio_usd, precio_cs, saldo_central, saldo_esteli.
+      </div>
+    </div>
 
     <div class="odoo-card">
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
@@ -498,17 +545,17 @@
       </div>
       <div id="tab-import" class="modal-panel hidden">
         <p class="text-xs text-slate">
-          CSV con columnas: cod_producto, descripcion, linea, segmento, precio_venta1_usd, precio_venta2_usd, precio_venta3_usd, costo_producto_usd, existencia, activo.
+          Excel con columnas: codigo, descripcion, linea, segmento, costo_usd, precio_usd, precio_cs, saldo_central, saldo_esteli.
         </p>
         <a class="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-sky-800" href="/inventory/import/template">
           <i class="bi bi-download"></i>
-          Descargar formato CSV
+          Descargar plantilla Excel
         </a>
         <form class="mt-3 space-y-3" method="post" action="/inventory/import" enctype="multipart/form-data">
-          <input name="file" type="file" accept=".csv" class="w-full rounded-xl border border-slate-200 px-3 py-2 bg-white text-sm" required />
+          <input name="file" type="file" accept=".xlsx" class="w-full rounded-xl border border-slate-200 px-3 py-2 bg-white text-sm" required />
           <button class="w-full rounded-xl border border-sky-200 bg-sky-50 py-2 font-semibold text-sky-900 hover:bg-sky-100 inline-flex items-center justify-center gap-2">
             <i class="bi bi-upload"></i>
-            Importar CSV
+            Importar Excel
           </button>
         </form>
       </div>

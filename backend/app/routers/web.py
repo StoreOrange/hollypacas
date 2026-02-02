@@ -12,12 +12,12 @@ from email.message import EmailMessage
 import io
 from pathlib import Path
 from dotenv import dotenv_values
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font
 from reportlab.lib import colors
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -31,7 +31,7 @@ from ..core.security import (
     hash_password,
     verify_password,
 )
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from ..models.inventory import (
@@ -1059,23 +1059,37 @@ def login_action(
             status_code=403,
         )
 
-    token = create_access_token({"sub": user.email})
+    # Keep sessions alive by default for POS usage (1 year).
+    expires = timedelta(days=365)
+    token = create_access_token({"sub": user.email}, expires_delta=expires)
     response = RedirectResponse("/home", status_code=302)
-    max_age = 60 * 60 * 24 * 30 if remember else None
+    max_age = int(expires.total_seconds())
+    expires_at = datetime.now(timezone.utc) + expires
+    host = request.url.hostname or ""
+    cookie_domain = None
+    if host and host not in {"localhost", "127.0.0.1"} and host.count(".") >= 1:
+        cookie_domain = f".{host.split('.', 1)[1]}"
     response.set_cookie(
         "access_token",
         token,
         httponly=True,
         samesite="lax",
         max_age=max_age,
+        expires=expires_at,
+        path="/",
+        domain=cookie_domain,
     )
     return response
 
 
 @router.get("/logout")
-def logout():
+def logout(request: Request):
     response = RedirectResponse("/login", status_code=302)
-    response.delete_cookie("access_token")
+    host = request.url.hostname or ""
+    cookie_domain = None
+    if host and host not in {"localhost", "127.0.0.1"} and host.count(".") >= 1:
+        cookie_domain = f".{host.split('.', 1)[1]}"
+    response.delete_cookie("access_token", path="/", domain=cookie_domain)
     return response
 
 
@@ -1129,6 +1143,7 @@ def inventory_page(
     if not show_inactive:
         productos_query = productos_query.filter(Producto.activo.is_(True))
     productos = productos_query.all()
+    bodegas = db.query(Bodega).filter(Bodega.activo.is_(True)).order_by(Bodega.id).all()
     lineas = db.query(Linea).order_by(Linea.linea).all()
     segmentos = db.query(Segmento).order_by(Segmento.segmento).all()
     error = request.query_params.get("error")
@@ -1139,12 +1154,45 @@ def inventory_page(
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
+    product_ids = [p.id for p in productos]
+    bodega_ids = [b.id for b in bodegas]
+    balances = _balances_by_bodega(db, bodega_ids, product_ids)
+    bodega_central = next((b for b in bodegas if (b.code or "").lower() == "central"), None)
+    if not bodega_central:
+        bodega_central = next((b for b in bodegas if "central" in (b.name or "").lower()), None)
+    bodega_esteli = next((b for b in bodegas if (b.code or "").lower() == "esteli"), None)
+    if not bodega_esteli:
+        bodega_esteli = next((b for b in bodegas if "esteli" in (b.name or "").lower()), None)
+
+    def _sum_for_bodega(bodega: Optional[Bodega]) -> tuple[Decimal, int]:
+        if not bodega:
+            return Decimal("0"), 0
+        total_qty = Decimal("0")
+        count_items = 0
+        for producto in productos:
+            qty = balances.get((producto.id, bodega.id), Decimal("0"))
+            total_qty += qty
+            if qty > 0:
+                count_items += 1
+        return total_qty, count_items
+
+    central_qty, central_items = _sum_for_bodega(bodega_central)
+    esteli_qty, esteli_items = _sum_for_bodega(bodega_esteli)
+    global_qty = central_qty + esteli_qty
+    global_items = len({p.id for p in productos if (balances.get((p.id, bodega_central.id), Decimal("0")) if bodega_central else Decimal("0")) > 0 or (balances.get((p.id, bodega_esteli.id), Decimal("0")) if bodega_esteli else Decimal("0")) > 0})
     return request.app.state.templates.TemplateResponse(
         "inventory.html",
         {
             "request": request,
             "user": user,
             "productos": productos,
+            "bodegas": bodegas,
+            "central_qty": float(central_qty),
+            "esteli_qty": float(esteli_qty),
+            "global_qty": float(global_qty),
+            "central_items": central_items,
+            "esteli_items": esteli_items,
+            "global_items": global_items,
             "lineas": lineas,
             "segmentos": segmentos,
             "edit_product": edit_product,
@@ -4516,8 +4564,18 @@ def sales_products_search(
         .limit(100)
         .all()
     )
+    _, bodega = _resolve_branch_bodega(db, user)
+    balances: dict[tuple[int, int], Decimal] = {}
+    if bodega and productos:
+        product_ids = [p.id for p in productos]
+        balances = _balances_by_bodega(db, [bodega.id], product_ids)
     items = []
     for producto in productos:
+        existencia = 0.0
+        if bodega and balances:
+            existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0)
+        elif producto.saldo:
+            existencia = float(producto.saldo.existencia or 0)
         items.append(
             {
                 "id": producto.id,
@@ -4525,9 +4583,7 @@ def sales_products_search(
                 "descripcion": producto.descripcion,
                 "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
                 "precio_venta1": float(producto.precio_venta1 or 0),
-                "existencia": float(producto.saldo.existencia or 0)
-                if producto.saldo
-                else 0,
+                "existencia": existencia,
                 "combo_count": len(producto.combo_children or []),
             }
         )
@@ -6806,9 +6862,9 @@ def inventory_import_products(
     db: Session = Depends(get_db),
     _: User = Depends(_require_admin_web),
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
         target = redirect_to or "/inventory"
-        return RedirectResponse(f"{target}?error=Archivo+CSV+requerido", status_code=303)
+        return RedirectResponse(f"{target}?error=Archivo+Excel+(.xlsx)+requerido", status_code=303)
 
     rate_today = (
         db.query(ExchangeRate)
@@ -6825,33 +6881,93 @@ def inventory_import_products(
         target = redirect_to or "/inventory"
         return RedirectResponse(f"{target}?error=Archivo+vacio", status_code=303)
 
-    def to_float(value: Optional[str]) -> float:
+    def to_decimal(value) -> Decimal:
         if value is None:
-            return 0.0
-        cleaned = value.strip().replace(",", "")
+            return Decimal("0")
+        if isinstance(value, (int, float, Decimal)):
+            return Decimal(str(value))
+        cleaned = str(value).strip().replace(",", "")
         if not cleaned:
-            return 0.0
+            return Decimal("0")
         try:
-            return float(cleaned)
-        except ValueError:
-            return 0.0
+            return Decimal(cleaned)
+        except Exception:
+            return Decimal("0")
 
-    tasa = float(rate_today.rate)
-    rows = csv.DictReader(content.decode("utf-8-sig").splitlines())
-    for row in rows:
-        cod = (row.get("cod_producto") or "").strip()
-        descripcion = (row.get("descripcion") or "").strip()
+    tasa = Decimal(str(rate_today.rate))
+    wb = load_workbook(io.BytesIO(content), data_only=True)
+    ws = wb.active
+    header_row = [str(cell.value).strip() if cell.value is not None else "" for cell in ws[1]]
+    header_map = {name.lower(): idx for idx, name in enumerate(header_row)}
+
+    def col_idx(*names: str) -> Optional[int]:
+        for name in names:
+            idx = header_map.get(name.lower())
+            if idx is not None:
+                return idx
+        return None
+
+    idx_codigo = col_idx("codigo", "cod_producto", "cod")
+    idx_desc = col_idx("descripcion", "descripción", "nombre")
+    idx_linea = col_idx("linea")
+    idx_segmento = col_idx("segmento")
+    idx_costo_usd = col_idx("costo_usd", "costo_producto_usd", "costo")
+    idx_precio_usd = col_idx("precio_usd", "precio_venta1_usd")
+    idx_precio_cs = col_idx("precio_cs", "precio_cordobas", "precio_venta1")
+    idx_saldo_central = col_idx("saldo_central", "existencia_central")
+    idx_saldo_esteli = col_idx("saldo_esteli", "existencia_esteli")
+
+    if idx_codigo is None or idx_desc is None:
+        target = redirect_to or "/inventory"
+        return RedirectResponse(f"{target}?error=Columnas+requeridas:+codigo+y+descripcion", status_code=303)
+
+    bodegas = db.query(Bodega).filter(Bodega.activo.is_(True)).all()
+    bodega_central = next(
+        (b for b in bodegas if (b.code or "").lower() == "central"),
+        None,
+    )
+    if not bodega_central:
+        bodega_central = next((b for b in bodegas if "central" in (b.name or "").lower()), None)
+    bodega_esteli = next(
+        (b for b in bodegas if (b.code or "").lower() == "esteli"),
+        None,
+    )
+    if not bodega_esteli:
+        bodega_esteli = next((b for b in bodegas if "esteli" in (b.name or "").lower()), None)
+
+    ingreso_tipo = (
+        db.query(IngresoTipo)
+        .filter(func.lower(IngresoTipo.nombre).like("%ajuste%"))
+        .first()
+    )
+    if not ingreso_tipo:
+        ingreso_tipo = (
+            db.query(IngresoTipo)
+            .filter(func.lower(IngresoTipo.nombre).like("%apertura%"))
+            .first()
+        )
+    if not ingreso_tipo:
+        ingreso_tipo = db.query(IngresoTipo).order_by(IngresoTipo.id).first()
+
+    central_items: list[tuple[Producto, Decimal]] = []
+    esteli_items: list[tuple[Producto, Decimal]] = []
+    total_rows = 0
+    skipped_rows = 0
+    created_count = 0
+    updated_count = 0
+
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        total_rows += 1
+        cod = str(row[idx_codigo]).strip() if row[idx_codigo] is not None else ""
+        descripcion = str(row[idx_desc]).strip() if row[idx_desc] is not None else ""
         if not cod or not descripcion:
+            skipped_rows += 1
             continue
 
-        exists = db.query(Producto).filter(Producto.cod_producto == cod).first()
-        if exists:
-            continue
-
-        linea_name = (row.get("linea") or "").strip()
-        segmento_name = (row.get("segmento") or "").strip()
         linea = None
         segmento = None
+        linea_name = str(row[idx_linea]).strip() if idx_linea is not None and row[idx_linea] is not None else ""
+        segmento_name = str(row[idx_segmento]).strip() if idx_segmento is not None and row[idx_segmento] is not None else ""
         if linea_name:
             linea = (
                 db.query(Linea)
@@ -6873,35 +6989,115 @@ def inventory_import_products(
                 db.add(segmento)
                 db.flush()
 
-        precio1_usd = to_float(row.get("precio_venta1_usd"))
-        precio2_usd = to_float(row.get("precio_venta2_usd"))
-        precio3_usd = to_float(row.get("precio_venta3_usd"))
-        costo_usd = to_float(row.get("costo_producto_usd"))
-        existencia = to_float(row.get("existencia"))
-        activo_val = (row.get("activo") or "S").strip().upper()
-        activo = activo_val not in {"N", "NO", "0", "FALSE"}
+        costo_usd = to_decimal(row[idx_costo_usd]) if idx_costo_usd is not None else Decimal("0")
+        precio_usd = to_decimal(row[idx_precio_usd]) if idx_precio_usd is not None else Decimal("0")
+        precio_cs = to_decimal(row[idx_precio_cs]) if idx_precio_cs is not None else Decimal("0")
+        if precio_usd == 0 and precio_cs > 0:
+            precio_usd = (precio_cs / tasa) if tasa else Decimal("0")
+        if precio_cs == 0 and precio_usd > 0:
+            precio_cs = precio_usd * tasa
 
-        producto = Producto(
-            cod_producto=cod,
-            descripcion=descripcion,
-            linea_id=linea.id if linea else None,
-            segmento_id=segmento.id if segmento else None,
-            precio_venta1=precio1_usd * tasa,
-            precio_venta2=precio2_usd * tasa,
-            precio_venta3=precio3_usd * tasa,
-            precio_venta1_usd=precio1_usd,
-            precio_venta2_usd=precio2_usd,
-            precio_venta3_usd=precio3_usd,
+        producto = db.query(Producto).filter(Producto.cod_producto == cod).first()
+        if not producto:
+            producto = Producto(
+                cod_producto=cod,
+                descripcion=descripcion,
+                linea_id=linea.id if linea else None,
+                segmento_id=segmento.id if segmento else None,
+                precio_venta1=precio_cs,
+                precio_venta2=Decimal("0"),
+                precio_venta3=Decimal("0"),
+                precio_venta1_usd=precio_usd,
+                precio_venta2_usd=Decimal("0"),
+                precio_venta3_usd=Decimal("0"),
+                tasa_cambio=tasa,
+                costo_producto=costo_usd * tasa,
+                activo=True,
+            )
+            db.add(producto)
+            db.flush()
+            created_count += 1
+        else:
+            producto.descripcion = descripcion
+            if linea:
+                producto.linea_id = linea.id
+            if segmento:
+                producto.segmento_id = segmento.id
+            if precio_usd > 0:
+                producto.precio_venta1_usd = precio_usd
+                producto.precio_venta1 = precio_cs
+            if costo_usd > 0:
+                producto.costo_producto = costo_usd * tasa
+            producto.tasa_cambio = tasa
+            updated_count += 1
+
+        saldo_central = to_decimal(row[idx_saldo_central]) if idx_saldo_central is not None else Decimal("0")
+        saldo_esteli = to_decimal(row[idx_saldo_esteli]) if idx_saldo_esteli is not None else Decimal("0")
+
+        if bodega_central and saldo_central > 0:
+            central_items.append((producto, saldo_central))
+        if bodega_esteli and saldo_esteli > 0:
+            esteli_items.append((producto, saldo_esteli))
+
+        # No mezclar bodegas en el saldo global: se mantiene en cero y
+        # el saldo por bodega se calcula desde los movimientos.
+        saldo_row = db.query(SaldoProducto).filter(SaldoProducto.producto_id == producto.id).first()
+        if not saldo_row:
+            db.add(SaldoProducto(producto_id=producto.id, existencia=Decimal("0")))
+        else:
+            saldo_row.existencia = Decimal("0")
+
+    def create_ingreso(bodega: Bodega, items: list[tuple[Producto, Decimal]]) -> None:
+        if not items:
+            return
+        ingreso = IngresoInventario(
+            tipo_id=ingreso_tipo.id if ingreso_tipo else 1,
+            bodega_id=bodega.id,
+            proveedor_id=None,
+            fecha=date.today(),
+            moneda="USD",
             tasa_cambio=tasa,
-            costo_producto=costo_usd * tasa,
-            activo=activo,
+            total_usd=Decimal("0"),
+            total_cs=Decimal("0"),
+            observacion="Carga inicial por importacion",
+            usuario_registro="Importador",
         )
-        db.add(producto)
+        db.add(ingreso)
         db.flush()
-        db.add(SaldoProducto(producto_id=producto.id, existencia=existencia))
+        total_usd = Decimal("0")
+        total_cs = Decimal("0")
+        for producto, qty in items:
+            costo_unit_usd = Decimal(str(producto.costo_producto or 0)) / tasa if tasa else Decimal("0")
+            subtotal_usd = costo_unit_usd * qty
+            subtotal_cs = subtotal_usd * tasa
+            total_usd += subtotal_usd
+            total_cs += subtotal_cs
+            db.add(
+                IngresoItem(
+                    ingreso_id=ingreso.id,
+                    producto_id=producto.id,
+                    cantidad=qty,
+                    costo_unitario_usd=costo_unit_usd,
+                    costo_unitario_cs=costo_unit_usd * tasa,
+                    subtotal_usd=subtotal_usd,
+                    subtotal_cs=subtotal_cs,
+                )
+            )
+        ingreso.total_usd = total_usd
+        ingreso.total_cs = total_cs
+
+    if bodega_central:
+        create_ingreso(bodega_central, central_items)
+    if bodega_esteli:
+        create_ingreso(bodega_esteli, esteli_items)
 
     db.commit()
-    return RedirectResponse(redirect_to or "/inventory", status_code=303)
+    target = redirect_to or "/inventory"
+    msg = (
+        f"Importacion completa. Filas: {total_rows}. "
+        f"Creados: {created_count}. Actualizados: {updated_count}. Omitidos: {skipped_rows}."
+    )
+    return RedirectResponse(f"{target}?success={msg}", status_code=303)
 
 
 @router.get("/inventory/import/template")
@@ -6909,26 +7105,120 @@ def inventory_import_template(
     _: User = Depends(_require_admin_web),
 ):
     headers = [
-        "cod_producto",
+        "codigo",
         "descripcion",
         "linea",
         "segmento",
-        "precio_venta1_usd",
-        "precio_venta2_usd",
-        "precio_venta3_usd",
-        "costo_producto_usd",
-        "existencia",
-        "activo",
+        "costo_usd",
+        "precio_usd",
+        "precio_cs",
+        "saldo_central",
+        "saldo_esteli",
     ]
-    content = io.StringIO()
-    writer = csv.writer(content)
-    writer.writerow(headers)
-    content.seek(0)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Inventario"
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
     return StreamingResponse(
-        content,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=productos_template.csv"},
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=productos_template.xlsx"},
     )
+
+
+@router.post("/inventory/import/preview")
+def inventory_import_preview(
+    file: UploadFile = File(...),
+    _: User = Depends(_require_admin_web),
+):
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        return HTMLResponse(
+            "<div class='alert alert-warning py-2 px-3'>Archivo Excel (.xlsx) requerido.</div>"
+        )
+    content = file.file.read()
+    if not content:
+        return HTMLResponse(
+            "<div class='alert alert-warning py-2 px-3'>Archivo vacio.</div>"
+        )
+    wb = load_workbook(io.BytesIO(content), data_only=True)
+    ws = wb.active
+    headers = [str(cell.value).strip() if cell.value is not None else "" for cell in ws[1]]
+    rows = []
+    total_rows = 0
+    skipped_rows = 0
+    idx_codigo = None
+    idx_desc = None
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row:
+            continue
+        total_rows += 1
+        rows.append([cell if cell is not None else "" for cell in row])
+    if headers:
+        header_map = {name.lower(): idx for idx, name in enumerate(headers)}
+        idx_codigo = header_map.get("codigo")
+        idx_desc = header_map.get("descripcion")
+    if idx_codigo is not None or idx_desc is not None:
+        for row in rows:
+            cod = str(row[idx_codigo]).strip() if idx_codigo is not None and row[idx_codigo] is not None else ""
+            desc = str(row[idx_desc]).strip() if idx_desc is not None and row[idx_desc] is not None else ""
+            if not cod or not desc:
+                skipped_rows += 1
+    if not headers:
+        return HTMLResponse(
+            "<div class='alert alert-warning py-2 px-3'>No se detectaron columnas.</div>"
+        )
+    table = [
+        "<div class='mt-3'>",
+        "<div class='fw-semibold mb-2'>Vista previa (todas las filas)</div>",
+        f"<div class='small text-muted mb-2'>Filas detectadas: {total_rows}. Omitidas por codigo/descripcion vacios: {skipped_rows}.</div>",
+        "<div class='table-responsive'>",
+        "<table class='table table-sm table-striped align-middle'>",
+        "<thead><tr>",
+    ]
+    for h in headers:
+        table.append(f"<th class='text-nowrap'>{h}</th>")
+    table.append("</tr></thead><tbody>")
+    for row in rows:
+        table.append("<tr>")
+        for cell in row:
+            table.append(f"<td class='text-nowrap'>{cell}</td>")
+        table.append("</tr>")
+    table.append("</tbody></table></div></div>")
+    return HTMLResponse("".join(table))
+
+
+@router.post("/inventory/import/reset")
+def inventory_import_reset(
+    redirect_to: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(_require_admin_web),
+):
+    # Guard rail: avoid wiping products if there are sales linked.
+    ventas_count = db.query(VentaItem).count()
+    if ventas_count > 0:
+        target = redirect_to or "/inventory"
+        return RedirectResponse(
+            f"{target}?error=No+se+puede+limpiar+inventario+con+ventas+registradas",
+            status_code=303,
+        )
+
+    db.query(IngresoItem).delete()
+    db.query(IngresoInventario).delete()
+    db.query(EgresoItem).delete()
+    db.query(EgresoInventario).delete()
+    db.query(SaldoProducto).delete()
+    db.query(ProductoCombo).delete()
+    db.query(Producto).delete()
+    db.commit()
+
+    target = redirect_to or "/inventory"
+    return RedirectResponse(f"{target}?success=Inventario+limpio", status_code=303)
 
 
 @router.get("/finance/rates")
