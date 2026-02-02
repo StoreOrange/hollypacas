@@ -102,8 +102,18 @@
       </div>
       {% endif %}
       {% if success %}
-      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2" data-success-banner>
-        {{ success }}
+      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2 flex flex-wrap items-center justify-between gap-3" data-success-banner>
+        <span>{{ success }}</span>
+        {% if print_id %}
+        <a
+          href="/sales/{{ print_id }}/ticket/print"
+          target="_blank"
+          rel="noopener"
+          class="rounded-full bg-emerald-600 text-white text-xs font-semibold px-4 py-2 shadow-sm hover:bg-emerald-700 transition"
+        >
+          Ver e imprimir ticket
+        </a>
+        {% endif %}
       </div>
       {% endif %}
 
@@ -2507,11 +2517,6 @@
     });
   }
   {% endif %}
-  {% if print_id %}
-  const autoPrint = {{ "true" if pos_print and pos_print.auto_print else "false" }};
-  if (!autoPrint) {
-    window.open("/sales/{{ print_id }}/ticket", "pos_ticket");
-  }
-  {% endif %}
+  // La impresion se hace manual con el boton de vista previa.
 </script>
 {% endblock %}

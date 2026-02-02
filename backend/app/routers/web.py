@@ -3140,23 +3140,12 @@ def sales_reprint(
     )
     if not factura or not factura.bodega or not factura.bodega.branch:
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
-    pos_print = (
-        db.query(PosPrintSetting)
-        .filter(PosPrintSetting.branch_id == factura.bodega.branch.id)
-        .first()
+    return JSONResponse(
+        {
+            "ok": True,
+            "print_url": f"/sales/{factura.id}/ticket/print",
+        }
     )
-    if not pos_print:
-        return JSONResponse({"ok": False, "message": "Configura impresion POS primero"}, status_code=400)
-    try:
-        _print_pos_ticket(
-            factura,
-            pos_print.printer_name,
-            pos_print.copies,
-            pos_print.sumatra_path,
-        )
-    except Exception:
-        return JSONResponse({"ok": False, "message": "No se pudo reimprimir"}, status_code=500)
-    return JSONResponse({"ok": True})
 
 
 @router.post("/sales/{venta_id}/reversion/request")
