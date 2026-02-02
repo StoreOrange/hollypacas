@@ -3143,7 +3143,7 @@ def sales_reprint(
     return JSONResponse(
         {
             "ok": True,
-            "print_url": f"/sales/{factura.id}/ticket/print",
+            "print_url": f"/sales/{factura.id}/ticket",
         }
     )
 
