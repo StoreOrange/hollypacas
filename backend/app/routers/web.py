@@ -3143,7 +3143,7 @@ def sales_reprint(
     return JSONResponse(
         {
             "ok": True,
-            "print_url": f"/sales/{factura.id}/ticket",
+            "print_url": f"/sales/{factura.id}/ticket/print",
         }
     )
 
@@ -5161,7 +5161,21 @@ def sales_ticket_print(
         return f"{value:,.2f}"
 
     items = []
+    line_count = 0
+    line_count += 1  # company
+    line_count += 1  # ruc
+    line_count += 1  # telefono
+    line_count += len(direccion_lines)
+    line_count += 1  # sucursal
+    line_count += 1  # divider
+    line_count += 5  # factura/fecha/cliente/id/vendedor
+    line_count += 1  # divider
     for item in factura.items:
+        desc_lines = wrap_text(item.producto.descripcion if item.producto else "-", 32)
+        line_count += 1  # codigo
+        line_count += len(desc_lines)
+        line_count += 2  # qty/price + desc/subtotal
+        line_count += 1  # divider
         qty = float(item.cantidad or 0)
         price = (
             float(item.precio_unitario_cs or 0)
@@ -5184,6 +5198,7 @@ def sales_ticket_print(
         )
 
     pagos_render = []
+    line_count += 3  # subtotal/desc/total
     for pago in pagos:
         forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
         banco = pago.banco.nombre if pago.banco else ""
@@ -5194,6 +5209,14 @@ def sales_ticket_print(
             else float(pago.monto_usd or 0)
         )
         pagos_render.append({"label": label, "monto": monto})
+    if pagos_render:
+        line_count += 2  # divider + title
+        line_count += len(pagos_render)
+    line_count += 1  # vuelto/saldo
+    line_count += 4  # footer
+
+    line_height_mm = 4.0
+    page_height_mm = max(120.0, 14.0 + line_count * line_height_mm + 18.0)
 
     return request.app.state.templates.TemplateResponse(
         "sales_ticket_print.html",
@@ -5220,6 +5243,7 @@ def sales_ticket_print(
             "pagos": pagos_render,
             "format_amount": format_amount,
             "copies": copies,
+            "page_height_mm": page_height_mm,
             "version": settings.UI_VERSION,
         },
     )
