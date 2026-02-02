@@ -6214,7 +6214,10 @@ async def sales_create_invoice(
             )
         except Exception:
             pass
-    return RedirectResponse("/sales", status_code=303)
+    return RedirectResponse(
+        f"/sales?success=Venta+registrada&print_id={factura.id}",
+        status_code=303,
+    )
 
 
 @router.get("/sales/cobranza")
