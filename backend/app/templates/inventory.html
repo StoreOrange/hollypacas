@@ -94,21 +94,21 @@
             <i class="bi bi-building text-sky-600"></i>
             Central (items / saldo)
           </div>
-          <strong>{{ central_items }} / {{ "%.2f"|format(central_qty) }}</strong>
+          <strong>{{ central_items|default(0) }} / {{ "%.2f"|format(central_qty|default(0)) }}</strong>
         </div>
         <div class="odoo-kpi">
           <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
             <i class="bi bi-geo-alt text-indigo-600"></i>
             Esteli (items / saldo)
           </div>
-          <strong>{{ esteli_items }} / {{ "%.2f"|format(esteli_qty) }}</strong>
+          <strong>{{ esteli_items|default(0) }} / {{ "%.2f"|format(esteli_qty|default(0)) }}</strong>
         </div>
         <div class="odoo-kpi">
           <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
             <i class="bi bi-diagram-2 text-emerald-600"></i>
             Global (items / saldo)
           </div>
-          <strong>{{ global_items }} / {{ "%.2f"|format(global_qty) }}</strong>
+          <strong>{{ global_items|default(0) }} / {{ "%.2f"|format(global_qty|default(0)) }}</strong>
         </div>
       </div>
 
