@@ -35,19 +35,22 @@
         <div class="col-lg-9">
           <div class="odoo-card">
             <div class="odoo-section-title mb-3">Asignacion de permisos</div>
-            <form method="post" action="/data/permisos">
-              <div class="row g-3 align-items-end">
-                <div class="col-md-6">
-                  <label class="odoo-field-label">Rol *</label>
-                  <select class="form-select odoo-select" name="role_id" onchange="this.form.submit()">
-                    {% for role in roles %}
-                    <option value="{{ role.id }}" {% if selected_role and role.id == selected_role.id %}selected{% endif %}>
-                      {{ role.name | capitalize }}
-                    </option>
-                    {% endfor %}
-                  </select>
-                </div>
+            <div class="row g-3 align-items-end">
+              <div class="col-md-6">
+                <label class="odoo-field-label">Rol *</label>
+                <select
+                  class="form-select odoo-select"
+                  name="role_id"
+                  onchange="window.location.href = '/data/permisos?role_id=' + this.value"
+                >
+                  {% for role in roles %}
+                  <option value="{{ role.id }}" {% if selected_role and role.id == selected_role.id %}selected{% endif %}>
+                    {{ role.name | capitalize }}
+                  </option>
+                  {% endfor %}
+                </select>
               </div>
+            </div>
 
               {% if selected_role and selected_role.name == 'administrador' %}
               <div class="alert alert-primary mt-3 mb-0">
@@ -55,6 +58,9 @@
                 El rol administrador siempre tiene acceso total.
               </div>
               {% endif %}
+
+            <form method="post" action="/data/permisos">
+              <input type="hidden" name="role_id" value="{{ selected_role.id if selected_role else '' }}" />
 
               <div class="mt-4">
                 {% for group in permission_groups %}

@@ -4292,7 +4292,10 @@ def data_permisos(
         selected_role = roles[0]
     selected_permissions = set()
     if selected_role:
-        selected_permissions = {perm.name for perm in (selected_role.permissions or [])}
+        if selected_role.name == "administrador":
+            selected_permissions = set(_permission_catalog_names())
+        else:
+            selected_permissions = {perm.name for perm in (selected_role.permissions or [])}
     return request.app.state.templates.TemplateResponse(
         "data_permisos.html",
         {
