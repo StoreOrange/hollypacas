@@ -231,6 +231,7 @@
                     <th>Moneda</th>
                     <th class="text-end">Monto depositado</th>
                     <th>Obs.</th>
+                    <th class="text-end">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -249,6 +250,13 @@
                     <td>{{ dep.moneda }}</td>
                     <td class="text-end">{{ "%.2f"|format(dep.monto_usd if dep.moneda == 'USD' else dep.monto_cs) }}</td>
                     <td>{{ dep.observacion or "-" }}</td>
+                    <td class="text-end">
+                      <form method="post" action="/sales/depositos/{{ dep.id }}/delete" class="d-inline delete-deposito-form">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Eliminar deposito">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </form>
+                    </td>
                   </tr>
                   {% endfor %}
                 </tbody>
@@ -393,6 +401,19 @@
       if (depositoMonto) depositoMonto.value = formatMoney(row.dataset.monto || 0, row.dataset.moneda || "CS");
       if (depositoObservacion) depositoObservacion.value = row.dataset.observacion || "";
       if (bancoSelect) bancoSelect.dispatchEvent(new Event("change"));
+    });
+  });
+
+  document.querySelectorAll(".delete-deposito-form").forEach((form) => {
+    form.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (confirm("¿Eliminar este deposito? Esta accion no se puede deshacer.")) {
+        form.submit();
+      }
     });
   });
 

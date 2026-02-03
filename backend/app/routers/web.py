@@ -52,23 +52,24 @@ from ..models.inventory import (
     Segmento,
 )
 from ..models.sales import (
-      Banco,
-      CajaDiaria,
-      CierreCaja,
-      CuentaContable,
+    Banco,
+    CajaDiaria,
+    CierreCaja,
     Cliente,
-    CuentaBancaria,
     CobranzaAbono,
+    CuentaBancaria,
+    CuentaContable,
+    DepositoCliente,
     EmailConfig,
     FormaPago,
     NotificationRecipient,
     PosPrintSetting,
     ReciboCaja,
-    DepositoCliente,
     ReciboMotivo,
     ReciboRubro,
     ReversionToken,
     Vendedor,
+    VendedorBodega,
     VentaFactura,
     VentaItem,
     VentaPago,
@@ -234,6 +235,32 @@ def _resolve_branch_bodega(db: Session, user: User) -> tuple[Optional[Branch], O
                 .first()
             )
     return branch, bodega
+
+
+def _vendedores_for_bodega(db: Session, bodega: Optional[Bodega]) -> list[Vendedor]:
+    base = db.query(Vendedor).filter(Vendedor.activo.is_(True))
+    if not bodega:
+        return base.order_by(Vendedor.nombre).all()
+    assigned = (
+        base.join(VendedorBodega, VendedorBodega.vendedor_id == Vendedor.id)
+        .filter(VendedorBodega.bodega_id == bodega.id)
+        .order_by(Vendedor.nombre)
+        .all()
+    )
+    if assigned:
+        return assigned
+    return base.order_by(Vendedor.nombre).all()
+
+
+def _default_vendedor_id(db: Session, bodega: Optional[Bodega]) -> Optional[int]:
+    if not bodega:
+        return None
+    row = (
+        db.query(VendedorBodega)
+        .filter(VendedorBodega.bodega_id == bodega.id, VendedorBodega.is_default.is_(True))
+        .first()
+    )
+    return row.vendedor_id if row else None
 
 
 def _get_sumatra_path(config_path: Optional[str] = None) -> Optional[Path]:
@@ -1527,7 +1554,6 @@ def sales_page(
         .all()
     )
     clientes = db.query(Cliente).order_by(Cliente.nombre).all()
-    vendedores = db.query(Vendedor).order_by(Vendedor.nombre).all()
     formas_pago = db.query(FormaPago).order_by(FormaPago.nombre).all()
     bancos = db.query(Banco).order_by(Banco.nombre).all()
     cuentas = db.query(CuentaBancaria).order_by(CuentaBancaria.banco_id).all()
@@ -1541,6 +1567,7 @@ def sales_page(
         .first()
     )
     branch, bodega = _resolve_branch_bodega(db, user)
+    vendedores = _vendedores_for_bodega(db, bodega)
     next_invoice = None
     if branch and bodega:
         last_factura = (
@@ -1578,6 +1605,7 @@ def sales_page(
             "print_id": print_id,
             "next_invoice": next_invoice,
             "pos_print": pos_print,
+            "default_vendedor_id": _default_vendedor_id(db, bodega),
             "version": settings.UI_VERSION,
         },
     )
@@ -1636,7 +1664,7 @@ def sales_utilitario(
     ventas = (
         ventas_query.order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc()).all()
     )
-    vendedores = db.query(Vendedor).order_by(Vendedor.nombre).all()
+    vendedores = _vendedores_for_bodega(db, bodega)
 
     return request.app.state.templates.TemplateResponse(
         "sales_utilitario.html",
@@ -2269,7 +2297,7 @@ def sales_depositos(
             end_date = today_value
 
     branch, bodega = _resolve_branch_bodega(db, user)
-    vendedores = db.query(Vendedor).order_by(Vendedor.nombre).all()
+    vendedores = _vendedores_for_bodega(db, bodega)
     bancos = db.query(Banco).order_by(Banco.nombre).all()
     cuentas = db.query(CuentaBancaria).order_by(CuentaBancaria.banco_id).all()
 
@@ -2617,7 +2645,8 @@ def report_sales_detailed(
     )
 
     branches = db.query(Branch).order_by(Branch.name).all()
-    vendedores = db.query(Vendedor).order_by(Vendedor.nombre).all()
+    _, bodega = _resolve_branch_bodega(db, user)
+    vendedores = _vendedores_for_bodega(db, bodega)
 
     return request.app.state.templates.TemplateResponse(
         "report_sales_detailed.html",
@@ -2772,6 +2801,7 @@ def sales_depositos_export(
 ):
     start_date, end_date, vendedor_q, banco_q, moneda_q = _depositos_filters(request)
     branch, bodega = _resolve_branch_bodega(db, user)
+    vendedores = _vendedores_for_bodega(db, bodega)
     depositos_query = db.query(DepositoCliente)
     if bodega:
         depositos_query = depositos_query.filter(DepositoCliente.bodega_id == bodega.id)
@@ -3083,6 +3113,26 @@ async def sales_depositos_create(
 
     msg = "Deposito+actualizado" if deposito_id else "Deposito+registrado"
     return RedirectResponse(f"/sales/depositos?success={msg}", status_code=303)
+
+
+@router.post("/sales/depositos/{deposito_id}/delete")
+def sales_depositos_delete(
+    request: Request,
+    deposito_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.depositos")
+    _, bodega = _resolve_branch_bodega(db, user)
+    query = db.query(DepositoCliente).filter(DepositoCliente.id == deposito_id)
+    if bodega:
+        query = query.filter(DepositoCliente.bodega_id == bodega.id)
+    deposito = query.first()
+    if not deposito:
+        return RedirectResponse("/sales/depositos?error=Deposito+no+encontrado", status_code=303)
+    db.delete(deposito)
+    db.commit()
+    return RedirectResponse("/sales/depositos?success=Deposito+eliminado", status_code=303)
 
 
 @router.get("/sales/{venta_id}/detail")
@@ -3576,6 +3626,13 @@ def data_vendedores(
     if edit_id:
         edit_item = db.query(Vendedor).filter(Vendedor.id == int(edit_id)).first()
     items = db.query(Vendedor).order_by(Vendedor.nombre).all()
+    bodegas = db.query(Bodega).order_by(Bodega.name).all()
+    edit_bodega_ids = []
+    edit_default_bodega_id = None
+    if edit_item:
+        edit_bodega_ids = [asig.bodega_id for asig in (edit_item.assignments or [])]
+        default_assignment = next((asig for asig in (edit_item.assignments or []) if asig.is_default), None)
+        edit_default_bodega_id = default_assignment.bodega_id if default_assignment else None
     return request.app.state.templates.TemplateResponse(
         "data_vendedores.html",
         {
@@ -3583,6 +3640,9 @@ def data_vendedores(
             "user": user,
             "items": items,
             "edit_item": edit_item,
+            "bodegas": bodegas,
+            "edit_bodega_ids": edit_bodega_ids,
+            "edit_default_bodega_id": edit_default_bodega_id,
             "error": error,
             "success": success,
             "version": settings.UI_VERSION,
@@ -3594,6 +3654,8 @@ def data_vendedores(
 def data_create_vendedor(
     nombre: str = Form(...),
     telefono: Optional[str] = Form(None),
+    bodega_ids: Optional[list[str]] = Form(None),
+    default_bodega_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -3605,6 +3667,18 @@ def data_create_vendedor(
         return RedirectResponse("/data/vendedores?error=Vendedor+ya+existe", status_code=303)
     vendedor = Vendedor(nombre=nombre, telefono=telefono, activo=True)
     db.add(vendedor)
+    db.flush()
+    selected_ids = {int(b) for b in (bodega_ids or []) if str(b).strip()}
+    if default_bodega_id:
+        selected_ids.add(int(default_bodega_id))
+    for bodega_id in sorted(selected_ids):
+        db.add(
+            VendedorBodega(
+                vendedor_id=vendedor.id,
+                bodega_id=bodega_id,
+                is_default=default_bodega_id and int(default_bodega_id) == bodega_id,
+            )
+        )
     db.commit()
     return RedirectResponse("/data/vendedores?success=Vendedor+creado", status_code=303)
 
@@ -3615,6 +3689,8 @@ def data_update_vendedor(
     nombre: str = Form(...),
     telefono: Optional[str] = Form(None),
     activo: Optional[str] = Form(None),
+    bodega_ids: Optional[list[str]] = Form(None),
+    default_bodega_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -3624,6 +3700,18 @@ def data_update_vendedor(
     vendedor.nombre = nombre.strip()
     vendedor.telefono = telefono
     vendedor.activo = activo == "on"
+    selected_ids = {int(b) for b in (bodega_ids or []) if str(b).strip()}
+    if default_bodega_id:
+        selected_ids.add(int(default_bodega_id))
+    vendedor.assignments.clear()
+    for bodega_id in sorted(selected_ids):
+        vendedor.assignments.append(
+            VendedorBodega(
+                vendedor_id=vendedor.id,
+                bodega_id=bodega_id,
+                is_default=default_bodega_id and int(default_bodega_id) == bodega_id,
+            )
+        )
     db.commit()
     return RedirectResponse("/data/vendedores?success=Vendedor+actualizado", status_code=303)
 
@@ -6341,7 +6429,7 @@ def sales_cobranza(
         .first()
     )
     tasa = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
-    vendedores = db.query(Vendedor).order_by(Vendedor.nombre).all()
+    vendedores = _vendedores_for_bodega(db, bodega)
 
     return request.app.state.templates.TemplateResponse(
         "sales_cobranza.html",
@@ -6354,6 +6442,7 @@ def sales_cobranza(
             "producto_q": producto_q,
             "vendedor_q": vendedor_q,
             "vendedores": vendedores,
+            "default_vendedor_id": _default_vendedor_id(db, bodega),
             "total_saldo_cs": float(total_saldo_cs),
             "total_saldo_usd": float(total_saldo_usd),
             "version": settings.UI_VERSION,
