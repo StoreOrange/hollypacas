@@ -1934,6 +1934,9 @@
   }
 
   document.addEventListener("keydown", (event) => {
+    if (paymentModal && paymentModal.classList.contains("show")) {
+      return;
+    }
     if (comboModal && comboModal.classList.contains("show")) {
       return;
     }
@@ -2462,6 +2465,7 @@
   const paymentModal = document.getElementById("payment-modal");
   if (paymentModal) {
     paymentModal.addEventListener("show.bs.modal", () => {
+      productNavMode = "paused";
       paymentEnterStage = 0;
       updatePartySummary();
       if (payCliente) payCliente.textContent = clienteSummary?.textContent || "--";
@@ -2492,6 +2496,13 @@
       if (pagoMonto) {
         pagoMonto.focus();
         pagoMonto.select();
+      }
+    });
+    paymentModal.addEventListener("hidden.bs.modal", () => {
+      productNavMode = "search";
+      if (productSearch) {
+        productSearch.focus();
+        productSearch.select();
       }
     });
   }
