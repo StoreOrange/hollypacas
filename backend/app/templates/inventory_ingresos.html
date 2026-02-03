@@ -229,6 +229,7 @@
             <i class="bi bi-house-door"></i>
             <span class="fw-semibold">Ingreso de mercaderia en Bodega Central</span>
           </div>
+          <div id="ingreso-client-error" class="alert alert-warning py-2 px-3 mb-2 d-none" role="alert"></div>
           <div class="odoo-modal-section">
             <div class="d-flex align-items-center justify-content-between mb-3">
               <div class="odoo-modal-title">Datos del ingreso</div>
@@ -1121,6 +1122,15 @@
       todayHighlight: true,
       language: "es",
     });
+    if (!fechaField.value) {
+      const now = new Date();
+      const formatted = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      fechaField.value = formatted;
+      $(fechaField).datepicker("update", formatted);
+    }
+  } else if (fechaField && !fechaField.value) {
+    const now = new Date();
+    fechaField.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   }
 
   if (window.$ && $.fn.select2) {
@@ -1793,14 +1803,26 @@
       label.includes("import");
     if (requiere && !proveedorField?.value) missing.push("Proveedor");
     if (missing.length) {
+      const errorBanner = document.getElementById("ingreso-client-error");
+      if (errorBanner) {
+        errorBanner.textContent = `Faltan: ${missing.join(", ")}`;
+        errorBanner.classList.remove("d-none");
+      }
       if (typeof Swal !== "undefined") {
         Swal.fire({
           icon: "warning",
           title: "Campos obligatorios",
           text: `Faltan: ${missing.join(", ")}`,
         });
+      } else {
+        alert(`Faltan: ${missing.join(", ")}`);
       }
       return false;
+    }
+    const errorBanner = document.getElementById("ingreso-client-error");
+    if (errorBanner) {
+      errorBanner.classList.add("d-none");
+      errorBanner.textContent = "";
     }
     return true;
   };
