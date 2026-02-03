@@ -1,7 +1,11 @@
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-LOCAL_TZ = ZoneInfo("America/Managua")
+try:
+    LOCAL_TZ = ZoneInfo("America/Managua")
+except ZoneInfoNotFoundError:
+    # Fallback for environments without tzdata (e.g., some Windows installs)
+    LOCAL_TZ = timezone(timedelta(hours=-6))
 
 
 def local_now() -> datetime:
