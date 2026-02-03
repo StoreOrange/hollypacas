@@ -5738,9 +5738,6 @@ async def inventory_create_ingreso(
     def to_decimal(value: Optional[float]) -> Decimal:
         return Decimal(str(value or 0))
 
-    def to_decimal(value: Optional[float]) -> Decimal:
-        return Decimal(str(value or 0))
-
     tasa = float(rate_today.rate) if rate_today else 0
     fecha_value = date.fromisoformat(str(fecha).split("T")[0])
     ingreso = IngresoInventario(
@@ -5880,8 +5877,6 @@ async def inventory_create_egreso(
         cost = to_float(item_costs[index] if index < len(item_costs) else 0)
         if qty <= 0:
             continue
-        qty_dec = to_decimal(qty)
-
         producto = db.query(Producto).filter(Producto.id == int(product_id)).first()
         if not producto:
             db.rollback()
@@ -5917,8 +5912,8 @@ async def inventory_create_egreso(
         db.add(item)
 
         if producto.saldo:
-            existencia_actual = to_decimal(producto.saldo.existencia)
-            producto.saldo.existencia = existencia_actual - qty_dec
+            existencia_actual = float(producto.saldo.existencia or 0)
+            producto.saldo.existencia = existencia_actual - qty
 
     egreso.total_usd = total_usd
     egreso.total_cs = total_cs
