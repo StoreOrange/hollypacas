@@ -241,7 +241,7 @@
                   <i class="bi bi-journal-plus text-brand me-1"></i>
                   Tipo de ingreso *
                 </label>
-                <select id="field-tipo" name="tipo_id" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100" required>
+                <select id="field-tipo" name="tipo_id" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100">
                   <option value="">Selecciona</option>
                   {% for tipo in tipos %}
                   <option value="{{ tipo.id }}" data-requiere-proveedor="{{ 1 if tipo.requiere_proveedor else 0 }}">{{ tipo.nombre }}</option>
@@ -253,14 +253,14 @@
                   <i class="bi bi-calendar-event text-brand me-1"></i>
                   Fecha *
                 </label>
-                <input id="field-fecha" name="fecha" type="text" class="odoo-input form-control form-control-sm datepicker w-100" placeholder="Selecciona fecha" required />
+                <input id="field-fecha" name="fecha" type="text" class="odoo-input form-control form-control-sm datepicker w-100" placeholder="Selecciona fecha" />
               </div>
               <div class="col-xl-2 col-lg-3 col-md-6">
                 <label class="form-label text-sm font-semibold text-ink">
                   <i class="bi bi-box-seam text-brand me-1"></i>
                   Bodega *
                 </label>
-                <select name="bodega_id" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100" required>
+                <select name="bodega_id" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100">
                   <option value="">Selecciona</option>
                   {% for bodega in bodegas %}
                   <option value="{{ bodega.id }}" {% if user.default_bodega_id == bodega.id or (not user.default_bodega_id and bodega.code == "central") %}selected{% endif %}>{{ bodega.name }}</option>
@@ -284,7 +284,7 @@
                   <i class="bi bi-currency-exchange text-brand me-1"></i>
                   Moneda *
                 </label>
-                <select id="field-moneda" name="moneda" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100" required>
+                <select id="field-moneda" name="moneda" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100">
                   <option value="USD">USD</option>
                   <option value="CS">C$</option>
                 </select>
