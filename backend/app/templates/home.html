@@ -17,7 +17,14 @@
             <div class="odoo-title mt-2">Centro de operaciones</div>
             <div class="odoo-subtitle mt-1">Gestion integral para ventas, inventario y finanzas.</div>
           </div>
-          <div class="odoo-toolbar d-flex flex-column flex-sm-row gap-2 w-100 w-lg-auto">
+          <div class="d-flex d-lg-none align-items-center gap-2 w-100">
+            <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar">
+              <i class="bi bi-list"></i>
+              Menu
+            </button>
+            <span class="text-slate text-sm">Accesos rapidos</span>
+          </div>
+          <div class="odoo-toolbar d-none d-lg-flex flex-column flex-sm-row gap-2 w-100 w-lg-auto">
             <a class="btn btn-primary btn-sm shadow-sm d-inline-flex align-items-center gap-2" href="/inventory">
               <i class="bi bi-box-seam"></i>
               Catalogo de productos
@@ -102,6 +109,20 @@
             </a>
           </div>
           <div class="col-md-6 col-xl-4">
+            <a class="text-decoration-none" href="/inventory/caliente">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Inventario en Caliente</div>
+                  <span class="odoo-pill primary">
+                    <i class="bi bi-lightning-charge"></i>
+                    Stock
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Existencias en tiempo real por bodega.</p>
+              </div>
+            </a>
+          </div>
+          <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <a class="text-decoration-none" href="/reports">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
                 <div class="d-flex align-items-center justify-content-between">
@@ -115,7 +136,7 @@
               </div>
             </a>
           </div>
-          <div class="col-md-6 col-xl-4">
+          <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <a class="text-decoration-none" href="/inventory">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
                 <div class="d-flex align-items-center justify-content-between">
@@ -129,7 +150,7 @@
               </div>
             </a>
           </div>
-          <div class="col-md-6 col-xl-4">
+          <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <a class="text-decoration-none" href="/inventory/ingresos">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
                 <div class="d-flex align-items-center justify-content-between">
@@ -143,7 +164,7 @@
               </div>
             </a>
           </div>
-          <div class="col-md-6 col-xl-4">
+          <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <a class="text-decoration-none" href="/inventory/egresos">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
                 <div class="d-flex align-items-center justify-content-between">
@@ -157,7 +178,7 @@
               </div>
             </a>
           </div>
-          <div class="col-md-6 col-xl-4">
+          <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <a class="text-decoration-none" href="/finance">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
                 <div class="d-flex align-items-center justify-content-between">
@@ -171,7 +192,7 @@
               </div>
             </a>
           </div>
-          <div class="col-md-6 col-xl-4">
+          <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
               <div class="d-flex align-items-center justify-content-between">
                 <div class="odoo-section-title">Contabilidad</div>
@@ -183,7 +204,7 @@
               <p class="text-slate mt-2">Libros contables y conciliaciones.</p>
             </div>
           </div>
-          <div class="col-md-6 col-xl-4">
+          <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <a class="text-decoration-none" href="/data">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
                 <div class="d-flex align-items-center justify-content-between">
@@ -197,7 +218,7 @@
               </div>
             </a>
           </div>
-          <div class="col-md-6 col-xl-4">
+          <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
               <div class="d-flex align-items-center justify-content-between">
                 <div class="odoo-section-title">Ecommerce</div>

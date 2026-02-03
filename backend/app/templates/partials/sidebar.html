@@ -1,4 +1,4 @@
-<aside data-bs-sidebar class="odoo-sidebar sidebar bg-white border-end d-flex flex-column">
+<aside data-bs-sidebar class="odoo-sidebar sidebar bg-white border-end d-none d-lg-flex flex-column">
   {% set has_perms = request.state.has_permissions if request and request.state else false %}
   {% set perms = request.state.permission_names if has_perms else [] %}
   <div class="p-3 border-bottom">
@@ -123,3 +123,124 @@
     </a>
   </div>
 </aside>
+
+<div class="offcanvas offcanvas-start d-lg-none" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
+  <div class="offcanvas-header border-bottom">
+    <div class="d-flex align-items-center gap-2">
+      <div class="rounded-3 bg-primary text-white fw-bold px-2 py-1">HP</div>
+      <div>
+        <div class="fw-semibold text-dark" id="mobileSidebarLabel">Hollywood Pacas</div>
+        <div class="text-uppercase text-muted small">ERP Central</div>
+      </div>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+  </div>
+  <div class="offcanvas-body p-0 d-flex flex-column">
+    <div class="px-3 pt-3">
+      <div class="text-uppercase text-muted small fw-semibold">Modulos</div>
+    </div>
+    <div class="flex-grow-1 overflow-auto px-2 py-2">
+      <nav class="nav flex-column gap-2">
+        {% if not has_perms or 'menu.home' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/home">
+          <i class="bi bi-speedometer2 text-primary fs-5"></i>
+          <span class="nav-text">Panel</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales">
+          <i class="bi bi-cart-check text-primary fs-5"></i>
+          <span class="nav-text">Ventas</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales.caliente' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/ventas-caliente">
+          <i class="bi bi-fire text-primary fs-5"></i>
+          <span class="nav-text">Ventas en Caliente</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.reports' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/reports">
+          <i class="bi bi-bar-chart text-primary fs-5"></i>
+          <span class="nav-text">Informes</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales.cobranza' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/cobranza">
+          <i class="bi bi-collection text-primary fs-5"></i>
+          <span class="nav-text">Gestion de cobranza</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales.cierre' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/cierre">
+          <i class="bi bi-cash-stack text-primary fs-5"></i>
+          <span class="nav-text">Cierre de caja</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales.utilitario' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/utilitario">
+          <i class="bi bi-receipt text-primary fs-5"></i>
+          <span class="nav-text">Utilitario Ventas</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales.roc' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/roc">
+          <i class="bi bi-journal-text text-primary fs-5"></i>
+          <span class="nav-text">Recibos de caja</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales.depositos' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/depositos">
+          <i class="bi bi-bank text-primary fs-5"></i>
+          <span class="nav-text">Registro de depositos</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.inventory' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/inventory">
+          <i class="bi bi-box-seam text-primary fs-5"></i>
+          <span class="nav-text">Inventarios</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.inventory.caliente' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/inventory/caliente">
+          <i class="bi bi-lightning-charge text-primary fs-5"></i>
+          <span class="nav-text">Mi inventario en Caliente</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.inventory.ingresos' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/inventory/ingresos">
+          <i class="bi bi-box-arrow-in-down text-primary fs-5"></i>
+          <span class="nav-text">Ingresos Inventario</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.inventory.egresos' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/inventory/egresos">
+          <i class="bi bi-box-arrow-up text-primary fs-5"></i>
+          <span class="nav-text">Egresos Inventario</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.finance' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/finance">
+          <i class="bi bi-cash-stack text-primary fs-5"></i>
+          <span class="nav-text">Finanzas</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.data' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/data">
+          <i class="bi bi-grid text-primary fs-5"></i>
+          <span class="nav-text">Datos</span>
+        </a>
+        {% endif %}
+      </nav>
+    </div>
+    <div class="border-top p-3">
+      <div class="badge bg-light text-primary text-uppercase mb-2">Administrador</div>
+      <div class="fw-semibold text-dark">{{ user.full_name }}</div>
+      <div class="text-muted small">{{ user.email }}</div>
+      <a class="btn btn-sm btn-outline-secondary w-100 mt-2" href="/logout">
+        <i class="bi bi-box-arrow-right"></i>
+        <span class="nav-text">Cerrar sesion</span>
+      </a>
+    </div>
+  </div>
+</div>
