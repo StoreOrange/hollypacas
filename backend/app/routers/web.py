@@ -31,6 +31,7 @@ from ..core.security import (
     hash_password,
     verify_password,
 )
+from ..core.utils import local_now, local_now_naive, local_today
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -6096,17 +6097,23 @@ async def sales_create_invoice(
     width = 6
     numero = f"{prefix}-{next_seq:0{width}d}"
 
-    fecha_value = date.fromisoformat(str(fecha).split("T")[0])
+    now_local = local_now()
+    try:
+        fecha_value = date.fromisoformat(str(fecha).split("T")[0])
+    except (TypeError, ValueError):
+        fecha_value = local_today()
+    fecha_dt = datetime.combine(fecha_value, now_local.time()).replace(tzinfo=None)
     factura = VentaFactura(
         secuencia=next_seq,
         numero=numero,
         bodega_id=bodega.id,
         cliente_id=int(cliente_id) if cliente_id else None,
         vendedor_id=int(vendedor_id) if vendedor_id else None,
-        fecha=fecha_value,
+        fecha=fecha_dt,
         moneda=moneda,
         tasa_cambio=tasa if moneda == "USD" else None,
         usuario_registro=user.full_name,
+        created_at=local_now_naive(),
     )
     db.add(factura)
     db.flush()
