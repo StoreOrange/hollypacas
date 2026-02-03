@@ -1151,7 +1151,7 @@ def inventory_page(
     success = request.query_params.get("success")
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -1218,7 +1218,7 @@ def inventory_caliente(
     scope = scope_param
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -1371,7 +1371,7 @@ def inventory_ingresos_page(
     start_date = _parse_date(request.query_params.get("start_date"))
     end_date = _parse_date(request.query_params.get("end_date"))
     if not start_date and not end_date:
-        end_date = date.today()
+        end_date = local_today()
         start_date = end_date - timedelta(days=30)
     ingresos_query = db.query(IngresoInventario)
     if start_date:
@@ -1408,7 +1408,7 @@ def inventory_ingresos_page(
     print_id = request.query_params.get("print_id")
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -1454,7 +1454,7 @@ def inventory_egresos_page(
     start_date = _parse_date(request.query_params.get("start_date"))
     end_date = _parse_date(request.query_params.get("end_date"))
     if not start_date and not end_date:
-        end_date = date.today()
+        end_date = local_today()
         start_date = end_date - timedelta(days=30)
     egresos_query = db.query(EgresoInventario)
     if start_date:
@@ -1488,7 +1488,7 @@ def inventory_egresos_page(
     print_id = request.query_params.get("print_id")
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -1536,7 +1536,7 @@ def sales_page(
     print_id = request.query_params.get("print_id")
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -1604,8 +1604,8 @@ def sales_utilitario(
     vendedor_q = (request.query_params.get("vendedor") or "").strip()
     producto_q = (request.query_params.get("producto") or "").strip()
     if not start_date and not end_date:
-        start_date = date.today()
-        end_date = date.today()
+        start_date = local_today()
+        end_date = local_today()
 
     ventas_query = db.query(VentaFactura)
     branch, bodega = _resolve_branch_bodega(db, user)
@@ -1667,7 +1667,7 @@ def sales_roc(
     print_id = request.query_params.get("print_id")
     start_raw = request.query_params.get("start_date")
     end_raw = request.query_params.get("end_date")
-    today_value = date.today()
+    today_value = local_today()
     start_date = today_value
     end_date = today_value
     if start_raw or end_raw:
@@ -1689,7 +1689,7 @@ def sales_roc(
     recibos = recibos_query.order_by(ReciboCaja.fecha.desc(), ReciboCaja.id.desc()).limit(200).all()
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -1725,12 +1725,12 @@ def sales_cierre(
     success = request.query_params.get("success")
     print_id = request.query_params.get("print_id")
     fecha_raw = request.query_params.get("fecha")
-    fecha_value = date.today()
+    fecha_value = local_today()
     if fecha_raw:
         try:
             fecha_value = date.fromisoformat(str(fecha_raw))
         except ValueError:
-            fecha_value = date.today()
+            fecha_value = local_today()
 
     branch, bodega = _resolve_branch_bodega(db, user)
     rate_today = (
@@ -1847,12 +1847,12 @@ async def sales_cierre_create(
 ):
     form = await request.form()
     fecha_raw = form.get("fecha")
-    fecha_value = date.today()
+    fecha_value = local_today()
     if fecha_raw:
         try:
             fecha_value = date.fromisoformat(str(fecha_raw))
         except ValueError:
-            fecha_value = date.today()
+            fecha_value = local_today()
 
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch or not bodega:
@@ -2109,7 +2109,7 @@ async def sales_roc_create(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -2132,9 +2132,9 @@ async def sales_roc_create(
         try:
             fecha_value = date.fromisoformat(str(fecha_raw).split("T")[0])
         except ValueError:
-            fecha_value = date.today()
+            fecha_value = local_today()
     else:
-        fecha_value = date.today()
+        fecha_value = local_today()
 
     last_recibo = (
         db.query(ReciboCaja)
@@ -2255,7 +2255,7 @@ def sales_depositos(
     vendedor_q = request.query_params.get("vendedor_id")
     banco_q = request.query_params.get("banco_id")
     moneda_q = request.query_params.get("moneda")
-    today_value = date.today()
+    today_value = local_today()
     start_date = today_value
     end_date = today_value
     if start_raw or end_raw:
@@ -2350,7 +2350,7 @@ def sales_ventas_caliente(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.sales")
-    today = date.today()
+    today = local_today()
     first_day = date(today.year, today.month, 1)
     next_month = (first_day.replace(day=28) + timedelta(days=4)).replace(day=1)
     rate_today = (
@@ -2479,7 +2479,7 @@ def _sales_report_filters(request: Request):
     vendedor_id = request.query_params.get("vendedor_id")
     producto_q = (request.query_params.get("producto") or "").strip()
 
-    today = date.today()
+    today = local_today()
     start_date = today
     end_date = today
     if start_raw or end_raw:
@@ -2722,7 +2722,7 @@ def _depositos_filters(request: Request):
     vendedor_q = request.query_params.get("vendedor_id")
     banco_q = request.query_params.get("banco_id")
     moneda_q = request.query_params.get("moneda")
-    today_value = date.today()
+    today_value = local_today()
     start_date = today_value
     end_date = today_value
     if start_raw or end_raw:
@@ -2785,7 +2785,7 @@ def sales_depositos_export(
     grouped, total_cs, total_usd = _depositos_grouped(depositos)
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -3005,13 +3005,13 @@ async def sales_depositos_create(
         try:
             fecha_value = date.fromisoformat(str(fecha_raw).split("T")[0])
         except ValueError:
-            fecha_value = date.today()
+            fecha_value = local_today()
     else:
-        fecha_value = date.today()
+        fecha_value = local_today()
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -3337,8 +3337,8 @@ async def sales_reversion_confirm(
     factura.estado = "ANULADA"
     factura.reversion_motivo = token_row.motivo
     factura.revertida_por = user.full_name
-    factura.revertida_at = datetime.utcnow()
-    token_row.used_at = datetime.utcnow()
+    factura.revertida_at = local_now_naive()
+    token_row.used_at = local_now_naive()
     db.commit()
     return JSONResponse({"ok": True, "message": "Factura anulada"})
 
@@ -5299,7 +5299,7 @@ def inventory_create_product(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -5388,7 +5388,7 @@ def inventory_update_product(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -5718,7 +5718,7 @@ async def inventory_create_ingreso(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -5842,7 +5842,7 @@ async def inventory_create_egreso(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -6047,7 +6047,7 @@ async def sales_create_invoice(
     item_combo_groups = form.getlist("item_combo_group")
 
     if not fecha:
-        fecha = date.today().isoformat()
+        fecha = local_today().isoformat()
     if not moneda:
         moneda = "CS"
     if not vendedor_id:
@@ -6061,7 +6061,7 @@ async def sales_create_invoice(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -6263,7 +6263,7 @@ def sales_cobranza(
     end_raw = request.query_params.get("end_date")
     producto_q = (request.query_params.get("producto") or "").strip()
     vendedor_q = (request.query_params.get("vendedor_id") or "").strip()
-    today_value = date.today()
+    today_value = local_today()
     start_date = today_value
     end_date = today_value
     if start_raw or end_raw:
@@ -6333,7 +6333,7 @@ def sales_cobranza(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -6369,7 +6369,7 @@ def sales_cobranza_export(
     end_raw = request.query_params.get("end_date")
     producto_q = (request.query_params.get("producto") or "").strip()
     vendedor_q = (request.query_params.get("vendedor_id") or "").strip()
-    today_value = date.today()
+    today_value = local_today()
     start_date = today_value
     end_date = today_value
     if start_raw or end_raw:
@@ -6403,7 +6403,7 @@ def sales_cobranza_export(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -6668,7 +6668,7 @@ async def sales_cobranza_abono(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -6703,7 +6703,7 @@ async def sales_cobranza_abono(
         bodega_id=factura.bodega_id or user.default_bodega_id,
         secuencia=next_seq,
         numero=numero,
-        fecha=date.today(),
+        fecha=local_today(),
         moneda=moneda,
         tasa_cambio=tasa if tasa else None,
         monto_usd=monto_usd,
@@ -6784,7 +6784,7 @@ async def sales_cobranza_abono_update(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -6893,7 +6893,7 @@ def inventory_import_products(
 
     rate_today = (
         db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= date.today())
+        .filter(ExchangeRate.effective_date <= local_today())
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
@@ -7079,7 +7079,7 @@ def inventory_import_products(
             tipo_id=ingreso_tipo.id if ingreso_tipo else 1,
             bodega_id=bodega.id,
             proveedor_id=None,
-            fecha=date.today(),
+            fecha=local_today(),
             moneda="USD",
             tasa_cambio=tasa,
             total_usd=Decimal("0"),
@@ -7315,3 +7315,4 @@ def inventory_activate_product(
         db.commit()
         return RedirectResponse("/inventory", status_code=303)
     return RedirectResponse("/inventory?error=Producto+no+encontrado", status_code=303)
+
