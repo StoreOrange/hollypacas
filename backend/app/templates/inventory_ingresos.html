@@ -224,7 +224,7 @@
     </div>
     <div class="px-6 pb-4 pt-2 space-y-4 overflow-y-auto max-h-[70vh] odoo-modal-body">
       <div id="tab-ingreso" class="ingreso-panel">
-        <form id="ingreso-form" method="post" action="/inventory/ingresos" class="space-y-4 text-base">
+        <form id="ingreso-form" method="post" action="/inventory/ingresos" class="space-y-4 text-base" novalidate>
           <div id="bodega-banner" class="alert alert-info py-2 px-3 mb-2 d-flex align-items-center gap-2" role="status">
             <i class="bi bi-house-door"></i>
             <span class="fw-semibold">Ingreso de mercaderia en Bodega Central</span>
@@ -417,7 +417,7 @@
                 <i class="bi bi-trash3"></i>
                 Limpiar borrador
               </button>
-              <button class="btn btn-primary btn-md d-inline-flex align-items-center gap-2" type="submit">
+              <button id="submit-ingreso" class="btn btn-primary btn-md d-inline-flex align-items-center gap-2" type="submit">
                 <i class="bi bi-check2-circle"></i>
                 Registrar ingreso
               </button>
@@ -1829,10 +1829,37 @@
 
   if (ingresoForm) {
     ingresoForm.addEventListener("submit", (event) => {
+      const itemsCount = itemsTable?.querySelectorAll("tr[data-item-row]").length || 0;
+      if (!itemsCount) {
+        event.preventDefault();
+        const errorBanner = document.getElementById("ingreso-client-error");
+        if (errorBanner) {
+          errorBanner.textContent = "Agrega productos al ingreso antes de registrar.";
+          errorBanner.classList.remove("d-none");
+        }
+        if (typeof Swal !== "undefined") {
+          Swal.fire({
+            icon: "warning",
+            title: "Ingreso vacio",
+            text: "Agrega productos al ingreso antes de registrar.",
+          });
+        } else {
+          alert("Agrega productos al ingreso antes de registrar.");
+        }
+        return;
+      }
       if (!validateIngresoRequired()) {
         event.preventDefault();
         return;
       }
+    });
+  }
+
+  const submitIngresoButton = document.getElementById("submit-ingreso");
+  if (submitIngresoButton && ingresoForm) {
+    submitIngresoButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      ingresoForm.requestSubmit();
     });
   }
 
