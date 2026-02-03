@@ -51,7 +51,7 @@
           <div class="col-12 col-md-2">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
             <select name="branch_id" class="form-select form-select-sm">
-              <option value="">Todas</option>
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
               {% for branch in branches %}
               <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>
                 {{ branch.name }}

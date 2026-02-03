@@ -2491,6 +2491,9 @@ def _sales_report_filters(request: Request):
             start_date = today
             end_date = today
 
+    if not branch_id:
+        branch_id = "all"
+
     return start_date, end_date, branch_id, vendedor_id, producto_q
 
 
@@ -2515,9 +2518,9 @@ def _build_sales_report_rows(
         .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
         .filter(VentaFactura.fecha >= start_date, VentaFactura.fecha <= end_date)
     )
-    if bodega_user and not branch_id:
+    if branch_id != "all" and bodega_user:
         query = query.filter(VentaFactura.bodega_id == bodega_user.id)
-    if branch_id:
+    if branch_id and branch_id != "all":
         try:
             query = query.filter(Branch.id == int(branch_id))
         except ValueError:
