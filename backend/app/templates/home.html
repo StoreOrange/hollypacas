@@ -3,7 +3,7 @@
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
-  <main class="p-6 lg:p-8 text-[18px]">
+  <main class="p-4 sm:p-6 lg:p-8 text-[18px]">
     <div class="odoo-page">
       <div class="odoo-header">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
@@ -17,7 +17,7 @@
             <div class="odoo-title mt-2">Centro de operaciones</div>
             <div class="odoo-subtitle mt-1">Gestion integral para ventas, inventario y finanzas.</div>
           </div>
-          <div class="odoo-toolbar">
+          <div class="odoo-toolbar d-flex flex-column flex-sm-row gap-2 w-100 w-lg-auto">
             <a class="btn btn-primary btn-sm shadow-sm d-inline-flex align-items-center gap-2" href="/inventory">
               <i class="bi bi-box-seam"></i>
               Catalogo de productos
@@ -32,7 +32,8 @@
             </a>
           </div>
         </div>
-        <ul class="nav nav-tabs mt-3">
+        <div class="overflow-x-auto mt-3">
+          <ul class="nav nav-tabs flex-nowrap">
           <li class="nav-item">
             <a class="nav-link active" href="/home">Panel</a>
           </li>
@@ -42,7 +43,8 @@
           <li class="nav-item">
             <a class="nav-link" href="/reports">Informes</a>
           </li>
-        </ul>
+          </ul>
+        </div>
       </div>
 
       <div class="odoo-kpis">
