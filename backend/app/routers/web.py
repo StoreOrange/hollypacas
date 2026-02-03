@@ -2515,7 +2515,7 @@ def _build_sales_report_rows(
         .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
         .filter(VentaFactura.fecha >= start_date, VentaFactura.fecha <= end_date)
     )
-    if bodega_user:
+    if bodega_user and not branch_id:
         query = query.filter(VentaFactura.bodega_id == bodega_user.id)
     if branch_id:
         try:
