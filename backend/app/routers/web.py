@@ -2771,7 +2771,7 @@ def sales_depositos_export(
     user: User = Depends(_require_admin_web),
 ):
     start_date, end_date, vendedor_q, banco_q, moneda_q = _depositos_filters(request)
-    _, bodega = _resolve_branch_bodega(db, user)
+    branch, bodega = _resolve_branch_bodega(db, user)
     depositos_query = db.query(DepositoCliente)
     if bodega:
         depositos_query = depositos_query.filter(DepositoCliente.bodega_id == bodega.id)
@@ -2812,6 +2812,9 @@ def sales_depositos_export(
         y -= 50
         c.setFont("Times-Roman", 9)
         c.setFillColor(colors.HexColor("#4b5563"))
+        if branch:
+            c.drawString(24, y, f"Sucursal: {branch.name}")
+            y -= 14
         c.drawString(24, y, f"Rango: {start_date} a {end_date}")
         y -= 14
         c.drawString(24, y, f"Tasa: {rate_today.rate if rate_today else 'N/D'}")
