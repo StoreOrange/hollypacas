@@ -5741,21 +5741,6 @@ async def inventory_create_ingreso(
     def to_decimal(value: Optional[float]) -> Decimal:
         return Decimal(str(value or 0))
 
-    def to_decimal(value: Optional[float]) -> Decimal:
-        return Decimal(str(value or 0))
-
-    def to_decimal(value: Optional[float]) -> Decimal:
-        return Decimal(str(value or 0))
-
-    def to_decimal(value: Optional[float]) -> Decimal:
-        return Decimal(str(value or 0))
-
-    def to_decimal(value: Optional[float]) -> Decimal:
-        return Decimal(str(value or 0))
-
-    def to_decimal(value: Optional[float]) -> Decimal:
-        return Decimal(str(value or 0))
-
     tasa = float(rate_today.rate) if rate_today else 0
     fecha_value = date.fromisoformat(str(fecha).split("T")[0])
     ingreso = IngresoInventario(
