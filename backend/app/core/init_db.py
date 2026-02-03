@@ -594,6 +594,22 @@ def init_db() -> None:
         if "cierre_auto_print" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE pos_print_settings ADD COLUMN cierre_auto_print BOOLEAN DEFAULT FALSE"))
+    if "vendedor_bodegas" not in inspector.get_table_names():
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE vendedor_bodegas (
+                        id SERIAL PRIMARY KEY,
+                        vendedor_id INTEGER NOT NULL REFERENCES vendedores(id),
+                        bodega_id INTEGER NOT NULL REFERENCES bodegas(id),
+                        is_default BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        CONSTRAINT uq_vendedor_bodega UNIQUE (vendedor_id, bodega_id)
+                    )
+                    """
+                )
+            )
     db = SessionLocal()
     try:
         _seed_roles(db)

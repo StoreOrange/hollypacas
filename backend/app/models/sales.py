@@ -28,6 +28,22 @@ class Vendedor(Base):
     activo = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
 
+    assignments = relationship("VendedorBodega", back_populates="vendedor", cascade="all, delete-orphan")
+
+
+class VendedorBodega(Base):
+    __tablename__ = "vendedor_bodegas"
+    __table_args__ = (UniqueConstraint("vendedor_id", "bodega_id", name="uq_vendedor_bodega"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    vendedor_id = Column(Integer, ForeignKey("vendedores.id"), nullable=False)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=False)
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    vendedor = relationship("Vendedor", back_populates="assignments")
+    bodega = relationship("Bodega")
+
 
 class FormaPago(Base):
     __tablename__ = "formas_pago"

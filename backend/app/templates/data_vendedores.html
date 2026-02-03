@@ -44,6 +44,28 @@
                 <label class="odoo-field-label">Telefono</label>
                 <input class="form-control odoo-input" name="telefono" value="{{ edit_item.telefono if edit_item else '' }}" />
               </div>
+              <div class="col-md-4">
+                <label class="odoo-field-label">Bodegas asignadas</label>
+                <select class="form-select odoo-select" name="bodega_ids" multiple size="3">
+                  {% for bodega in bodegas %}
+                  <option value="{{ bodega.id }}" {% if bodega.id in edit_bodega_ids %}selected{% endif %}>
+                    {{ bodega.branch.name }} - {{ bodega.name }}
+                  </option>
+                  {% endfor %}
+                </select>
+                <div class="text-muted small mt-1">Puedes seleccionar varias bodegas.</div>
+              </div>
+              <div class="col-md-4">
+                <label class="odoo-field-label">Bodega por defecto</label>
+                <select class="form-select odoo-select" name="default_bodega_id">
+                  <option value="">Sin definir</option>
+                  {% for bodega in bodegas %}
+                  <option value="{{ bodega.id }}" {% if edit_default_bodega_id and bodega.id == edit_default_bodega_id %}selected{% endif %}>
+                    {{ bodega.branch.name }} - {{ bodega.name }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
               {% if edit_item %}
               <div class="col-md-2 d-flex align-items-end">
                 <div class="form-check">
@@ -69,6 +91,7 @@
                   <tr>
                     <th>Nombre</th>
                     <th>Telefono</th>
+                    <th>Sucursal / Bodega</th>
                     <th>Estado</th>
                     <th class="text-end">Acciones</th>
                   </tr>
@@ -78,6 +101,15 @@
                   <tr>
                     <td class="fw-semibold">{{ item.nombre }}</td>
                     <td>{{ item.telefono or "-" }}</td>
+                    <td>
+                      {% if item.assignments %}
+                        {% for asig in item.assignments %}
+                          <span class="d-block">{{ asig.bodega.branch.name }} - {{ asig.bodega.name }}{% if asig.is_default %} (def) {% endif %}</span>
+                        {% endfor %}
+                      {% else %}
+                        -
+                      {% endif %}
+                    </td>
                     <td>
                       <span class="odoo-pill {{ 'success' if item.activo else '' }}">{{ "Activo" if item.activo else "Inactivo" }}</span>
                     </td>

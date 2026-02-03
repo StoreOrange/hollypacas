@@ -698,7 +698,7 @@
               <select id="vendedor-select" name="vendedor_id" class="form-select odoo-input select2 flex-grow-1" form="sales-form" required>
                 <option value="">Selecciona</option>
                 {% for vendedor in vendedores %}
-                <option value="{{ vendedor.id }}">{{ vendedor.nombre }}</option>
+                <option value="{{ vendedor.id }}" {% if default_vendedor_id and vendedor.id == default_vendedor_id %}selected{% endif %}>{{ vendedor.nombre }}</option>
                 {% endfor %}
               </select>
               <button id="open-vendedor-modal" type="button" class="btn btn-outline-secondary btn-sm" @click="vendedorOpen = true">
