@@ -2508,6 +2508,8 @@ def _build_sales_report_rows(
     producto_q: str,
 ):
     _, bodega_user = _resolve_branch_bodega(db, user)
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
     query = (
         db.query(VentaFactura, VentaItem, Producto, Cliente, Vendedor, Branch)
@@ -2517,7 +2519,7 @@ def _build_sales_report_rows(
         .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
         .join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True)
         .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
-        .filter(VentaFactura.fecha >= start_date, VentaFactura.fecha <= end_date)
+        .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
     )
     if branch_id and branch_id != "all":
         try:
