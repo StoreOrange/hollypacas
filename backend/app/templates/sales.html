@@ -659,12 +659,16 @@
                 </button>
               </li>
             </ul>
-            <div class="tab-content mt-3">
-              <div class="tab-pane fade show active" id="cliente-select-pane" role="tabpanel" aria-labelledby="cliente-select-tab">
-                <div class="flex items-center gap-2">
-                  <select id="cliente-select" name="cliente_id" class="form-select odoo-input select2 flex-grow-1" form="sales-form">
-                    <option value="">Consumidor final</option>
-                    {% for cliente in clientes %}
+              <div class="tab-content mt-3">
+                <div class="tab-pane fade show active" id="cliente-select-pane" role="tabpanel" aria-labelledby="cliente-select-tab">
+                  <div class="mb-2">
+                    <label class="form-label text-xs text-slate">Buscar cliente</label>
+                    <input id="cliente-filter" type="text" class="form-control form-control-sm odoo-input" placeholder="Escribe para filtrar..." autocomplete="off" />
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <select id="cliente-select" name="cliente_id" class="form-select odoo-input select2 flex-grow-1" form="sales-form">
+                      <option value="">Consumidor final</option>
+                      {% for cliente in clientes %}
                     <option value="{{ cliente.id }}">{{ cliente.nombre }}</option>
                     {% endfor %}
                   </select>
@@ -2355,12 +2359,13 @@
   }
 
   const clienteSummary = document.getElementById("cliente-summary");
-  const vendedorSummary = document.getElementById("vendedor-summary");
-  const fechaSummary = document.getElementById("fecha-summary");
-  const horaSummary = document.getElementById("hora-summary");
-  const clienteSelect = document.getElementById("cliente-select");
-  const vendedorSelect = document.getElementById("vendedor-select");
-  const fechaInput = document.getElementById("venta-fecha");
+    const vendedorSummary = document.getElementById("vendedor-summary");
+    const fechaSummary = document.getElementById("fecha-summary");
+    const horaSummary = document.getElementById("hora-summary");
+    const clienteSelect = document.getElementById("cliente-select");
+    const clienteFilter = document.getElementById("cliente-filter");
+    const vendedorSelect = document.getElementById("vendedor-select");
+    const fechaInput = document.getElementById("venta-fecha");
 
   const updatePartySummary = () => {
     if (clienteSummary && clienteSelect) {
@@ -2443,6 +2448,11 @@
         if ($party.length) {
           $party.each(function () {
             const $el = $(this);
+            if ($el.attr("id") === "cliente-select" && document.getElementById("cliente-filter")) {
+              if ($el.data("select2")) $el.select2("destroy");
+              $el.removeClass("select2");
+              return;
+            }
             if ($el.data("select2")) return;
             $el.select2({
               width: "100%",
@@ -2485,6 +2495,57 @@
               $cliente.select2("open");
               const search = document.querySelector(".select2-container--open .select2-search__field");
               if (search) search.focus();
+            }
+          }
+          if (clienteFilter) clienteFilter.focus();
+        });
+      }
+
+      const originalClienteOptions = [];
+      if (clienteSelect) {
+        Array.from(clienteSelect.options).forEach((opt) => {
+          originalClienteOptions.push({ value: opt.value, text: opt.textContent || "" });
+        });
+      }
+
+      const rebuildClienteOptions = (term) => {
+        if (!clienteSelect) return;
+        const search = (term || "").trim().toLowerCase();
+        clienteSelect.innerHTML = "";
+        const base = originalClienteOptions.filter((opt) => opt.value === "");
+        const rest = originalClienteOptions.filter((opt) => opt.value !== "");
+        base.forEach((opt) => {
+          const option = new Option(opt.text, opt.value, false, false);
+          clienteSelect.append(option);
+        });
+        const filtered = !search
+          ? rest
+          : rest.filter((opt) => opt.text.toLowerCase().includes(search));
+        filtered.forEach((opt) => {
+          const option = new Option(opt.text, opt.value, false, false);
+          clienteSelect.append(option);
+        });
+        if (search && filtered.length) {
+          clienteSelect.selectedIndex = 1;
+        }
+        clienteSelect.dispatchEvent(new Event("change"));
+      };
+
+      if (clienteFilter) {
+        clienteFilter.addEventListener("input", (event) => {
+          rebuildClienteOptions(event.target.value);
+        });
+        clienteFilter.addEventListener("keydown", (event) => {
+          if (!clienteSelect) return;
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            clienteSelect.focus();
+          }
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (clienteSelect.options.length > 1) {
+              clienteSelect.selectedIndex = 1;
+              clienteSelect.dispatchEvent(new Event("change"));
             }
           }
         });
