@@ -6734,6 +6734,8 @@ async def inventory_create_egreso(
 
     total_usd = 0.0
     total_cs = 0.0
+    product_ids = [int(pid) for pid in item_ids if str(pid).isdigit()]
+    balances = _balances_by_bodega(db, [int(bodega_id)], list(set(product_ids))) if product_ids else {}
     for index, product_id in enumerate(item_ids):
         qty = to_float(item_qtys[index] if index < len(item_qtys) else 0)
         cost = to_float(item_costs[index] if index < len(item_costs) else 0)
@@ -6744,11 +6746,12 @@ async def inventory_create_egreso(
             db.rollback()
             return RedirectResponse("/inventory/egresos?error=Producto+no+encontrado", status_code=303)
 
-        existencia = float(producto.saldo.existencia or 0) if producto.saldo else 0.0
+        existencia = float(balances.get((producto.id, int(bodega_id)), Decimal("0")) or 0)
         if existencia < qty:
             db.rollback()
             mensaje = f"Stock+insuficiente+para+{producto.cod_producto}"
             return RedirectResponse(f"/inventory/egresos?error={mensaje}", status_code=303)
+        balances[(producto.id, int(bodega_id))] = Decimal(str(existencia)) - to_decimal(qty)
 
         if moneda == "USD":
             costo_usd = cost
@@ -6774,8 +6777,8 @@ async def inventory_create_egreso(
         db.add(item)
 
         if producto.saldo:
-            existencia_actual = float(producto.saldo.existencia or 0)
-            producto.saldo.existencia = existencia_actual - qty
+            existencia_actual = to_decimal(producto.saldo.existencia)
+            producto.saldo.existencia = existencia_actual - to_decimal(qty)
 
     egreso.total_usd = total_usd
     egreso.total_cs = total_cs
