@@ -666,7 +666,7 @@
                     <input id="cliente-filter" type="text" class="form-control form-control-sm odoo-input" placeholder="Escribe para filtrar..." autocomplete="off" />
                   </div>
                   <div class="flex items-center gap-2">
-                    <select id="cliente-select" name="cliente_id" class="form-select odoo-input select2 flex-grow-1" form="sales-form">
+                    <select id="cliente-select" name="cliente_id" class="form-select odoo-input flex-grow-1" form="sales-form">
                       <option value="">Consumidor final</option>
                       {% for cliente in clientes %}
                     <option value="{{ cliente.id }}">{{ cliente.nombre }}</option>
@@ -2489,14 +2489,7 @@
       if (partyModal) {
         partyModal.addEventListener("shown.bs.modal", () => {
           initPartySelects();
-          if (window.$ && $.fn.select2) {
-            const $cliente = $("#cliente-select");
-            if ($cliente.length) {
-              $cliente.select2("open");
-              const search = document.querySelector(".select2-container--open .select2-search__field");
-              if (search) search.focus();
-            }
-          }
+          // Cliente usa filtro nativo, no select2.
           if (clienteFilter) clienteFilter.focus();
         });
       }
