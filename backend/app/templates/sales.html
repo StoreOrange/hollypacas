@@ -2429,7 +2429,8 @@
         }
       }
     }
-      if (window.$ && $.fn.select2) {
+      const initPartySelects = () => {
+        if (!(window.$ && $.fn.select2)) return;
         const tokenMatcher = (params, data) => {
           const term = (params.term || "").trim().toLowerCase();
           if (!term) return data;
@@ -2438,29 +2439,46 @@
           const ok = tokens.every((token) => text.includes(token));
           return ok ? data : null;
         };
-        $("#party-modal .select2").select2({
-          width: "100%",
-          placeholder: "Selecciona",
-          allowClear: true,
-          minimumResultsForSearch: 0,
-          matcher: tokenMatcher,
-          dropdownParent: $("#party-modal"),
-          selectionCssClass: "odoo-select2",
-          dropdownCssClass: "odoo-select2",
-        });
-        $("#payment-modal .select2").select2({
-          width: "100%",
-          placeholder: "Selecciona",
-          allowClear: true,
-          dropdownParent: $("#payment-modal"),
-          selectionCssClass: "odoo-select2",
-          dropdownCssClass: "odoo-select2",
-        });
-      }
+        const $party = $("#party-modal .select2");
+        if ($party.length) {
+          $party.each(function () {
+            const $el = $(this);
+            if ($el.data("select2")) return;
+            $el.select2({
+              width: "100%",
+              placeholder: "Selecciona",
+              allowClear: true,
+              minimumResultsForSearch: 0,
+              matcher: tokenMatcher,
+              dropdownParent: $("#party-modal"),
+              selectionCssClass: "odoo-select2",
+              dropdownCssClass: "odoo-select2",
+            });
+          });
+        }
+        const $payment = $("#payment-modal .select2");
+        if ($payment.length) {
+          $payment.each(function () {
+            const $el = $(this);
+            if ($el.data("select2")) return;
+            $el.select2({
+              width: "100%",
+              placeholder: "Selecciona",
+              allowClear: true,
+              dropdownParent: $("#payment-modal"),
+              selectionCssClass: "odoo-select2",
+              dropdownCssClass: "odoo-select2",
+            });
+          });
+        }
+      };
+
+      initPartySelects();
 
       const partyModal = document.getElementById("party-modal");
       if (partyModal) {
         partyModal.addEventListener("shown.bs.modal", () => {
+          initPartySelects();
           if (window.$ && $.fn.select2) {
             const $cliente = $("#cliente-select");
             if ($cliente.length) {
