@@ -499,8 +499,8 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura) -> bytes:
     top_margin = 6 * mm
     bottom_margin = 6 * mm
     logo_path = Path(__file__).resolve().parents[1] / "static" / "logopos.png"
-    logo_height = 45 * mm if logo_path.exists() else 0
-    logo_spacing = 2 * mm if logo_height else 0
+    logo_height = 52 * mm if logo_path.exists() else 0
+    logo_spacing = 3 * mm if logo_height else 0
 
     def line_gap(size: int) -> float:
         return size + 4
@@ -514,7 +514,7 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura) -> bytes:
     y = total_height - top_margin
 
     if logo_height:
-        logo_width = 65 * mm
+        logo_width = 75 * mm
         pdf.drawImage(
             str(logo_path),
             (width - logo_width) / 2,
