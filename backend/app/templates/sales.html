@@ -2488,6 +2488,10 @@
         const renderClienteResults = (items) => {
           if (!clienteResults) return;
           clienteResults.innerHTML = "";
+          if (!items.length) {
+            clienteResults.innerHTML = `<div class="list-group-item text-slate">Sin resultados</div>`;
+            return;
+          }
           items.forEach((item, index) => {
             const btn = document.createElement("button");
             btn.type = "button";
@@ -2511,11 +2515,25 @@
             return;
           }
           try {
+            if (clienteResults) {
+              clienteResults.innerHTML = `<div class="list-group-item text-slate">Buscando...</div>`;
+            }
             const resp = await fetch(`/sales/clientes/search?q=${encodeURIComponent(q)}`, {
               headers: { "X-Requested-With": "fetch" },
             });
-            if (!resp.ok) return;
-            const data = await resp.json();
+            if (!resp.ok) {
+              if (clienteResults) {
+                clienteResults.innerHTML = `<div class="list-group-item text-danger">No se pudo buscar.</div>`;
+              }
+              return;
+            }
+            const data = await resp.json().catch(() => null);
+            if (!data || data.ok === false) {
+              if (clienteResults) {
+                clienteResults.innerHTML = `<div class="list-group-item text-danger">No se pudo buscar.</div>`;
+              }
+              return;
+            }
             renderClienteResults(data.items || []);
           } catch (_) {}
         };

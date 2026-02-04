@@ -6829,7 +6829,7 @@ def sales_clientes_search(
     _enforce_permission(request, user, "access.sales")
     term = (q or "").strip()
     if len(term) < 2:
-        return JSONResponse({"items": []})
+        return JSONResponse({"ok": True, "items": []})
     clientes = (
         db.query(Cliente)
         .filter(func.lower(Cliente.nombre).like(f"%{term.lower()}%"))
@@ -6837,7 +6837,7 @@ def sales_clientes_search(
         .limit(25)
         .all()
     )
-    return JSONResponse({"items": [{"id": c.id, "nombre": c.nombre} for c in clientes]})
+    return JSONResponse({"ok": True, "items": [{"id": c.id, "nombre": c.nombre} for c in clientes]})
 
 
 @router.post("/sales/cliente/{cliente_id}/update")
