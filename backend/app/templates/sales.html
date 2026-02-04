@@ -2528,6 +2528,14 @@
         if (search && filtered.length) {
           clienteSelect.selectedIndex = 1;
         }
+        if (search) {
+          const visibleCount = Math.min(6, Math.max(filtered.length + 1, 2));
+          clienteSelect.size = visibleCount;
+          clienteSelect.classList.add("is-open");
+        } else {
+          clienteSelect.size = 1;
+          clienteSelect.classList.remove("is-open");
+        }
         clienteSelect.dispatchEvent(new Event("change"));
       };
 
@@ -2546,6 +2554,8 @@
             if (clienteSelect.options.length > 1) {
               clienteSelect.selectedIndex = 1;
               clienteSelect.dispatchEvent(new Event("change"));
+              clienteSelect.size = 1;
+              clienteSelect.classList.remove("is-open");
             }
           }
         });
