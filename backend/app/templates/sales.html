@@ -2429,24 +2429,48 @@
         }
       }
     }
-    if (window.$ && $.fn.select2) {
-      $("#party-modal .select2").select2({
-        width: "100%",
-        placeholder: "Selecciona",
-        allowClear: true,
-        dropdownParent: $("#party-modal"),
-        selectionCssClass: "odoo-select2",
-        dropdownCssClass: "odoo-select2",
-      });
-      $("#payment-modal .select2").select2({
-        width: "100%",
-        placeholder: "Selecciona",
-        allowClear: true,
-        dropdownParent: $("#payment-modal"),
-        selectionCssClass: "odoo-select2",
-        dropdownCssClass: "odoo-select2",
-      });
-    }
+      if (window.$ && $.fn.select2) {
+        const tokenMatcher = (params, data) => {
+          const term = (params.term || "").trim().toLowerCase();
+          if (!term) return data;
+          const text = (data.text || "").toLowerCase();
+          const tokens = term.split(/\s+/).filter(Boolean);
+          const ok = tokens.every((token) => text.includes(token));
+          return ok ? data : null;
+        };
+        $("#party-modal .select2").select2({
+          width: "100%",
+          placeholder: "Selecciona",
+          allowClear: true,
+          minimumResultsForSearch: 0,
+          matcher: tokenMatcher,
+          dropdownParent: $("#party-modal"),
+          selectionCssClass: "odoo-select2",
+          dropdownCssClass: "odoo-select2",
+        });
+        $("#payment-modal .select2").select2({
+          width: "100%",
+          placeholder: "Selecciona",
+          allowClear: true,
+          dropdownParent: $("#payment-modal"),
+          selectionCssClass: "odoo-select2",
+          dropdownCssClass: "odoo-select2",
+        });
+      }
+
+      const partyModal = document.getElementById("party-modal");
+      if (partyModal) {
+        partyModal.addEventListener("shown.bs.modal", () => {
+          if (window.$ && $.fn.select2) {
+            const $cliente = $("#cliente-select");
+            if ($cliente.length) {
+              $cliente.select2("open");
+              const search = document.querySelector(".select2-container--open .select2-search__field");
+              if (search) search.focus();
+            }
+          }
+        });
+      }
     syncPaymentFields();
     updatePartySummary();
     updateTotals();
