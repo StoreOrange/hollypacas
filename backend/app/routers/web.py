@@ -2526,6 +2526,154 @@ def _sales_report_filters(request: Request):
     return start_date, end_date, branch_id, vendedor_id, producto_q
 
 
+def _sales_products_report_filters(request: Request):
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    branch_id = request.query_params.get("branch_id")
+    vendedor_id = request.query_params.get("vendedor_id")
+
+    today = local_today()
+    start_date = today
+    end_date = today
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            start_date = today
+            end_date = today
+
+    if not branch_id:
+        branch_id = "all"
+
+    return start_date, end_date, branch_id, vendedor_id
+
+
+def _build_sales_products_report(
+    db: Session,
+    start_date: date,
+    end_date: date,
+    branch_id: str | None,
+    vendedor_id: str | None,
+):
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+
+    base_query = (
+        db.query(VentaFactura, VentaItem, Producto, Branch)
+        .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+        .join(Producto, Producto.id == VentaItem.producto_id)
+        .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+        .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+        .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+        .filter(VentaFactura.estado != "ANULADA")
+    )
+    if branch_id and branch_id != "all":
+        try:
+            base_query = base_query.filter(Branch.id == int(branch_id))
+        except ValueError:
+            pass
+    if vendedor_id:
+        try:
+            base_query = base_query.filter(VentaFactura.vendedor_id == int(vendedor_id))
+        except ValueError:
+            pass
+
+    rows = base_query.all()
+    report_map: dict[int, dict] = {}
+    facturas_set = set()
+
+    for factura, item, producto, branch in rows:
+        moneda = factura.moneda or "CS"
+        tasa_factura = Decimal(str(factura.tasa_cambio or 0))
+        if moneda == "CS" and not tasa_factura:
+            rate_today = (
+                db.query(ExchangeRate)
+                .filter(ExchangeRate.effective_date <= factura.fecha)
+                .order_by(ExchangeRate.effective_date.desc())
+                .first()
+            )
+            tasa_factura = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
+
+        cantidad = Decimal(str(item.cantidad or 0))
+        subtotal_usd = Decimal(str(item.subtotal_usd or 0))
+        subtotal_cs = Decimal(str(item.subtotal_cs or 0))
+        venta_usd = subtotal_usd if moneda == "USD" else (subtotal_cs / tasa_factura if tasa_factura else Decimal("0"))
+        venta_cs = subtotal_cs if moneda == "CS" else (subtotal_usd * tasa_factura if tasa_factura else Decimal("0"))
+
+        costo_cs_unit = Decimal(str(producto.costo_producto or 0))
+        costo_cs = costo_cs_unit * cantidad
+        tasa_producto = Decimal(str(producto.tasa_cambio or 0))
+        if not tasa_producto:
+            tasa_producto = tasa_factura
+        if not tasa_producto:
+            rate_today = (
+                db.query(ExchangeRate)
+                .filter(ExchangeRate.effective_date <= factura.fecha)
+                .order_by(ExchangeRate.effective_date.desc())
+                .first()
+            )
+            tasa_producto = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
+        costo_usd = costo_cs / tasa_producto if tasa_producto else Decimal("0")
+
+        if producto.id not in report_map:
+            report_map[producto.id] = {
+                "codigo": producto.cod_producto,
+                "producto": producto.descripcion,
+                "cantidad": Decimal("0"),
+                "venta_usd": Decimal("0"),
+                "venta_cs": Decimal("0"),
+                "costo_usd": Decimal("0"),
+                "costo_cs": Decimal("0"),
+            }
+        report_row = report_map[producto.id]
+        report_row["cantidad"] += cantidad
+        report_row["venta_usd"] += venta_usd
+        report_row["venta_cs"] += venta_cs
+        report_row["costo_usd"] += costo_usd
+        report_row["costo_cs"] += costo_cs
+        facturas_set.add(factura.id)
+
+    report_rows = []
+    total_qty = Decimal("0")
+    total_usd = Decimal("0")
+    total_cs = Decimal("0")
+    total_cost_usd = Decimal("0")
+    total_cost_cs = Decimal("0")
+    for row in report_map.values():
+        total_qty += row["cantidad"]
+        total_usd += row["venta_usd"]
+        total_cs += row["venta_cs"]
+        total_cost_usd += row["costo_usd"]
+        total_cost_cs += row["costo_cs"]
+        report_rows.append(
+            {
+                "codigo": row["codigo"],
+                "producto": row["producto"],
+                "cantidad": float(row["cantidad"]),
+                "venta_usd": float(row["venta_usd"]),
+                "venta_cs": float(row["venta_cs"]),
+                "costo_usd": float(row["costo_usd"]),
+                "costo_cs": float(row["costo_cs"]),
+                "margen_usd": float(row["venta_usd"] - row["costo_usd"]),
+            }
+        )
+
+    report_rows.sort(key=lambda r: r["venta_usd"], reverse=True)
+    total_facturas = len(facturas_set)
+    return (
+        report_rows,
+        total_qty,
+        total_usd,
+        total_cs,
+        total_cost_usd,
+        total_cost_cs,
+        total_facturas,
+    )
+
+
 def _depositos_report_filters(request: Request):
     start_raw = request.query_params.get("start_date")
     end_raw = request.query_params.get("end_date")
@@ -2909,6 +3057,51 @@ def report_depositos_export(
         buffer,
         media_type="application/pdf",
         headers={"Content-Disposition": "inline; filename=depositos_reporte.pdf"},
+    )
+
+
+@router.get("/reports/ventas-productos")
+def report_sales_products(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, vendedor_id = _sales_products_report_filters(request)
+    (
+        report_rows,
+        total_qty,
+        total_usd,
+        total_cs,
+        total_cost_usd,
+        total_cost_cs,
+        total_facturas,
+    ) = _build_sales_products_report(db, start_date, end_date, branch_id, vendedor_id)
+
+    branches = db.query(Branch).order_by(Branch.name).all()
+    _, bodega = _resolve_branch_bodega(db, user)
+    vendedores = _vendedores_for_bodega(db, bodega)
+
+    return request.app.state.templates.TemplateResponse(
+        "report_sales_products.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": report_rows,
+            "branches": branches,
+            "vendedores": vendedores,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "selected_branch": branch_id or "",
+            "selected_vendedor": vendedor_id or "",
+            "total_qty": float(total_qty),
+            "total_usd": float(total_usd),
+            "total_cs": float(total_cs),
+            "total_cost_usd": float(total_cost_usd),
+            "total_cost_cs": float(total_cost_cs),
+            "total_facturas": total_facturas,
+            "version": settings.UI_VERSION,
+        },
     )
 
 
