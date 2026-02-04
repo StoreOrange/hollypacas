@@ -2718,6 +2718,205 @@ def _depositos_report_query(
     return query
 
 
+def _kardex_report_filters(request: Request):
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    branch_id = request.query_params.get("branch_id")
+    producto_q = (request.query_params.get("producto") or "").strip()
+
+    today = local_today()
+    start_date = today
+    end_date = today
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            start_date = today
+            end_date = today
+
+    if not branch_id:
+        branch_id = "all"
+
+    return start_date, end_date, branch_id, producto_q
+
+
+def _kardex_cost_unit_usd(
+    db: Session,
+    producto: Producto,
+    tasa_fallback: Decimal,
+) -> Decimal:
+    costo_cs = Decimal(str(producto.costo_producto or 0))
+    tasa = Decimal(str(producto.tasa_cambio or 0)) or tasa_fallback
+    if not tasa:
+        rate_today = (
+            db.query(ExchangeRate)
+            .filter(ExchangeRate.effective_date <= local_today())
+            .order_by(ExchangeRate.effective_date.desc())
+            .first()
+        )
+        tasa = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
+    return costo_cs / tasa if tasa else Decimal("0")
+
+
+def _build_kardex_movements(
+    db: Session,
+    start_date: date,
+    end_date: date,
+    branch_id: str | None,
+    producto_q: str,
+):
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+
+    producto_filter = None
+    if producto_q:
+        like = f"%{producto_q.lower()}%"
+        producto_filter = or_(
+            func.lower(Producto.cod_producto).like(like),
+            func.lower(Producto.descripcion).like(like),
+        )
+
+    branch_filter = None
+    if branch_id and branch_id != "all":
+        try:
+            branch_filter = int(branch_id)
+        except ValueError:
+            branch_filter = None
+
+    movimientos = []
+
+    ingresos_q = (
+        db.query(IngresoInventario, IngresoItem, Producto, Bodega, Branch)
+        .join(IngresoItem, IngresoItem.ingreso_id == IngresoInventario.id)
+        .join(Producto, Producto.id == IngresoItem.producto_id)
+        .join(Bodega, Bodega.id == IngresoInventario.bodega_id)
+        .join(Branch, Branch.id == Bodega.branch_id)
+        .filter(IngresoInventario.fecha >= start_date, IngresoInventario.fecha <= end_date)
+    )
+    if branch_filter:
+        ingresos_q = ingresos_q.filter(Branch.id == branch_filter)
+    if producto_filter is not None:
+        ingresos_q = ingresos_q.filter(producto_filter)
+
+    for ingreso, item, producto, bodega, branch in ingresos_q.all():
+        cantidad = Decimal(str(item.cantidad or 0))
+        costo_unit_cs = Decimal(str(item.costo_unitario_cs or 0))
+        costo_unit_usd = Decimal(str(item.costo_unitario_usd or 0))
+        movimientos.append(
+            {
+                "fecha": ingreso.fecha,
+                "tipo": "Ingreso",
+                "branch": branch.name if branch else "-",
+                "bodega": bodega.name if bodega else "-",
+                "producto_id": producto.id,
+                "codigo": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "cantidad": cantidad,
+                "costo_unit_cs": costo_unit_cs,
+                "costo_unit_usd": costo_unit_usd,
+            }
+        )
+
+    egresos_q = (
+        db.query(EgresoInventario, EgresoItem, Producto, Bodega, Branch)
+        .join(EgresoItem, EgresoItem.egreso_id == EgresoInventario.id)
+        .join(Producto, Producto.id == EgresoItem.producto_id)
+        .join(Bodega, Bodega.id == EgresoInventario.bodega_id)
+        .join(Branch, Branch.id == Bodega.branch_id)
+        .filter(EgresoInventario.fecha >= start_date, EgresoInventario.fecha <= end_date)
+    )
+    if branch_filter:
+        egresos_q = egresos_q.filter(Branch.id == branch_filter)
+    if producto_filter is not None:
+        egresos_q = egresos_q.filter(producto_filter)
+
+    for egreso, item, producto, bodega, branch in egresos_q.all():
+        cantidad = Decimal(str(item.cantidad or 0)) * Decimal("-1")
+        costo_unit_cs = Decimal(str(item.costo_unitario_cs or 0))
+        costo_unit_usd = Decimal(str(item.costo_unitario_usd or 0))
+        movimientos.append(
+            {
+                "fecha": egreso.fecha,
+                "tipo": "Egreso",
+                "branch": branch.name if branch else "-",
+                "bodega": bodega.name if bodega else "-",
+                "producto_id": producto.id,
+                "codigo": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "cantidad": cantidad,
+                "costo_unit_cs": costo_unit_cs,
+                "costo_unit_usd": costo_unit_usd,
+            }
+        )
+
+    ventas_q = (
+        db.query(VentaFactura, VentaItem, Producto, Bodega, Branch)
+        .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+        .join(Producto, Producto.id == VentaItem.producto_id)
+        .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+        .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+        .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+        .filter(VentaFactura.estado != "ANULADA")
+    )
+    if branch_filter:
+        ventas_q = ventas_q.filter(Branch.id == branch_filter)
+    if producto_filter is not None:
+        ventas_q = ventas_q.filter(producto_filter)
+
+    for factura, item, producto, bodega, branch in ventas_q.all():
+        cantidad = Decimal(str(item.cantidad or 0)) * Decimal("-1")
+        tasa_factura = Decimal(str(factura.tasa_cambio or 0))
+        costo_unit_usd = _kardex_cost_unit_usd(db, producto, tasa_factura)
+        costo_unit_cs = Decimal(str(producto.costo_producto or 0))
+        movimientos.append(
+            {
+                "fecha": factura.fecha.date() if isinstance(factura.fecha, datetime) else factura.fecha,
+                "tipo": "Venta",
+                "branch": branch.name if branch else "-",
+                "bodega": bodega.name if bodega else "-",
+                "producto_id": producto.id,
+                "codigo": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "cantidad": cantidad,
+                "costo_unit_cs": costo_unit_cs,
+                "costo_unit_usd": costo_unit_usd,
+            }
+        )
+
+    movimientos.sort(key=lambda row: (row["fecha"], row["tipo"]))
+
+    saldos = {}
+    rows = []
+    for mov in movimientos:
+        key = (mov["producto_id"], mov["bodega"])
+        saldo = saldos.get(key, Decimal("0"))
+        saldo += mov["cantidad"]
+        saldos[key] = saldo
+        costo_unit_cs = mov["costo_unit_cs"]
+        costo_unit_usd = mov["costo_unit_usd"]
+        rows.append(
+            {
+                **mov,
+                "saldo": saldo,
+                "costo_total_cs": saldo * costo_unit_cs,
+                "costo_total_usd": saldo * costo_unit_usd,
+            }
+        )
+
+    resumen = {
+        "movimientos": len(rows),
+        "dias": (end_date - start_date).days + 1,
+        "total_ingresos": sum((r["cantidad"] for r in rows if r["tipo"] == "Ingreso"), Decimal("0")),
+        "total_egresos": sum((abs(r["cantidad"]) for r in rows if r["tipo"] == "Egreso"), Decimal("0")),
+        "total_ventas": sum((abs(r["cantidad"]) for r in rows if r["tipo"] == "Venta"), Decimal("0")),
+    }
+
+    return rows, resumen
+
+
 def _build_sales_report_rows(
     db: Session,
     user: User,
@@ -3102,6 +3301,123 @@ def report_sales_products(
             "total_facturas": total_facturas,
             "version": settings.UI_VERSION,
         },
+    )
+
+
+@router.get("/reports/kardex")
+def report_kardex(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, producto_q = _kardex_report_filters(request)
+    rows, resumen = _build_kardex_movements(db, start_date, end_date, branch_id, producto_q)
+    branches = db.query(Branch).order_by(Branch.name).all()
+
+    return request.app.state.templates.TemplateResponse(
+        "report_kardex.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": rows,
+            "resumen": resumen,
+            "branches": branches,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "selected_branch": branch_id or "",
+            "producto_q": producto_q,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/reports/kardex/export")
+def report_kardex_export(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, producto_q = _kardex_report_filters(request)
+    rows, resumen = _build_kardex_movements(db, start_date, end_date, branch_id, producto_q)
+    branches = db.query(Branch).order_by(Branch.name).all()
+    selected_branch = None
+    if branch_id and branch_id != "all":
+        try:
+            selected_branch = next((b for b in branches if b.id == int(branch_id)), None)
+        except ValueError:
+            selected_branch = None
+
+    buffer = io.BytesIO()
+    width = 380
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import portrait
+
+    c = canvas.Canvas(buffer, pagesize=portrait((width, 700)))
+    y = 660
+    logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
+    if logo_path.exists():
+        c.drawImage(str(logo_path), 24, y - 40, width=90, height=40, mask="auto")
+    c.setFont("Times-Bold", 11)
+    c.drawString(120, y - 8, "Reporte Kardex por producto")
+    c.drawString(120, y - 24, "Movimientos de inventario")
+    y -= 50
+    c.setFont("Times-Roman", 9)
+    c.setFillColor(colors.HexColor("#4b5563"))
+    if selected_branch:
+        c.drawString(24, y, f"Sucursal: {selected_branch.name}")
+        y -= 14
+    c.drawString(24, y, f"Rango: {start_date} a {end_date}")
+    y -= 14
+    c.drawString(24, y, f"Producto: {producto_q or 'Todos'}")
+    y -= 14
+    c.drawString(24, y, f"Dias: {resumen['dias']}")
+    y -= 14
+    c.drawString(24, y, f"Ingresos: {resumen['total_ingresos']}")
+    y -= 14
+    c.drawString(24, y, f"Egresos: {resumen['total_egresos']}")
+    y -= 14
+    c.drawString(24, y, f"Ventas: {resumen['total_ventas']}")
+    y -= 14
+    c.setFillColor(colors.black)
+    c.line(24, y, width - 24, y)
+    y -= 12
+
+    c.setFont("Times-Bold", 8)
+    c.drawString(24, y, "Fecha")
+    c.drawString(70, y, "Sucursal/Bodega")
+    c.drawString(170, y, "Producto")
+    c.drawRightString(230, y, "Cant")
+    c.drawRightString(270, y, "Saldo")
+    c.drawRightString(330, y, "Costo Unit")
+    c.drawRightString(width - 24, y, "Costo Total")
+    y -= 12
+    c.setFont("Times-Roman", 8)
+
+    for row in rows:
+        if y < 70:
+            c.showPage()
+            y = 660
+        fecha_text = row["fecha"].strftime("%d/%m/%Y") if row["fecha"] else ""
+        sucursal_text = f"{row['branch']} / {row['bodega']}"
+        prod_text = f"{row['codigo']} {row['descripcion'][:14]}"
+        c.drawString(24, y, fecha_text)
+        c.drawString(70, y, sucursal_text[:18])
+        c.drawString(170, y, prod_text)
+        c.drawRightString(230, y, f"{row['cantidad']:.2f}")
+        c.drawRightString(270, y, f"{row['saldo']:.2f}")
+        c.drawRightString(330, y, f"{row['costo_unit_cs']:.2f}")
+        c.drawRightString(width - 24, y, f"{row['costo_total_cs']:.2f}")
+        y -= 12
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=kardex.pdf"},
     )
 
 
