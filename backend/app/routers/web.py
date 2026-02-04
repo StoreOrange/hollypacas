@@ -803,40 +803,40 @@ def _build_cierre_ticket_pdf_bytes(
 
     lines: list[tuple[str, str, bool, int]] = []
 
-    def add_line(text: str, align: str = "left", bold: bool = False, size: int = 8):
+    def add_line(text: str, align: str = "left", bold: bool = False, size: int = 9):
         lines.append((text, align, bold, size))
 
-    add_line(company_name.upper(), "center", True, 10)
+    add_line(company_name.upper(), "center", True, 12)
     add_line(f"RUC: {ruc}", "center")
     add_line(f"Tel: {telefono}", "center")
     direccion_lines = wrap_text(direccion, 32)[:2]
     for line in direccion_lines:
         add_line(line, "center")
-    add_line(f"Sucursal: {sucursal}", "center", True, 9)
+    add_line(f"Sucursal: {sucursal}", "center", True, 10)
     add_line("-" * 32, "center")
-    add_line("CIERRE OFICIAL DE CAJA", "center", True, 10)
+    add_line("CIERRE OFICIAL DE CAJA", "center", True, 12)
     add_line("-" * 32, "center")
-    add_line(f"Fecha: {fecha_str}", "left", True, 9)
-    add_line(f"Bodega: {bodega_name}", "left", False, 9)
+    add_line(f"Fecha: {fecha_str}", "left", True, 10)
+    add_line(f"Bodega: {bodega_name}", "left", False, 10)
     add_line("-" * 32, "center")
 
-    add_line("Resumen arqueo (USD)", "left", True, 9)
-    add_line(f"Ventas: $ {format_amount(resumen['ventas_usd'])}", "left", False, 9)
-    add_line(f"Ingresos: + $ {format_amount(resumen['ingresos_usd'])}", "left", False, 9)
-    add_line(f"Egresos: - $ {format_amount(resumen['egresos_usd'])}", "left", False, 9)
-    add_line(f"Depositos: - $ {format_amount(resumen['depositos_usd'])}", "left", False, 9)
-    add_line(f"Creditos: - $ {format_amount(resumen['creditos_usd'])}", "left", False, 9)
-    add_line(f"Total esperado: $ {format_amount(resumen['total_calculado_usd'])}", "left", True, 9)
+    add_line("Resumen arqueo (USD)", "left", True, 10)
+    add_line(f"Ventas: $ {format_amount(resumen['ventas_usd'])}", "left", False, 10)
+    add_line(f"Ingresos: + $ {format_amount(resumen['ingresos_usd'])}", "left", False, 10)
+    add_line(f"Egresos: - $ {format_amount(resumen['egresos_usd'])}", "left", False, 10)
+    add_line(f"Depositos: - $ {format_amount(resumen['depositos_usd'])}", "left", False, 10)
+    add_line(f"Creditos: - $ {format_amount(resumen['creditos_usd'])}", "left", False, 10)
+    add_line(f"Total esperado: $ {format_amount(resumen['total_calculado_usd'])}", "left", True, 10)
     add_line("")
 
-    add_line("Efectivo contado", "left", True, 9)
-    add_line(f"Total C$: {format_amount(cierre.total_efectivo_cs)}", "left", False, 9)
-    add_line(f"Total USD: {format_amount(cierre.total_efectivo_usd)}", "left", False, 9)
-    add_line(f"Total USD equiv: {format_amount(cierre.total_efectivo_usd_equiv)}", "left", True, 9)
+    add_line("Efectivo contado", "left", True, 10)
+    add_line(f"Total C$: {format_amount(cierre.total_efectivo_cs)}", "left", False, 10)
+    add_line(f"Total USD: {format_amount(cierre.total_efectivo_usd)}", "left", False, 10)
+    add_line(f"Total USD equiv: {format_amount(cierre.total_efectivo_usd_equiv)}", "left", True, 10)
     add_line("-" * 32, "center")
 
-    add_line(f"Faltante/Sobrante: $ {format_amount(cierre.diferencia_usd)}", "left", True, 9)
-    add_line(f"Total bultos vendidos: {format_amount(total_bultos)}", "left", False, 9)
+    add_line(f"Faltante/Sobrante: $ {format_amount(cierre.diferencia_usd)}", "left", True, 10)
+    add_line(f"Total bultos vendidos: {format_amount(total_bultos)}", "left", False, 10)
     add_line("")
 
     try:
@@ -848,7 +848,7 @@ def _build_cierre_ticket_pdf_bytes(
     except Exception:
         detalle_usd = {}
 
-    add_line("Desglose USD (cantidades)", "left", True, 9)
+    add_line("Desglose USD (cantidades)", "left", True, 10)
     usd_items = []
     for denom, qty in detalle_usd.items():
         try:
@@ -863,10 +863,10 @@ def _build_cierre_ticket_pdf_bytes(
         subtotal_usd_breakdown += total
         add_line(f"$ {denom} x {qty} = $ {format_amount(total)}", "left", False, 9)
     add_line("")
-    add_line(f"Total desglose USD: {format_amount(subtotal_usd_breakdown)}", "left", True, 9)
+    add_line(f"Total desglose USD: {format_amount(subtotal_usd_breakdown)}", "left", True, 10)
     add_line("")
 
-    add_line("Desglose C$ (cantidades)", "left", True, 9)
+    add_line("Desglose C$ (cantidades)", "left", True, 10)
     cs_items = []
     for denom, qty in detalle_cs.items():
         try:
@@ -881,11 +881,11 @@ def _build_cierre_ticket_pdf_bytes(
         subtotal_cs_breakdown += total
         add_line(f"C$ {denom} x {qty} = C$ {format_amount(total)}", "left", False, 9)
     add_line("")
-    add_line(f"Total desglose C$: {format_amount(subtotal_cs_breakdown)}", "left", True, 9)
+    add_line(f"Total desglose C$: {format_amount(subtotal_cs_breakdown)}", "left", True, 10)
     add_line("")
-    add_line(f"Total C$: {format_amount(cierre.total_efectivo_cs)}", "left", True, 9)
-    add_line(f"Total USD: {format_amount(cierre.total_efectivo_usd)}", "left", True, 9)
-    add_line(f"Total USD equiv: {format_amount(cierre.total_efectivo_usd_equiv)}", "left", True, 9)
+    add_line(f"Total C$: {format_amount(cierre.total_efectivo_cs)}", "left", True, 10)
+    add_line(f"Total USD: {format_amount(cierre.total_efectivo_usd)}", "left", True, 10)
+    add_line(f"Total USD equiv: {format_amount(cierre.total_efectivo_usd_equiv)}", "left", True, 10)
 
     add_line("-" * 32, "center")
     add_line("Realizado por: __________________", "left", False, 9)
@@ -904,7 +904,7 @@ def _build_cierre_ticket_pdf_bytes(
     logo_spacing = 2 * mm if logo_height else 0
 
     def line_gap(size: int) -> float:
-        return size + 4
+        return size + 5
 
     total_height = top_margin + bottom_margin + logo_height + logo_spacing
     total_height += sum(line_gap(size) for _, _, _, size in lines)
