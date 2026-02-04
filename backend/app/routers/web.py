@@ -79,6 +79,10 @@ from ..models.user import Branch, Permission, Role, User
 router = APIRouter()
 
 
+def to_decimal(value: Optional[float]) -> Decimal:
+    return Decimal(str(value or 0))
+
+
 def _get_user_from_cookie(request: Request, db: Session) -> Optional[User]:
     token = request.cookies.get("access_token")
     if not token:

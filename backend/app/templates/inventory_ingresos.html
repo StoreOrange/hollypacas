@@ -1035,14 +1035,17 @@
 
   const syncProveedorRequired = () => {
     const option = tipoField.options[tipoField.selectedIndex];
-    const requiere = option ? option.dataset.requiereProveedor === "1" : false;
+    const label = (option?.textContent || "").toLowerCase();
+    const requiere =
+      (option && option.dataset.requiereProveedor === "1") ||
+      label.includes("compra") ||
+      label.includes("import");
     if (proveedorField) {
       proveedorField.required = requiere;
-      proveedorField.disabled = !requiere;
+      proveedorField.disabled = false;
+      proveedorField.removeAttribute("disabled");
       if (window.$ && $.fn.select2) {
-        $(proveedorField)
-          .prop("disabled", !requiere)
-          .trigger("change.select2");
+        $(proveedorField).prop("disabled", false).trigger("change.select2");
       }
       if (!requiere) {
         proveedorField.value = "";
