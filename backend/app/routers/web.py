@@ -2526,6 +2526,50 @@ def _sales_report_filters(request: Request):
     return start_date, end_date, branch_id, vendedor_id, producto_q
 
 
+def _depositos_report_filters(request: Request):
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    branch_id = request.query_params.get("branch_id")
+
+    today = local_today()
+    start_date = today
+    end_date = today
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            start_date = today
+            end_date = today
+
+    if not branch_id:
+        branch_id = "all"
+
+    return start_date, end_date, branch_id
+
+
+def _depositos_report_query(
+    db: Session,
+    start_date: date,
+    end_date: date,
+    branch_id: str | None,
+):
+    query = (
+        db.query(DepositoCliente)
+        .join(Bodega, DepositoCliente.bodega_id == Bodega.id, isouter=True)
+        .join(Branch, Bodega.branch_id == Branch.id, isouter=True)
+        .filter(DepositoCliente.fecha.between(start_date, end_date))
+    )
+    if branch_id and branch_id != "all":
+        try:
+            query = query.filter(Branch.id == int(branch_id))
+        except ValueError:
+            pass
+    return query
+
+
 def _build_sales_report_rows(
     db: Session,
     user: User,
@@ -2667,6 +2711,204 @@ def report_sales_detailed(
             "total_items": total_items,
             "version": settings.UI_VERSION,
         },
+      )
+
+
+@router.get("/reports/depositos")
+def report_depositos(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id = _depositos_report_filters(request)
+    depositos = (
+        _depositos_report_query(db, start_date, end_date, branch_id)
+        .order_by(DepositoCliente.fecha.desc(), DepositoCliente.id.desc())
+        .all()
+    )
+    branches = db.query(Branch).order_by(Branch.name).all()
+
+    total_cs = Decimal("0")
+    total_usd = Decimal("0")
+    for dep in depositos:
+        if dep.moneda == "USD":
+            total_usd += Decimal(str(dep.monto_usd or 0))
+        else:
+            total_cs += Decimal(str(dep.monto_cs or 0))
+
+    return request.app.state.templates.TemplateResponse(
+        "report_depositos.html",
+        {
+            "request": request,
+            "user": user,
+            "depositos": depositos,
+            "branches": branches,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "selected_branch": branch_id or "",
+            "total_cs": float(total_cs),
+            "total_usd": float(total_usd),
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/reports/depositos/export")
+def report_depositos_export(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id = _depositos_report_filters(request)
+    depositos = (
+        _depositos_report_query(db, start_date, end_date, branch_id)
+        .order_by(DepositoCliente.banco_id, DepositoCliente.fecha)
+        .all()
+    )
+    branches = db.query(Branch).order_by(Branch.name).all()
+    selected_branch = None
+    if branch_id and branch_id != "all":
+        try:
+            selected_branch = next((b for b in branches if b.id == int(branch_id)), None)
+        except ValueError:
+            selected_branch = None
+
+    grouped, total_cs, total_usd = _depositos_grouped(depositos)
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    rate = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
+    total_usd_equiv = total_usd + (total_cs / rate if rate else Decimal("0"))
+
+    buffer = io.BytesIO()
+    width = 380
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import portrait
+    from reportlab.lib.units import mm
+
+    c = canvas.Canvas(buffer, pagesize=portrait((width, 600)))
+    y = 560
+    logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
+    if logo_path.exists():
+        c.drawImage(str(logo_path), 24, y - 40, width=90, height=40, mask="auto")
+    c.setFont("Times-Bold", 11)
+    c.drawString(120, y - 8, "Informe de Depositos, Transferencias y")
+    c.drawString(120, y - 24, "Tarjetas Pacas Hollywood")
+    y -= 50
+    c.setFont("Times-Roman", 9)
+    c.setFillColor(colors.HexColor("#4b5563"))
+    if selected_branch:
+        c.drawString(24, y, f"Sucursal: {selected_branch.name}")
+        y -= 14
+    c.drawString(24, y, f"Rango: {start_date} a {end_date}")
+    y -= 14
+    c.drawString(24, y, f"Tasa: {rate_today.rate if rate_today else 'N/D'}")
+    y -= 14
+    c.setFillColor(colors.black)
+    c.line(24, y, width - 24, y)
+    y -= 12
+
+    grouped_map = {}
+    for dep in depositos:
+        banco_name = dep.banco.nombre if dep.banco else "-"
+        if len(banco_name) > 12:
+            banco_name = banco_name[:12] + "…"
+        grouped_map.setdefault(dep.banco_id, {"banco": banco_name, "rows": []})
+        grouped_map[dep.banco_id]["rows"].append(dep)
+    grouped_list = sorted(grouped_map.values(), key=lambda row: row["banco"])
+
+    total_count = 0
+    for group in grouped_list:
+        if y < 90:
+            c.showPage()
+            y = 560
+        c.setFillColor(colors.HexColor("#1e3a8a"))
+        c.roundRect(24, y - 6, width - 48, 16, 4, fill=1, stroke=0)
+        c.setFillColor(colors.white)
+        c.setFont("Times-Bold", 9)
+        c.drawString(30, y - 2, group["banco"])
+        c.setFillColor(colors.black)
+        y -= 20
+
+        c.setFont("Times-Bold", 8)
+        c.drawString(24, y, "Fecha")
+        c.drawString(95, y, "Banco")
+        c.drawRightString(210, y, "Monto Cordobas")
+        c.drawRightString(300, y, "Monto Dolares")
+        c.drawString(310, y, "Vendedor")
+        y -= 12
+        c.setFont("Times-Roman", 8)
+
+        subtotal_cs = Decimal("0")
+        subtotal_usd = Decimal("0")
+        for dep in group["rows"]:
+            if y < 70:
+                c.showPage()
+                y = 560
+            total_count += 1
+            fecha_text = dep.fecha.strftime("%d/%m/%Y") if dep.fecha else ""
+            vendedor_text = dep.vendedor.nombre if dep.vendedor else "-"
+            banco_text = dep.banco.nombre if dep.banco else "-"
+            c.drawString(24, y, fecha_text)
+            c.drawString(95, y, banco_text[:10])
+            if dep.moneda == "USD":
+                monto_usd = Decimal(str(dep.monto_usd or 0))
+                subtotal_usd += monto_usd
+                c.setFillColor(colors.HexColor("#16a34a"))
+                c.drawRightString(210, y, "C$ 0.00")
+                c.drawRightString(300, y, f"$ {monto_usd:,.2f}")
+                c.setFillColor(colors.black)
+            else:
+                monto_cs = Decimal(str(dep.monto_cs or 0))
+                subtotal_cs += monto_cs
+                c.setFillColor(colors.HexColor("#1d4ed8"))
+                c.drawRightString(210, y, f"C$ {monto_cs:,.2f}")
+                c.drawRightString(300, y, "$ 0.00")
+                c.setFillColor(colors.black)
+            c.drawString(310, y, vendedor_text[:18])
+            y -= 12
+
+        y -= 6
+        c.setFont("Times-Bold", 9)
+        c.drawString(30, y, "Total depositos :")
+        c.setFillColor(colors.HexColor("#1d4ed8"))
+        c.drawString(140, y, f"C$ {subtotal_cs:,.2f}")
+        c.setFillColor(colors.HexColor("#16a34a"))
+        c.drawRightString(width - 24, y, f"$ {subtotal_usd:,.2f}")
+        c.setFillColor(colors.black)
+        y -= 18
+        c.line(24, y, width - 24, y)
+        y -= 16
+
+    c.setFont("Times-Bold", 10)
+    c.drawString(24, y, "Totales depositos :")
+    c.setFillColor(colors.HexColor("#1d4ed8"))
+    c.drawRightString(width - 120, y, f"C$ {total_cs:,.2f}")
+    c.setFillColor(colors.HexColor("#16a34a"))
+    c.drawRightString(width - 24, y, f"$ {total_usd:,.2f}")
+    c.setFillColor(colors.black)
+    y -= 18
+    c.setFont("Times-Bold", 10)
+    c.drawString(24, y, "Totales depositos Dolarizado")
+    c.setFillColor(colors.HexColor("#16a34a"))
+    c.drawRightString(width - 24, y, f"$ {total_usd_equiv:,.2f}")
+    c.setFillColor(colors.black)
+    y -= 14
+    c.setFont("Times-Roman", 9)
+    c.drawRightString(width - 24, y, f"Cantidad de DP: {total_count}")
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=depositos_reporte.pdf"},
     )
 
 
