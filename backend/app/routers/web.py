@@ -2975,7 +2975,7 @@ def _build_sales_report_rows(
             )
         )
 
-    rows = query.order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc()).all()
+    rows = query.order_by(VentaFactura.secuencia.asc(), VentaFactura.id.asc()).all()
     report_rows = []
     total_usd = Decimal("0")
     total_cs = Decimal("0")

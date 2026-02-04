@@ -18,14 +18,14 @@
             <div class="odoo-subtitle mt-1 text-sm">Detalle por factura, cliente, vendedor y producto.</div>
           </div>
           <div class="d-flex flex-wrap align-items-center gap-2">
-            <div class="odoo-pill primary">
-              <i class="bi bi-cash-stack"></i>
-              Total USD: $ {{ "%.2f"|format(total_usd or 0) }}
-            </div>
-            <div class="odoo-pill">
-              <i class="bi bi-currency-exchange"></i>
-              Total C$: C$ {{ "%.2f"|format(total_cs or 0) }}
-            </div>
+              <div class="odoo-pill primary">
+                <i class="bi bi-cash-stack"></i>
+                Total USD: $ {{ "{:,.2f}".format(total_usd or 0) }}
+              </div>
+              <div class="odoo-pill">
+                <i class="bi bi-currency-exchange"></i>
+                Total C$: C$ {{ "{:,.2f}".format(total_cs or 0) }}
+              </div>
           </div>
         </div>
         <ul class="nav nav-tabs mt-3">
@@ -131,15 +131,15 @@
                 <td>{{ row.vendedor }}</td>
                 <td>{{ row.sucursal }}</td>
                 <td>{{ row.producto }}</td>
-                <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
                 <td class="text-end">
-                  <span class="money-cell" data-usd="{{ row.precio_usd }}" data-cs="{{ row.precio_cs }}">C$ {{ "%.2f"|format(row.precio_cs or 0) }}</span>
+                  <span class="money-cell" data-usd="{{ row.precio_usd }}" data-cs="{{ row.precio_cs }}">C$ {{ "{:,.2f}".format(row.precio_cs or 0) }}</span>
                 </td>
                 <td class="text-end">
-                  <span class="money-cell" data-usd="{{ row.subtotal_usd }}" data-cs="{{ row.subtotal_cs }}">C$ {{ "%.2f"|format(row.subtotal_cs or 0) }}</span>
+                  <span class="money-cell" data-usd="{{ row.subtotal_usd }}" data-cs="{{ row.subtotal_cs }}">C$ {{ "{:,.2f}".format(row.subtotal_cs or 0) }}</span>
                 </td>
                 <td class="text-end">
-                  <span class="money-cell" data-usd="{{ row.total_factura_usd }}" data-cs="{{ row.total_factura_cs }}">C$ {{ "%.2f"|format(row.total_factura_cs or 0) }}</span>
+                  <span class="money-cell" data-usd="{{ row.total_factura_usd }}" data-cs="{{ row.total_factura_cs }}">C$ {{ "{:,.2f}".format(row.total_factura_cs or 0) }}</span>
                 </td>
                 <td class="text-center">
                   {% if row.anulada %}
@@ -159,13 +159,13 @@
             <tfoot>
               <tr class="table-light">
                 <th colspan="6" class="text-end">Totales</th>
-                <th class="text-end">{{ "%.2f"|format(total_items or 0) }}</th>
+                <th class="text-end">{{ "{:,.2f}".format(total_items or 0) }}</th>
                 <th class="text-end">-</th>
                 <th class="text-end">
-                  <span id="totals-subtotal" class="fw-semibold">C$ {{ "%.2f"|format(total_cs or 0) }}</span>
+                  <span id="totals-subtotal" class="fw-semibold">C$ {{ "{:,.2f}".format(total_cs or 0) }}</span>
                 </th>
                 <th class="text-end">
-                  <span id="totals-total" class="fw-semibold">C$ {{ "%.2f"|format(total_cs or 0) }}</span>
+                  <span id="totals-total" class="fw-semibold">C$ {{ "{:,.2f}".format(total_cs or 0) }}</span>
                 </th>
                 <th class="text-center">
                   <span class="badge bg-secondary">Facturas: {{ total_facturas or 0 }}</span>
