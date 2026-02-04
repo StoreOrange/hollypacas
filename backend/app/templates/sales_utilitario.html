@@ -24,6 +24,14 @@
               <span class="input-group-text bg-white border-0">a</span>
               <input name="end_date" type="date" class="form-control border-0" value="{{ end_date }}" />
             </div>
+            <select name="branch_id" class="form-select form-select-sm rounded-pill border-slate-200 w-40">
+              <option value="all" {% if branch_id in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if branch_id == branch.id|string %}selected{% endif %}>
+                {{ branch.name }}
+              </option>
+              {% endfor %}
+            </select>
             <input name="cliente" class="form-control form-control-sm rounded-pill border-slate-200 w-32" placeholder="Cliente" value="{{ cliente_q }}" />
             <select name="vendedor" class="form-select form-select-sm rounded-pill border-slate-200 w-40">
               <option value="">Vendedor</option>

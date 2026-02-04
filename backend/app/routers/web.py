@@ -1628,6 +1628,7 @@ def sales_utilitario(
 
     start_date = _parse_date(request.query_params.get("start_date"))
     end_date = _parse_date(request.query_params.get("end_date"))
+    branch_id = request.query_params.get("branch_id") or "all"
     cliente_q = (request.query_params.get("cliente") or "").strip()
     vendedor_q = (request.query_params.get("vendedor") or "").strip()
     producto_q = (request.query_params.get("producto") or "").strip()
@@ -1635,14 +1636,22 @@ def sales_utilitario(
         start_date = local_today()
         end_date = local_today()
 
-    ventas_query = db.query(VentaFactura)
-    branch, bodega = _resolve_branch_bodega(db, user)
-    if bodega:
-        ventas_query = ventas_query.filter(VentaFactura.bodega_id == bodega.id)
+    ventas_query = (
+        db.query(VentaFactura)
+        .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+        .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+    )
+    if branch_id and branch_id != "all":
+        try:
+            ventas_query = ventas_query.filter(Branch.id == int(branch_id))
+        except ValueError:
+            pass
     if start_date:
-        ventas_query = ventas_query.filter(VentaFactura.fecha >= start_date)
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        ventas_query = ventas_query.filter(VentaFactura.fecha >= start_dt)
     if end_date:
-        ventas_query = ventas_query.filter(VentaFactura.fecha <= end_date)
+        end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+        ventas_query = ventas_query.filter(VentaFactura.fecha < end_dt)
     if cliente_q:
         ventas_query = ventas_query.join(Cliente, isouter=True).filter(
             func.lower(Cliente.nombre).like(f"%{cliente_q.lower()}%")
@@ -1664,7 +1673,9 @@ def sales_utilitario(
     ventas = (
         ventas_query.order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc()).all()
     )
+    _, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
+    branches = db.query(Branch).order_by(Branch.name).all()
 
     return request.app.state.templates.TemplateResponse(
         "sales_utilitario.html",
@@ -1673,8 +1684,10 @@ def sales_utilitario(
             "user": user,
             "ventas": ventas,
             "vendedores": vendedores,
+            "branches": branches,
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
+            "branch_id": branch_id,
             "cliente_q": cliente_q,
             "vendedor_q": vendedor_q,
             "producto_q": producto_q,
