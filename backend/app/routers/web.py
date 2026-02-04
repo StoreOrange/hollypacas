@@ -6819,6 +6819,27 @@ def sales_create_cliente(
     return JSONResponse({"ok": True, "id": cliente.id, "nombre": cliente.nombre})
 
 
+@router.get("/sales/clientes/search")
+def sales_clientes_search(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales")
+    term = (q or "").strip()
+    if len(term) < 2:
+        return JSONResponse({"items": []})
+    clientes = (
+        db.query(Cliente)
+        .filter(func.lower(Cliente.nombre).like(f"%{term.lower()}%"))
+        .order_by(Cliente.nombre)
+        .limit(25)
+        .all()
+    )
+    return JSONResponse({"items": [{"id": c.id, "nombre": c.nombre} for c in clientes]})
+
+
 @router.post("/sales/cliente/{cliente_id}/update")
 def sales_update_cliente(
     cliente_id: int,

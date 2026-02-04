@@ -663,21 +663,20 @@
                 <div class="tab-pane fade show active" id="cliente-select-pane" role="tabpanel" aria-labelledby="cliente-select-tab">
                   <div class="mb-2">
                     <label class="form-label text-xs text-slate">Buscar cliente</label>
-                    <input id="cliente-filter" type="text" class="form-control form-control-sm odoo-input" placeholder="Escribe para filtrar..." autocomplete="off" />
+                    <input id="cliente-search" type="text" class="form-control form-control-sm odoo-input" placeholder="Escribe para buscar..." autocomplete="off" />
+                    <div class="form-text">Minimo 2 caracteres.</div>
                   </div>
-                  <div class="flex items-center gap-2">
-                    <select id="cliente-select" name="cliente_id" class="form-select odoo-input flex-grow-1" form="sales-form">
-                      <option value="">Consumidor final</option>
-                      {% for cliente in clientes %}
-                    <option value="{{ cliente.id }}">{{ cliente.nombre }}</option>
-                    {% endfor %}
-                  </select>
-                  <button id="cliente-default" type="button" class="btn btn-outline-secondary btn-sm" title="Consumidor final">
-                    <i class="bi bi-person-check"></i>
-                  </button>
+                  <input id="cliente-id" type="hidden" name="cliente_id" form="sales-form" />
+                  <div id="cliente-results" class="list-group mb-2" role="listbox" aria-label="Resultados de clientes"></div>
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="text-sm text-slate">Seleccionado:</div>
+                    <div id="cliente-selected-label" class="text-sm fw-semibold">Consumidor final</div>
+                    <button id="cliente-default" type="button" class="btn btn-outline-secondary btn-sm ms-auto" title="Consumidor final">
+                      <i class="bi bi-person-check"></i>
+                    </button>
+                  </div>
+                  <div class="text-xs text-slate mt-1">Por defecto: Consumidor final.</div>
                 </div>
-                <div class="text-xs text-slate mt-1">Por defecto: Consumidor final.</div>
-              </div>
               <div class="tab-pane fade" id="cliente-new-pane" role="tabpanel" aria-labelledby="cliente-new-tab">
                 <form id="cliente-form" class="space-y-3">
                   <label class="text-sm font-semibold text-ink">Nombre *</label>
@@ -2316,13 +2315,8 @@
         }
         return;
       }
-      const option = new Option(payload.nombre, payload.id, true, true);
-      const select = document.getElementById("cliente-select");
-      if (select) {
-        select.append(option);
-        select.dispatchEvent(new Event("change"));
-      }
-      clienteForm.reset();
+        setClienteSelection(payload.id, payload.nombre);
+        clienteForm.reset();
       const tabButton = document.getElementById("cliente-select-tab");
       if (tabButton && window.bootstrap) {
         const tab = new bootstrap.Tab(tabButton);
@@ -2362,14 +2356,26 @@
     const vendedorSummary = document.getElementById("vendedor-summary");
     const fechaSummary = document.getElementById("fecha-summary");
     const horaSummary = document.getElementById("hora-summary");
-    const clienteSelect = document.getElementById("cliente-select");
-    const clienteFilter = document.getElementById("cliente-filter");
+    const clienteSearch = document.getElementById("cliente-search");
+    const clienteResults = document.getElementById("cliente-results");
+    const clienteIdInput = document.getElementById("cliente-id");
+    const clienteSelectedLabel = document.getElementById("cliente-selected-label");
     const vendedorSelect = document.getElementById("vendedor-select");
     const fechaInput = document.getElementById("venta-fecha");
+    let clienteActiveIndex = -1;
+
+    const setClienteSelection = (id, label) => {
+      if (clienteIdInput) clienteIdInput.value = id || "";
+      if (clienteSelectedLabel) clienteSelectedLabel.textContent = label || "Consumidor final";
+      if (clienteSummary) clienteSummary.textContent = clienteSelectedLabel?.textContent || "Consumidor final";
+      if (payCliente) payCliente.textContent = clienteSelectedLabel?.textContent || "--";
+      if (clienteResults) clienteResults.innerHTML = "";
+      clienteActiveIndex = -1;
+    };
 
   const updatePartySummary = () => {
-    if (clienteSummary && clienteSelect) {
-      clienteSummary.textContent = clienteSelect.selectedOptions[0]?.textContent || "Consumidor final";
+    if (clienteSummary) {
+      clienteSummary.textContent = clienteSelectedLabel?.textContent || "Consumidor final";
     }
     if (vendedorSummary && vendedorSelect) {
       vendedorSummary.textContent = vendedorSelect.selectedOptions[0]?.textContent || "Sin asignar";
@@ -2396,21 +2402,12 @@
     }
   };
 
-  if (clienteSelect) {
-    clienteSelect.addEventListener("change", updatePartySummary);
-  }
-  const clienteDefault = document.getElementById("cliente-default");
-  if (clienteDefault && clienteSelect) {
-    clienteDefault.addEventListener("click", () => {
-      clienteSelect.value = "";
-      if (window.$ && $.fn.select2) {
-        $(clienteSelect).trigger("change.select2");
-      } else {
-        clienteSelect.dispatchEvent(new Event("change"));
-      }
-      updatePartySummary();
-    });
-  }
+    const clienteDefault = document.getElementById("cliente-default");
+    if (clienteDefault) {
+      clienteDefault.addEventListener("click", () => {
+        setClienteSelection("", "Consumidor final");
+      });
+    }
   if (vendedorSelect) {
     vendedorSelect.addEventListener("change", updatePartySummary);
   }
@@ -2448,11 +2445,6 @@
         if ($party.length) {
           $party.each(function () {
             const $el = $(this);
-            if ($el.attr("id") === "cliente-select" && document.getElementById("cliente-filter")) {
-              if ($el.data("select2")) $el.select2("destroy");
-              $el.removeClass("select2");
-              return;
-            }
             if ($el.data("select2")) return;
             $el.select2({
               width: "100%",
@@ -2485,74 +2477,78 @@
 
       initPartySelects();
 
-      const partyModal = document.getElementById("party-modal");
-      if (partyModal) {
-        partyModal.addEventListener("shown.bs.modal", () => {
-          initPartySelects();
-          // Cliente usa filtro nativo, no select2.
-          if (clienteFilter) clienteFilter.focus();
-        });
-      }
-
-      const originalClienteOptions = [];
-      if (clienteSelect) {
-        Array.from(clienteSelect.options).forEach((opt) => {
-          originalClienteOptions.push({ value: opt.value, text: opt.textContent || "" });
-        });
-      }
-
-      const rebuildClienteOptions = (term) => {
-        if (!clienteSelect) return;
-        const search = (term || "").trim().toLowerCase();
-        clienteSelect.innerHTML = "";
-        const base = originalClienteOptions.filter((opt) => opt.value === "");
-        const rest = originalClienteOptions.filter((opt) => opt.value !== "");
-        base.forEach((opt) => {
-          const option = new Option(opt.text, opt.value, false, false);
-          clienteSelect.append(option);
-        });
-        const filtered = !search
-          ? rest
-          : rest.filter((opt) => opt.text.toLowerCase().includes(search));
-        filtered.forEach((opt) => {
-          const option = new Option(opt.text, opt.value, false, false);
-          clienteSelect.append(option);
-        });
-        if (search && filtered.length) {
-          clienteSelect.selectedIndex = 1;
+        const partyModal = document.getElementById("party-modal");
+        if (partyModal) {
+          partyModal.addEventListener("shown.bs.modal", () => {
+            initPartySelects();
+            if (clienteSearch) clienteSearch.focus();
+          });
         }
-        if (search) {
-          const visibleCount = Math.min(6, Math.max(filtered.length + 1, 2));
-          clienteSelect.size = visibleCount;
-          clienteSelect.classList.add("is-open");
-        } else {
-          clienteSelect.size = 1;
-          clienteSelect.classList.remove("is-open");
-        }
-        clienteSelect.dispatchEvent(new Event("change"));
-      };
 
-      if (clienteFilter) {
-        clienteFilter.addEventListener("input", (event) => {
-          rebuildClienteOptions(event.target.value);
-        });
-        clienteFilter.addEventListener("keydown", (event) => {
-          if (!clienteSelect) return;
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            clienteSelect.focus();
-          }
-          if (event.key === "Enter") {
-            event.preventDefault();
-            if (clienteSelect.options.length > 1) {
-              clienteSelect.selectedIndex = 1;
-              clienteSelect.dispatchEvent(new Event("change"));
-              clienteSelect.size = 1;
-              clienteSelect.classList.remove("is-open");
+        const renderClienteResults = (items) => {
+          if (!clienteResults) return;
+          clienteResults.innerHTML = "";
+          items.forEach((item, index) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "list-group-item list-group-item-action";
+            btn.dataset.id = item.id;
+            btn.dataset.label = item.nombre;
+            btn.textContent = item.nombre;
+            btn.addEventListener("click", () => setClienteSelection(item.id, item.nombre));
+            if (index === 0) {
+              btn.classList.add("active");
+              clienteActiveIndex = 0;
             }
+            clienteResults.append(btn);
+          });
+        };
+
+        const fetchClientes = async (term) => {
+          const q = term.trim();
+          if (q.length < 2) {
+            if (clienteResults) clienteResults.innerHTML = "";
+            return;
           }
-        });
-      }
+          try {
+            const resp = await fetch(`/sales/clientes/search?q=${encodeURIComponent(q)}`, {
+              headers: { "X-Requested-With": "fetch" },
+            });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            renderClienteResults(data.items || []);
+          } catch (_) {}
+        };
+
+        let clienteTimer = null;
+        if (clienteSearch) {
+          clienteSearch.addEventListener("input", (event) => {
+            clearTimeout(clienteTimer);
+            clienteTimer = setTimeout(() => fetchClientes(event.target.value), 180);
+          });
+          clienteSearch.addEventListener("keydown", (event) => {
+            const items = clienteResults ? Array.from(clienteResults.children) : [];
+            if (!items.length) return;
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              clienteActiveIndex = Math.min(clienteActiveIndex + 1, items.length - 1);
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              clienteActiveIndex = Math.max(clienteActiveIndex - 1, 0);
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              const el = items[clienteActiveIndex >= 0 ? clienteActiveIndex : 0];
+              if (el) {
+                setClienteSelection(el.dataset.id, el.dataset.label);
+              }
+              return;
+            } else {
+              return;
+            }
+            items.forEach((el, idx) => el.classList.toggle("active", idx === clienteActiveIndex));
+            if (items[clienteActiveIndex]) items[clienteActiveIndex].scrollIntoView({ block: "nearest" });
+          });
+        }
     syncPaymentFields();
     updatePartySummary();
     updateTotals();
