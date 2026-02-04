@@ -709,8 +709,7 @@
           <label class="block text-sm font-semibold text-ink d-flex align-items-center gap-2">
             <i class="bi bi-calendar-event text-brand"></i>
             Fecha *
-            <input id="venta-fecha" type="date" class="mt-2 w-full odoo-input form-control" />
-            <input id="venta-fecha-hidden" name="fecha" type="hidden" form="sales-form" required />
+            <input id="venta-fecha" name="fecha" form="sales-form" type="date" class="mt-2 w-full odoo-input form-control" required />
           </label>
         </div>
       </div>
@@ -2362,7 +2361,6 @@
   const clienteSelect = document.getElementById("cliente-select");
   const vendedorSelect = document.getElementById("vendedor-select");
   const fechaInput = document.getElementById("venta-fecha");
-  const fechaHidden = document.getElementById("venta-fecha-hidden");
 
   const updatePartySummary = () => {
     if (clienteSummary && clienteSelect) {
@@ -2373,9 +2371,6 @@
     }
     if (fechaSummary && fechaInput) {
       fechaSummary.textContent = fechaInput.value || "--";
-      if (fechaHidden) {
-        fechaHidden.value = fechaInput.value || "";
-      }
     }
   };
 
@@ -2422,9 +2417,6 @@
     if (fechaInput && !fechaInput.value) {
       const today = formatLocalDate();
       fechaInput.value = today;
-      if (fechaHidden) {
-        fechaHidden.value = today;
-      }
     }
     if (vendedorSelect && !vendedorSelect.value) {
       const firstOption = Array.from(vendedorSelect.options).find((opt) => opt.value);
