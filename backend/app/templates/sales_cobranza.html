@@ -140,7 +140,7 @@
                   <button class="btn btn-sm btn-outline-primary" type="button" data-detail="{{ factura.id }}">
                     <i class="bi bi-eye"></i>
                   </button>
-                  <button class="btn btn-sm btn-outline-success" type="button" data-abono="{{ factura.id }}" data-moneda="{{ factura.moneda }}" data-saldo="{{ row.saldo_cs if factura.moneda != 'USD' else row.saldo_usd }}" data-estado="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" {% if factura.estado_cobranza == 'PAGADA' or factura.estado == 'ANULADA' %}disabled title="Factura no disponible"{% endif %}>
+                  <button class="btn btn-sm btn-outline-success" type="button" data-abono="{{ factura.id }}" data-moneda="{{ factura.moneda }}" data-saldo="{{ row.saldo_cs if factura.moneda != 'USD' else row.saldo_usd }}" data-estado="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" data-numero="{{ factura.numero }}" data-cliente="{{ factura.cliente.nombre if factura.cliente else 'Consumidor final' }}" data-vendedor="{{ factura.vendedor.nombre if factura.vendedor else '-' }}" {% if factura.estado_cobranza == 'PAGADA' or factura.estado == 'ANULADA' %}disabled title="Factura no disponible"{% endif %}>
                     <i class="bi bi-plus-circle"></i>
                   </button>
                   <button class="btn btn-sm btn-outline-secondary" type="button" data-estado="{{ factura.id }}" data-current="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" {% if factura.estado == 'ANULADA' %}disabled title="Factura anulada"{% endif %}>
@@ -200,7 +200,21 @@
       <div class="odoo-modal-body p-4">
         <input type="hidden" id="abono-factura-id">
         <input type="hidden" id="abono-id">
-        <div class="mb-3 p-2 rounded-lg bg-slate-50 border border-slate-200">
+        <div class="mb-3 p-2 rounded-lg bg-white border border-slate-200">
+          <div class="row g-2 text-sm mb-2">
+            <div class="col-12">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Factura</div>
+              <div class="fw-semibold text-ink" id="abono-factura-numero">--</div>
+            </div>
+            <div class="col-12">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Cliente</div>
+              <div class="text-ink" id="abono-factura-cliente">--</div>
+            </div>
+            <div class="col-12">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Vendedor</div>
+              <div class="text-ink" id="abono-factura-vendedor">--</div>
+            </div>
+          </div>
           <div class="text-xs uppercase tracking-[0.2em] text-slate">Saldo pendiente</div>
           <div class="fs-5 fw-bold text-ink" id="abono-saldo">--</div>
         </div>
@@ -406,6 +420,9 @@
         }
         document.getElementById("abono-factura-id").value = abonoBtn.dataset.abono;
         document.getElementById("abono-id").value = "";
+        document.getElementById("abono-factura-numero").textContent = abonoBtn.dataset.numero || "--";
+        document.getElementById("abono-factura-cliente").textContent = abonoBtn.dataset.cliente || "--";
+        document.getElementById("abono-factura-vendedor").textContent = abonoBtn.dataset.vendedor || "--";
         const moneda = abonoBtn.dataset.moneda || "CS";
         const saldo = parseFloat(abonoBtn.dataset.saldo || 0);
         document.getElementById("abono-moneda").value = moneda;
