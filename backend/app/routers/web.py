@@ -3802,21 +3802,20 @@ def report_sales_export(
     if format.lower() == "pdf":
         buffer = io.BytesIO()
         from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import A4, landscape
-        from reportlab.lib.units import mm
+        from reportlab.lib.pagesizes import A4
         from reportlab.lib import colors
 
-        width, height = landscape(A4)
-        c = canvas.Canvas(buffer, pagesize=landscape(A4))
-        margin = 18
-        y = height - 32
+        width, height = A4
+        c = canvas.Canvas(buffer, pagesize=A4)
+        margin = 24
+        y = height - 36
 
         logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
         if logo_path.exists():
-            c.drawImage(str(logo_path), margin, y - 40, width=90, height=40, mask="auto")
+            c.drawImage(str(logo_path), margin, y - 42, width=90, height=40, mask="auto")
 
         c.setFont("Times-Bold", 10)
-        c.drawString(margin + 110, y - 10, "Informe Detallado de Ventas por Producto")
+        c.drawString(margin + 110, y - 10, "Reporte Detallado de Ventas")
         c.setFont("Times-Roman", 8)
         c.setFillColor(colors.HexColor("#475569"))
         c.drawString(margin + 110, y - 24, f"Rango: {start_date} a {end_date}")
@@ -3827,34 +3826,50 @@ def report_sales_export(
                 selected_branch = db.query(Branch).filter(Branch.id == int(branch_id)).first()
             except Exception:
                 selected_branch = None
-        if selected_branch:
-            c.drawString(margin + 110, y - 40, f"Sucursal: {selected_branch.name}")
+        branch_label = selected_branch.name if selected_branch else "Todas"
+        c.drawString(margin + 110, y - 40, f"Sucursal: {branch_label}")
         c.setFillColor(colors.black)
-        y -= 60
+        y -= 64
+
+        content_width = width - (margin * 2)
+        fecha_x = margin
+        factura_x = margin + 60
+        cliente_x = margin + 140
+        vendedor_x = margin + 330
+        sucursal_x = margin + 430
+        producto_x = factura_x
+        qty_right = margin + content_width - 170
+        price_right = margin + content_width - 110
+        subtotal_right = margin + content_width - 50
+        total_right = margin + content_width
+
+        def max_chars_for_width(width_pts: float, font_size: int = 8) -> int:
+            return max(8, int(width_pts / (font_size * 0.55)))
 
         def draw_header():
             nonlocal y
-            c.setFillColor(colors.HexColor("#1e3a8a"))
-            c.rect(margin, y - 12, width - margin * 2, 16, fill=1, stroke=0)
-            c.setFillColor(colors.white)
             c.setFont("Times-Bold", 8)
-            c.drawString(margin + 2, y - 10, "Factura")
-            c.drawString(margin + 70, y - 10, "Cliente")
-            c.drawString(margin + 240, y - 10, "Codigo")
-            c.drawString(margin + 310, y - 10, "Producto")
-            c.drawRightString(margin + 520, y - 10, "Cant")
-            c.drawRightString(margin + 590, y - 10, "Precio")
-            c.drawRightString(margin + 660, y - 10, "Subtotal")
-            c.drawRightString(margin + 730, y - 10, "Total")
-            c.drawString(margin + 740, y - 10, "Vend")
+            c.setFillColor(colors.HexColor("#1e293b"))
+            c.drawString(fecha_x, y, "Fecha")
+            c.drawString(factura_x, y, "Factura")
+            c.drawString(cliente_x, y, "Cliente")
+            c.drawString(vendedor_x, y, "Vendedor")
+            c.drawString(sucursal_x, y, "Sucursal")
+            c.drawString(producto_x, y - 10, "Producto")
+            c.drawRightString(qty_right, y - 10, "Cant")
+            c.drawRightString(price_right, y - 10, "Precio")
+            c.drawRightString(subtotal_right, y - 10, "Subtotal")
+            c.drawRightString(total_right, y - 10, "Total")
+            c.setFillColor(colors.HexColor("#e2e8f0"))
+            c.line(margin, y - 14, width - margin, y - 14)
             c.setFillColor(colors.black)
             c.setFont("Times-Roman", 8)
-            y -= 20
+            y -= 22
 
         def trunc(text: str, limit: int) -> str:
             if text is None:
                 return ""
-            return text if len(text) <= limit else text[: limit - 1] + "…"
+            return text if len(text) <= limit else text[: limit - 3] + "..."
 
         def wrap_lines(text: str, limit: int, max_lines: int = 2) -> list[str]:
             if not text:
@@ -3883,38 +3898,39 @@ def report_sales_export(
 
         draw_header()
         for row in report_rows:
-            if y < 80:
-                c.showPage()
-                y = height - 30
-                draw_header()
             moneda = row.get("moneda") or "CS"
             label = "$" if moneda == "USD" else "C$"
             precio = row["precio_usd"] if moneda == "USD" else row["precio_cs"]
             subtotal = row["subtotal_usd"] if moneda == "USD" else row["subtotal_cs"]
             total_fact = row["total_factura_usd"] if moneda == "USD" else row["total_factura_cs"]
-            cliente_lines = wrap_lines(row.get("cliente") or "", 26, 2)
-            producto_lines = wrap_lines(row.get("producto") or "", 28, 2)
-            extra_lines = max(len(cliente_lines), len(producto_lines)) - 1
+            product_text = f"{row.get('codigo') or ''} {row.get('producto') or ''}".strip()
+            product_limit = max_chars_for_width(qty_right - producto_x - 8, 8)
+            producto_lines = wrap_lines(product_text, product_limit, 2)
+            row_height = 12 * (1 + len(producto_lines))
 
-            c.drawString(margin + 2, y, str(row["factura"] or ""))
-            c.drawString(margin + 70, y, cliente_lines[0] if cliente_lines else "")
-            c.drawString(margin + 240, y, trunc(row.get("codigo") or "", 12))
-            c.drawString(margin + 310, y, producto_lines[0] if producto_lines else "")
-            c.drawRightString(margin + 520, y, f"{row.get('cantidad', 0):,.2f}")
-            c.drawRightString(margin + 590, y, f"{label} {float(precio or 0):,.2f}")
-            c.drawRightString(margin + 660, y, f"{label} {float(subtotal or 0):,.2f}")
-            c.drawRightString(margin + 730, y, f"{label} {float(total_fact or 0):,.2f}")
-            c.drawString(margin + 740, y, trunc(row["vendedor"] or "-", 10))
+            if y - row_height < 70:
+                c.showPage()
+                y = height - 36
+                draw_header()
 
-            if extra_lines > 0:
-                line_y = y - 12
-                second_cliente = cliente_lines[1] if len(cliente_lines) > 1 else ""
-                second_producto = producto_lines[1] if len(producto_lines) > 1 else ""
-                c.drawString(margin + 70, line_y, second_cliente)
-                c.drawString(margin + 310, line_y, second_producto)
-                y = line_y - 8
-            else:
-                y -= 12
+            fecha_text = row.get("fecha") or ""
+            c.drawString(fecha_x, y, str(fecha_text))
+            c.drawString(factura_x, y, trunc(str(row["factura"] or ""), 14))
+            c.drawString(cliente_x, y, trunc(row.get("cliente") or "", 32))
+            c.drawString(vendedor_x, y, trunc(row.get("vendedor") or "-", 16))
+            c.drawString(sucursal_x, y, trunc(row.get("sucursal") or "-", 16))
+
+            line2_y = y - 12
+            c.drawString(producto_x, line2_y, producto_lines[0] if producto_lines else "")
+            c.drawRightString(qty_right, line2_y, f"{row.get('cantidad', 0):,.2f}")
+            c.drawRightString(price_right, line2_y, f"{label} {float(precio or 0):,.2f}")
+            c.drawRightString(subtotal_right, line2_y, f"{label} {float(subtotal or 0):,.2f}")
+            c.drawRightString(total_right, line2_y, f"{label} {float(total_fact or 0):,.2f}")
+
+            if len(producto_lines) > 1:
+                c.drawString(producto_x, line2_y - 12, producto_lines[1])
+
+            y -= row_height
 
         y -= 10
         c.setFont("Times-Bold", 10)
@@ -3926,11 +3942,14 @@ def report_sales_export(
         c.drawString(margin, y, f"Total C$: {total_cs:,.2f}")
         c.drawString(margin + 200, y, f"Total USD: {total_usd:,.2f}")
         c.drawString(margin + 380, y, f"Bultos vendidos: {float(total_items or 0):,.2f}")
-        c.drawString(margin + 600, y, f"Facturas: {total_facturas}")
+        c.drawString(margin + 470, y, f"Facturas: {total_facturas}")
         y -= 24
 
         c.setFont("Times-Bold", 10)
         c.setFillColor(colors.HexColor("#1e3a8a"))
+        if y < 90:
+            c.showPage()
+            y = height - 50
         c.drawString(margin, y, "Resumen por vendedor (USD)")
         c.setFillColor(colors.black)
         y -= 16
