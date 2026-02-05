@@ -2763,26 +2763,34 @@ def _kardex_report_filters(request: Request):
     return start_date, end_date, branch_id, producto_q
 
 
+def _inventory_consolidated_filters(request: Request) -> str:
+    branch_id = request.query_params.get("branch_id")
+    return branch_id or "all"
+
+
 def _inventory_consolidated_data(
     db: Session,
-) -> tuple[list[dict], Decimal, Decimal, list[Bodega]]:
+    branch_id: str,
+) -> tuple[list[dict], Decimal, Decimal, list[Branch], Optional[Branch], list[Bodega]]:
     productos = (
         db.query(Producto)
         .filter(Producto.activo.is_(True))
         .order_by(Producto.descripcion)
         .all()
     )
-    bodegas = db.query(Bodega).filter(Bodega.activo.is_(True)).order_by(Bodega.id).all()
-    bodega_central = next((b for b in bodegas if (b.code or "").lower() == "central"), None)
-    if not bodega_central:
-        bodega_central = next((b for b in bodegas if "central" in (b.name or "").lower()), None)
-    bodega_esteli = next((b for b in bodegas if (b.code or "").lower() == "esteli"), None)
-    if not bodega_esteli:
-        bodega_esteli = next((b for b in bodegas if "esteli" in (b.name or "").lower()), None)
-    selected_bodegas = [b for b in (bodega_central, bodega_esteli) if b]
-    if not selected_bodegas:
-        selected_bodegas = bodegas
-    bodega_ids = [b.id for b in selected_bodegas]
+    branches = db.query(Branch).order_by(Branch.name).all()
+    selected_branch = None
+    if branch_id and branch_id != "all":
+        try:
+            selected_branch = next((b for b in branches if b.id == int(branch_id)), None)
+        except ValueError:
+            selected_branch = None
+
+    bodegas_query = db.query(Bodega).filter(Bodega.activo.is_(True))
+    if selected_branch:
+        bodegas_query = bodegas_query.filter(Bodega.branch_id == selected_branch.id)
+    bodegas = bodegas_query.order_by(Bodega.id).all()
+    bodega_ids = [b.id for b in bodegas]
     product_ids = [p.id for p in productos]
     balances = _balances_by_bodega(db, bodega_ids, product_ids)
 
@@ -2808,7 +2816,7 @@ def _inventory_consolidated_data(
         )
         total_qty += qty
         total_cost += costo_total
-    return rows, total_qty, total_cost, selected_bodegas
+    return rows, total_qty, total_cost, branches, selected_branch, bodegas
 
 
 def _kardex_cost_unit_usd(
@@ -3388,8 +3396,17 @@ def report_inventory_consolidated(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
-    rows, total_qty, total_cost, bodegas = _inventory_consolidated_data(db)
-    bodega_names = ", ".join([b.name for b in bodegas]) if bodegas else "Todas"
+    branch_id = _inventory_consolidated_filters(request)
+    rows, total_qty, total_cost, branches, selected_branch, _ = _inventory_consolidated_data(db, branch_id)
+    branch_label = selected_branch.name if selected_branch else "Ambas"
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    rate = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
+    total_usd = (total_cost / rate) if rate else None
     return request.app.state.templates.TemplateResponse(
         "report_inventory_consolidated.html",
         {
@@ -3398,8 +3415,12 @@ def report_inventory_consolidated(
             "rows": rows,
             "total_qty": float(total_qty),
             "total_cost": float(total_cost),
+            "total_usd": float(total_usd) if total_usd is not None else None,
+            "rate_value": float(rate) if rate else None,
             "total_items": len(rows),
-            "bodegas_label": bodega_names,
+            "branches": branches,
+            "selected_branch": branch_id or "all",
+            "branch_label": branch_label,
             "version": settings.UI_VERSION,
         },
     )
@@ -3412,7 +3433,17 @@ def report_inventory_consolidated_pdf(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
-    rows, total_qty, total_cost, _ = _inventory_consolidated_data(db)
+    branch_id = _inventory_consolidated_filters(request)
+    rows, total_qty, total_cost, _, selected_branch, _ = _inventory_consolidated_data(db, branch_id)
+    branch_label = selected_branch.name if selected_branch else "Ambas"
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    rate = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
+    total_usd = (total_cost / rate) if rate else None
 
     buffer = io.BytesIO()
     from reportlab.pdfgen import canvas
@@ -3478,9 +3509,10 @@ def report_inventory_consolidated_pdf(
     c.setFont("Times-Roman", 10)
     c.setFillColor(colors.HexColor("#475569"))
     c.drawString(header_x, date_y, f"Fecha: {fecha_label}")
-    c.drawString(header_x, date_y - 14, "Expresado en moneda nacional cordobas.")
+    c.drawString(header_x, date_y - 14, f"Sucursal: {branch_label}")
+    c.drawString(header_x, date_y - 28, "Expresado en moneda nacional cordobas.")
     c.setFillColor(colors.black)
-    y = date_y - 34
+    y = date_y - 46
 
     row_height = 15
 
@@ -3529,6 +3561,12 @@ def report_inventory_consolidated_pdf(
     c.drawString(margin + 4, y, "Totales")
     c.drawRightString(margin + 360, y, f"{float(total_qty or 0):,.2f}")
     c.drawRightString(width - margin, y, f"C$ {float(total_cost or 0):,.2f}")
+    if total_usd is not None:
+        y -= 14
+        c.setFont("Times-Roman", 10)
+        c.setFillColor(colors.HexColor("#16a34a"))
+        c.drawRightString(width - margin, y, f"Equivalencia USD: $ {float(total_usd):,.2f}")
+        c.setFillColor(colors.black)
 
     c.showPage()
     c.save()

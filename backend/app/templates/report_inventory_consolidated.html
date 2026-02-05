@@ -16,11 +16,16 @@
             </nav>
             <div class="odoo-title mt-2 text-xl">Inventario consolidado</div>
             <div class="odoo-subtitle mt-1 text-sm">Existencias sumadas entre bodegas principales.</div>
+            <div class="text-sm text-slate mt-1">Sucursal: <strong class="text-ink">{{ branch_label }}</strong></div>
           </div>
           <div class="d-flex flex-wrap align-items-center gap-2">
             <div class="odoo-pill primary">
               <i class="bi bi-box-seam"></i>
               Items: {{ total_items }}
+            </div>
+            <div class="odoo-pill">
+              <i class="bi bi-building"></i>
+              Sucursal: {{ branch_label }}
             </div>
             <div class="odoo-pill">
               <i class="bi bi-bar-chart"></i>
@@ -55,17 +60,29 @@
       </div>
 
       <div class="odoo-card">
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-          <div class="text-sm text-slate">
-            Bodegas incluidas: <strong class="text-ink">{{ bodegas_label }}</strong>
+        <form class="row g-2 align-items-end" method="get" action="/reports/inventario-consolidado">
+          <div class="col-12 col-md-4">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Ambas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>
+                {{ branch.name }}
+              </option>
+              {% endfor %}
+            </select>
           </div>
-          <div class="d-flex flex-wrap gap-2">
-            <a class="btn btn-outline-danger btn-sm" href="/reports/inventario-consolidado/pdf">
+          <div class="col-12 col-md-auto">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">
+              <i class="bi bi-search"></i>
+              Filtrar
+            </button>
+            <a class="btn btn-outline-danger btn-sm" href="/reports/inventario-consolidado/pdf?branch_id={{ selected_branch }}">
               <i class="bi bi-file-earmark-pdf"></i>
               PDF
             </a>
           </div>
-        </div>
+        </form>
       </div>
 
       <div class="odoo-card text-sm">
@@ -104,6 +121,12 @@
                 <th></th>
                 <th class="text-end">C$ {{ "%.2f"|format(total_cost or 0) }}</th>
               </tr>
+              {% if total_usd is not none %}
+              <tr>
+                <th colspan="4" class="text-end">Equivalencia USD{% if rate_value %} (tasa {{ "%.4f"|format(rate_value) }}){% endif %}</th>
+                <th class="text-end">$ {{ "%.2f"|format(total_usd or 0) }}</th>
+              </tr>
+              {% endif %}
             </tfoot>
           </table>
         </div>
