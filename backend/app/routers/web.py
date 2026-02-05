@@ -3945,6 +3945,54 @@ def report_sales_export(
             - Decimal(str(total_creditos_usd))
         )
 
+        cobranza_rows = []
+        cobranza_query = db.query(VentaFactura).filter(
+            VentaFactura.fecha >= start_dt,
+            VentaFactura.fecha < end_dt,
+            VentaFactura.estado != "ANULADA",
+            VentaFactura.estado_cobranza == "PENDIENTE",
+        )
+        if bodega_ids is not None:
+            cobranza_query = cobranza_query.filter(VentaFactura.bodega_id.in_(bodega_ids))
+        if vendedor_id:
+            try:
+                cobranza_query = cobranza_query.filter(VentaFactura.vendedor_id == int(vendedor_id))
+            except Exception:
+                pass
+
+        for factura in cobranza_query.order_by(VentaFactura.fecha, VentaFactura.numero).all():
+            moneda = factura.moneda or "CS"
+            tasa = Decimal(str(factura.tasa_cambio or 0))
+            total_usd = to_usd(
+                moneda,
+                Decimal(str(factura.total_cs or 0)),
+                Decimal(str(factura.total_usd or 0)),
+                tasa,
+                factura.fecha,
+            )
+            abonos_usd = Decimal("0")
+            for abono in factura.abonos:
+                abono_moneda = abono.moneda or "CS"
+                abono_tasa = Decimal(str(abono.tasa_cambio or 0))
+                abonos_usd += to_usd(
+                    abono_moneda,
+                    Decimal(str(abono.monto_cs or 0)),
+                    Decimal(str(abono.monto_usd or 0)),
+                    abono_tasa,
+                    abono.fecha,
+                )
+            saldo_usd = max(total_usd - abonos_usd, Decimal("0"))
+            cobranza_rows.append(
+                {
+                    "factura": factura.numero,
+                    "cliente": factura.cliente.nombre if factura.cliente else "Consumidor final",
+                    "vendedor": factura.vendedor.nombre if factura.vendedor else "-",
+                    "total_usd": total_usd,
+                    "abono_usd": abonos_usd,
+                    "saldo_usd": saldo_usd,
+                }
+            )
+
         content_width = width - (margin * 2)
         factura_x = margin
         producto_x = margin + 90
@@ -4095,8 +4143,62 @@ def report_sales_export(
             c.drawString(margin, y, trunc(row["vendedor"], 25))
             c.drawRightString(margin + 260, y, f"$ {float(row['total_usd'] or 0):,.2f}")
             y -= 14
-
         c.showPage()
+        y = height - 50
+        c.setFont("Times-Bold", 10)
+        c.setFillColor(colors.HexColor("#1e3a8a"))
+        c.drawString(margin, y, "Reporte de Cuentas por Cobrar - Anexo.")
+        c.setFillColor(colors.black)
+        y -= 16
+
+        annex_content_width = width - (margin * 2)
+        factura_x = margin
+        cliente_x = margin + 70
+        vendedor_x = margin + 250
+        monto_right = margin + annex_content_width - 120
+        abono_right = margin + annex_content_width - 60
+        saldo_right = margin + annex_content_width
+
+        def draw_annex_header():
+            nonlocal y
+            c.setFont("Times-Bold", 8)
+            c.setFillColor(colors.HexColor("#1e293b"))
+            c.drawString(factura_x, y, "Factura")
+            c.drawString(cliente_x, y, "Cliente")
+            c.drawString(vendedor_x, y, "Vendedor")
+            c.drawRightString(monto_right, y, "Monto USD")
+            c.drawRightString(abono_right, y, "Abono USD")
+            c.drawRightString(saldo_right, y, "Saldo USD")
+            c.setFillColor(colors.HexColor("#e2e8f0"))
+            c.line(margin, y - 6, width - margin, y - 6)
+            c.setFillColor(colors.black)
+            c.setFont("Times-Roman", 8)
+            y -= 16
+
+        draw_annex_header()
+        factura_limit = max_chars_for_width(cliente_x - factura_x - 6, 8)
+        cliente_limit = max_chars_for_width(vendedor_x - cliente_x - 6, 8)
+        vendedor_limit = max_chars_for_width(monto_right - vendedor_x - 6, 8)
+
+        for row in cobranza_rows:
+            if y < 70:
+                c.showPage()
+                y = height - 50
+                c.setFont("Times-Bold", 10)
+                c.setFillColor(colors.HexColor("#1e3a8a"))
+                c.drawString(margin, y, "Reporte de Cuentas por Cobrar - Anexo.")
+                c.setFillColor(colors.black)
+                y -= 16
+                draw_annex_header()
+
+            c.drawString(factura_x, y, trunc(str(row["factura"] or ""), factura_limit))
+            c.drawString(cliente_x, y, trunc(row["cliente"] or "-", cliente_limit))
+            c.drawString(vendedor_x, y, trunc(row["vendedor"] or "-", vendedor_limit))
+            c.drawRightString(monto_right, y, f"$ {float(row['total_usd'] or 0):,.2f}")
+            c.drawRightString(abono_right, y, f"$ {float(row['abono_usd'] or 0):,.2f}")
+            c.drawRightString(saldo_right, y, f"$ {float(row['saldo_usd'] or 0):,.2f}")
+            y -= 12
+
         c.save()
         buffer.seek(0)
         return StreamingResponse(
