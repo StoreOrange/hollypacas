@@ -1557,7 +1557,10 @@ def sales_page(
         .order_by(Producto.descripcion)
         .all()
     )
-    clientes = db.query(Cliente).order_by(Cliente.nombre).all()
+    clientes_preview = [
+        {"id": c.id, "nombre": c.nombre}
+        for c in db.query(Cliente).order_by(Cliente.nombre).limit(1000).all()
+    ]
     formas_pago = db.query(FormaPago).order_by(FormaPago.nombre).all()
     bancos = db.query(Banco).order_by(Banco.nombre).all()
     cuentas = db.query(CuentaBancaria).order_by(CuentaBancaria.banco_id).all()
@@ -1598,7 +1601,7 @@ def sales_page(
             "request": request,
             "user": user,
             "productos": productos,
-            "clientes": clientes,
+            "clientes_preview": clientes_preview,
             "vendedores": vendedores,
             "formas_pago": formas_pago,
             "bancos": bancos,
@@ -2981,6 +2984,7 @@ def _build_sales_report_rows(
     total_cs = Decimal("0")
     facturas_set = set()
     total_items = Decimal("0")
+    vendedor_totals: dict[str, Decimal] = {}
     for factura, item, producto, cliente, vendedor, branch in rows:
         moneda = factura.moneda or "CS"
         tasa = Decimal(str(factura.tasa_cambio or 0))
@@ -3011,6 +3015,8 @@ def _build_sales_report_rows(
             total_cs += subtotal_cs
             facturas_set.add(factura.id)
             total_items += Decimal(str(item.cantidad or 0))
+            vendedor_name = vendedor.nombre if vendedor else "Sin asignar"
+            vendedor_totals[vendedor_name] = vendedor_totals.get(vendedor_name, Decimal("0")) + subtotal_usd
         report_rows.append(
             {
                 "fecha": factura.fecha.strftime("%d/%m/%Y") if factura.fecha else "",
@@ -3018,7 +3024,8 @@ def _build_sales_report_rows(
                 "cliente": cliente.nombre if cliente else "Consumidor final",
                 "vendedor": vendedor.nombre if vendedor else "-",
                 "sucursal": branch.name if branch else "-",
-                "producto": f"{producto.cod_producto} - {producto.descripcion}",
+                "codigo": producto.cod_producto if producto else "",
+                "producto": producto.descripcion if producto else "",
                 "cantidad": float(item.cantidad or 0),
                 "moneda": moneda,
                 "precio_usd": float(precio_unit if moneda == "USD" else (precio_unit / tasa if tasa else Decimal("0"))),
@@ -3031,7 +3038,11 @@ def _build_sales_report_rows(
                 "factura_id": factura.id,
             }
         )
-    return report_rows, total_usd, total_cs, len(facturas_set), float(total_items)
+    vendor_summary = [
+        {"vendedor": name, "total_usd": float(total)}
+        for name, total in sorted(vendedor_totals.items(), key=lambda item: item[1], reverse=True)
+    ]
+    return report_rows, total_usd, total_cs, len(facturas_set), float(total_items), vendor_summary
 
 
 @router.get("/reports/ventas")
@@ -3042,7 +3053,7 @@ def report_sales_detailed(
 ):
     _enforce_permission(request, user, "access.reports")
     start_date, end_date, branch_id, vendedor_id, producto_q = _sales_report_filters(request)
-    report_rows, total_usd, total_cs, total_facturas, total_items = _build_sales_report_rows(
+    report_rows, total_usd, total_cs, total_facturas, total_items, vendor_summary = _build_sales_report_rows(
         db,
         user,
         start_date,
@@ -3062,6 +3073,7 @@ def report_sales_detailed(
             "request": request,
             "user": user,
             "rows": report_rows,
+            "vendor_summary": vendor_summary,
             "branches": branches,
             "vendedores": vendedores,
             "start_date": start_date.isoformat(),
@@ -3441,12 +3453,13 @@ def report_kardex_export(
 @router.get("/reports/ventas/export")
 def report_sales_export(
     request: Request,
+    format: str = "xlsx",
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
     start_date, end_date, branch_id, vendedor_id, producto_q = _sales_report_filters(request)
-    report_rows, total_usd, total_cs, total_facturas, total_items = _build_sales_report_rows(
+    report_rows, total_usd, total_cs, total_facturas, total_items, vendor_summary = _build_sales_report_rows(
         db,
         user,
         start_date,
@@ -3455,6 +3468,123 @@ def report_sales_export(
         vendedor_id,
         producto_q,
     )
+
+    if format.lower() == "pdf":
+        buffer = io.BytesIO()
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4, portrait
+        from reportlab.lib.units import mm
+        from reportlab.lib import colors
+
+        width, height = portrait(A4)
+        c = canvas.Canvas(buffer, pagesize=portrait(A4))
+        margin = 18
+        y = height - 30
+
+        logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
+        if logo_path.exists():
+            c.drawImage(str(logo_path), margin, y - 40, width=90, height=40, mask="auto")
+
+        c.setFont("Times-Bold", 14)
+        c.drawString(margin + 110, y - 10, "Informe Detallado de Ventas por Producto")
+        c.setFont("Times-Roman", 9)
+        c.setFillColor(colors.HexColor("#475569"))
+        c.drawString(margin + 110, y - 26, f"Rango: {start_date} a {end_date}")
+
+        selected_branch = None
+        if branch_id and branch_id != "all":
+            try:
+                selected_branch = db.query(Branch).filter(Branch.id == int(branch_id)).first()
+            except Exception:
+                selected_branch = None
+        if selected_branch:
+            c.drawString(margin + 110, y - 40, f"Sucursal: {selected_branch.name}")
+        c.setFillColor(colors.black)
+        y -= 60
+
+        def draw_header():
+            nonlocal y
+            c.setFillColor(colors.HexColor("#1e3a8a"))
+            c.rect(margin, y - 12, width - margin * 2, 14, fill=1, stroke=0)
+            c.setFillColor(colors.white)
+            c.setFont("Times-Bold", 8)
+            c.drawString(margin + 2, y - 10, "Fecha")
+            c.drawString(margin + 48, y - 10, "Factura")
+            c.drawString(margin + 105, y - 10, "Cliente")
+            c.drawString(margin + 200, y - 10, "Codigo")
+            c.drawString(margin + 240, y - 10, "Producto")
+            c.drawRightString(margin + 380, y - 10, "Cant")
+            c.drawRightString(margin + 425, y - 10, "Precio")
+            c.drawRightString(margin + 470, y - 10, "Subtotal")
+            c.drawRightString(margin + 515, y - 10, "Total")
+            c.drawString(margin + 520, y - 10, "Vend")
+            c.setFillColor(colors.black)
+            c.setFont("Times-Roman", 7)
+            y -= 18
+
+        def trunc(text: str, limit: int) -> str:
+            if text is None:
+                return ""
+            return text if len(text) <= limit else text[: limit - 1] + "…"
+
+        draw_header()
+        for row in report_rows:
+            if y < 80:
+                c.showPage()
+                y = height - 30
+                draw_header()
+            moneda = row.get("moneda") or "CS"
+            label = "$" if moneda == "USD" else "C$"
+            precio = row["precio_usd"] if moneda == "USD" else row["precio_cs"]
+            subtotal = row["subtotal_usd"] if moneda == "USD" else row["subtotal_cs"]
+            total_fact = row["total_factura_usd"] if moneda == "USD" else row["total_factura_cs"]
+            c.drawString(margin + 2, y, row["fecha"] or "")
+            c.drawString(margin + 48, y, str(row["factura"] or ""))
+            c.drawString(margin + 105, y, trunc(row["cliente"] or "", 16))
+            c.drawString(margin + 200, y, trunc(row.get("codigo") or "", 10))
+            c.drawString(margin + 240, y, trunc(row.get("producto") or "", 20))
+            c.drawRightString(margin + 380, y, f"{row.get('cantidad', 0):,.2f}")
+            c.drawRightString(margin + 425, y, f"{label} {float(precio or 0):,.2f}")
+            c.drawRightString(margin + 470, y, f"{label} {float(subtotal or 0):,.2f}")
+            c.drawRightString(margin + 515, y, f"{label} {float(total_fact or 0):,.2f}")
+            c.drawString(margin + 520, y, trunc(row["vendedor"] or "-", 8))
+            y -= 10
+
+        y -= 8
+        c.setFont("Times-Bold", 9)
+        c.setFillColor(colors.HexColor("#1e3a8a"))
+        c.drawString(margin, y, "Totales")
+        c.setFillColor(colors.black)
+        y -= 12
+        c.setFont("Times-Roman", 9)
+        c.drawString(margin, y, f"Total C$: {total_cs:,.2f}")
+        c.drawString(margin + 160, y, f"Total USD: {total_usd:,.2f}")
+        c.drawString(margin + 320, y, f"Bultos vendidos: {float(total_items or 0):,.2f}")
+        c.drawString(margin + 470, y, f"Facturas: {total_facturas}")
+        y -= 18
+
+        c.setFont("Times-Bold", 9)
+        c.setFillColor(colors.HexColor("#1e3a8a"))
+        c.drawString(margin, y, "Resumen por vendedor (USD)")
+        c.setFillColor(colors.black)
+        y -= 12
+        c.setFont("Times-Roman", 8)
+        for row in vendor_summary:
+            if y < 50:
+                c.showPage()
+                y = height - 40
+            c.drawString(margin, y, trunc(row["vendedor"], 25))
+            c.drawRightString(margin + 220, y, f"$ {float(row['total_usd'] or 0):,.2f}")
+            y -= 10
+
+        c.showPage()
+        c.save()
+        buffer.seek(0)
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline; filename=ventas_detallado.pdf"},
+        )
 
     wb = Workbook()
     ws = wb.active
@@ -3465,6 +3595,7 @@ def report_sales_export(
         "Cliente",
         "Vendedor",
         "Sucursal",
+        "Codigo",
         "Producto",
         "Cantidad",
         "Moneda",
@@ -3489,6 +3620,7 @@ def report_sales_export(
                 row["cliente"],
                 row["vendedor"],
                 row["sucursal"],
+                row.get("codigo", ""),
                 row["producto"],
                 row["cantidad"],
                 row["moneda"],
@@ -3503,7 +3635,11 @@ def report_sales_export(
     ws.append(["Total USD", float(total_usd)])
     ws.append(["Total C$", float(total_cs)])
     ws.append(["Facturas", total_facturas])
-    ws.append(["Items", total_items])
+    ws.append(["Bultos", total_items])
+    ws.append([])
+    ws.append(["Resumen vendedores (USD)"])
+    for row in vendor_summary:
+        ws.append([row["vendedor"], float(row["total_usd"])])
     stream = io.BytesIO()
     wb.save(stream)
     stream.seek(0)
@@ -6798,8 +6934,9 @@ def sales_create_cliente(
     email: Optional[str] = Form(None),
     direccion: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_user_web),
 ):
+    _enforce_permission(request, user, "access.sales")
     nombre = nombre.strip()
     if not nombre:
         return JSONResponse({"ok": False, "message": "Nombre requerido"}, status_code=400)
@@ -6828,7 +6965,7 @@ def sales_clientes_search(
 ):
     _enforce_permission(request, user, "access.sales")
     term = (q or "").strip()
-    if len(term) < 2:
+    if len(term) < 1:
         return JSONResponse({"ok": True, "items": []})
     clientes = (
         db.query(Cliente)

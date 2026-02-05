@@ -83,6 +83,10 @@
               <i class="bi bi-file-earmark-excel"></i>
               Excel
             </a>
+            <a class="btn btn-outline-danger btn-sm" href="/reports/ventas/export?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&vendedor_id={{ selected_vendedor }}&producto={{ producto_q }}">
+              <i class="bi bi-file-earmark-pdf"></i>
+              PDF
+            </a>
             <a class="btn btn-outline-secondary btn-sm" href="/reports/ventas">
               <i class="bi bi-eraser"></i>
               Hoy
@@ -114,6 +118,7 @@
                 <th>Cliente</th>
                 <th>Vendedor</th>
                 <th>Sucursal</th>
+                <th>Codigo</th>
                 <th>Producto</th>
                 <th class="text-end">Cantidad</th>
                 <th class="text-end">Precio</th>
@@ -130,6 +135,7 @@
                 <td>{{ row.cliente }}</td>
                 <td>{{ row.vendedor }}</td>
                 <td>{{ row.sucursal }}</td>
+                <td>{{ row.codigo }}</td>
                 <td>{{ row.producto }}</td>
                 <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
                 <td class="text-end">
@@ -158,7 +164,7 @@
             </tbody>
             <tfoot>
               <tr class="table-light">
-                <th colspan="6" class="text-end">Totales</th>
+                <th colspan="7" class="text-end">Totales</th>
                 <th class="text-end">{{ "{:,.2f}".format(total_items or 0) }}</th>
                 <th class="text-end">-</th>
                 <th class="text-end">
@@ -173,6 +179,66 @@
               </tr>
             </tfoot>
           </table>
+        </div>
+      </div>
+
+      <div class="row g-3 mt-2">
+        <div class="col-12 col-lg-7">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-2 text-base">Resumen por vendedor (USD)</div>
+            <div class="table-responsive">
+              <table class="table table-sm odoo-table text-sm align-middle">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr>
+                    <th>Vendedor</th>
+                    <th class="text-end">Total USD</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in vendor_summary %}
+                  <tr>
+                    <td>{{ row.vendedor }}</td>
+                    <td class="text-end">$ {{ "{:,.2f}".format(row.total_usd or 0) }}</td>
+                  </tr>
+                  {% endfor %}
+                  {% if vendor_summary|length == 0 %}
+                  <tr>
+                    <td colspan="2" class="text-center text-slate py-3">Sin datos.</td>
+                  </tr>
+                  {% endif %}
+                </tbody>
+                <tfoot>
+                  <tr class="table-light">
+                    <th class="text-end">Total USD</th>
+                    <th class="text-end">$ {{ "{:,.2f}".format(total_usd or 0) }}</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-5">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-2 text-base">Totales generales</div>
+            <div class="d-flex flex-column gap-2">
+              <div class="d-flex justify-content-between">
+                <span>Total C$</span>
+                <strong>C$ {{ "{:,.2f}".format(total_cs or 0) }}</strong>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span>Total USD</span>
+                <strong>$ {{ "{:,.2f}".format(total_usd or 0) }}</strong>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span>Bultos vendidos</span>
+                <strong>{{ "{:,.2f}".format(total_items or 0) }}</strong>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span>Facturas</span>
+                <strong>{{ total_facturas or 0 }}</strong>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
