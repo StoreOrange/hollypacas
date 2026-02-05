@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Informes</li>
+                <li class="breadcrumb-item active" aria-current="page">Inventario</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Inventario consolidado</div>
+            <div class="odoo-subtitle mt-1 text-sm">Existencias sumadas entre bodegas principales.</div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="odoo-pill primary">
+              <i class="bi bi-box-seam"></i>
+              Items: {{ total_items }}
+            </div>
+            <div class="odoo-pill">
+              <i class="bi bi-bar-chart"></i>
+              Cantidad: {{ "%.2f"|format(total_qty or 0) }}
+            </div>
+            <div class="odoo-pill primary">
+              <i class="bi bi-cash-stack"></i>
+              Total: C$ {{ "%.2f"|format(total_cost or 0) }}
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/reports">Informes</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/ventas">Ventas detallado</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/ventas-productos">Ventas por producto</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/kardex">Kardex</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/depositos">Depositos</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/reports/inventario-consolidado">Inventario</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="odoo-card">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <div class="text-sm text-slate">
+            Bodegas incluidas: <strong class="text-ink">{{ bodegas_label }}</strong>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-danger btn-sm" href="/reports/inventario-consolidado/pdf">
+              <i class="bi bi-file-earmark-pdf"></i>
+              PDF
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm">
+        <div class="odoo-section-title mb-3 text-base">Resumen consolidado</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Codigo</th>
+                <th>Descripcion</th>
+                <th class="text-end">Cantidad</th>
+                <th class="text-end">Costo unitario</th>
+                <th class="text-end">Costo total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr>
+                <td>{{ row.codigo }}</td>
+                <td>{{ row.descripcion }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
+                <td class="text-end">C$ {{ "%.2f"|format(row.costo_unitario or 0) }}</td>
+                <td class="text-end">C$ {{ "%.2f"|format(row.costo_total or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if rows|length == 0 %}
+              <tr>
+                <td colspan="5" class="text-center text-slate py-3">Sin resultados.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th colspan="2" class="text-end">Totales</th>
+                <th class="text-end">{{ "%.2f"|format(total_qty or 0) }}</th>
+                <th></th>
+                <th class="text-end">C$ {{ "%.2f"|format(total_cost or 0) }}</th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

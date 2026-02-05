@@ -2763,6 +2763,54 @@ def _kardex_report_filters(request: Request):
     return start_date, end_date, branch_id, producto_q
 
 
+def _inventory_consolidated_data(
+    db: Session,
+) -> tuple[list[dict], Decimal, Decimal, list[Bodega]]:
+    productos = (
+        db.query(Producto)
+        .filter(Producto.activo.is_(True))
+        .order_by(Producto.descripcion)
+        .all()
+    )
+    bodegas = db.query(Bodega).filter(Bodega.activo.is_(True)).order_by(Bodega.id).all()
+    bodega_central = next((b for b in bodegas if (b.code or "").lower() == "central"), None)
+    if not bodega_central:
+        bodega_central = next((b for b in bodegas if "central" in (b.name or "").lower()), None)
+    bodega_esteli = next((b for b in bodegas if (b.code or "").lower() == "esteli"), None)
+    if not bodega_esteli:
+        bodega_esteli = next((b for b in bodegas if "esteli" in (b.name or "").lower()), None)
+    selected_bodegas = [b for b in (bodega_central, bodega_esteli) if b]
+    if not selected_bodegas:
+        selected_bodegas = bodegas
+    bodega_ids = [b.id for b in selected_bodegas]
+    product_ids = [p.id for p in productos]
+    balances = _balances_by_bodega(db, bodega_ids, product_ids)
+
+    rows: list[dict] = []
+    total_qty = Decimal("0")
+    total_cost = Decimal("0")
+    for producto in productos:
+        qty = Decimal("0")
+        for bodega_id in bodega_ids:
+            qty += balances.get((producto.id, bodega_id), Decimal("0"))
+        if qty == 0:
+            continue
+        costo_unit = Decimal(str(producto.costo_producto or 0))
+        costo_total = costo_unit * qty
+        rows.append(
+            {
+                "codigo": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "cantidad": qty,
+                "costo_unitario": costo_unit,
+                "costo_total": costo_total,
+            }
+        )
+        total_qty += qty
+        total_cost += costo_total
+    return rows, total_qty, total_cost, selected_bodegas
+
+
 def _kardex_cost_unit_usd(
     db: Session,
     producto: Producto,
@@ -3333,6 +3381,165 @@ def report_sales_products(
     )
 
 
+@router.get("/reports/inventario-consolidado")
+def report_inventory_consolidated(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    rows, total_qty, total_cost, bodegas = _inventory_consolidated_data(db)
+    bodega_names = ", ".join([b.name for b in bodegas]) if bodegas else "Todas"
+    return request.app.state.templates.TemplateResponse(
+        "report_inventory_consolidated.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": rows,
+            "total_qty": float(total_qty),
+            "total_cost": float(total_cost),
+            "total_items": len(rows),
+            "bodegas_label": bodega_names,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/reports/inventario-consolidado/pdf")
+def report_inventory_consolidated_pdf(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    rows, total_qty, total_cost, _ = _inventory_consolidated_data(db)
+
+    buffer = io.BytesIO()
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+
+    width, height = A4
+    c = canvas.Canvas(buffer, pagesize=A4)
+    margin = 30
+    y = height - 36
+
+    logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
+    if logo_path.exists():
+        c.drawImage(str(logo_path), margin, y - 40, width=90, height=40, mask="auto")
+
+    header_text = (
+        "Reporte de inventario consolidado : Pacas Hollywood Central  - Managua   "
+        "Semaforos del colonial 20 vrs. al lago .  8900-0300"
+    )
+    header_x = margin + 110
+    header_width = width - margin - header_x
+
+    def wrap_pdf(text: str, max_width: float, font_name: str, font_size: int) -> list[str]:
+        words = text.split()
+        lines: list[str] = []
+        current = ""
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if c.stringWidth(candidate, font_name, font_size) <= max_width:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        return lines
+
+    c.setFont("Times-Bold", 11)
+    header_lines = wrap_pdf(header_text, header_width, "Times-Bold", 11)
+    header_line_height = 14
+    header_top = y - 8
+    for idx, line in enumerate(header_lines):
+        c.drawString(header_x, header_top - idx * header_line_height, line)
+
+    date_y = header_top - len(header_lines) * header_line_height - 2
+    today = local_today()
+    months = [
+        "enero",
+        "febrero",
+        "marzo",
+        "abril",
+        "mayo",
+        "junio",
+        "julio",
+        "agosto",
+        "septiembre",
+        "octubre",
+        "noviembre",
+        "diciembre",
+    ]
+    fecha_label = f"{today.day:02d} de {months[today.month - 1]} {today.year}"
+    c.setFont("Times-Roman", 10)
+    c.setFillColor(colors.HexColor("#475569"))
+    c.drawString(header_x, date_y, f"Fecha: {fecha_label}")
+    c.drawString(header_x, date_y - 14, "Expresado en moneda nacional cordobas.")
+    c.setFillColor(colors.black)
+    y = date_y - 34
+
+    row_height = 15
+
+    def draw_header():
+        nonlocal y
+        c.setFillColor(colors.HexColor("#1e3a8a"))
+        c.rect(margin, y - 12, width - margin * 2, 18, fill=1, stroke=0)
+        c.setFillColor(colors.white)
+        c.setFont("Times-Bold", 9)
+        c.drawString(margin + 4, y - 10, "Codigo")
+        c.drawString(margin + 82, y - 10, "Descripcion")
+        c.drawRightString(margin + 330, y - 10, "Cantidad")
+        c.drawRightString(margin + 430, y - 10, "Costo Unit")
+        c.drawRightString(width - margin, y - 10, "Costo Total")
+        c.setFillColor(colors.black)
+        c.setFont("Times-Roman", 9)
+        y -= 22
+
+    def trunc(text: str, limit: int) -> str:
+        if text is None:
+            return ""
+        return text if len(text) <= limit else text[: limit - 3] + "..."
+
+    draw_header()
+    for row in rows:
+        if y < 80:
+            c.showPage()
+            y = height - 36
+            draw_header()
+        c.drawString(margin + 4, y, trunc(row.get("codigo") or "", 10))
+        c.drawString(margin + 82, y, trunc(row.get("descripcion") or "", 52))
+        c.drawRightString(margin + 330, y, f"{float(row.get('cantidad') or 0):,.2f}")
+        c.drawRightString(margin + 430, y, f"C$ {float(row.get('costo_unitario') or 0):,.2f}")
+        c.drawRightString(width - margin, y, f"C$ {float(row.get('costo_total') or 0):,.2f}")
+        y -= row_height
+
+    if y < 60:
+        c.showPage()
+        y = height - 36
+        draw_header()
+
+    y -= 4
+    c.line(margin, y, width - margin, y)
+    y -= 18
+    c.setFont("Times-Bold", 11)
+    c.drawString(margin + 4, y, "Totales")
+    c.drawRightString(margin + 360, y, f"{float(total_qty or 0):,.2f}")
+    c.drawRightString(width - margin, y, f"C$ {float(total_cost or 0):,.2f}")
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=inventario_consolidado.pdf"},
+    )
+
+
 @router.get("/reports/kardex")
 def report_kardex(
     request: Request,
@@ -3472,24 +3679,24 @@ def report_sales_export(
     if format.lower() == "pdf":
         buffer = io.BytesIO()
         from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import A4, portrait
+        from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.units import mm
         from reportlab.lib import colors
 
-        width, height = portrait(A4)
-        c = canvas.Canvas(buffer, pagesize=portrait(A4))
+        width, height = landscape(A4)
+        c = canvas.Canvas(buffer, pagesize=landscape(A4))
         margin = 18
-        y = height - 30
+        y = height - 32
 
         logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
         if logo_path.exists():
             c.drawImage(str(logo_path), margin, y - 40, width=90, height=40, mask="auto")
 
-        c.setFont("Times-Bold", 14)
+        c.setFont("Times-Bold", 10)
         c.drawString(margin + 110, y - 10, "Informe Detallado de Ventas por Producto")
-        c.setFont("Times-Roman", 9)
+        c.setFont("Times-Roman", 8)
         c.setFillColor(colors.HexColor("#475569"))
-        c.drawString(margin + 110, y - 26, f"Rango: {start_date} a {end_date}")
+        c.drawString(margin + 110, y - 24, f"Rango: {start_date} a {end_date}")
 
         selected_branch = None
         if branch_id and branch_id != "all":
@@ -3505,27 +3712,51 @@ def report_sales_export(
         def draw_header():
             nonlocal y
             c.setFillColor(colors.HexColor("#1e3a8a"))
-            c.rect(margin, y - 12, width - margin * 2, 14, fill=1, stroke=0)
+            c.rect(margin, y - 12, width - margin * 2, 16, fill=1, stroke=0)
             c.setFillColor(colors.white)
             c.setFont("Times-Bold", 8)
-            c.drawString(margin + 2, y - 10, "Fecha")
-            c.drawString(margin + 48, y - 10, "Factura")
-            c.drawString(margin + 105, y - 10, "Cliente")
-            c.drawString(margin + 200, y - 10, "Codigo")
-            c.drawString(margin + 240, y - 10, "Producto")
-            c.drawRightString(margin + 380, y - 10, "Cant")
-            c.drawRightString(margin + 425, y - 10, "Precio")
-            c.drawRightString(margin + 470, y - 10, "Subtotal")
-            c.drawRightString(margin + 515, y - 10, "Total")
-            c.drawString(margin + 520, y - 10, "Vend")
+            c.drawString(margin + 2, y - 10, "Factura")
+            c.drawString(margin + 70, y - 10, "Cliente")
+            c.drawString(margin + 240, y - 10, "Codigo")
+            c.drawString(margin + 310, y - 10, "Producto")
+            c.drawRightString(margin + 520, y - 10, "Cant")
+            c.drawRightString(margin + 590, y - 10, "Precio")
+            c.drawRightString(margin + 660, y - 10, "Subtotal")
+            c.drawRightString(margin + 730, y - 10, "Total")
+            c.drawString(margin + 740, y - 10, "Vend")
             c.setFillColor(colors.black)
-            c.setFont("Times-Roman", 7)
-            y -= 18
+            c.setFont("Times-Roman", 8)
+            y -= 20
 
         def trunc(text: str, limit: int) -> str:
             if text is None:
                 return ""
             return text if len(text) <= limit else text[: limit - 1] + "…"
+
+        def wrap_lines(text: str, limit: int, max_lines: int = 2) -> list[str]:
+            if not text:
+                return [""]
+            words = text.split()
+            lines: list[str] = []
+            current = ""
+            for word in words:
+                candidate = f"{current} {word}".strip()
+                if len(candidate) <= limit:
+                    current = candidate
+                else:
+                    lines.append(current)
+                    current = word
+                    if len(lines) >= max_lines:
+                        break
+            if len(lines) < max_lines and current:
+                lines.append(current)
+            if len(lines) > max_lines:
+                lines = lines[:max_lines]
+            if len(lines) == max_lines and len(words) > 0:
+                full = " ".join(lines)
+                if len(full) < len(text):
+                    lines[-1] = trunc(lines[-1], max(3, limit - 1))
+            return lines or [trunc(text, limit)]
 
         draw_header()
         for row in report_rows:
@@ -3538,44 +3769,56 @@ def report_sales_export(
             precio = row["precio_usd"] if moneda == "USD" else row["precio_cs"]
             subtotal = row["subtotal_usd"] if moneda == "USD" else row["subtotal_cs"]
             total_fact = row["total_factura_usd"] if moneda == "USD" else row["total_factura_cs"]
-            c.drawString(margin + 2, y, row["fecha"] or "")
-            c.drawString(margin + 48, y, str(row["factura"] or ""))
-            c.drawString(margin + 105, y, trunc(row["cliente"] or "", 16))
-            c.drawString(margin + 200, y, trunc(row.get("codigo") or "", 10))
-            c.drawString(margin + 240, y, trunc(row.get("producto") or "", 20))
-            c.drawRightString(margin + 380, y, f"{row.get('cantidad', 0):,.2f}")
-            c.drawRightString(margin + 425, y, f"{label} {float(precio or 0):,.2f}")
-            c.drawRightString(margin + 470, y, f"{label} {float(subtotal or 0):,.2f}")
-            c.drawRightString(margin + 515, y, f"{label} {float(total_fact or 0):,.2f}")
-            c.drawString(margin + 520, y, trunc(row["vendedor"] or "-", 8))
-            y -= 10
+            cliente_lines = wrap_lines(row.get("cliente") or "", 26, 2)
+            producto_lines = wrap_lines(row.get("producto") or "", 28, 2)
+            extra_lines = max(len(cliente_lines), len(producto_lines)) - 1
 
-        y -= 8
-        c.setFont("Times-Bold", 9)
+            c.drawString(margin + 2, y, str(row["factura"] or ""))
+            c.drawString(margin + 70, y, cliente_lines[0] if cliente_lines else "")
+            c.drawString(margin + 240, y, trunc(row.get("codigo") or "", 12))
+            c.drawString(margin + 310, y, producto_lines[0] if producto_lines else "")
+            c.drawRightString(margin + 520, y, f"{row.get('cantidad', 0):,.2f}")
+            c.drawRightString(margin + 590, y, f"{label} {float(precio or 0):,.2f}")
+            c.drawRightString(margin + 660, y, f"{label} {float(subtotal or 0):,.2f}")
+            c.drawRightString(margin + 730, y, f"{label} {float(total_fact or 0):,.2f}")
+            c.drawString(margin + 740, y, trunc(row["vendedor"] or "-", 10))
+
+            if extra_lines > 0:
+                line_y = y - 12
+                second_cliente = cliente_lines[1] if len(cliente_lines) > 1 else ""
+                second_producto = producto_lines[1] if len(producto_lines) > 1 else ""
+                c.drawString(margin + 70, line_y, second_cliente)
+                c.drawString(margin + 310, line_y, second_producto)
+                y = line_y - 8
+            else:
+                y -= 12
+
+        y -= 10
+        c.setFont("Times-Bold", 10)
         c.setFillColor(colors.HexColor("#1e3a8a"))
         c.drawString(margin, y, "Totales")
         c.setFillColor(colors.black)
-        y -= 12
+        y -= 16
         c.setFont("Times-Roman", 9)
         c.drawString(margin, y, f"Total C$: {total_cs:,.2f}")
-        c.drawString(margin + 160, y, f"Total USD: {total_usd:,.2f}")
-        c.drawString(margin + 320, y, f"Bultos vendidos: {float(total_items or 0):,.2f}")
-        c.drawString(margin + 470, y, f"Facturas: {total_facturas}")
-        y -= 18
+        c.drawString(margin + 200, y, f"Total USD: {total_usd:,.2f}")
+        c.drawString(margin + 380, y, f"Bultos vendidos: {float(total_items or 0):,.2f}")
+        c.drawString(margin + 600, y, f"Facturas: {total_facturas}")
+        y -= 24
 
-        c.setFont("Times-Bold", 9)
+        c.setFont("Times-Bold", 10)
         c.setFillColor(colors.HexColor("#1e3a8a"))
         c.drawString(margin, y, "Resumen por vendedor (USD)")
         c.setFillColor(colors.black)
-        y -= 12
-        c.setFont("Times-Roman", 8)
+        y -= 16
+        c.setFont("Times-Roman", 9)
         for row in vendor_summary:
             if y < 50:
                 c.showPage()
-                y = height - 40
+                y = height - 60
             c.drawString(margin, y, trunc(row["vendedor"], 25))
-            c.drawRightString(margin + 220, y, f"$ {float(row['total_usd'] or 0):,.2f}")
-            y -= 10
+            c.drawRightString(margin + 260, y, f"$ {float(row['total_usd'] or 0):,.2f}")
+            y -= 14
 
         c.showPage()
         c.save()
