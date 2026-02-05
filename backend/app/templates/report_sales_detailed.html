@@ -5,6 +5,43 @@
 
   <main class="p-6 lg:p-8 text-[16px]">
     <div class="odoo-page">
+      <style>
+        .report-sales-table {
+          table-layout: fixed;
+          width: 100%;
+          min-width: 1200px;
+        }
+        .report-sales-table th,
+        .report-sales-table td {
+          padding: 0.55rem 0.75rem;
+        }
+        .report-sales-table th {
+          white-space: nowrap;
+        }
+        .report-sales-table td {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .report-sales-table td.col-cliente,
+        .report-sales-table td.col-producto,
+        .report-sales-table td.col-vendedor,
+        .report-sales-table td.col-sucursal {
+          white-space: normal;
+          word-break: break-word;
+        }
+        .report-sales-table td.col-cliente,
+        .report-sales-table td.col-producto {
+          min-width: 200px;
+        }
+        .report-sales-table td.col-vendedor,
+        .report-sales-table td.col-sucursal {
+          min-width: 150px;
+        }
+        .report-sales-table td.col-codigo {
+          min-width: 110px;
+        }
+      </style>
       <div class="odoo-header">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
           <div>
@@ -110,7 +147,7 @@
       <div class="odoo-card text-sm">
         <div class="odoo-section-title mb-3 text-base">Detalle de ventas</div>
         <div class="table-responsive">
-          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle report-sales-table">
             <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
               <tr>
                 <th>Fecha</th>
@@ -132,11 +169,11 @@
               <tr class="{% if row.anulada %}text-danger{% endif %}">
                 <td>{{ row.fecha }}</td>
                 <td class="fw-semibold">{{ row.factura }}</td>
-                <td>{{ row.cliente }}</td>
-                <td>{{ row.vendedor }}</td>
-                <td>{{ row.sucursal }}</td>
-                <td>{{ row.codigo }}</td>
-                <td>{{ row.producto }}</td>
+                <td class="col-cliente">{{ row.cliente }}</td>
+                <td class="col-vendedor">{{ row.vendedor }}</td>
+                <td class="col-sucursal">{{ row.sucursal }}</td>
+                <td class="col-codigo">{{ row.codigo }}</td>
+                <td class="col-producto">{{ row.producto }}</td>
                 <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
                 <td class="text-end">
                   <span class="money-cell" data-usd="{{ row.precio_usd }}" data-cs="{{ row.precio_cs }}">C$ {{ "{:,.2f}".format(row.precio_cs or 0) }}</span>
