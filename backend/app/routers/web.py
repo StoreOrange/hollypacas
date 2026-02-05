@@ -7599,6 +7599,8 @@ def sales_cobranza(
     results = []
     total_saldo_cs = Decimal("0")
     total_saldo_usd = Decimal("0")
+    total_pacas = Decimal("0")
+    total_vendido_cs = Decimal("0")
     for factura in ventas:
         if factura.estado == "ANULADA":
             total_abono_usd = Decimal("0")
@@ -7606,6 +7608,8 @@ def sales_cobranza(
             saldo_usd = Decimal("0")
             saldo_cs = Decimal("0")
         else:
+            total_pacas += Decimal(str(factura.total_items or 0))
+            total_vendido_cs += Decimal(str(factura.total_cs or 0))
             total_abono_usd = sum(Decimal(str(a.monto_usd or 0)) for a in factura.abonos)
             total_abono_cs = sum(Decimal(str(a.monto_cs or 0)) for a in factura.abonos)
             total_due_usd = Decimal(str(factura.total_usd or 0))
@@ -7655,6 +7659,8 @@ def sales_cobranza(
             "default_vendedor_id": _default_vendedor_id(db, bodega),
             "total_saldo_cs": float(total_saldo_cs),
             "total_saldo_usd": float(total_saldo_usd),
+            "total_pacas": float(total_pacas),
+            "total_vendido_cs": float(total_vendido_cs),
             "version": settings.UI_VERSION,
         },
     )
