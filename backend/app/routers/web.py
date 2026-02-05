@@ -3832,16 +3832,11 @@ def report_sales_export(
         y -= 64
 
         content_width = width - (margin * 2)
-        fecha_x = margin
-        factura_x = margin + 60
-        cliente_x = margin + 140
-        vendedor_x = margin + 330
-        sucursal_x = margin + 430
-        producto_x = factura_x
+        factura_x = margin
+        producto_x = margin + 90
         qty_right = margin + content_width - 170
-        price_right = margin + content_width - 110
-        subtotal_right = margin + content_width - 50
-        total_right = margin + content_width
+        price_right = margin + content_width - 100
+        subtotal_right = margin + content_width
 
         def max_chars_for_width(width_pts: float, font_size: int = 8) -> int:
             return max(8, int(width_pts / (font_size * 0.55)))
@@ -3850,21 +3845,16 @@ def report_sales_export(
             nonlocal y
             c.setFont("Times-Bold", 8)
             c.setFillColor(colors.HexColor("#1e293b"))
-            c.drawString(fecha_x, y, "Fecha")
             c.drawString(factura_x, y, "Factura")
-            c.drawString(cliente_x, y, "Cliente")
-            c.drawString(vendedor_x, y, "Vendedor")
-            c.drawString(sucursal_x, y, "Sucursal")
-            c.drawString(producto_x, y - 10, "Producto")
-            c.drawRightString(qty_right, y - 10, "Cant")
-            c.drawRightString(price_right, y - 10, "Precio")
-            c.drawRightString(subtotal_right, y - 10, "Subtotal")
-            c.drawRightString(total_right, y - 10, "Total")
+            c.drawString(producto_x, y, "Producto")
+            c.drawRightString(qty_right, y, "Cant")
+            c.drawRightString(price_right, y, "Precio")
+            c.drawRightString(subtotal_right, y, "Subtotal")
             c.setFillColor(colors.HexColor("#e2e8f0"))
-            c.line(margin, y - 14, width - margin, y - 14)
+            c.line(margin, y - 6, width - margin, y - 6)
             c.setFillColor(colors.black)
             c.setFont("Times-Roman", 8)
-            y -= 22
+            y -= 16
 
         def trunc(text: str, limit: int) -> str:
             if text is None:
@@ -3902,8 +3892,7 @@ def report_sales_export(
             label = "$" if moneda == "USD" else "C$"
             precio = row["precio_usd"] if moneda == "USD" else row["precio_cs"]
             subtotal = row["subtotal_usd"] if moneda == "USD" else row["subtotal_cs"]
-            total_fact = row["total_factura_usd"] if moneda == "USD" else row["total_factura_cs"]
-            product_text = f"{row.get('codigo') or ''} {row.get('producto') or ''}".strip()
+            product_text = f"{row.get('producto') or ''}".strip()
             product_limit = max_chars_for_width(qty_right - producto_x - 8, 8)
             producto_lines = wrap_lines(product_text, product_limit, 2)
             row_height = 12 * (1 + len(producto_lines))
@@ -3913,24 +3902,27 @@ def report_sales_export(
                 y = height - 36
                 draw_header()
 
-            fecha_text = row.get("fecha") or ""
-            c.drawString(fecha_x, y, str(fecha_text))
-            c.drawString(factura_x, y, trunc(str(row["factura"] or ""), 14))
-            c.drawString(cliente_x, y, trunc(row.get("cliente") or "", 32))
-            c.drawString(vendedor_x, y, trunc(row.get("vendedor") or "-", 16))
-            c.drawString(sucursal_x, y, trunc(row.get("sucursal") or "-", 16))
-
-            line2_y = y - 12
-            c.drawString(producto_x, line2_y, producto_lines[0] if producto_lines else "")
-            c.drawRightString(qty_right, line2_y, f"{row.get('cantidad', 0):,.2f}")
-            c.drawRightString(price_right, line2_y, f"{label} {float(precio or 0):,.2f}")
-            c.drawRightString(subtotal_right, line2_y, f"{label} {float(subtotal or 0):,.2f}")
-            c.drawRightString(total_right, line2_y, f"{label} {float(total_fact or 0):,.2f}")
+            c.drawString(factura_x, y, trunc(str(row["factura"] or ""), 16))
+            line_y = y - 12
+            c.drawString(producto_x, line_y, producto_lines[0] if producto_lines else "")
+            c.drawRightString(qty_right, line_y, f"{row.get('cantidad', 0):,.2f}")
+            c.drawRightString(price_right, line_y, f"{label} {float(precio or 0):,.2f}")
+            c.drawRightString(subtotal_right, line_y, f"{label} {float(subtotal or 0):,.2f}")
 
             if len(producto_lines) > 1:
-                c.drawString(producto_x, line2_y - 12, producto_lines[1])
+                c.drawString(producto_x, line_y - 12, producto_lines[1])
 
             y -= row_height
+
+        rate_row = (
+            db.query(ExchangeRate)
+            .filter(ExchangeRate.effective_date <= end_date)
+            .order_by(ExchangeRate.effective_date.desc())
+            .first()
+        )
+        rate = Decimal(str(rate_row.rate)) if rate_row else Decimal("0")
+        total_cs_decimal = Decimal(str(total_cs or 0))
+        total_usd_conv = (total_cs_decimal / rate) if rate > 0 else Decimal("0")
 
         y -= 10
         c.setFont("Times-Bold", 10)
@@ -3939,10 +3931,15 @@ def report_sales_export(
         c.setFillColor(colors.black)
         y -= 16
         c.setFont("Times-Roman", 9)
+        c.drawString(margin, y, f"Total final (C$): {total_cs:,.2f}")
+        c.drawString(margin + 220, y, f"Bultos vendidos: {float(total_items or 0):,.2f}")
+        y -= 14
         c.drawString(margin, y, f"Total C$: {total_cs:,.2f}")
-        c.drawString(margin + 200, y, f"Total USD: {total_usd:,.2f}")
-        c.drawString(margin + 380, y, f"Bultos vendidos: {float(total_items or 0):,.2f}")
-        c.drawString(margin + 470, y, f"Facturas: {total_facturas}")
+        if rate > 0:
+            c.drawString(margin + 220, y, f"Total USD conversión: {float(total_usd_conv):,.2f}")
+            c.drawString(margin + 420, y, f"Tasa: {float(rate):,.4f}")
+        else:
+            c.drawString(margin + 220, y, "Total USD conversión: -")
         y -= 24
 
         c.setFont("Times-Bold", 10)
