@@ -338,7 +338,7 @@
         }
         return;
       }
-      const printUrl = payload?.print_url || `/sales/${ventaId}/ticket/print`;
+      const printUrl = payload?.print_url || `/sales/${ventaId}/ticket/print?copies=2`;
       window.open(printUrl, "_blank", "noopener");
       if (typeof Swal !== "undefined") {
         Swal.fire({ icon: "success", title: "Vista previa abierta", timer: 1500, showConfirmButton: false });

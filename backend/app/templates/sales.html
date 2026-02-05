@@ -105,7 +105,7 @@
         <span>{{ success }}</span>
         {% if print_id %}
         <a
-          href="/sales/{{ print_id }}/ticket/print"
+          href="/sales/{{ print_id }}/ticket/print?copies=2"
           target="_blank"
           rel="noopener"
           id="sales-print-ticket"
@@ -2678,7 +2678,6 @@
       event.preventDefault();
       const url = printLink.getAttribute("href");
       if (url) {
-        window.open(url, "_blank", "noopener");
         window.open(url, "_blank", "noopener");
       }
       window.addEventListener("focus", reloadAfterPrint, { once: true });

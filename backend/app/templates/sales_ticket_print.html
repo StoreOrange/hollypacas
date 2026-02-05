@@ -84,8 +84,22 @@
     </div>
     <script>
       window.addEventListener("load", () => {
-        window.print();
-        window.onafterprint = () => window.close();
+        const params = new URLSearchParams(window.location.search);
+        let copies = parseInt(params.get("copies") || "2", 10);
+        if (!Number.isFinite(copies) || copies < 1) {
+          copies = 2;
+        }
+        let remaining = copies;
+        const triggerPrint = () => window.print();
+        window.addEventListener("afterprint", () => {
+          remaining -= 1;
+          if (remaining > 0) {
+            setTimeout(() => triggerPrint(), 350);
+          } else {
+            window.close();
+          }
+        });
+        setTimeout(() => triggerPrint(), 200);
       });
     </script>
   </body>
