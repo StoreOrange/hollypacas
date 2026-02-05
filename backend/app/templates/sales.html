@@ -164,34 +164,6 @@
               </div>
             </div>
 
-            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
-              <div class="flex items-center justify-between">
-                <div>
-                  <div class="text-lg font-semibold text-ink">Resumen de venta</div>
-                  <div class="text-xs uppercase tracking-[0.24em] text-slate font-semibold">Datos principales</div>
-                </div>
-                <span class="text-xs text-slate">Edición rápida</span>
-              </div>
-              <div class="mt-3 grid gap-2 text-sm">
-                <div class="flex items-center justify-between">
-                  <span class="text-slate">Cliente</span>
-                  <span id="cliente-summary" class="font-semibold text-ink">Consumidor final</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-slate">Vendedor</span>
-                  <span id="vendedor-summary" class="font-semibold text-ink">Sin asignar</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-slate">Fecha</span>
-                  <span id="fecha-summary" class="font-semibold text-ink">--</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-slate">Hora</span>
-                  <span id="hora-summary" class="font-semibold text-ink">--</span>
-                </div>
-              </div>
-            </div>
-
             <div id="party-inline" class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
               <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Datos de venta</div>
               <div class="text-lg font-semibold text-ink mt-1">Cliente, vendedor y fecha</div>
@@ -201,68 +173,28 @@
                     <i class="bi bi-person text-brand"></i>
                     Cliente
                   </label>
-                  <ul class="nav nav-pills mt-2" id="clienteTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                      <button class="nav-link active" id="cliente-select-tab" data-bs-toggle="pill" data-bs-target="#cliente-select-pane" type="button" role="tab" aria-controls="cliente-select-pane" aria-selected="true">
-                        Seleccionar
-                      </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                      <button class="nav-link" id="cliente-new-tab" data-bs-toggle="pill" data-bs-target="#cliente-new-pane" type="button" role="tab" aria-controls="cliente-new-pane" aria-selected="false">
-                        Nuevo cliente
-                      </button>
-                    </li>
-                  </ul>
-                  <div class="tab-content mt-3">
-                    <div class="tab-pane fade show active" id="cliente-select-pane" role="tabpanel" aria-labelledby="cliente-select-tab">
-                      <div class="mb-2">
-                        <label class="form-label text-xs text-slate">Buscar cliente</label>
-                        <input id="cliente-search" type="text" class="form-control form-control-sm odoo-input" placeholder="Escribe para buscar..." autocomplete="off" maxlength="200" oninput="window.__filterClientes && window.__filterClientes(this.value)" onfocus="window.__filterClientes && window.__filterClientes(this.value)" />
-                        <div class="form-text">Escribe para buscar (desde 1 caracter).</div>
+                  <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
+                    <button id="cliente-search-open" type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#cliente-search-modal">
+                      Buscar cliente
+                    </button>
+                    <div class="text-sm text-slate">Seleccionado:</div>
+                    <div id="cliente-selected-label" class="text-sm fw-semibold">Consumidor final</div>
+                    <button id="cliente-default" type="button" class="btn btn-outline-secondary btn-sm ms-auto" title="Consumidor final">
+                      <i class="bi bi-person-check"></i>
+                    </button>
+                    <input id="cliente-id" type="hidden" name="cliente_id" form="sales-form" />
+                  </div>
+                  <div class="mt-3 border border-slate-200 rounded-2xl p-3 bg-slate-50">
+                    <div class="text-sm font-semibold text-ink mb-2">Nuevo cliente</div>
+                    <div id="cliente-form" class="grid gap-2">
+                      <input name="nombre" class="w-full odoo-input form-control form-control-sm" placeholder="Nombre del cliente *" required />
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <input name="telefono" type="tel" class="w-full odoo-input form-control form-control-sm" placeholder="Telefono" />
+                        <input name="identificacion" class="w-full odoo-input form-control form-control-sm" placeholder="RUC / Cedula" />
                       </div>
-                      <input id="cliente-id" type="hidden" name="cliente_id" form="sales-form" />
-                      <div class="odoo-table-wrap border border-slate-200 rounded-2xl overflow-y-auto max-h-52">
-                        <div class="px-3 py-2 text-xs uppercase tracking-[0.2em] font-semibold text-slate bg-slate-50">
-                          Clientes encontrados
-                        </div>
-                          <div id="cliente-results" role="listbox" aria-label="Resultados de clientes" class="divide-y">
-                            {% if clientes_preview %}
-                              {% for c in clientes_preview %}
-                              <div
-                                class="px-3 py-2 text-sm cursor-pointer hover:bg-slate-100 cliente-row{% if loop.index0 >= 7 %} d-none{% endif %}"
-                                data-id="{{ c.id }}"
-                                data-label="{{ c.nombre }}"
-                                data-name="{{ c.nombre|lower }}"
-                              >{{ c.nombre }}</div>
-                              {% endfor %}
-                              <div id="cliente-empty" class="px-3 py-2 text-slate text-sm d-none">Sin resultados</div>
-                            {% else %}
-                            <div class="px-3 py-2 text-slate text-sm">No hay clientes.</div>
-                            {% endif %}
-                          </div>
-                      </div>
-                      <div class="d-flex align-items-center gap-2">
-                        <div class="text-sm text-slate">Seleccionado:</div>
-                        <div id="cliente-selected-label" class="text-sm fw-semibold">Consumidor final</div>
-                        <button id="cliente-default" type="button" class="btn btn-outline-secondary btn-sm ms-auto" title="Consumidor final">
-                          <i class="bi bi-person-check"></i>
-                        </button>
-                      </div>
-                      <div class="text-xs text-slate mt-1">Por defecto: Consumidor final.</div>
-                    </div>
-                    <div class="tab-pane fade" id="cliente-new-pane" role="tabpanel" aria-labelledby="cliente-new-tab">
-                      <div id="cliente-form" class="space-y-3">
-                        <label class="text-sm font-semibold text-ink">Nombre *</label>
-                        <input name="nombre" class="w-full odoo-input form-control" placeholder="Nombre del cliente" required />
-                        <label class="text-sm font-semibold text-ink">Identificacion R/C (opcional)</label>
-                        <input name="identificacion" class="w-full odoo-input form-control" placeholder="Cedula o RUC" />
-                        <label class="text-sm font-semibold text-ink">Telefono (opcional)</label>
-                        <input name="telefono" type="tel" class="w-full odoo-input form-control" placeholder="Numero de telefono" />
-                        <label class="text-sm font-semibold text-ink">Correo (opcional)</label>
-                        <input name="email" type="email" class="w-full odoo-input form-control" placeholder="Correo" />
-                        <label class="text-sm font-semibold text-ink">Direccion (opcional)</label>
-                        <input name="direccion" class="w-full odoo-input form-control" placeholder="Direccion" />
-                        <button id="cliente-save" type="button" class="btn btn-primary w-full">Guardar cliente</button>
+                      <input name="direccion" class="w-full odoo-input form-control form-control-sm" placeholder="Direccion" />
+                      <div class="d-flex flex-wrap gap-2">
+                        <button id="cliente-save" type="button" class="btn btn-primary btn-sm">Guardar cliente</button>
                       </div>
                     </div>
                   </div>
@@ -642,7 +574,9 @@
           Digita la cantidad de billetes/monedas para calcular el total efectivo contado.
         </div>
       </div>
-      </div>
+    </div>
+  </div>
+</div>
 
 <div class="modal fade" id="combo-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -719,6 +653,46 @@
             <div class="text-sm text-slate mt-2" id="combo-status"></div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="cliente-search-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold">Clientes</div>
+          <div class="text-lg font-semibold text-ink">Buscar y seleccionar</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label text-xs text-slate">Buscar cliente</label>
+          <input id="cliente-modal-search" type="text" class="form-control form-control-sm odoo-input" placeholder="Escribe para buscar..." autocomplete="off" />
+          <div id="cliente-modal-status" class="form-text">Escribe para buscar.</div>
+        </div>
+        <div class="table-responsive border rounded-2xl">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Cliente</th>
+                <th class="text-end">Accion</th>
+              </tr>
+            </thead>
+            <tbody id="cliente-modal-body">
+              <tr>
+                <td colspan="2" class="text-center text-slate">Sin resultados.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="text-xs text-slate mt-2">Doble clic en un cliente para seleccionar.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
       </div>
     </div>
   </div>
@@ -2334,10 +2308,9 @@
           field.value = "";
         }
       });
-      const tabButton = document.getElementById("cliente-select-tab");
-      if (tabButton && window.bootstrap) {
-        const tab = new bootstrap.Tab(tabButton);
-        tab.show();
+      if (clienteModalSearch) {
+        clienteModalSearch.focus();
+        clienteModalSearch.select();
       }
     } catch (err) {
       console.error("Error creando cliente (catch)", err);
@@ -2385,31 +2358,26 @@
     });
   }
 
+      const partyRoot = document.getElementById("party-inline");
       const clienteSummary = document.getElementById("cliente-summary");
       const vendedorSummary = document.getElementById("vendedor-summary");
       const fechaSummary = document.getElementById("fecha-summary");
       const horaSummary = document.getElementById("hora-summary");
-      const clienteSearch = document.getElementById("cliente-search");
-      const clienteResults = document.getElementById("cliente-results");
-      const clienteEmpty = document.getElementById("cliente-empty");
-      const clienteIdInput = document.getElementById("cliente-id");
+      const clienteIdInput = partyRoot ? partyRoot.querySelector("#cliente-id") : document.getElementById("cliente-id");
       const clienteSelectedLabel = document.getElementById("cliente-selected-label");
       const vendedorSelect = document.getElementById("vendedor-select");
       const fechaInput = document.getElementById("venta-fecha");
-      let clienteActiveIndex = -1;
-      let clienteRows = clienteResults ? Array.from(clienteResults.querySelectorAll(".cliente-row")) : [];
-
-      const syncClienteRows = () => {
-        clienteRows = clienteResults ? Array.from(clienteResults.querySelectorAll(".cliente-row")) : [];
-      };
+      const clienteModal = document.getElementById("cliente-search-modal");
+      const clienteModalSearch = document.getElementById("cliente-modal-search");
+      const clienteModalBody = document.getElementById("cliente-modal-body");
+      const clienteModalStatus = document.getElementById("cliente-modal-status");
+      let clienteTimer = null;
 
       const setClienteSelection = (id, label) => {
         if (clienteIdInput) clienteIdInput.value = id || "";
         if (clienteSelectedLabel) clienteSelectedLabel.textContent = label || "Consumidor final";
-        if (clienteSearch && label) clienteSearch.value = label;
         if (clienteSummary) clienteSummary.textContent = clienteSelectedLabel?.textContent || "Consumidor final";
         if (payCliente) payCliente.textContent = clienteSelectedLabel?.textContent || "--";
-        clienteActiveIndex = -1;
       };
 
   const updatePartySummary = () => {
@@ -2441,7 +2409,7 @@
     }
   };
 
-    const clienteDefault = document.getElementById("cliente-default");
+    const clienteDefault = partyRoot ? partyRoot.querySelector("#cliente-default") : document.getElementById("cliente-default");
     if (clienteDefault) {
       clienteDefault.addEventListener("click", () => {
         setClienteSelection("", "Consumidor final");
@@ -2491,9 +2459,11 @@
               allowClear: true,
               minimumResultsForSearch: 0,
               matcher: tokenMatcher,
-              selectionCssClass: "odoo-select2",
-              dropdownCssClass: "odoo-select2",
             });
+            const instance = $el.data("select2");
+            if (instance && instance.$container) {
+              instance.$container.addClass("odoo-select2");
+            }
           });
         }
         const $payment = $("#payment-modal .select2");
@@ -2506,103 +2476,117 @@
               placeholder: "Selecciona",
               allowClear: true,
               dropdownParent: $("#payment-modal"),
-              selectionCssClass: "odoo-select2",
-              dropdownCssClass: "odoo-select2",
             });
+            const instance = $el.data("select2");
+            if (instance && instance.$container) {
+              instance.$container.addClass("odoo-select2");
+            }
           });
         }
       };
 
       initPartySelects();
 
-        if (clienteSearch) clienteSearch.focus();
+      const clienteSearchOpen = document.getElementById("cliente-search-open");
+      if (clienteSearchOpen && clienteModal && window.bootstrap) {
+        clienteSearchOpen.addEventListener("click", (event) => {
+          event.preventDefault();
+          const modal = bootstrap.Modal.getOrCreateInstance(clienteModal);
+          modal.show();
+        });
+      }
 
-        const clearClienteHighlight = () => {
-          clienteRows.forEach((row) => row.classList.remove("bg-slate-100"));
-        };
+      const renderClienteModalStatus = (message) => {
+        if (clienteModalStatus) clienteModalStatus.textContent = message || "";
+      };
 
-        const getVisibleClienteRows = () => clienteRows.filter((row) => !row.classList.contains("d-none"));
+      const renderClienteModalItems = (items) => {
+        if (!clienteModalBody) return;
+        clienteModalBody.innerHTML = "";
+        if (!items.length) {
+          clienteModalBody.innerHTML = `<tr><td colspan="2" class="text-center text-slate">Sin resultados.</td></tr>`;
+          return;
+        }
+        items.slice(0, 50).forEach((item) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td class="text-sm">${item.nombre}</td>
+            <td class="text-end">
+              <button type="button" class="btn btn-outline-primary btn-sm">Seleccionar</button>
+            </td>
+          `;
+          row.addEventListener("dblclick", () => {
+            setClienteSelection(item.id, item.nombre);
+            if (clienteModal && window.bootstrap) {
+              const modal = bootstrap.Modal.getInstance(clienteModal);
+              if (modal) modal.hide();
+            }
+          });
+          const btn = row.querySelector("button");
+          if (btn) {
+            btn.addEventListener("click", () => {
+              setClienteSelection(item.id, item.nombre);
+              if (clienteModal && window.bootstrap) {
+                const modal = bootstrap.Modal.getInstance(clienteModal);
+                if (modal) modal.hide();
+              }
+            });
+          }
+          clienteModalBody.append(row);
+        });
+      };
 
-        const highlightClienteIndex = (index) => {
-          const visibleRows = getVisibleClienteRows();
-          if (!visibleRows.length) {
-            clienteActiveIndex = -1;
+      const searchClientes = async (term) => {
+        const q = (term || "").trim();
+        if (!q) {
+          renderClienteModalStatus("Escribe para buscar.");
+          if (clienteModalBody) {
+            clienteModalBody.innerHTML = `<tr><td colspan="2" class="text-center text-slate">Escribe para buscar.</td></tr>`;
+          }
+          return;
+        }
+        renderClienteModalStatus("Buscando...");
+        try {
+          const resp = await fetch(`/sales/clientes/search?q=${encodeURIComponent(q)}`, {
+            headers: { "X-Requested-With": "fetch" },
+          });
+          if (!resp.ok) {
+            renderClienteModalStatus("No se pudo buscar.");
             return;
           }
-          clienteActiveIndex = Math.max(0, Math.min(index, visibleRows.length - 1));
-          clearClienteHighlight();
-          const activeRow = visibleRows[clienteActiveIndex];
-          if (activeRow) {
-            activeRow.classList.add("bg-slate-100");
-            activeRow.scrollIntoView({ block: "nearest" });
+          const data = await resp.json().catch(() => null);
+          if (!data || data.ok === false) {
+            renderClienteModalStatus("No se pudo buscar.");
+            return;
           }
-        };
-
-        const bindClienteRows = () => {
-          if (!clienteResults) return;
-          syncClienteRows();
-          clienteRows.forEach((row) => {
-            row.addEventListener("click", () => setClienteSelection(row.dataset.id, row.dataset.label));
-          });
-        };
-
-        const filterClienteRows = (term) => {
-          const q = (term || "").trim().toLowerCase();
-          let visibleCount = 0;
-          clienteRows.forEach((row, idx) => {
-            const name = (row.dataset.name || row.dataset.label || "").toLowerCase();
-            const matches = q ? name.includes(q) : idx < 7;
-            row.classList.toggle("d-none", !matches);
-            if (matches) visibleCount += 1;
-          });
-          if (clienteEmpty) {
-            clienteEmpty.classList.toggle("d-none", visibleCount !== 0);
-          }
-          if (clienteResults) clienteResults.scrollTop = 0;
-          highlightClienteIndex(0);
-        };
-
-        window.__filterClientes = filterClienteRows;
-
-        let clienteTimer = null;
-        bindClienteRows();
-        filterClienteRows(clienteSearch ? clienteSearch.value : "");
-        if (clienteSearch) {
-          clienteSearch.addEventListener("input", (event) => {
-            clearTimeout(clienteTimer);
-            clienteTimer = setTimeout(() => filterClienteRows(event.target.value), 120);
-          });
-          clienteSearch.addEventListener("keyup", (event) => {
-            if (event.key.length === 1 || event.key === "Backspace" || event.key === "Delete") {
-              clearTimeout(clienteTimer);
-              clienteTimer = setTimeout(() => filterClienteRows(event.target.value), 120);
-            }
-          });
-          clienteSearch.addEventListener("change", (event) => {
-            filterClienteRows(event.target.value);
-          });
-          clienteSearch.addEventListener("focus", () => {
-            filterClienteRows(clienteSearch.value);
-          });
-          clienteSearch.addEventListener("keydown", (event) => {
-            const items = getVisibleClienteRows();
-            if (!items.length) return;
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              highlightClienteIndex(clienteActiveIndex + 1);
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              highlightClienteIndex(clienteActiveIndex - 1);
-            } else if (event.key === "Enter") {
-              event.preventDefault();
-              const el = items[clienteActiveIndex >= 0 ? clienteActiveIndex : 0];
-              if (el) {
-                setClienteSelection(el.dataset.id, el.dataset.label);
-              }
-              return;
-            }
-          });
+          renderClienteModalItems(data.items || []);
+        } catch (err) {
+          console.error("Error buscando clientes", err);
+          renderClienteModalStatus("Error de red al buscar.");
         }
+      };
+
+      if (clienteModalSearch) {
+        clienteModalSearch.addEventListener("input", (event) => {
+          clearTimeout(clienteTimer);
+          clienteTimer = setTimeout(() => searchClientes(event.target.value), 200);
+        });
+        clienteModalSearch.addEventListener("focus", () => {
+          searchClientes(clienteModalSearch.value);
+        });
+      }
+      if (clienteModal) {
+        clienteModal.addEventListener("shown.bs.modal", () => {
+          if (clienteModalSearch) {
+            clienteModalSearch.focus();
+            clienteModalSearch.select();
+          }
+          renderClienteModalStatus("Escribe para buscar.");
+          if (clienteModalBody) {
+            clienteModalBody.innerHTML = `<tr><td colspan="2" class="text-center text-slate">Escribe para buscar.</td></tr>`;
+          }
+        });
+      }
     syncPaymentFields();
     updatePartySummary();
     updateTotals();
