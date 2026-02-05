@@ -3982,6 +3982,8 @@ def report_sales_export(
                     abono.fecha,
                 )
             saldo_usd = max(total_usd - abonos_usd, Decimal("0"))
+            if saldo_usd <= 0:
+                continue
             cobranza_rows.append(
                 {
                     "factura": factura.numero,
