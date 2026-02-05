@@ -4001,6 +4001,7 @@ def report_sales_export(
             return lines or [trunc(text, limit)]
 
         draw_header()
+        line_height = 12
         for row in report_rows:
             moneda = row.get("moneda") or "CS"
             label = "$" if moneda == "USD" else "C$"
@@ -4009,22 +4010,22 @@ def report_sales_export(
             product_text = f"{row.get('producto') or ''}".strip()
             product_limit = max_chars_for_width(qty_right - producto_x - 8, 8)
             producto_lines = wrap_lines(product_text, product_limit, 2)
-            row_height = 12 * (1 + len(producto_lines))
+            row_height = (line_height * max(1, len(producto_lines))) + 4
 
             if y - row_height < 70:
                 c.showPage()
                 y = height - 36
                 draw_header()
 
-            c.drawString(factura_x, y, trunc(str(row["factura"] or ""), 16))
-            line_y = y - 12
-            c.drawString(producto_x, line_y, producto_lines[0] if producto_lines else "")
-            c.drawRightString(qty_right, line_y, f"{row.get('cantidad', 0):,.2f}")
-            c.drawRightString(price_right, line_y, f"{label} {float(precio or 0):,.2f}")
-            c.drawRightString(subtotal_right, line_y, f"{label} {float(subtotal or 0):,.2f}")
+            row_y = y
+            c.drawString(factura_x, row_y, trunc(str(row["factura"] or ""), 16))
+            c.drawString(producto_x, row_y, producto_lines[0] if producto_lines else "")
+            c.drawRightString(qty_right, row_y, f"{row.get('cantidad', 0):,.2f}")
+            c.drawRightString(price_right, row_y, f"{label} {float(precio or 0):,.2f}")
+            c.drawRightString(subtotal_right, row_y, f"{label} {float(subtotal or 0):,.2f}")
 
             if len(producto_lines) > 1:
-                c.drawString(producto_x, line_y - 12, producto_lines[1])
+                c.drawString(producto_x, row_y - line_height, producto_lines[1])
 
             y -= row_height
 
