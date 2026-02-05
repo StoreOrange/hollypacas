@@ -108,6 +108,7 @@
           href="/sales/{{ print_id }}/ticket/print"
           target="_blank"
           rel="noopener"
+          id="sales-print-ticket"
           class="rounded-full bg-emerald-600 text-white text-xs font-semibold px-4 py-2 shadow-sm hover:bg-emerald-700 transition"
         >
           Ver e imprimir ticket
@@ -2659,6 +2660,33 @@
       showConfirmButton: false,
     });
   }
+  (function () {
+    const printLink = document.getElementById("sales-print-ticket");
+    if (!printLink) {
+      setTimeout(() => {
+        window.location.href = "/sales";
+      }, 1900);
+      return;
+    }
+    const reloadAfterPrint = () => {
+      window.removeEventListener("focus", reloadAfterPrint);
+      setTimeout(() => {
+        window.location.href = "/sales";
+      }, 300);
+    };
+    printLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      const url = printLink.getAttribute("href");
+      if (url) {
+        window.open(url, "_blank", "noopener");
+        window.open(url, "_blank", "noopener");
+      }
+      window.addEventListener("focus", reloadAfterPrint, { once: true });
+      setTimeout(() => {
+        window.location.href = "/sales";
+      }, 12000);
+    });
+  })();
   {% endif %}
   // La impresion se hace manual con el boton de vista previa.
 </script>
