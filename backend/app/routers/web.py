@@ -3831,6 +3831,120 @@ def report_sales_export(
         c.setFillColor(colors.black)
         y -= 64
 
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+
+        rate_cache: dict[date, Decimal] = {}
+        def rate_for_date(value_date: date | datetime | None) -> Decimal:
+            if not value_date:
+                return Decimal('0')
+            key = value_date if isinstance(value_date, date) and not isinstance(value_date, datetime) else value_date.date()
+            if key not in rate_cache:
+                rate_row = (
+                    db.query(ExchangeRate)
+                    .filter(ExchangeRate.effective_date <= key)
+                    .order_by(ExchangeRate.effective_date.desc())
+                    .first()
+                )
+                rate_cache[key] = Decimal(str(rate_row.rate)) if rate_row else Decimal('0')
+            return rate_cache[key]
+
+        def to_usd(moneda: str, monto_cs: Decimal, monto_usd: Decimal, tasa: Decimal, value_date) -> Decimal:
+            if moneda == 'USD':
+                return Decimal(str(monto_usd or 0))
+            rate = tasa if tasa else rate_for_date(value_date)
+            return (Decimal(str(monto_cs or 0)) / rate) if rate else Decimal('0')
+
+        bodega_ids = None
+        if branch_id and branch_id != 'all':
+            try:
+                branch_int = int(branch_id)
+                bodega_ids = [row[0] for row in db.query(Bodega.id).filter(Bodega.branch_id == branch_int).all()]
+            except Exception:
+                bodega_ids = []
+
+        total_ventas_usd = Decimal('0')
+        ventas_query = db.query(VentaFactura).filter(
+            VentaFactura.fecha >= start_dt,
+            VentaFactura.fecha < end_dt,
+            VentaFactura.estado != 'ANULADA',
+        )
+        if bodega_ids is not None:
+            ventas_query = ventas_query.filter(VentaFactura.bodega_id.in_(bodega_ids))
+        if vendedor_id:
+            try:
+                ventas_query = ventas_query.filter(VentaFactura.vendedor_id == int(vendedor_id))
+            except Exception:
+                pass
+        for factura in ventas_query.all():
+            moneda = factura.moneda or 'CS'
+            tasa = Decimal(str(factura.tasa_cambio or 0))
+            total_ventas_usd += to_usd(moneda, Decimal(str(factura.total_cs or 0)), Decimal(str(factura.total_usd or 0)), tasa, factura.fecha)
+
+        total_egresos_usd = Decimal('0')
+        recibos_query = db.query(ReciboCaja).filter(
+            ReciboCaja.fecha.between(start_date, end_date),
+            ReciboCaja.afecta_caja.is_(True),
+            ReciboCaja.tipo == 'EGRESO',
+        )
+        if bodega_ids is not None:
+            recibos_query = recibos_query.filter(ReciboCaja.bodega_id.in_(bodega_ids))
+        for recibo in recibos_query.all():
+            moneda = recibo.moneda or 'CS'
+            tasa = Decimal(str(recibo.tasa_cambio or 0))
+            total_egresos_usd += to_usd(moneda, Decimal(str(recibo.monto_cs or 0)), Decimal(str(recibo.monto_usd or 0)), tasa, recibo.fecha)
+
+        total_depositos_usd = Decimal('0')
+        depositos_query = db.query(DepositoCliente).filter(
+            DepositoCliente.fecha.between(start_date, end_date),
+        )
+        if bodega_ids is not None:
+            depositos_query = depositos_query.filter(DepositoCliente.bodega_id.in_(bodega_ids))
+        if vendedor_id:
+            try:
+                depositos_query = depositos_query.filter(DepositoCliente.vendedor_id == int(vendedor_id))
+            except Exception:
+                pass
+        for dep in depositos_query.all():
+            moneda = dep.moneda or 'CS'
+            tasa = Decimal(str(dep.tasa_cambio or 0))
+            total_depositos_usd += to_usd(moneda, Decimal(str(dep.monto_cs or 0)), Decimal(str(dep.monto_usd or 0)), tasa, dep.fecha)
+
+        total_creditos_usd = Decimal('0')
+        creditos_query = db.query(VentaFactura).filter(
+            VentaFactura.fecha >= start_dt,
+            VentaFactura.fecha < end_dt,
+            VentaFactura.estado != 'ANULADA',
+            VentaFactura.estado_cobranza == 'PENDIENTE',
+        )
+        if bodega_ids is not None:
+            creditos_query = creditos_query.filter(VentaFactura.bodega_id.in_(bodega_ids))
+        if vendedor_id:
+            try:
+                creditos_query = creditos_query.filter(VentaFactura.vendedor_id == int(vendedor_id))
+            except Exception:
+                pass
+        for factura in creditos_query.all():
+            moneda = factura.moneda or 'CS'
+            tasa = Decimal(str(factura.tasa_cambio or 0))
+            if moneda == 'USD':
+                paid_usd = sum(Decimal(str(a.monto_usd or 0)) for a in factura.abonos)
+                due_usd = Decimal(str(factura.total_usd or 0))
+                saldo_usd = max(due_usd - paid_usd, Decimal('0'))
+                total_creditos_usd += saldo_usd
+            else:
+                paid_cs = sum(Decimal(str(a.monto_cs or 0)) for a in factura.abonos)
+                due_cs = Decimal(str(factura.total_cs or 0))
+                saldo_cs = max(due_cs - paid_cs, Decimal('0'))
+                total_creditos_usd += to_usd('CS', saldo_cs, Decimal('0'), tasa, factura.fecha)
+
+        total_residuo_usd = (
+            Decimal(str(total_ventas_usd))
+            - Decimal(str(total_depositos_usd))
+            - Decimal(str(total_egresos_usd))
+            - Decimal(str(total_creditos_usd))
+        )
+
         content_width = width - (margin * 2)
         factura_x = margin
         producto_x = margin + 90
@@ -3941,6 +4055,28 @@ def report_sales_export(
         else:
             c.drawString(margin + 220, y, "Total USD conversión: -")
         y -= 24
+
+        if y < 120:
+            c.showPage()
+            y = height - 50
+
+        c.setFont("Times-Bold", 10)
+        c.setFillColor(colors.HexColor("#1e3a8a"))
+        c.drawString(margin, y, "Resumen arqueo (USD)")
+        c.setFillColor(colors.black)
+        y -= 16
+        c.setFont("Times-Roman", 9)
+        c.drawString(margin, y, f"Total ventas: $ {float(total_ventas_usd):,.2f}")
+        y -= 12
+        c.drawString(margin, y, f"- Depositos: $ {float(total_depositos_usd):,.2f}")
+        y -= 12
+        c.drawString(margin, y, f"- Gastos recibos de caja: $ {float(total_egresos_usd):,.2f}")
+        y -= 12
+        c.drawString(margin, y, f"- Pendientes deudas: $ {float(total_creditos_usd):,.2f}")
+        y -= 12
+        c.setFont("Times-Bold", 9)
+        c.drawString(margin, y, f"Total residuo esperado (efectivo): $ {float(total_residuo_usd):,.2f}")
+        y -= 22
 
         c.setFont("Times-Bold", 10)
         c.setFillColor(colors.HexColor("#1e3a8a"))
