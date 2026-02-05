@@ -3946,6 +3946,7 @@ def report_sales_export(
         )
 
         cobranza_rows = []
+        total_creditos_pendientes_usd = Decimal("0")
         cobranza_query = db.query(VentaFactura).filter(
             VentaFactura.fecha >= start_dt,
             VentaFactura.fecha < end_dt,
@@ -3984,6 +3985,7 @@ def report_sales_export(
             saldo_usd = max(total_usd - abonos_usd, Decimal("0"))
             if saldo_usd <= 0:
                 continue
+            total_creditos_pendientes_usd += saldo_usd
             cobranza_rows.append(
                 {
                     "factura": factura.numero,
@@ -4200,6 +4202,22 @@ def report_sales_export(
             c.drawRightString(abono_right, y, f"$ {float(row['abono_usd'] or 0):,.2f}")
             c.drawRightString(saldo_right, y, f"$ {float(row['saldo_usd'] or 0):,.2f}")
             y -= 12
+
+        if y < 90:
+            c.showPage()
+            y = height - 50
+            c.setFont("Times-Bold", 10)
+            c.setFillColor(colors.HexColor("#1e3a8a"))
+            c.drawString(margin, y, "Reporte de Cuentas por Cobrar - Anexo.")
+            c.setFillColor(colors.black)
+            y -= 16
+        c.setFont("Times-Bold", 9)
+        c.drawRightString(
+            saldo_right,
+            y,
+            f"Total creditos pendientes: $ {float(total_creditos_pendientes_usd):,.2f}",
+        )
+        y -= 14
 
         c.save()
         buffer.seek(0)
