@@ -2381,16 +2381,26 @@
         if (payCliente) payCliente.textContent = clienteSelectedLabel?.textContent || "--";
       };
 
+  const getClienteLabel = () => clienteSelectedLabel?.textContent || "Consumidor final";
+  const getVendedorLabel = () => vendedorSelect?.selectedOptions[0]?.textContent || "Sin asignar";
+  const getFechaLabel = () => fechaInput?.value || "--";
+
   const updatePartySummary = () => {
+    const clienteLabel = getClienteLabel();
+    const vendedorLabel = getVendedorLabel();
+    const fechaLabel = getFechaLabel();
     if (clienteSummary) {
-      clienteSummary.textContent = clienteSelectedLabel?.textContent || "Consumidor final";
+      clienteSummary.textContent = clienteLabel;
     }
-    if (vendedorSummary && vendedorSelect) {
-      vendedorSummary.textContent = vendedorSelect.selectedOptions[0]?.textContent || "Sin asignar";
+    if (vendedorSummary) {
+      vendedorSummary.textContent = vendedorLabel;
     }
-    if (fechaSummary && fechaInput) {
-      fechaSummary.textContent = fechaInput.value || "--";
+    if (fechaSummary) {
+      fechaSummary.textContent = fechaLabel;
     }
+    if (payCliente) payCliente.textContent = clienteLabel || "--";
+    if (payVendedor) payVendedor.textContent = vendedorLabel || "--";
+    if (payFecha) payFecha.textContent = fechaLabel || "--";
   };
 
   const formatLocalDate = () => {
@@ -2601,9 +2611,9 @@
       productNavMode = "paused";
       paymentEnterStage = 0;
       updatePartySummary();
-      if (payCliente) payCliente.textContent = clienteSummary?.textContent || "--";
-      if (payVendedor) payVendedor.textContent = vendedorSummary?.textContent || "--";
-      if (payFecha) payFecha.textContent = fechaSummary?.textContent || "--";
+      if (payCliente) payCliente.textContent = getClienteLabel() || "--";
+      if (payVendedor) payVendedor.textContent = getVendedorLabel() || "--";
+      if (payFecha) payFecha.textContent = getFechaLabel() || "--";
       if (payHora && horaSummary) payHora.textContent = horaSummary.textContent || "--";
       if (payTotalUsd) payTotalUsd.textContent = formatMoney(currentTotals.usd, "USD");
       if (payTotalCs) payTotalCs.textContent = formatMoney(currentTotals.cs, "CS");
