@@ -28,6 +28,9 @@ class Settings:
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.zoho.com")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMS_WEBHOOK_URL: str = os.getenv("SMS_WEBHOOK_URL", "")
+    SMS_WEBHOOK_TOKEN: str = os.getenv("SMS_WEBHOOK_TOKEN", "")
+    SMS_ALERT_RECIPIENTS: str = os.getenv("SMS_ALERT_RECIPIENTS", "")
 
 
 settings = Settings()

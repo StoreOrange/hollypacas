@@ -11,6 +11,8 @@ from email.message import EmailMessage
 
 import io
 from pathlib import Path
+from urllib import request as urlrequest
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from dotenv import dotenv_values
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font
@@ -108,16 +110,91 @@ def _has_permission(user: User, perm: str) -> bool:
 
 
 def _set_request_permissions(request: Request, user: User) -> None:
-    perm_names = _permission_names(user)
+    if any(role.name == "administrador" for role in user.roles or []):
+        perm_names = _permission_catalog_names()
+    else:
+        perm_names = _permission_names(user)
     request.state.permission_names = perm_names
-    request.state.has_permissions = bool(perm_names)
+    request.state.has_permissions = True
+
+
+def _is_api_request(request: Request) -> bool:
+    accept = (request.headers.get("accept") or "").lower()
+    if "application/json" in accept:
+        return True
+    if request.headers.get("x-requested-with") == "fetch":
+        return True
+    if request.headers.get("hx-request"):
+        return True
+    return False
+
+
+def _permission_redirect_url(request: Request, message: str) -> str:
+    referer = request.headers.get("referer") or "/home"
+    base_url = str(request.base_url).rstrip("/")
+    if referer.startswith("http") and not referer.startswith(base_url):
+        referer = "/home"
+    parsed = urlparse(referer)
+    query = parse_qs(parsed.query)
+    query["perm_error"] = [message]
+    new_query = urlencode(query, doseq=True)
+    if parsed.scheme:
+        return urlunparse(
+            (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
+        )
+    return f"{parsed.path}?{new_query}" if new_query else parsed.path
+
+
+def _permission_sms_recipients() -> list[str]:
+    raw = (settings.SMS_ALERT_RECIPIENTS or "").strip()
+    if not raw:
+        return []
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _send_permission_sms_alert(user: Optional[User], request: Request, perm: str) -> None:
+    sms_url = (settings.SMS_WEBHOOK_URL or "").strip()
+    recipients = _permission_sms_recipients()
+    if not sms_url or not recipients:
+        return
+    user_label = user.full_name if user and user.full_name else (user.email if user else "desconocido")
+    message = (
+        "Acceso denegado. "
+        f"Usuario: {user_label}. "
+        f"Permiso: {perm}. "
+        f"Ruta: {request.url.path}. "
+        f"Hora: {local_now().strftime('%Y-%m-%d %H:%M:%S')}."
+    )
+    payload = {
+        "to": recipients,
+        "message": message,
+        "user": user.email if user else None,
+        "perm": perm,
+        "path": request.url.path,
+        "ip": request.client.host if request.client else None,
+    }
+    headers = {"Content-Type": "application/json"}
+    token = (settings.SMS_WEBHOOK_TOKEN or "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    data = json.dumps(payload).encode("utf-8")
+    req = urlrequest.Request(sms_url, data=data, headers=headers, method="POST")
+    with urlrequest.urlopen(req, timeout=3) as response:
+        response.read()
 
 
 def _enforce_permission(request: Request, user: User, perm: str) -> None:
-    if not request.state.has_permissions:
-        return
     if not _has_permission(user, perm):
-        raise HTTPException(status_code=403, detail="Acceso denegado")
+        message = "No tienes permisos para acceder a esta opcion del sistema."
+        try:
+            _send_permission_sms_alert(user, request, perm)
+        except Exception:
+            pass
+        if _is_api_request(request):
+            raise HTTPException(status_code=403, detail=message)
+        raise HTTPException(
+            status_code=303, headers={"Location": _permission_redirect_url(request, message)}
+        )
 
 
 PERMISSION_GROUPS = [
@@ -155,6 +232,7 @@ PERMISSION_GROUPS = [
         "title": "Accesos (acciones)",
         "items": [
             {"name": "access.sales", "label": "Acceso a ventas"},
+            {"name": "access.sales.caliente", "label": "Ventas en caliente"},
             {"name": "access.sales.registrar", "label": "Registrar facturas"},
             {"name": "access.sales.pagos", "label": "Aplicar pagos"},
             {"name": "access.sales.utilitario", "label": "Utilitario de ventas"},
@@ -169,6 +247,7 @@ PERMISSION_GROUPS = [
             {"name": "access.inventory.egresos", "label": "Egresos de inventario"},
             {"name": "access.inventory.productos", "label": "Crear/editar productos"},
             {"name": "access.finance", "label": "Acceso a finanzas"},
+            {"name": "access.finance.rates", "label": "Configurar tasas"},
             {"name": "access.reports", "label": "Acceso a informes"},
             {"name": "access.data", "label": "Acceso a datos"},
             {"name": "access.data.permissions", "label": "Gestion de permisos"},
@@ -1893,6 +1972,7 @@ async def sales_cierre_create(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales.cierre")
     form = await request.form()
     fecha_raw = form.get("fecha")
     fecha_value = local_today()
@@ -2077,10 +2157,12 @@ async def sales_cierre_create(
 
 @router.get("/sales/cierre/{cierre_id}/pdf")
 def sales_cierre_pdf(
+    request: Request,
     cierre_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales.cierre")
     cierre = db.query(CierreCaja).filter(CierreCaja.id == cierre_id).first()
     if not cierre:
         return JSONResponse({"ok": False, "message": "Cierre no encontrado"}, status_code=404)
@@ -2131,6 +2213,7 @@ async def sales_roc_create(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales.roc")
     form = await request.form()
     tipo = (form.get("tipo") or "EGRESO").upper()
     rubro_id = form.get("rubro_id")
@@ -2271,10 +2354,12 @@ async def sales_roc_create(
 
 @router.get("/sales/roc/{recibo_id}/pdf")
 def sales_roc_pdf(
+    request: Request,
     recibo_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales.roc")
     recibo = db.query(ReciboCaja).filter(ReciboCaja.id == recibo_id).first()
     if not recibo:
         return JSONResponse({"ok": False, "message": "Recibo no encontrado"}, status_code=404)
@@ -2397,7 +2482,7 @@ def sales_ventas_caliente(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
-    _enforce_permission(request, user, "access.sales")
+    _enforce_permission(request, user, "access.sales.caliente")
     today = local_today()
     first_day = date(today.year, today.month, 1)
     next_month = (first_day.replace(day=28) + timedelta(days=4)).replace(day=1)
@@ -3984,6 +4069,7 @@ def sales_depositos_export(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales.depositos")
     start_date, end_date, vendedor_q, banco_q, moneda_q = _depositos_filters(request)
     branch, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
@@ -4178,6 +4264,7 @@ async def sales_depositos_create(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales.depositos")
     form = await request.form()
     deposito_id = form.get("deposito_id")
     vendedor_id = form.get("vendedor_id")
@@ -4322,10 +4409,12 @@ def sales_depositos_delete(
 
 @router.get("/sales/{venta_id}/detail")
 def sales_detail(
+    request: Request,
     venta_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
+    _enforce_permission(request, user, "access.sales.cobranza")
     factura = (
         db.query(VentaFactura)
         .filter(VentaFactura.id == venta_id)
@@ -4397,6 +4486,7 @@ async def sales_reversion_request(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales.reversion")
     form = await request.form()
     motivo = (form.get("motivo") or "").strip()
     if not motivo:
@@ -4534,6 +4624,7 @@ async def sales_reversion_confirm(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales.reversion")
     form = await request.form()
     token = (form.get("token") or "").strip()
     if not token:
@@ -4655,12 +4746,14 @@ def data_notificaciones(
 
 @router.post("/data/notificaciones/config")
 def data_notificaciones_config(
+    request: Request,
     sender_email: str = Form(...),
     sender_name: Optional[str] = Form(None),
     active: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     sender_email = sender_email.strip()
     if not sender_email:
         return RedirectResponse("/data/notificaciones?error=Correo+requerido", status_code=303)
@@ -4677,11 +4770,13 @@ def data_notificaciones_config(
 
 @router.post("/data/notificaciones/recipients")
 def data_notificaciones_add_recipient(
+    request: Request,
     email: str = Form(...),
     name: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     email = email.strip().lower()
     if not email:
         return RedirectResponse("/data/notificaciones?error=Correo+requerido", status_code=303)
@@ -4695,6 +4790,7 @@ def data_notificaciones_add_recipient(
 
 @router.post("/data/notificaciones/recipients/{recipient_id}/update")
 def data_notificaciones_update_recipient(
+    request: Request,
     recipient_id: int,
     email: str = Form(...),
     name: Optional[str] = Form(None),
@@ -4702,6 +4798,7 @@ def data_notificaciones_update_recipient(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     recipient = db.query(NotificationRecipient).filter(NotificationRecipient.id == recipient_id).first()
     if not recipient:
         return RedirectResponse("/data/notificaciones?error=Destinatario+no+existe", status_code=303)
@@ -4714,6 +4811,7 @@ def data_notificaciones_update_recipient(
 
 @router.post("/data/pos-print")
 def data_pos_print_save(
+    request: Request,
     branch_id: int = Form(...),
     printer_name: str = Form(...),
     copies: int = Form(1),
@@ -4728,6 +4826,7 @@ def data_pos_print_save(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     printer_name = printer_name.strip()
     if not printer_name or not branch_id:
         return RedirectResponse("/data/pos-print?error=Datos+incompletos", status_code=303)
@@ -4764,6 +4863,7 @@ def data_pos_print_save(
 
 @router.post("/data/pos-print/{setting_id}/update")
 def data_pos_print_update(
+    request: Request,
     setting_id: int,
     branch_id: int = Form(...),
     printer_name: str = Form(...),
@@ -4779,6 +4879,7 @@ def data_pos_print_update(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     setting = db.query(PosPrintSetting).filter(PosPrintSetting.id == setting_id).first()
     if not setting:
         return RedirectResponse("/data/pos-print?error=Configuracion+no+existe", status_code=303)
@@ -4837,6 +4938,7 @@ def data_vendedores(
 
 @router.post("/data/vendedores")
 def data_create_vendedor(
+    request: Request,
     nombre: str = Form(...),
     telefono: Optional[str] = Form(None),
     bodega_ids: Optional[list[str]] = Form(None),
@@ -4844,6 +4946,7 @@ def data_create_vendedor(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     nombre = nombre.strip()
     if not nombre:
         return RedirectResponse("/data/vendedores?error=Nombre+requerido", status_code=303)
@@ -4870,6 +4973,7 @@ def data_create_vendedor(
 
 @router.post("/data/vendedores/{item_id}/update")
 def data_update_vendedor(
+    request: Request,
     item_id: int,
     nombre: str = Form(...),
     telefono: Optional[str] = Form(None),
@@ -4879,6 +4983,7 @@ def data_update_vendedor(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     vendedor = db.query(Vendedor).filter(Vendedor.id == item_id).first()
     if not vendedor:
         return RedirectResponse("/data/vendedores?error=Vendedor+no+existe", status_code=303)
@@ -4931,10 +5036,12 @@ def data_bancos(
 
 @router.post("/data/bancos")
 def data_create_banco(
+    request: Request,
     nombre: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     nombre = nombre.strip()
     if not nombre:
         return RedirectResponse("/data/bancos?error=Nombre+requerido", status_code=303)
@@ -4949,11 +5056,13 @@ def data_create_banco(
 
 @router.post("/data/bancos/{item_id}/update")
 def data_update_banco(
+    request: Request,
     item_id: int,
     nombre: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     banco = db.query(Banco).filter(Banco.id == item_id).first()
     if not banco:
         return RedirectResponse("/data/bancos?error=Banco+no+existe", status_code=303)
@@ -4992,6 +5101,7 @@ def data_sucursales(
 
 @router.post("/data/sucursales")
 def data_create_sucursal(
+    request: Request,
     code: str = Form(...),
     name: str = Form(...),
     company_name: str = Form(...),
@@ -5001,6 +5111,7 @@ def data_create_sucursal(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     code = code.strip().lower()
     name = name.strip()
     company_name = company_name.strip()
@@ -5032,6 +5143,7 @@ def data_create_sucursal(
 
 @router.post("/data/sucursales/{item_id}/update")
 def data_update_sucursal(
+    request: Request,
     item_id: int,
     code: str = Form(...),
     name: str = Form(...),
@@ -5042,6 +5154,7 @@ def data_update_sucursal(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     branch = db.query(Branch).filter(Branch.id == item_id).first()
     if not branch:
         return RedirectResponse("/data/sucursales?error=Sucursal+no+existe", status_code=303)
@@ -5103,6 +5216,7 @@ def data_bodegas(
 
 @router.post("/data/bodegas")
 def data_create_bodega(
+    request: Request,
     code: str = Form(...),
     name: str = Form(...),
     branch_id: int = Form(...),
@@ -5110,6 +5224,7 @@ def data_create_bodega(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     code = code.strip().lower()
     name = name.strip()
     if not code or not name:
@@ -5131,6 +5246,7 @@ def data_create_bodega(
 
 @router.post("/data/bodegas/{item_id}/update")
 def data_update_bodega(
+    request: Request,
     item_id: int,
     code: str = Form(...),
     name: str = Form(...),
@@ -5139,6 +5255,7 @@ def data_update_bodega(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     bodega = db.query(Bodega).filter(Bodega.id == item_id).first()
     if not bodega:
         return RedirectResponse("/data/bodegas?error=Bodega+no+existe", status_code=303)
@@ -5195,10 +5312,12 @@ def data_formas_pago(
 
 @router.post("/data/formas-pago")
 def data_create_forma_pago(
+    request: Request,
     nombre: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     nombre = nombre.strip()
     if not nombre:
         return RedirectResponse("/data/formas-pago?error=Nombre+requerido", status_code=303)
@@ -5213,11 +5332,13 @@ def data_create_forma_pago(
 
 @router.post("/data/formas-pago/{item_id}/update")
 def data_update_forma_pago(
+    request: Request,
     item_id: int,
     nombre: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     forma = db.query(FormaPago).filter(FormaPago.id == item_id).first()
     if not forma:
         return RedirectResponse("/data/formas-pago?error=Forma+no+existe", status_code=303)
@@ -5258,12 +5379,14 @@ def data_recibos_rubros(
 
 @router.post("/data/recibos-rubros")
 def data_recibos_rubros_create(
+    request: Request,
     nombre: str = Form(...),
     cuenta_id: Optional[int] = Form(None),
     activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     nombre = nombre.strip()
     if not nombre:
         return RedirectResponse("/data/recibos-rubros?error=Nombre+requerido", status_code=303)
@@ -5277,13 +5400,15 @@ def data_recibos_rubros_create(
 
 @router.post("/data/recibos-rubros/{item_id}/update")
 def data_recibos_rubros_update(
+    request: Request,
     item_id: int,
     nombre: str = Form(...),
     cuenta_id: Optional[int] = Form(None),
     activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     item = db.query(ReciboRubro).filter(ReciboRubro.id == item_id).first()
     if not item:
         return RedirectResponse("/data/recibos-rubros?error=Rubro+no+existe", status_code=303)
@@ -5324,12 +5449,14 @@ def data_recibos_motivos(
 
 @router.post("/data/recibos-motivos")
 def data_recibos_motivos_create(
+    request: Request,
     nombre: str = Form(...),
     tipo: str = Form(...),
     activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     nombre = nombre.strip()
     tipo = tipo.strip().upper()
     if tipo not in {"INGRESO", "EGRESO"}:
@@ -5346,13 +5473,15 @@ def data_recibos_motivos_create(
 
 @router.post("/data/recibos-motivos/{item_id}/update")
 def data_recibos_motivos_update(
+    request: Request,
     item_id: int,
     nombre: str = Form(...),
     tipo: str = Form(...),
     activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     item = db.query(ReciboMotivo).filter(ReciboMotivo.id == item_id).first()
     if not item:
         return RedirectResponse("/data/recibos-motivos?error=Motivo+no+existe", status_code=303)
@@ -5395,6 +5524,7 @@ def data_cuentas_contables(
 
 @router.post("/data/cuentas-contables")
 def data_cuentas_contables_create(
+    request: Request,
     codigo: str = Form(...),
     nombre: str = Form(...),
     tipo: str = Form(...),
@@ -5402,8 +5532,9 @@ def data_cuentas_contables_create(
     parent_id: Optional[int] = Form(None),
     activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     codigo = codigo.strip()
     nombre = nombre.strip()
     tipo = tipo.strip().upper()
@@ -5442,6 +5573,7 @@ def data_cuentas_contables_create(
 
 @router.post("/data/cuentas-contables/{item_id}/update")
 def data_cuentas_contables_update(
+    request: Request,
     item_id: int,
     codigo: str = Form(...),
     nombre: str = Form(...),
@@ -5450,8 +5582,9 @@ def data_cuentas_contables_update(
     parent_id: Optional[int] = Form(None),
     activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     item = db.query(CuentaContable).filter(CuentaContable.id == item_id).first()
     if not item:
         return RedirectResponse("/data/cuentas-contables?error=Cuenta+no+existe", status_code=303)
@@ -5516,10 +5649,12 @@ def data_roles(
 
 @router.post("/data/roles")
 def data_create_role(
+    request: Request,
     nombre: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.roles")
     nombre = nombre.strip().lower()
     if not nombre:
         return RedirectResponse("/data/roles?error=Nombre+requerido", status_code=303)
@@ -5534,11 +5669,13 @@ def data_create_role(
 
 @router.post("/data/roles/{item_id}/update")
 def data_update_role(
+    request: Request,
     item_id: int,
     nombre: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.roles")
     role = db.query(Role).filter(Role.id == item_id).first()
     if not role:
         return RedirectResponse("/data/roles?error=Rol+no+existe", status_code=303)
@@ -5650,6 +5787,7 @@ def data_usuarios(
 
 @router.post("/data/usuarios")
 def data_create_usuario(
+    request: Request,
     full_name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
@@ -5659,6 +5797,7 @@ def data_create_usuario(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.users")
     full_name = full_name.strip()
     email = email.strip().lower()
     if not full_name or not email or not password:
@@ -5694,6 +5833,7 @@ def data_create_usuario(
 
 @router.post("/data/usuarios/{item_id}/update")
 def data_update_usuario(
+    request: Request,
     item_id: int,
     full_name: str = Form(...),
     email: str = Form(...),
@@ -5705,6 +5845,7 @@ def data_update_usuario(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.users")
     edit_user = db.query(User).filter(User.id == item_id).first()
     if not edit_user:
         return RedirectResponse("/data/usuarios?error=Usuario+no+existe", status_code=303)
@@ -5762,6 +5903,7 @@ def data_clientes(
 
 @router.post("/data/clientes")
 def data_create_cliente(
+    request: Request,
     nombre: str = Form(...),
     identificacion: Optional[str] = Form(None),
     telefono: Optional[str] = Form(None),
@@ -5770,6 +5912,7 @@ def data_create_cliente(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     nombre = nombre.strip()
     if not nombre:
         return RedirectResponse("/data/clientes?error=Nombre+requerido", status_code=303)
@@ -5791,6 +5934,7 @@ def data_create_cliente(
 
 @router.post("/data/clientes/{item_id}/update")
 def data_update_cliente(
+    request: Request,
     item_id: int,
     nombre: str = Form(...),
     identificacion: Optional[str] = Form(None),
@@ -5801,6 +5945,7 @@ def data_update_cliente(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.data.catalogs")
     cliente = db.query(Cliente).filter(Cliente.id == item_id).first()
     if not cliente:
         return RedirectResponse("/data/clientes?error=Cliente+no+existe", status_code=303)
@@ -5864,10 +6009,12 @@ def sales_products_search(
 
 @router.get("/inventory/ingresos/{ingreso_id}/pdf")
 def inventory_ingreso_pdf(
+    request: Request,
     ingreso_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.ingresos")
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
@@ -6025,10 +6172,12 @@ def inventory_ingreso_pdf(
 
 @router.get("/inventory/egresos/{egreso_id}/pdf")
 def inventory_egreso_pdf(
+    request: Request,
     egreso_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.egresos")
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
@@ -6344,10 +6493,12 @@ def sales_invoice_pdf(
 
 @router.get("/sales/{venta_id}/ticket")
 def sales_ticket_pos(
+    request: Request,
     venta_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales")
     try:
         from reportlab.lib.units import mm
         from reportlab.pdfgen import canvas
@@ -6375,6 +6526,7 @@ def sales_ticket_print(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales")
     copies_value = request.query_params.get("copies", "1")
     try:
         copies = max(int(copies_value), 1)
@@ -6549,8 +6701,9 @@ def inventory_create_product(
     activo: Optional[str] = Form(None),
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     accept_header = request.headers.get("accept", "")
     is_fetch = (
         request.headers.get("x-requested-with") == "fetch"
@@ -6644,8 +6797,9 @@ def inventory_update_product(
     activo: Optional[str] = Form(None),
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     accept_header = request.headers.get("accept", "")
     is_fetch = (
         request.headers.get("x-requested-with") == "fetch"
@@ -6718,10 +6872,12 @@ def inventory_update_product(
 
 @router.get("/inventory/product/{product_id}/json")
 def inventory_product_json(
+    request: Request,
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     producto = db.query(Producto).filter(Producto.id == product_id).first()
     if not producto:
         return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
@@ -6746,10 +6902,12 @@ def inventory_product_json(
 
 @router.get("/inventory/product/{product_id}/combo")
 def inventory_product_combo_list(
+    request: Request,
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     producto = db.query(Producto).filter(Producto.id == product_id).first()
     if not producto:
         return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
@@ -6779,12 +6937,14 @@ def inventory_product_combo_list(
 
 @router.post("/inventory/product/{product_id}/combo")
 def inventory_product_combo_add(
+    request: Request,
     product_id: int,
     child_id: int = Form(...),
     cantidad: float = Form(...),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     producto = db.query(Producto).filter(Producto.id == product_id).first()
     if not producto:
         return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
@@ -6819,11 +6979,13 @@ def inventory_product_combo_add(
 
 @router.post("/inventory/product/{product_id}/combo/{combo_id}/delete")
 def inventory_product_combo_delete(
+    request: Request,
     product_id: int,
     combo_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     combo = (
         db.query(ProductoCombo)
         .filter(
@@ -6841,13 +7003,15 @@ def inventory_product_combo_delete(
 
 @router.post("/inventory/linea")
 def inventory_create_linea(
+    request: Request,
     cod_linea: str = Form(...),
     linea: str = Form(...),
     activo: Optional[str] = Form(None),
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     exists = db.query(Linea).filter(Linea.cod_linea == cod_linea).first()
     if not exists:
         db.add(Linea(cod_linea=cod_linea, linea=linea, activo=activo == "on"))
@@ -6857,13 +7021,15 @@ def inventory_create_linea(
 
 @router.post("/inventory/linea/{linea_id}/update")
 def inventory_update_linea(
+    request: Request,
     linea_id: int,
     linea: str = Form(...),
     activo: Optional[str] = Form(None),
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     linea_obj = db.query(Linea).filter(Linea.id == linea_id).first()
     if linea_obj:
         linea_obj.linea = linea.strip()
@@ -6874,11 +7040,13 @@ def inventory_update_linea(
 
 @router.post("/inventory/segmento")
 def inventory_create_segmento(
+    request: Request,
     segmento: str = Form(...),
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     exists = db.query(Segmento).filter(Segmento.segmento == segmento).first()
     if not exists:
         db.add(Segmento(segmento=segmento))
@@ -6888,12 +7056,14 @@ def inventory_create_segmento(
 
 @router.post("/inventory/segmento/{segmento_id}/update")
 def inventory_update_segmento(
+    request: Request,
     segmento_id: int,
     segmento: str = Form(...),
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     segmento_obj = db.query(Segmento).filter(Segmento.id == segmento_id).first()
     if segmento_obj:
         segmento_obj.segmento = segmento.strip()
@@ -6974,6 +7144,7 @@ async def inventory_create_ingreso(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.ingresos")
     form = await request.form()
     tipo_id = form.get("tipo_id")
     bodega_id = form.get("bodega_id")
@@ -7098,6 +7269,7 @@ async def inventory_create_egreso(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.egresos")
     form = await request.form()
     tipo_id = form.get("tipo_id")
     bodega_id = form.get("bodega_id")
@@ -7327,6 +7499,7 @@ async def sales_create_invoice(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.sales.registrar")
     form = await request.form()
     cliente_id = form.get("cliente_id") or None
     vendedor_id = form.get("vendedor_id") or None
@@ -7673,6 +7846,7 @@ def sales_cobranza_export(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
+    _enforce_permission(request, user, "access.sales.cobranza")
     start_raw = request.query_params.get("start_date")
     end_raw = request.query_params.get("end_date")
     producto_q = (request.query_params.get("producto") or "").strip()
@@ -7888,10 +8062,12 @@ def sales_cobranza_export(
 
 @router.get("/sales/cobranza/{venta_id}/abonos")
 def sales_cobranza_abonos(
+    request: Request,
     venta_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
+    _enforce_permission(request, user, "access.sales.cobranza")
     factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
     if not factura:
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
@@ -7928,6 +8104,7 @@ async def sales_cobranza_abono(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
+    _enforce_permission(request, user, "access.sales.pagos")
     form = await request.form()
     moneda = (form.get("moneda") or "CS").upper()
     monto_raw = form.get("monto")
@@ -8042,6 +8219,7 @@ async def sales_cobranza_abono_update(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
+    _enforce_permission(request, user, "access.sales.pagos")
     form = await request.form()
     moneda = (form.get("moneda") or "CS").upper()
     monto_raw = form.get("monto")
@@ -8129,11 +8307,13 @@ async def sales_cobranza_abono_update(
 
 @router.post("/sales/cobranza/{venta_id}/abono/{abono_id}/delete")
 def sales_cobranza_abono_delete(
+    request: Request,
     venta_id: int,
     abono_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
+    _enforce_permission(request, user, "access.sales.pagos")
     factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
     if not factura:
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
@@ -8173,6 +8353,7 @@ async def sales_cobranza_estado(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
+    _enforce_permission(request, user, "access.sales.cobranza")
     form = await request.form()
     estado = (form.get("estado") or "PENDIENTE").upper()
     if estado not in {"PENDIENTE", "PAGADA"}:
@@ -8190,11 +8371,13 @@ async def sales_cobranza_estado(
 
 @router.post("/inventory/import")
 def inventory_import_products(
+    request: Request,
     file: UploadFile = File(...),
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         target = redirect_to or "/inventory"
         return RedirectResponse(f"{target}?error=Archivo+Excel+(.xlsx)+requerido", status_code=303)
@@ -8435,8 +8618,10 @@ def inventory_import_products(
 
 @router.get("/inventory/import/template")
 def inventory_import_template(
-    _: User = Depends(_require_admin_web),
+    request: Request,
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     headers = [
         "codigo",
         "descripcion",
@@ -8467,9 +8652,11 @@ def inventory_import_template(
 
 @router.post("/inventory/import/preview")
 def inventory_import_preview(
+    request: Request,
     file: UploadFile = File(...),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         return HTMLResponse(
             "<div class='alert alert-warning py-2 px-3'>Archivo Excel (.xlsx) requerido.</div>"
@@ -8528,10 +8715,12 @@ def inventory_import_preview(
 
 @router.post("/inventory/import/reset")
 def inventory_import_reset(
+    request: Request,
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     # Guard rail: avoid wiping products if there are sales linked.
     ventas_count = db.query(VentaItem).count()
     if ventas_count > 0:
@@ -8560,6 +8749,7 @@ def finance_rates(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.finance.rates")
     rates = db.query(ExchangeRate).order_by(ExchangeRate.effective_date.desc()).all()
     return request.app.state.templates.TemplateResponse(
         "finance_rates.html",
@@ -8574,12 +8764,14 @@ def finance_rates(
 
 @router.post("/finance/rates")
 def finance_rates_create(
+    request: Request,
     effective_date: date = Form(...),
     period: str = Form(...),
     rate: float = Form(...),
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.finance.rates")
     exists = (
         db.query(ExchangeRate)
         .filter(
@@ -8596,10 +8788,12 @@ def finance_rates_create(
 
 @router.post("/inventory/product/{product_id}/deactivate")
 def inventory_deactivate_product(
+    request: Request,
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     producto = db.query(Producto).filter(Producto.id == product_id).first()
     if producto:
         existencia = float(producto.saldo.existencia) if producto.saldo else 0
@@ -8613,10 +8807,12 @@ def inventory_deactivate_product(
 
 @router.post("/inventory/product/{product_id}/activate")
 def inventory_activate_product(
+    request: Request,
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(_require_admin_web),
+    user: User = Depends(_require_admin_web),
 ):
+    _enforce_permission(request, user, "access.inventory.productos")
     producto = db.query(Producto).filter(Producto.id == product_id).first()
     if producto:
         producto.activo = True
