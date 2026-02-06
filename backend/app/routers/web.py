@@ -1320,7 +1320,7 @@ def inventory_page(
 def inventory_caliente(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(_require_admin_web),
+    user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.inventory.caliente")
     q = (request.query_params.get("q") or "").strip()
@@ -1360,8 +1360,25 @@ def inventory_caliente(
     bodega_map = {b.branch_id: b for b in bodegas}
 
     branch, user_bodega = _resolve_branch_bodega(db, user)
-    if scope not in {"central", "esteli", "ambas"}:
-        scope = "central"
+    user_branches = list(user.branches or [])
+    allowed_scopes: list[str] = []
+    if user_branches:
+        allowed_scopes = [b.code.lower() for b in user_branches if b.code and b.code.lower() in {"central", "esteli"}]
+    if not allowed_scopes and branch and branch.code:
+        if branch.code.lower() in {"central", "esteli"}:
+            allowed_scopes = [branch.code.lower()]
+    if not allowed_scopes:
+        allowed_scopes = ["central"]
+
+    if len(allowed_scopes) == 1:
+        scope = allowed_scopes[0]
+    else:
+        if scope not in {"central", "esteli", "ambas"}:
+            scope = "central"
+        if scope != "ambas" and scope not in allowed_scopes:
+            scope = allowed_scopes[0]
+        if scope == "ambas" and not all(code in allowed_scopes for code in ["central", "esteli"]):
+            scope = allowed_scopes[0]
 
     def _balances_by_bodega(bodega_ids: list[int], product_ids: list[int]) -> dict[tuple[int, int], Decimal]:
         if not bodega_ids or not product_ids:
@@ -1401,7 +1418,16 @@ def inventory_caliente(
         return balances
 
     product_ids = [p.id for p in productos]
-    bodega_ids = [b.id for b in bodegas]
+    if scope == "ambas":
+        bodega_ids = [b.id for b in bodegas]
+    else:
+        selected_branch = central_branch if scope == "central" else esteli_branch if scope == "esteli" else branch
+        selected_bodega = None
+        if selected_branch:
+            selected_bodega = bodega_map.get(selected_branch.id)
+        if scope not in {"central", "esteli"} and user_bodega:
+            selected_bodega = user_bodega
+        bodega_ids = [selected_bodega.id] if selected_bodega else []
     balances = _balances_by_bodega(bodega_ids, product_ids)
 
     productos_view = []
@@ -1455,6 +1481,7 @@ def inventory_caliente(
             "rate_today": rate_today,
             "scope": scope,
             "scope_param": scope_param,
+            "allowed_scopes": allowed_scopes,
             "current_branch": branch,
             "central_branch": central_branch,
             "esteli_branch": esteli_branch,

@@ -47,6 +47,7 @@
               </div>
             </div>
             <div class="col-lg-4 d-flex flex-wrap gap-2 align-items-center">
+              {% if allowed_scopes|length > 1 %}
               <div class="btn-group btn-group-sm" role="group" aria-label="Alcance de bodega">
                 <input type="radio" class="btn-check" name="scope" id="scope-central" value="central" autocomplete="off" {% if scope_param == 'central' %}checked{% endif %}
                   hx-get="/inventory/caliente"
@@ -79,6 +80,11 @@
                   Ambas
                 </label>
               </div>
+              {% else %}
+              <span class="badge bg-light text-primary border border-primary-subtle">
+                {{ central_branch.name if scope == 'central' else esteli_branch.name if scope == 'esteli' else current_branch.name if current_branch else 'Bodega' }}
+              </span>
+              {% endif %}
             </div>
             <div class="col-auto text-muted small">
               {% if rate_today %}
