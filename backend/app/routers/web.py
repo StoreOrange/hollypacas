@@ -6963,8 +6963,9 @@ def sales_ticket_print(
     line_count += 1  # vuelto/saldo
     line_count += 4  # footer
 
-    line_height_mm = 4.0
-    page_height_mm = max(120.0, 14.0 + line_count * line_height_mm + 18.0)
+    # Keep page height tight to content to avoid trailing white space in POS print
+    line_height_mm = 3.55
+    page_height_mm = max(96.0, 8.0 + line_count * line_height_mm + 8.0)
 
     return request.app.state.templates.TemplateResponse(
         "sales_ticket_print.html",
