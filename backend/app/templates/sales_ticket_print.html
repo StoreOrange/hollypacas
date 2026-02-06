@@ -19,10 +19,25 @@
       .item-block { margin-bottom: 10px; }
       .item-desc { font-weight: 600; }
       .footer { margin-top: 12px; }
+      .top-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        font-size: 10px;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .top-meta .left { white-space: nowrap; }
+      .top-meta .right { font-weight: 600; font-size: 9.5px; }
     </style>
   </head>
   <body>
     <div class="ticket">
+      <div class="top-meta">
+        <span class="left">{{ factura.numero }} - TICKET</span>
+        <span class="right">www.hollywoodpacas.ovh</span>
+      </div>
       <img src="/static/logo_hollywood.png" alt="Hollywood Pacas" class="logo" />
       <div class="center bold">{{ company_name.upper() }}</div>
       <div class="center small">RUC: {{ ruc }}</div>
