@@ -60,11 +60,11 @@
       <div class="odoo-kpis">
         <div class="odoo-kpi border-0 shadow-lg" style="background: linear-gradient(130deg, #ffffff 0%, #f4f6ff 60%, #eef2ff 100%);">
           <div class="text-xs uppercase tracking-[0.2em] text-slate">Total C$</div>
-          <strong class="d-block mt-2 text-brand">C$ {{ "%.2f"|format(total_cs) }}</strong>
+          <strong class="d-block mt-2 text-brand">C$ {{ "{:,.2f}".format(total_cs) }}</strong>
         </div>
         <div class="odoo-kpi border-0 shadow-lg" style="background: linear-gradient(130deg, #ffffff 0%, #f0fdf4 60%, #dcfce7 100%);">
           <div class="text-xs uppercase tracking-[0.2em] text-slate">Total USD</div>
-          <strong class="d-block mt-2 text-success">$ {{ "%.2f"|format(total_usd) }}</strong>
+          <strong class="d-block mt-2 text-success">$ {{ "{:,.2f}".format(total_usd) }}</strong>
         </div>
         <div class="odoo-kpi border-0 shadow-lg" style="background: linear-gradient(130deg, #ffffff 0%, #fdf2f8 60%, #fce7f3 100%);">
           <div class="text-xs uppercase tracking-[0.2em] text-slate">Depositos</div>
@@ -120,7 +120,7 @@
                 <select class="form-select odoo-input" name="cuenta_id" id="deposito-cuenta">
                   <option value="">Selecciona</option>
                   {% for cuenta in cuentas %}
-                  <option value="{{ cuenta.id }}" data-banco="{{ cuenta.banco_id }}">{{ cuenta.banco.nombre }} - {{ cuenta.moneda }} {{ cuenta.cuenta or 'Pendiente' }}</option>
+                  <option value="{{ cuenta.id }}" data-banco="{{ cuenta.banco_id }}" data-moneda="{{ cuenta.moneda }}">{{ cuenta.banco.nombre }} - {{ cuenta.moneda }} {{ cuenta.cuenta or 'Pendiente' }}</option>
                   {% endfor %}
                 </select>
               </div>
@@ -248,7 +248,7 @@
                     <td>{{ dep.vendedor.nombre if dep.vendedor else '-' }}</td>
                     <td>{{ dep.banco.nombre if dep.banco else '-' }}</td>
                     <td>{{ dep.moneda }}</td>
-                    <td class="text-end">{{ "%.2f"|format(dep.monto_usd if dep.moneda == 'USD' else dep.monto_cs) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(dep.monto_usd if dep.moneda == 'USD' else dep.monto_cs) }}</td>
                     <td>{{ dep.observacion or "-" }}</td>
                     <td class="text-end">
                       <form method="post" action="/sales/depositos/{{ dep.id }}/delete" class="d-inline delete-deposito-form">
@@ -263,12 +263,12 @@
                 <tfoot>
                   <tr>
                     <th colspan="4" class="text-end">Total C$</th>
-                    <th class="text-end">C$ {{ "%.2f"|format(total_cs) }}</th>
+                    <th class="text-end">C$ {{ "{:,.2f}".format(total_cs) }}</th>
                     <th></th>
                   </tr>
                   <tr>
                     <th colspan="4" class="text-end">Total USD</th>
-                    <th class="text-end">$ {{ "%.2f"|format(total_usd) }}</th>
+                    <th class="text-end">$ {{ "{:,.2f}".format(total_usd) }}</th>
                     <th></th>
                   </tr>
                 </tfoot>
@@ -300,7 +300,7 @@
                       {% endif %}
                       <td>{{ row.moneda }}</td>
                       <td class="text-end">{{ row.count }}</td>
-                      <td class="text-end">{{ "%.2f"|format(row.total) }}</td>
+                      <td class="text-end">{{ "{:,.2f}".format(row.total) }}</td>
                     </tr>
                     {% endfor %}
                   {% endfor %}
@@ -433,6 +433,23 @@
         if (!opt.value) return;
         opt.hidden = opt.dataset.banco !== bancoId;
       });
+      if (cuentaSelect.value) {
+        const selected = cuentaSelect.options[cuentaSelect.selectedIndex];
+        if (selected && selected.dataset && selected.dataset.banco !== bancoId) {
+          cuentaSelect.value = "";
+        }
+      }
+    });
+  }
+
+  if (cuentaSelect && depositoMoneda && depositoMonto) {
+    cuentaSelect.addEventListener("change", () => {
+      const selected = cuentaSelect.options[cuentaSelect.selectedIndex];
+      if (selected && selected.dataset && selected.dataset.moneda) {
+        depositoMoneda.value = selected.dataset.moneda;
+      }
+      depositoMonto.focus();
+      if (depositoMonto.select) depositoMonto.select();
     });
   }
   const layout = document.getElementById("layout");
