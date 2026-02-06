@@ -3999,11 +3999,11 @@ def report_sales_export(
 
         content_width = width - (margin * 2)
         factura_x = margin
-        cliente_x = margin + 70
-        producto_x = margin + 190
-        vendedor_x = margin + 360
-        qty_right = margin + content_width - 160
-        price_right = margin + content_width - 90
+        cliente_x = margin + 60
+        producto_x = margin + 170
+        vendedor_x = margin + 320
+        qty_right = margin + content_width - 140
+        price_right = margin + content_width - 70
         subtotal_right = margin + content_width
 
         def max_chars_for_width(width_pts: float, font_size: int = 8) -> int:
