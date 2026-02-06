@@ -4001,8 +4001,9 @@ def report_sales_export(
         factura_x = margin
         cliente_x = margin + 70
         producto_x = margin + 190
-        qty_right = margin + content_width - 170
-        price_right = margin + content_width - 100
+        vendedor_x = margin + 360
+        qty_right = margin + content_width - 160
+        price_right = margin + content_width - 90
         subtotal_right = margin + content_width
 
         def max_chars_for_width(width_pts: float, font_size: int = 8) -> int:
@@ -4015,6 +4016,7 @@ def report_sales_export(
             c.drawString(factura_x, y, "Factura")
             c.drawString(cliente_x, y, "Cliente")
             c.drawString(producto_x, y, "Producto")
+            c.drawString(vendedor_x, y, "Vendedor")
             c.drawRightString(qty_right, y, "Cant")
             c.drawRightString(price_right, y, "Precio")
             c.drawRightString(subtotal_right, y, "Subtotal")
@@ -4062,7 +4064,7 @@ def report_sales_export(
             precio = row["precio_usd"] if moneda == "USD" else row["precio_cs"]
             subtotal = row["subtotal_usd"] if moneda == "USD" else row["subtotal_cs"]
             product_text = f"{row.get('producto') or ''}".strip()
-            product_limit = max_chars_for_width(qty_right - producto_x - 8, 8)
+            product_limit = max_chars_for_width(vendedor_x - producto_x - 8, 8)
             producto_lines = wrap_lines(product_text, product_limit, 2)
             row_height = (line_height * max(1, len(producto_lines))) + 4
 
@@ -4080,6 +4082,7 @@ def report_sales_export(
                 c.setFont("Times-Roman", 8)
             else:
                 c.drawString(producto_x, row_y, producto_lines[0] if producto_lines else "")
+                c.drawString(vendedor_x, row_y, trunc(str(row.get("vendedor") or ""), 16))
                 c.drawRightString(qty_right, row_y, f"{row.get('cantidad', 0):,.2f}")
                 c.drawRightString(price_right, row_y, f"{label} {float(precio or 0):,.2f}")
                 c.drawRightString(subtotal_right, row_y, f"{label} {float(subtotal or 0):,.2f}")
