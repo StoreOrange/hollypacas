@@ -6342,6 +6342,9 @@ def inventory_ingreso_pdf(
     if not ingreso:
         raise HTTPException(status_code=404, detail="Ingreso no encontrado")
 
+    total_items = len(ingreso.items or [])
+    total_bultos = sum(float(item.cantidad or 0) for item in (ingreso.items or []))
+
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
@@ -6461,6 +6464,12 @@ def inventory_ingreso_pdf(
 
     y -= 8
     pdf.setFont("Helvetica-Bold", 10)
+    pdf.drawRightString(margin + 420, y, "Total bultos:")
+    pdf.drawRightString(margin + 500, y, f"{float(total_bultos or 0):.2f}")
+    y -= 12
+    pdf.drawRightString(margin + 420, y, "Total items:")
+    pdf.drawRightString(margin + 500, y, f"{int(total_items or 0)}")
+    y -= 12
     pdf.drawRightString(margin + 420, y, "Total USD:")
     pdf.drawRightString(margin + 500, y, f"{float(ingreso.total_usd or 0):.2f}")
     y -= 12
@@ -6504,6 +6513,9 @@ def inventory_egreso_pdf(
     )
     if not egreso:
         raise HTTPException(status_code=404, detail="Egreso no encontrado")
+
+    total_items = len(egreso.items or [])
+    total_bultos = sum(float(item.cantidad or 0) for item in (egreso.items or []))
 
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter)
@@ -6619,6 +6631,12 @@ def inventory_egreso_pdf(
 
     y -= 8
     pdf.setFont("Helvetica-Bold", 10)
+    pdf.drawRightString(margin + 420, y, "Total bultos:")
+    pdf.drawRightString(margin + 500, y, f"{float(total_bultos or 0):.2f}")
+    y -= 12
+    pdf.drawRightString(margin + 420, y, "Total items:")
+    pdf.drawRightString(margin + 500, y, f"{int(total_items or 0)}")
+    y -= 12
     pdf.drawRightString(margin + 420, y, "Total USD:")
     pdf.drawRightString(margin + 500, y, f"{float(egreso.total_usd or 0):.2f}")
     y -= 12

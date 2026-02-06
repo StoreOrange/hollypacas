@@ -373,9 +373,21 @@
                           </tbody>
                         </table>
                       </div>
+                      <div class="mt-2 d-flex flex-wrap gap-3 justify-content-end fw-bold text-dark">
+                        <span>Bultos cargados: <span id="items-bultos-live">0.00</span></span>
+                        <span>Items cargados: <span id="items-count-live">0</span></span>
+                      </div>
                     </div>
                 </div>
                 <div class="totals-bar d-flex flex-wrap gap-4 align-items-center justify-content-end border-top pt-3">
+                  <div>
+                    <div class="label">Total bultos</div>
+                    <div id="total-bultos" class="value">0.00</div>
+                  </div>
+                  <div>
+                    <div class="label">Total items</div>
+                    <div id="total-items" class="value">0</div>
+                  </div>
                   <div>
                     <div class="label">Total USD</div>
                     <div id="total-usd" class="value">$ 0.00</div>
@@ -391,6 +403,10 @@
                       Sin tasa configurada
                     {% endif %}
                   </div>
+                </div>
+                <div class="mt-2 mb-1 d-flex flex-wrap gap-4 justify-content-end fw-bold text-dark">
+                  <span>Total bultos: <span id="summary-bultos">0.00</span></span>
+                  <span>Total items: <span id="summary-items">0</span></span>
                 </div>
 
                 <div class="flex items-center justify-between pt-2">
@@ -433,6 +449,12 @@
   const productSearch = document.getElementById("product-search");
   const itemsTable = document.getElementById("items-table");
   const emptyItems = document.getElementById("empty-items");
+  const itemsBultosLive = document.getElementById("items-bultos-live");
+  const itemsCountLive = document.getElementById("items-count-live");
+  const summaryBultos = document.getElementById("summary-bultos");
+  const summaryItems = document.getElementById("summary-items");
+  const totalBultos = document.getElementById("total-bultos");
+  const totalItems = document.getElementById("total-items");
   const totalUsd = document.getElementById("total-usd");
   const totalCs = document.getElementById("total-cs");
   const monedaField = document.getElementById("field-moneda");
@@ -477,12 +499,25 @@
   });
 
   const updateTotals = () => {
+    let sumBultos = 0;
+    let countItems = 0;
     let sumUsd = 0;
     let sumCs = 0;
     itemsTable.querySelectorAll("tr[data-item-row]").forEach((row) => {
+      countItems += 1;
+      const qtyInput = row.querySelector(".row-qty");
+      const qtyHidden = row.querySelector("input[name='item_cantidad']");
+      const qtyValue = parseFloat(qtyInput?.value || qtyHidden?.value || 0);
+      sumBultos += Number.isFinite(qtyValue) ? qtyValue : 0;
       sumUsd += parseFloat(row.dataset.subtotalUsd || 0);
       sumCs += parseFloat(row.dataset.subtotalCs || 0);
     });
+    if (totalBultos) totalBultos.textContent = sumBultos.toFixed(2);
+    if (totalItems) totalItems.textContent = `${countItems}`;
+    if (itemsBultosLive) itemsBultosLive.textContent = sumBultos.toFixed(2);
+    if (itemsCountLive) itemsCountLive.textContent = `${countItems}`;
+    if (summaryBultos) summaryBultos.textContent = sumBultos.toFixed(2);
+    if (summaryItems) summaryItems.textContent = `${countItems}`;
     totalUsd.textContent = `$ ${sumUsd.toFixed(2)}`;
     totalCs.textContent = `C$ ${sumCs.toFixed(2)}`;
   };
