@@ -6871,6 +6871,17 @@ def sales_ticket_print(
             lines.append(current)
         return lines or [text]
 
+    def extract_weight_lbs(text: str) -> float:
+        if not text:
+            return 0.0
+        match = re.search(r"\b(\d+(?:\.\d+)?)\s*(lbs)\b", text.lower())
+        if not match:
+            return 0.0
+        try:
+            return float(match.group(1))
+        except ValueError:
+            return 0.0
+
     branch = factura.bodega.branch if factura.bodega else None
     company_name = (branch.company_name if branch and branch.company_name else "Pacas Hollywood").strip()
     ruc = branch.ruc if branch and branch.ruc else "-"
@@ -6909,6 +6920,8 @@ def sales_ticket_print(
         return f"{value:,.2f}"
 
     items = []
+    total_bultos = 0.0
+    total_lbs = 0.0
     line_count = 0
     line_count += 1  # company
     line_count += 1  # ruc
@@ -6925,6 +6938,11 @@ def sales_ticket_print(
         line_count += 2  # qty/price + desc/subtotal
         line_count += 1  # divider
         qty = float(item.cantidad or 0)
+        total_bultos += qty
+        desc_text = item.producto.descripcion if item.producto else ""
+        lbs_per_unit = extract_weight_lbs(desc_text)
+        if lbs_per_unit:
+            total_lbs += lbs_per_unit * qty
         price = (
             float(item.precio_unitario_cs or 0)
             if moneda == "CS"
@@ -6946,7 +6964,7 @@ def sales_ticket_print(
         )
 
     pagos_render = []
-    line_count += 3  # subtotal/desc/total
+    line_count += 5  # total bultos/lbs + subtotal/desc/total
     for pago in pagos:
         forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
         banco = pago.banco.nombre if pago.banco else ""
@@ -6988,6 +7006,8 @@ def sales_ticket_print(
             "total_amount": total_amount,
             "subtotal_amount": subtotal_amount,
             "saldo": saldo,
+            "total_bultos": total_bultos,
+            "total_lbs": total_lbs,
             "items": items,
             "pagos": pagos_render,
             "format_amount": format_amount,

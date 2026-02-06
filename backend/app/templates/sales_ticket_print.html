@@ -72,6 +72,8 @@
         {% endfor %}
       </div>
 
+      <div class="row bold"><span>Total bultos</span><span>{{ "%.2f"|format(total_bultos) }}</span></div>
+      <div class="row bold"><span>Total LBS</span><span>{{ "%.2f"|format(total_lbs) }}</span></div>
       <div class="row bold"><span>Subtotal</span><span>{{ currency_label }} {{ format_amount(subtotal_amount) }}</span></div>
       <div class="row"><span>Descuentos</span><span>{{ currency_label }} 0.00</span></div>
       <div class="row bold"><span>Total</span><span>{{ currency_label }} {{ format_amount(total_amount) }}</span></div>
