@@ -108,6 +108,7 @@
                 <th class="text-end">Saldo</th>
                 <th class="text-end">Costo Unit</th>
                 <th class="text-end">Costo Total</th>
+                <th>Vendedor</th>
               </tr>
             </thead>
             <tbody>
@@ -121,11 +122,12 @@
                 <td class="text-end">{{ "%.2f"|format(row.saldo or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.costo_unit_cs or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.costo_total_cs or 0) }}</td>
+                <td>{{ row.vendedor or "-" }}</td>
               </tr>
               {% endfor %}
               {% if rows|length == 0 %}
               <tr>
-                <td colspan="8" class="text-center text-slate py-3">Sin resultados.</td>
+                <td colspan="9" class="text-center text-slate py-3">Sin resultados.</td>
               </tr>
               {% endif %}
             </tbody>

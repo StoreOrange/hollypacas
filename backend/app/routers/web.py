@@ -3009,6 +3009,7 @@ def _build_kardex_movements(
                 "producto_id": producto.id,
                 "codigo": producto.cod_producto,
                 "descripcion": producto.descripcion,
+                "vendedor": "-",
                 "cantidad": cantidad,
                 "costo_unit_cs": costo_unit_cs,
                 "costo_unit_usd": costo_unit_usd,
@@ -3041,6 +3042,7 @@ def _build_kardex_movements(
                 "producto_id": producto.id,
                 "codigo": producto.cod_producto,
                 "descripcion": producto.descripcion,
+                "vendedor": "-",
                 "cantidad": cantidad,
                 "costo_unit_cs": costo_unit_cs,
                 "costo_unit_usd": costo_unit_usd,
@@ -3048,11 +3050,12 @@ def _build_kardex_movements(
         )
 
     ventas_q = (
-        db.query(VentaFactura, VentaItem, Producto, Bodega, Branch)
+        db.query(VentaFactura, VentaItem, Producto, Bodega, Branch, Vendedor)
         .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
         .join(Producto, Producto.id == VentaItem.producto_id)
         .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
         .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+        .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
         .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
         .filter(VentaFactura.estado != "ANULADA")
     )
@@ -3061,7 +3064,7 @@ def _build_kardex_movements(
     if producto_filter is not None:
         ventas_q = ventas_q.filter(producto_filter)
 
-    for factura, item, producto, bodega, branch in ventas_q.all():
+    for factura, item, producto, bodega, branch, vendedor in ventas_q.all():
         cantidad = Decimal(str(item.cantidad or 0)) * Decimal("-1")
         tasa_factura = Decimal(str(factura.tasa_cambio or 0))
         costo_unit_usd = _kardex_cost_unit_usd(db, producto, tasa_factura)
@@ -3075,6 +3078,7 @@ def _build_kardex_movements(
                 "producto_id": producto.id,
                 "codigo": producto.cod_producto,
                 "descripcion": producto.descripcion,
+                "vendedor": vendedor.nombre if vendedor else "-",
                 "cantidad": cantidad,
                 "costo_unit_cs": costo_unit_cs,
                 "costo_unit_usd": costo_unit_usd,
@@ -3337,7 +3341,7 @@ def report_depositos_export(
     total_usd_equiv = total_usd + (total_cs / rate if rate else Decimal("0"))
 
     buffer = io.BytesIO()
-    width = 380
+    width = 470
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import portrait
     from reportlab.lib.units import mm
@@ -3792,7 +3796,8 @@ def report_kardex_export(
     c.drawRightString(230, y, "Cant")
     c.drawRightString(270, y, "Saldo")
     c.drawRightString(330, y, "Costo Unit")
-    c.drawRightString(width - 24, y, "Costo Total")
+    c.drawRightString(390, y, "Costo Total")
+    c.drawString(395, y, "Vendedor")
     y -= 12
     c.setFont("Times-Roman", 8)
 
@@ -3809,7 +3814,8 @@ def report_kardex_export(
         c.drawRightString(230, y, f"{row['cantidad']:.2f}")
         c.drawRightString(270, y, f"{row['saldo']:.2f}")
         c.drawRightString(330, y, f"{row['costo_unit_cs']:.2f}")
-        c.drawRightString(width - 24, y, f"{row['costo_total_cs']:.2f}")
+        c.drawRightString(390, y, f"{row['costo_total_cs']:.2f}")
+        c.drawString(395, y, (row.get("vendedor") or "-")[:12])
         y -= 12
 
     c.showPage()
