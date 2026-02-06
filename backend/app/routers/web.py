@@ -3999,7 +3999,8 @@ def report_sales_export(
 
         content_width = width - (margin * 2)
         factura_x = margin
-        producto_x = margin + 90
+        cliente_x = margin + 70
+        producto_x = margin + 190
         qty_right = margin + content_width - 170
         price_right = margin + content_width - 100
         subtotal_right = margin + content_width
@@ -4012,6 +4013,7 @@ def report_sales_export(
             c.setFont("Times-Bold", 8)
             c.setFillColor(colors.HexColor("#1e293b"))
             c.drawString(factura_x, y, "Factura")
+            c.drawString(cliente_x, y, "Cliente")
             c.drawString(producto_x, y, "Producto")
             c.drawRightString(qty_right, y, "Cant")
             c.drawRightString(price_right, y, "Precio")
@@ -4071,13 +4073,19 @@ def report_sales_export(
 
             row_y = y
             c.drawString(factura_x, row_y, trunc(str(row["factura"] or ""), 16))
-            c.drawString(producto_x, row_y, producto_lines[0] if producto_lines else "")
-            c.drawRightString(qty_right, row_y, f"{row.get('cantidad', 0):,.2f}")
-            c.drawRightString(price_right, row_y, f"{label} {float(precio or 0):,.2f}")
-            c.drawRightString(subtotal_right, row_y, f"{label} {float(subtotal or 0):,.2f}")
+            c.drawString(cliente_x, row_y, trunc(str(row.get("cliente") or ""), 22))
+            if row.get("anulada"):
+                c.setFont("Times-Bold", 8)
+                c.drawString(producto_x, row_y, "ANULADO")
+                c.setFont("Times-Roman", 8)
+            else:
+                c.drawString(producto_x, row_y, producto_lines[0] if producto_lines else "")
+                c.drawRightString(qty_right, row_y, f"{row.get('cantidad', 0):,.2f}")
+                c.drawRightString(price_right, row_y, f"{label} {float(precio or 0):,.2f}")
+                c.drawRightString(subtotal_right, row_y, f"{label} {float(subtotal or 0):,.2f}")
 
-            if len(producto_lines) > 1:
-                c.drawString(producto_x, row_y - line_height, producto_lines[1])
+                if len(producto_lines) > 1:
+                    c.drawString(producto_x, row_y - line_height, producto_lines[1])
 
             y -= row_height
 
