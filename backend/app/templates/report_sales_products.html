@@ -84,6 +84,17 @@
               {% endfor %}
             </select>
           </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto</label>
+            <select name="producto_id" class="form-select form-select-sm">
+              <option value="">Todos</option>
+              {% for producto in productos %}
+              <option value="{{ producto.id }}" {% if selected_producto == producto.id|string %}selected{% endif %}>
+                {{ producto.cod_producto }} - {{ producto.descripcion }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
           <div class="col-12 col-md-auto">
             <button class="btn btn-outline-secondary btn-sm" type="submit">
               <i class="bi bi-search"></i>

@@ -2663,6 +2663,7 @@ def _sales_products_report_filters(request: Request):
     end_raw = request.query_params.get("end_date")
     branch_id = request.query_params.get("branch_id")
     vendedor_id = request.query_params.get("vendedor_id")
+    producto_id = request.query_params.get("producto_id")
 
     today = local_today()
     start_date = today
@@ -2680,7 +2681,7 @@ def _sales_products_report_filters(request: Request):
     if not branch_id:
         branch_id = "all"
 
-    return start_date, end_date, branch_id, vendedor_id
+    return start_date, end_date, branch_id, vendedor_id, producto_id
 
 
 def _build_sales_products_report(
@@ -2689,6 +2690,7 @@ def _build_sales_products_report(
     end_date: date,
     branch_id: str | None,
     vendedor_id: str | None,
+    producto_id: str | None,
 ):
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
@@ -2710,6 +2712,11 @@ def _build_sales_products_report(
     if vendedor_id:
         try:
             base_query = base_query.filter(VentaFactura.vendedor_id == int(vendedor_id))
+        except ValueError:
+            pass
+    if producto_id:
+        try:
+            base_query = base_query.filter(VentaItem.producto_id == int(producto_id))
         except ValueError:
             pass
 
@@ -3463,7 +3470,7 @@ def report_sales_products(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
-    start_date, end_date, branch_id, vendedor_id = _sales_products_report_filters(request)
+    start_date, end_date, branch_id, vendedor_id, producto_id = _sales_products_report_filters(request)
     (
         report_rows,
         total_qty,
@@ -3472,11 +3479,17 @@ def report_sales_products(
         total_cost_usd,
         total_cost_cs,
         total_facturas,
-    ) = _build_sales_products_report(db, start_date, end_date, branch_id, vendedor_id)
+    ) = _build_sales_products_report(db, start_date, end_date, branch_id, vendedor_id, producto_id)
 
     branches = db.query(Branch).order_by(Branch.name).all()
     _, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
+    productos = (
+        db.query(Producto)
+        .filter(Producto.activo.is_(True))
+        .order_by(Producto.descripcion)
+        .all()
+    )
 
     return request.app.state.templates.TemplateResponse(
         "report_sales_products.html",
@@ -3486,10 +3499,12 @@ def report_sales_products(
             "rows": report_rows,
             "branches": branches,
             "vendedores": vendedores,
+            "productos": productos,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
             "selected_branch": branch_id or "",
             "selected_vendedor": vendedor_id or "",
+            "selected_producto": producto_id or "",
             "total_qty": float(total_qty),
             "total_usd": float(total_usd),
             "total_cs": float(total_cs),
