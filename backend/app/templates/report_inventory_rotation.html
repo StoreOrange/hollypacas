@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Informes</li>
+                <li class="breadcrumb-item active" aria-current="page">Inventario y rotacion</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Inventario y rotacion</div>
+            <div class="odoo-subtitle mt-1 text-sm">Analisis de productos pegados, recuperacion de capital y velocidad de salida.</div>
+            <div class="text-sm text-slate mt-1">Sucursal: <strong class="text-ink">{{ branch_label }}</strong></div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="odoo-pill primary">
+              <i class="bi bi-box-seam"></i>
+              Stock activo: {{ kpis.productos_stock }}
+            </div>
+            <div class="odoo-pill">
+              <i class="bi bi-exclamation-triangle"></i>
+              Sin venta: {{ kpis.productos_sin_venta }}
+            </div>
+            <div class="odoo-pill primary">
+              <i class="bi bi-cash-stack"></i>
+              Inversion: C$ {{ "{:,.2f}".format(kpis.inversion_actual_cs or 0) }}
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/reports">Informes</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/ventas">Ventas detallado</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/ventas-productos">Ventas por producto</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/kardex">Kardex</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/inventario-consolidado">Inventario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/reports/inventario-rotacion">Inventario y rotacion</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="odoo-card mb-3">
+        <form class="row g-2 align-items-end" method="get" action="/reports/inventario-rotacion">
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+            <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+            <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Top items</label>
+            <input name="top_n" type="number" min="5" max="200" class="form-control form-control-sm" value="{{ top_n }}">
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Dias lentitud</label>
+            <input name="slow_days" type="number" min="7" max="365" class="form-control form-control-sm" value="{{ slow_days }}">
+          </div>
+          <div class="col-12 col-md-auto">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">
+              <i class="bi bi-search"></i>
+              Analizar
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Inversion actual en inventario</div>
+            <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.inversion_actual_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Inversion ingresada en periodo</div>
+            <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.inversion_ingresada_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Capital recuperado (costo)</div>
+            <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.capital_recuperado_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Recuperacion de capital</div>
+            <div class="odoo-title text-lg mt-1">{{ "{:,.2f}".format(kpis.recuperacion_pct or 0) }}%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card mb-3 text-sm">
+        <div class="odoo-section-title mb-3 text-base">Productos no vendidos del todo (con saldo actual)</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Codigo</th>
+                <th>Descripcion</th>
+                <th class="text-end">Ingresado</th>
+                <th class="text-end">Vendido</th>
+                <th class="text-end">Saldo</th>
+                <th class="text-end">% vendido</th>
+                <th class="text-end">Dias sin venta</th>
+                <th class="text-end">Inversion actual</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in unsold_rows %}
+              <tr>
+                <td>{{ row.codigo }}</td>
+                <td>{{ row.descripcion }}</td>
+                <td class="text-end">{{ "{:,.0f}".format(row.ingreso_qty or 0) }}</td>
+                <td class="text-end">{{ "{:,.0f}".format(row.vendido_qty or 0) }}</td>
+                <td class="text-end">{{ "{:,.0f}".format(row.saldo_qty or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.sell_through_pct or 0) }}%</td>
+                <td class="text-end">{{ row.days_without_sale if row.days_without_sale is not none else "-" }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.inversion_actual_cs or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if unsold_rows|length == 0 %}
+              <tr><td colspan="8" class="text-center text-slate py-3">Sin resultados.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-12 col-xl-6">
+          <div class="odoo-card h-100 text-sm">
+            <div class="odoo-section-title mb-3 text-base">Comportamiento lento (>= {{ slow_days }} dias)</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table text-sm align-middle">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr>
+                    <th>Codigo</th>
+                    <th class="text-end">Saldo</th>
+                    <th class="text-end">Dias sin venta</th>
+                    <th class="text-end">Prom. diario (90d)</th>
+                    <th class="text-end">Dias para liquidar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in slow_rows %}
+                  <tr>
+                    <td>{{ row.codigo }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(row.saldo_qty or 0) }}</td>
+                    <td class="text-end">{{ row.days_without_sale if row.days_without_sale is not none else "-" }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(row.avg_daily_90 or 0) }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(row.days_to_liquidate or 0) if row.days_to_liquidate is not none else "-" }}</td>
+                  </tr>
+                  {% endfor %}
+                  {% if slow_rows|length == 0 %}
+                  <tr><td colspan="5" class="text-center text-slate py-3">Sin resultados.</td></tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-xl-6">
+          <div class="odoo-card h-100 text-sm">
+            <div class="odoo-section-title mb-3 text-base">Inventario costoso pegado</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table text-sm align-middle">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr>
+                    <th>Codigo</th>
+                    <th>Descripcion</th>
+                    <th class="text-end">Saldo</th>
+                    <th class="text-end">Dias sin venta</th>
+                    <th class="text-end">Inversion actual</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in expensive_rows %}
+                  <tr>
+                    <td>{{ row.codigo }}</td>
+                    <td>{{ row.descripcion }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(row.saldo_qty or 0) }}</td>
+                    <td class="text-end">{{ row.days_without_sale if row.days_without_sale is not none else "-" }}</td>
+                    <td class="text-end">C$ {{ "{:,.2f}".format(row.inversion_actual_cs or 0) }}</td>
+                  </tr>
+                  {% endfor %}
+                  {% if expensive_rows|length == 0 %}
+                  <tr><td colspan="5" class="text-center text-slate py-3">Sin resultados.</td></tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card mt-3 text-sm">
+        <div class="odoo-section-title mb-3 text-base">Rotacion y recuperacion estimada</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Codigo</th>
+                <th>Descripcion</th>
+                <th class="text-end">Saldo</th>
+                <th class="text-end">Prom. diario (90d)</th>
+                <th class="text-end">Dias para liquidar</th>
+                <th>Rotacion</th>
+                <th class="text-end">% recuperacion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rotation_rows %}
+              <tr>
+                <td>{{ row.codigo }}</td>
+                <td>{{ row.descripcion }}</td>
+                <td class="text-end">{{ "{:,.0f}".format(row.saldo_qty or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.avg_daily_90 or 0) }}</td>
+                <td class="text-end">{{ "{:,.0f}".format(row.days_to_liquidate or 0) if row.days_to_liquidate is not none else "-" }}</td>
+                <td>{{ row.rotacion }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.sell_through_pct or 0) }}%</td>
+              </tr>
+              {% endfor %}
+              {% if rotation_rows|length == 0 %}
+              <tr><td colspan="7" class="text-center text-slate py-3">Sin resultados.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+{% endblock %}
+

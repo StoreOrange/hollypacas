@@ -2074,10 +2074,6 @@ def _build_commission_assignment_rows(
             )
         except ValueError:
             pass
-    temp_rows = temp_query.order_by(VentaComisionAsignacion.id.asc()).all()
-    if not temp_rows:
-        return [], 0, 0, {}, 0.0
-
     source_rows = _commission_sales_rows_query(
         db, fecha_value, branch_id if branch_id else "all", None, ""
     ).all()
@@ -2089,6 +2085,61 @@ def _build_commission_assignment_rows(
         )
         source_qty_map[item.id] = qty
         source_meta_map[item.id] = (factura, item, producto, cliente, vendedor, branch, bodega)
+
+    temp_rows = temp_query.order_by(VentaComisionAsignacion.id.asc()).all()
+
+    # Blindaje: si la tabla temporal quedo incompleta, recrea filas faltantes
+    # desde ventas reales del dia para evitar facturas "perdidas" en la grilla.
+    source_item_ids = set(source_qty_map.keys())
+    temp_item_ids = {row.venta_item_id for row in temp_rows}
+    missing_item_ids = source_item_ids - temp_item_ids
+    if missing_item_ids:
+        fallback_vendor = (
+            db.query(Vendedor.id)
+            .filter(Vendedor.activo.is_(True))
+            .order_by(Vendedor.nombre)
+            .first()
+        )
+        fallback_vendor_id = fallback_vendor[0] if fallback_vendor else None
+        for item_id in missing_item_ids:
+            source = source_meta_map.get(item_id)
+            if not source:
+                continue
+            factura, item, producto, cliente, vendedor, branch, bodega = source
+            qty = int(
+                Decimal(str(item.cantidad or 0)).quantize(
+                    Decimal("1"), rounding=ROUND_HALF_UP
+                )
+            )
+            if qty <= 0:
+                continue
+            assigned_vendor_id = (vendedor.id if vendedor else None) or fallback_vendor_id
+            if not assigned_vendor_id:
+                continue
+            db.add(
+                VentaComisionAsignacion(
+                    venta_item_id=item.id,
+                    factura_id=factura.id,
+                    branch_id=branch.id if branch else None,
+                    bodega_id=bodega.id if bodega else None,
+                    cliente_id=cliente.id if cliente else None,
+                    producto_id=producto.id,
+                    fecha=fecha_value,
+                    vendedor_origen_id=vendedor.id if vendedor else None,
+                    vendedor_asignado_id=assigned_vendor_id,
+                    cantidad=qty,
+                    precio_unitario_usd=Decimal(str(item.precio_unitario_usd or 0)),
+                    precio_unitario_cs=Decimal(str(item.precio_unitario_cs or 0)),
+                    subtotal_usd=Decimal(str(item.precio_unitario_usd or 0)) * qty,
+                    subtotal_cs=Decimal(str(item.precio_unitario_cs or 0)) * qty,
+                    usuario_registro="autobackfill",
+                )
+            )
+        db.commit()
+        temp_rows = temp_query.order_by(VentaComisionAsignacion.id.asc()).all()
+
+    if not temp_rows:
+        return [], 0, 0, {}, 0.0
 
     product_ids = list({row.producto_id for row in temp_rows})
     factura_ids = list({row.factura_id for row in temp_rows})
@@ -4378,6 +4429,298 @@ def _inventory_consolidated_filters(request: Request) -> str:
     return branch_id or "all"
 
 
+def _inventory_rotation_filters(request: Request):
+    branch_id = request.query_params.get("branch_id") or "all"
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    top_n_raw = request.query_params.get("top_n")
+    slow_days_raw = request.query_params.get("slow_days")
+
+    today = local_today()
+    start_date = today - timedelta(days=180)
+    end_date = today
+
+    if start_raw:
+        try:
+            start_date = date.fromisoformat(start_raw)
+        except ValueError:
+            pass
+    if end_raw:
+        try:
+            end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            pass
+    if end_date < start_date:
+        end_date = start_date
+
+    try:
+        top_n = int(top_n_raw or 20)
+    except ValueError:
+        top_n = 20
+    top_n = min(max(top_n, 5), 200)
+
+    try:
+        slow_days = int(slow_days_raw or 45)
+    except ValueError:
+        slow_days = 45
+    slow_days = min(max(slow_days, 7), 365)
+
+    return start_date, end_date, branch_id, top_n, slow_days
+
+
+def _build_inventory_rotation_data(
+    db: Session,
+    start_date: date,
+    end_date: date,
+    branch_id: str,
+    top_n: int,
+    slow_days: int,
+):
+    branches = db.query(Branch).order_by(Branch.name).all()
+    selected_branch = None
+    if branch_id and branch_id != "all":
+        try:
+            selected_branch = next((b for b in branches if b.id == int(branch_id)), None)
+        except ValueError:
+            selected_branch = None
+
+    bodegas_q = db.query(Bodega).filter(Bodega.activo.is_(True))
+    if selected_branch:
+        bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch.id)
+    bodegas = bodegas_q.order_by(Bodega.id.asc()).all()
+    bodega_ids = [b.id for b in bodegas]
+
+    if not bodega_ids:
+        return {
+            "branches": branches,
+            "selected_branch": selected_branch,
+            "kpis": {
+                "productos_stock": 0,
+                "productos_sin_venta": 0,
+                "inversion_actual_cs": 0.0,
+                "inversion_ingresada_cs": 0.0,
+                "capital_recuperado_cs": 0.0,
+                "recuperacion_pct": 0.0,
+            },
+            "unsold_rows": [],
+            "slow_rows": [],
+            "expensive_rows": [],
+            "rotation_rows": [],
+        }
+
+    productos = db.query(Producto).filter(Producto.activo.is_(True)).all()
+    product_map = {p.id: p for p in productos}
+
+    saldos = (
+        db.query(SaldoProducto)
+        .filter(SaldoProducto.bodega_id.in_(bodega_ids))
+        .all()
+    )
+    saldo_map: dict[int, Decimal] = {}
+    for s in saldos:
+        saldo_map[s.producto_id] = saldo_map.get(s.producto_id, Decimal("0")) + Decimal(
+            str(s.cantidad or 0)
+        )
+
+    ingresos_rows = (
+        db.query(
+            IngresoItem.producto_id,
+            func.sum(IngresoItem.cantidad),
+            func.sum(IngresoItem.cantidad * IngresoItem.costo_unitario_cs),
+            func.min(IngresoInventario.fecha),
+        )
+        .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
+        .filter(IngresoInventario.bodega_id.in_(bodega_ids))
+        .filter(IngresoInventario.fecha >= start_date, IngresoInventario.fecha <= end_date)
+        .group_by(IngresoItem.producto_id)
+        .all()
+    )
+    ingreso_qty_map: dict[int, Decimal] = {}
+    ingreso_cost_map: dict[int, Decimal] = {}
+    first_ingreso_map: dict[int, date] = {}
+    for pid, qty, cost_cs, first_date in ingresos_rows:
+        ingreso_qty_map[int(pid)] = Decimal(str(qty or 0))
+        ingreso_cost_map[int(pid)] = Decimal(str(cost_cs or 0))
+        first_ingreso_map[int(pid)] = first_date
+
+    ventas_rows = (
+        db.query(
+            VentaItem.producto_id,
+            func.sum(VentaItem.cantidad),
+            func.sum(VentaItem.subtotal_cs),
+            func.max(VentaFactura.fecha),
+        )
+        .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+        .filter(VentaFactura.bodega_id.in_(bodega_ids))
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(VentaFactura.fecha >= datetime.combine(start_date, datetime.min.time()))
+        .filter(VentaFactura.fecha < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
+        .group_by(VentaItem.producto_id)
+        .all()
+    )
+    sold_qty_map: dict[int, Decimal] = {}
+    sold_cs_map: dict[int, Decimal] = {}
+    last_sale_map: dict[int, datetime] = {}
+    for pid, qty, subtotal_cs, last_dt in ventas_rows:
+        sold_qty_map[int(pid)] = Decimal(str(qty or 0))
+        sold_cs_map[int(pid)] = Decimal(str(subtotal_cs or 0))
+        last_sale_map[int(pid)] = last_dt
+
+    last_90_start = end_date - timedelta(days=89)
+    ventas_90_rows = (
+        db.query(VentaItem.producto_id, func.sum(VentaItem.cantidad))
+        .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+        .filter(VentaFactura.bodega_id.in_(bodega_ids))
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(VentaFactura.fecha >= datetime.combine(last_90_start, datetime.min.time()))
+        .filter(VentaFactura.fecha < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
+        .group_by(VentaItem.producto_id)
+        .all()
+    )
+    sold_90_qty_map = {int(pid): Decimal(str(qty or 0)) for pid, qty in ventas_90_rows}
+
+    product_ids = set(saldo_map.keys()) | set(ingreso_qty_map.keys()) | set(sold_qty_map.keys())
+    rows = []
+    total_inversion_actual = Decimal("0")
+    total_inversion_ingresada = Decimal("0")
+    total_recuperado = Decimal("0")
+    productos_sin_venta = 0
+    productos_stock = 0
+
+    for pid in product_ids:
+        producto = product_map.get(pid)
+        if not producto:
+            continue
+        ingreso_qty = Decimal(str(ingreso_qty_map.get(pid, Decimal("0"))))
+        vendido_qty = Decimal(str(sold_qty_map.get(pid, Decimal("0"))))
+        saldo_qty = Decimal(str(saldo_map.get(pid, Decimal("0"))))
+        costo_unit_cs = Decimal(str(producto.costo_producto or 0))
+        inversion_actual_cs = saldo_qty * costo_unit_cs
+        inversion_ingresada_cs = Decimal(str(ingreso_cost_map.get(pid, Decimal("0"))))
+        capital_recuperado_cs = vendido_qty * costo_unit_cs
+        sell_through_pct = (
+            (vendido_qty / ingreso_qty) * Decimal("100")
+            if ingreso_qty > 0
+            else Decimal("0")
+        )
+        avg_daily_90 = Decimal(str(sold_90_qty_map.get(pid, Decimal("0")))) / Decimal("90")
+        days_to_liquidate = (
+            (saldo_qty / avg_daily_90)
+            if avg_daily_90 > 0 and saldo_qty > 0
+            else None
+        )
+        last_sale_dt = last_sale_map.get(pid)
+        last_sale_date = (
+            last_sale_dt.date() if isinstance(last_sale_dt, datetime) else last_sale_dt
+        )
+        first_ingreso = first_ingreso_map.get(pid)
+        days_without_sale = (
+            (end_date - last_sale_date).days
+            if last_sale_date
+            else ((end_date - first_ingreso).days if first_ingreso else None)
+        )
+
+        if saldo_qty > 0:
+            productos_stock += 1
+            total_inversion_actual += inversion_actual_cs
+        total_inversion_ingresada += inversion_ingresada_cs
+        total_recuperado += capital_recuperado_cs
+        if vendido_qty <= 0 and saldo_qty > 0:
+            productos_sin_venta += 1
+
+        if days_to_liquidate is None:
+            rotacion = "Sin movimiento"
+        elif days_to_liquidate <= Decimal("30"):
+            rotacion = "Rapida"
+        elif days_to_liquidate <= Decimal("90"):
+            rotacion = "Media"
+        else:
+            rotacion = "Lenta"
+
+        rows.append(
+            {
+                "producto_id": pid,
+                "codigo": producto.cod_producto or "-",
+                "descripcion": producto.descripcion or "-",
+                "ingreso_qty": float(ingreso_qty),
+                "vendido_qty": float(vendido_qty),
+                "saldo_qty": float(saldo_qty),
+                "costo_unit_cs": float(costo_unit_cs),
+                "inversion_actual_cs": float(inversion_actual_cs),
+                "inversion_ingresada_cs": float(inversion_ingresada_cs),
+                "capital_recuperado_cs": float(capital_recuperado_cs),
+                "sell_through_pct": float(sell_through_pct),
+                "last_sale": last_sale_date,
+                "first_ingreso": first_ingreso,
+                "days_without_sale": days_without_sale if days_without_sale is not None else None,
+                "avg_daily_90": float(avg_daily_90),
+                "days_to_liquidate": float(days_to_liquidate) if days_to_liquidate is not None else None,
+                "rotacion": rotacion,
+            }
+        )
+
+    unsold_rows = [
+        r for r in rows if (r["saldo_qty"] > 0 and r["sell_through_pct"] < 100)
+    ]
+    unsold_rows.sort(
+        key=lambda r: (
+            -(r["days_without_sale"] if r["days_without_sale"] is not None else 999999),
+            -r["inversion_actual_cs"],
+        )
+    )
+
+    slow_rows = [
+        r
+        for r in rows
+        if r["saldo_qty"] > 0 and (r["days_without_sale"] or 0) >= slow_days
+    ]
+    slow_rows.sort(
+        key=lambda r: (
+            -(r["days_without_sale"] or 0),
+            r["avg_daily_90"],
+            -r["inversion_actual_cs"],
+        )
+    )
+
+    expensive_rows = [
+        r
+        for r in rows
+        if r["saldo_qty"] > 0 and (r["days_without_sale"] or 0) >= slow_days
+    ]
+    expensive_rows.sort(key=lambda r: -r["inversion_actual_cs"])
+
+    rotation_rows = [r for r in rows if r["saldo_qty"] > 0]
+    rotation_rows.sort(
+        key=lambda r: (
+            999999 if r["days_to_liquidate"] is None else r["days_to_liquidate"],
+            -r["inversion_actual_cs"],
+        )
+    )
+
+    recuperacion_pct = (
+        (total_recuperado / total_inversion_ingresada) * Decimal("100")
+        if total_inversion_ingresada > 0
+        else Decimal("0")
+    )
+
+    return {
+        "branches": branches,
+        "selected_branch": selected_branch,
+        "kpis": {
+            "productos_stock": int(productos_stock),
+            "productos_sin_venta": int(productos_sin_venta),
+            "inversion_actual_cs": float(total_inversion_actual),
+            "inversion_ingresada_cs": float(total_inversion_ingresada),
+            "capital_recuperado_cs": float(total_recuperado),
+            "recuperacion_pct": float(recuperacion_pct),
+        },
+        "unsold_rows": unsold_rows[:top_n],
+        "slow_rows": slow_rows[:top_n],
+        "expensive_rows": expensive_rows[:top_n],
+        "rotation_rows": rotation_rows[:top_n],
+    }
+
+
 def _inventory_consolidated_data(
     db: Session,
     branch_id: str,
@@ -5043,6 +5386,47 @@ def report_inventory_consolidated(
             "branches": branches,
             "selected_branch": branch_id or "all",
             "branch_label": branch_label,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/reports/inventario-rotacion")
+def report_inventory_rotation(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, top_n, slow_days = _inventory_rotation_filters(request)
+    data = _build_inventory_rotation_data(
+        db,
+        start_date,
+        end_date,
+        branch_id,
+        top_n,
+        slow_days,
+    )
+    selected_branch = data["selected_branch"]
+    branch_label = selected_branch.name if selected_branch else "Todas las sucursales"
+
+    return request.app.state.templates.TemplateResponse(
+        "report_inventory_rotation.html",
+        {
+            "request": request,
+            "user": user,
+            "branches": data["branches"],
+            "selected_branch": branch_id or "all",
+            "branch_label": branch_label,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "top_n": top_n,
+            "slow_days": slow_days,
+            "kpis": data["kpis"],
+            "unsold_rows": data["unsold_rows"],
+            "slow_rows": data["slow_rows"],
+            "expensive_rows": data["expensive_rows"],
+            "rotation_rows": data["rotation_rows"],
             "version": settings.UI_VERSION,
         },
     )
