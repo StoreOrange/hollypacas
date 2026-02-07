@@ -71,6 +71,22 @@
     white-space: normal;
     word-break: break-word;
   }
+  .commission-grid tbody td:nth-child(1),
+  .commission-grid tbody td:nth-child(4),
+  .commission-grid tbody td:nth-child(5),
+  .commission-grid tbody td:nth-child(6),
+  .commission-grid tbody td:nth-child(7),
+  .commission-grid tbody td:nth-child(8),
+  .commission-grid tbody td:nth-child(9),
+  .commission-grid tbody td:nth-child(10),
+  .commission-grid tbody td:nth-child(11) {
+    white-space: nowrap;
+  }
+  .commission-grid tbody td:nth-child(3) {
+    white-space: normal;
+    word-break: break-word;
+    min-width: 340px;
+  }
   .commission-grid td.text-end,
   .commission-grid th.text-end {
     white-space: nowrap;
@@ -301,6 +317,19 @@
 
           <div class="table-responsive commission-grid-wrap">
             <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
+              <colgroup>
+                <col style="width:8%">
+                <col style="width:10%">
+                <col style="width:28%">
+                <col style="width:7%">
+                <col style="width:7%">
+                <col style="width:8%">
+                <col style="width:8%">
+                <col style="width:8%">
+                <col style="width:8%">
+                <col style="width:8%">
+                <col style="width:2%">
+              </colgroup>
               <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
                 <tr>
                   <th>Codigo</th>
@@ -538,8 +567,16 @@
 
           <div class="mt-3 d-flex flex-wrap gap-3">
             <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[220px]">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total bultos vendidos</div>
+              <div class="fw-bold text-ink" id="assign-total-vendidos">{{ "%.0f"|format(total_bultos_vendidos or 0) }}</div>
+            </div>
+            <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[220px]">
               <div class="text-xs uppercase tracking-[0.2em] text-slate">Total bultos asignados</div>
               <div class="fw-bold text-ink" id="assign-total-bultos">{{ "%.0f"|format(total_bultos or 0) }}</div>
+            </div>
+            <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[220px]">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Diferencia (asignados - vendidos)</div>
+              <div class="fw-bold text-ink" id="assign-total-diff">0</div>
             </div>
             <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[220px]">
               <div class="text-xs uppercase tracking-[0.2em] text-slate">Total filas asignadas</div>
@@ -840,6 +877,8 @@
     const finalizeBtn = document.getElementById("finalize-day-btn");
     const reopenBtn = document.getElementById("reopen-day-btn");
     const totalBultosEl = document.getElementById("assign-total-bultos");
+    const totalVendidosEl = document.getElementById("assign-total-vendidos");
+    const totalDiffEl = document.getElementById("assign-total-diff");
     const totalRowsEl = document.getElementById("assign-total-rows");
     const totalComisionEl = document.getElementById("assign-total-comision");
     const vendorSummaryBody = document.getElementById("assign-vendor-summary-body");
@@ -965,8 +1004,11 @@
       let qty = 0;
       let rows = 0;
       let totalComision = 0;
+      let soldQty = 0;
       const byVendor = {};
+      const soldByItem = {};
       assignmentBody.querySelectorAll("tr[data-assignment-row]").forEach((row) => {
+        const itemId = row.getAttribute("data-venta-item-id") || "";
         const rowQty = parseQty(row.getAttribute("data-cantidad"));
         const qtyInput = row.querySelector(".assignment-qty");
         const rowQtyCurrent = parseQty(qtyInput?.value);
@@ -987,9 +1029,20 @@
         qty += rowQtyCurrent;
         totalComision += rowComisionTotal;
         rows += 1;
+        if (!soldByItem[itemId]) {
+          soldByItem[itemId] = parseQty(row.getAttribute("data-total-item"));
+          soldQty += soldByItem[itemId];
+        }
         applyRowState(row);
       });
       if (totalBultosEl) totalBultosEl.textContent = `${qty}`;
+      if (totalVendidosEl) totalVendidosEl.textContent = `${soldQty}`;
+      if (totalDiffEl) {
+        const diff = qty - soldQty;
+        totalDiffEl.textContent = `${diff}`;
+        totalDiffEl.classList.toggle("text-danger", diff !== 0);
+        totalDiffEl.classList.toggle("text-success", diff === 0);
+      }
       if (totalRowsEl) totalRowsEl.textContent = `${rows}`;
       if (totalComisionEl) totalComisionEl.textContent = formatCurrency(totalComision, "$");
       if (vendorSummaryBody) {

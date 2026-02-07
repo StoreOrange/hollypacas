@@ -2139,7 +2139,7 @@ def _build_commission_assignment_rows(
         temp_rows = temp_query.order_by(VentaComisionAsignacion.id.asc()).all()
 
     if not temp_rows:
-        return [], 0, 0, {}, 0.0
+        return [], 0, 0, 0, {}, 0.0
 
     product_ids = list({row.producto_id for row in temp_rows})
     factura_ids = list({row.factura_id for row in temp_rows})
@@ -2204,7 +2204,7 @@ def _build_commission_assignment_rows(
             pass
 
     if not temp_rows:
-        return [], 0, 0, {}, 0.0
+        return [], 0, 0, 0, {}, 0.0
 
     commission_rows = (
         db.query(ProductoComision)
@@ -2280,6 +2280,10 @@ def _build_commission_assignment_rows(
             str(row.get("descripcion") or ""),
         )
     )
+    visible_item_ids = {int(row.venta_item_id) for row in temp_rows}
+    total_bultos_vendidos = int(
+        sum(int(source_qty_map.get(item_id, 0)) for item_id in visible_item_ids)
+    )
     total_bultos = int(sum(int(row.get("cantidad") or 0) for row in output_rows))
     total_comision = Decimal("0")
     by_vendor: dict[str, dict[str, float]] = {}
@@ -2292,7 +2296,14 @@ def _build_commission_assignment_rows(
             by_vendor[vendor_name] = {"bultos": 0.0, "comision_usd": 0.0}
         by_vendor[vendor_name]["bultos"] += qty
         by_vendor[vendor_name]["comision_usd"] += float(comision_total)
-    return output_rows, total_bultos, len(output_rows), by_vendor, float(total_comision)
+    return (
+        output_rows,
+        total_bultos,
+        len(output_rows),
+        total_bultos_vendidos,
+        by_vendor,
+        float(total_comision),
+    )
 
 
 def _commission_missing_prices(
@@ -2606,7 +2617,14 @@ def sales_comisiones(
     ]
 
     _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
-    assignment_rows, total_bultos, total_rows, by_vendor, total_comision_usd = _build_commission_assignment_rows(
+    (
+        assignment_rows,
+        total_bultos,
+        total_rows,
+        total_bultos_vendidos,
+        by_vendor,
+        total_comision_usd,
+    ) = _build_commission_assignment_rows(
         db,
         fecha_value,
         branch_id,
@@ -2636,6 +2654,7 @@ def sales_comisiones(
             "assignment_rows": assignment_rows,
             "total_bultos": total_bultos,
             "total_rows": total_rows,
+            "total_bultos_vendidos": total_bultos_vendidos,
             "total_comision_usd": total_comision_usd,
             "by_vendor": by_vendor,
             "day_status": day_status,
