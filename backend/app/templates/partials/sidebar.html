@@ -74,6 +74,12 @@
         <span class="nav-text fw-semibold">Registro de depositos</span>
       </a>
       {% endif %}
+      {% if not has_perms or 'menu.sales.comisiones' in perms %}
+      <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/comisiones">
+        <i class="bi bi-percent text-primary fs-5"></i>
+        <span class="nav-text fw-semibold">Registro de comisiones</span>
+      </a>
+      {% endif %}
       {% if not has_perms or 'menu.inventory' in perms %}
       <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/inventory">
         <i class="bi bi-boxes text-primary fs-5"></i>
@@ -193,6 +199,12 @@
         <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/depositos">
           <i class="bi bi-bank2 text-primary fs-5"></i>
           <span class="nav-text fw-semibold">Registro de depositos</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales.comisiones' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/comisiones">
+          <i class="bi bi-percent text-primary fs-5"></i>
+          <span class="nav-text fw-semibold">Registro de comisiones</span>
         </a>
         {% endif %}
         {% if not has_perms or 'menu.inventory' in perms %}

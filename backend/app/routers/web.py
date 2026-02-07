@@ -35,7 +35,7 @@ from ..core.security import (
 )
 from ..core.utils import local_now, local_now_naive, local_today
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from ..models.inventory import (
     Bodega,
@@ -70,6 +70,9 @@ from ..models.sales import (
     ReciboMotivo,
     ReciboRubro,
     ReversionToken,
+    ProductoComision,
+    VentaComisionAsignacion,
+    VentaComisionFinal,
     Vendedor,
     VendedorBodega,
     VentaFactura,
@@ -219,6 +222,7 @@ PERMISSION_GROUPS = [
             {"name": "menu.sales.roc", "label": "Recibos de caja"},
             {"name": "menu.sales.depositos", "label": "Registro de depositos"},
             {"name": "menu.sales.cierre", "label": "Cierre de caja"},
+            {"name": "menu.sales.comisiones", "label": "Registro de comisiones"},
         ],
     },
     {
@@ -241,6 +245,7 @@ PERMISSION_GROUPS = [
             {"name": "access.sales.depositos", "label": "Depositos bancarios"},
             {"name": "access.sales.cierre", "label": "Cierre de caja"},
             {"name": "access.sales.reversion", "label": "Reversion de facturas"},
+            {"name": "access.sales.comisiones", "label": "Registro de comisiones"},
             {"name": "access.inventory", "label": "Acceso a inventarios"},
             {"name": "access.inventory.caliente", "label": "Inventario en caliente"},
             {"name": "access.inventory.ingresos", "label": "Ingresos de inventario"},
@@ -327,6 +332,23 @@ def _vendedores_for_bodega(db: Session, bodega: Optional[Bodega]) -> list[Vended
     assigned = (
         base.join(VendedorBodega, VendedorBodega.vendedor_id == Vendedor.id)
         .filter(VendedorBodega.bodega_id == bodega.id)
+        .order_by(Vendedor.nombre)
+        .all()
+    )
+    if assigned:
+        return assigned
+    return base.order_by(Vendedor.nombre).all()
+
+
+def _vendedores_for_branch(db: Session, branch_id: Optional[int]) -> list[Vendedor]:
+    base = db.query(Vendedor).filter(Vendedor.activo.is_(True))
+    if not branch_id:
+        return base.order_by(Vendedor.nombre).all()
+    assigned = (
+        base.join(VendedorBodega, VendedorBodega.vendedor_id == Vendedor.id)
+        .join(Bodega, Bodega.id == VendedorBodega.bodega_id)
+        .filter(Bodega.branch_id == branch_id)
+        .distinct()
         .order_by(Vendedor.nombre)
         .all()
     )
@@ -1806,6 +1828,1475 @@ def sales_utilitario(
             "producto_q": producto_q,
             "version": settings.UI_VERSION,
         },
+    )
+
+
+def _sales_commissions_filters(request: Request):
+    fecha_raw = request.query_params.get("fecha")
+    branch_id = request.query_params.get("branch_id") or "all"
+    vendedor_facturacion_id = (
+        request.query_params.get("vendedor_facturacion_id")
+        or request.query_params.get("vendedor_id")
+        or ""
+    ).strip()
+    vendedor_asignado_id = (request.query_params.get("vendedor_asignado_id") or "").strip()
+    producto_asig_q = (request.query_params.get("producto_asig_q") or "").strip()
+    active_tab = (request.query_params.get("tab") or "precios").strip().lower()
+    if active_tab not in {"precios", "asignacion", "reportes"}:
+        active_tab = "precios"
+    fecha_value = local_today()
+    if fecha_raw:
+        try:
+            fecha_value = date.fromisoformat(fecha_raw)
+        except ValueError:
+            fecha_value = local_today()
+    return (
+        fecha_value,
+        branch_id,
+        vendedor_facturacion_id,
+        vendedor_asignado_id,
+        producto_asig_q,
+        active_tab,
+    )
+
+
+def _sales_commissions_report_filters(request: Request):
+    start_raw = request.query_params.get("rep_start_date")
+    end_raw = request.query_params.get("rep_end_date")
+    branch_id = request.query_params.get("rep_branch_id") or "all"
+    vendedor_id = (request.query_params.get("rep_vendedor_id") or "").strip()
+
+    today = local_today()
+    start_date = today
+    end_date = today
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            start_date = today
+            end_date = today
+    if end_date < start_date:
+        end_date = start_date
+    return start_date, end_date, branch_id, vendedor_id
+
+
+def _commission_sales_rows_query(
+    db: Session,
+    fecha_value: date,
+    branch_id: str | None,
+    vendedor_id: str | None,
+    producto_asig_q: str,
+):
+    start_dt = datetime.combine(fecha_value, datetime.min.time())
+    end_dt = datetime.combine(fecha_value + timedelta(days=1), datetime.min.time())
+
+    query = (
+        db.query(VentaFactura, VentaItem, Producto, Cliente, Vendedor, Branch, Bodega)
+        .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+        .join(Producto, Producto.id == VentaItem.producto_id)
+        .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+        .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+        .join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True)
+        .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
+        .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+        .filter(VentaFactura.estado != "ANULADA")
+    )
+    if branch_id and branch_id != "all":
+        try:
+            query = query.filter(Branch.id == int(branch_id))
+        except ValueError:
+            pass
+    if vendedor_id:
+        try:
+            query = query.filter(VentaFactura.vendedor_id == int(vendedor_id))
+        except ValueError:
+            pass
+    if producto_asig_q:
+        like = f"%{producto_asig_q.lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+            )
+        )
+    return query.order_by(VentaFactura.id.asc(), VentaItem.id.asc())
+
+
+def _commission_branch_scope(branch_id: str | None) -> Optional[int]:
+    if not branch_id or branch_id == "all":
+        return None
+    try:
+        return int(branch_id)
+    except ValueError:
+        return None
+
+
+def _ensure_commission_temp_snapshot(
+    db: Session,
+    fecha_value: date,
+    branch_id: str | None,
+) -> tuple[int, int]:
+    scope_branch_id = _commission_branch_scope(branch_id)
+    source_rows = _commission_sales_rows_query(
+        db, fecha_value, str(scope_branch_id) if scope_branch_id else "all", None, ""
+    ).all()
+
+    source_map: dict[int, tuple] = {
+        item.id: (factura, item, producto, cliente, vendedor, branch, bodega)
+        for factura, item, producto, cliente, vendedor, branch, bodega in source_rows
+    }
+    source_item_ids = set(source_map.keys())
+
+    temp_query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha == fecha_value
+    )
+    if scope_branch_id:
+        temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    temp_rows = temp_query.all()
+    temp_by_item: dict[int, list[VentaComisionAsignacion]] = {}
+    for row in temp_rows:
+        temp_by_item.setdefault(row.venta_item_id, []).append(row)
+    fallback_vendor = (
+        db.query(Vendedor.id)
+        .filter(Vendedor.activo.is_(True))
+        .order_by(Vendedor.nombre)
+        .first()
+    )
+    fallback_vendor_id = fallback_vendor[0] if fallback_vendor else None
+
+    created = 0
+    updated = 0
+    for item_id, source in source_map.items():
+        factura, item, producto, cliente, vendedor, branch, bodega = source
+        assigned_vendor_id = (vendedor.id if vendedor else None) or fallback_vendor_id
+        if not assigned_vendor_id:
+            continue
+        sold_qty = int(
+            Decimal(str(item.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+        if sold_qty <= 0:
+            continue
+        existing_rows = temp_by_item.get(item_id, [])
+        if existing_rows:
+            price_usd = Decimal(str(item.precio_unitario_usd or 0))
+            price_cs = Decimal(str(item.precio_unitario_cs or 0))
+            for row in existing_rows:
+                row.factura_id = factura.id
+                row.branch_id = branch.id if branch else None
+                row.bodega_id = bodega.id if bodega else None
+                row.cliente_id = cliente.id if cliente else None
+                row.producto_id = producto.id
+                row.vendedor_origen_id = vendedor.id if vendedor else None
+                if not row.vendedor_asignado_id:
+                    row.vendedor_asignado_id = assigned_vendor_id
+
+            rows_sorted = sorted(existing_rows, key=lambda r: r.id)
+            primary = next(
+                (r for r in rows_sorted if r.vendedor_asignado_id == (vendedor.id if vendedor else None)),
+                rows_sorted[0],
+            )
+            secondary_rows = [r for r in rows_sorted if r.id != primary.id]
+            sum_secondary = 0
+            for row in secondary_rows:
+                q = int(Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+                if q < 0:
+                    q = 0
+                row.cantidad = q
+                sum_secondary += q
+
+            primary_qty = sold_qty - sum_secondary
+            if primary_qty < 0:
+                primary_qty = 0
+            primary.cantidad = primary_qty
+
+            for row in existing_rows:
+                q = Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                row.subtotal_usd = price_usd * q
+                row.subtotal_cs = price_cs * q
+                row.precio_unitario_usd = price_usd
+                row.precio_unitario_cs = price_cs
+            updated += len(existing_rows)
+            continue
+
+        db.add(
+            VentaComisionAsignacion(
+                venta_item_id=item.id,
+                factura_id=factura.id,
+                branch_id=branch.id if branch else None,
+                bodega_id=bodega.id if bodega else None,
+                cliente_id=cliente.id if cliente else None,
+                producto_id=producto.id,
+                fecha=fecha_value,
+                vendedor_origen_id=vendedor.id if vendedor else None,
+                vendedor_asignado_id=assigned_vendor_id,
+                cantidad=sold_qty,
+                precio_unitario_usd=Decimal(str(item.precio_unitario_usd or 0)),
+                precio_unitario_cs=Decimal(str(item.precio_unitario_cs or 0)),
+                subtotal_usd=Decimal(str(item.precio_unitario_usd or 0)) * sold_qty,
+                subtotal_cs=Decimal(str(item.precio_unitario_cs or 0)) * sold_qty,
+                usuario_registro="snapshot",
+            )
+        )
+        created += 1
+
+    removed = 0
+    for row in temp_rows:
+        if row.venta_item_id not in source_item_ids:
+            db.delete(row)
+            removed += 1
+
+    if created or removed or updated:
+        db.commit()
+    return created, removed
+
+
+def _build_commission_assignment_rows(
+    db: Session,
+    fecha_value: date,
+    branch_id: str | None,
+    vendedor_facturacion_id: str | None,
+    vendedor_asignado_id: str | None,
+    producto_asig_q: str,
+):
+    scope_branch_id = _commission_branch_scope(branch_id)
+    temp_query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha == fecha_value
+    )
+    if scope_branch_id:
+        temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    if vendedor_asignado_id:
+        try:
+            temp_query = temp_query.filter(
+                VentaComisionAsignacion.vendedor_asignado_id == int(vendedor_asignado_id)
+            )
+        except ValueError:
+            pass
+    temp_rows = temp_query.order_by(VentaComisionAsignacion.id.asc()).all()
+    if not temp_rows:
+        return [], 0, 0, {}, 0.0
+
+    source_rows = _commission_sales_rows_query(
+        db, fecha_value, branch_id if branch_id else "all", None, ""
+    ).all()
+    source_qty_map: dict[int, int] = {}
+    source_meta_map: dict[int, tuple] = {}
+    for factura, item, producto, cliente, vendedor, branch, bodega in source_rows:
+        qty = int(
+            Decimal(str(item.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+        source_qty_map[item.id] = qty
+        source_meta_map[item.id] = (factura, item, producto, cliente, vendedor, branch, bodega)
+
+    product_ids = list({row.producto_id for row in temp_rows})
+    factura_ids = list({row.factura_id for row in temp_rows})
+    cliente_ids = list({row.cliente_id for row in temp_rows if row.cliente_id})
+    vendor_ids = list(
+        {
+            row.vendedor_origen_id
+            for row in temp_rows
+            if row.vendedor_origen_id
+        }
+        | {
+            row.vendedor_asignado_id
+            for row in temp_rows
+            if row.vendedor_asignado_id
+        }
+    )
+
+    products = (
+        db.query(Producto).filter(Producto.id.in_(product_ids)).all() if product_ids else []
+    )
+    product_map = {p.id: p for p in products}
+    factura_rows = (
+        db.query(VentaFactura).filter(VentaFactura.id.in_(factura_ids)).all()
+        if factura_ids
+        else []
+    )
+    factura_map = {f.id: f for f in factura_rows}
+    cliente_rows = (
+        db.query(Cliente).filter(Cliente.id.in_(cliente_ids)).all()
+        if cliente_ids
+        else []
+    )
+    cliente_map = {c.id: c for c in cliente_rows}
+    vendor_rows = (
+        db.query(Vendedor).filter(Vendedor.id.in_(vendor_ids)).all()
+        if vendor_ids
+        else []
+    )
+    vendor_map = {v.id: v.nombre for v in vendor_rows}
+
+    if producto_asig_q:
+        like = producto_asig_q.lower()
+        filtered = []
+        for row in temp_rows:
+            p = product_map.get(row.producto_id)
+            if not p:
+                continue
+            haystack = f"{p.cod_producto or ''} {p.descripcion or ''}".lower()
+            if like in haystack:
+                filtered.append(row)
+        temp_rows = filtered
+
+    if vendedor_facturacion_id:
+        try:
+            vendedor_facturacion_id_int = int(vendedor_facturacion_id)
+            temp_rows = [
+                row
+                for row in temp_rows
+                if int(row.vendedor_origen_id or 0) == vendedor_facturacion_id_int
+            ]
+        except ValueError:
+            pass
+
+    if not temp_rows:
+        return [], 0, 0, {}, 0.0
+
+    commission_rows = (
+        db.query(ProductoComision)
+        .filter(ProductoComision.producto_id.in_(product_ids))
+        .all()
+        if product_ids
+        else []
+    )
+    commission_map: dict[int, Decimal] = {
+        row.producto_id: Decimal(str(row.comision_usd or 0))
+        for row in commission_rows
+    }
+
+    primary_ids: set[int] = set()
+    grouped_rows: dict[int, list[VentaComisionAsignacion]] = {}
+    for row in temp_rows:
+        grouped_rows.setdefault(row.venta_item_id, []).append(row)
+    for rows in grouped_rows.values():
+        rows_sorted = sorted(rows, key=lambda r: r.id)
+        preferred = next(
+            (r for r in rows_sorted if r.vendedor_asignado_id == r.vendedor_origen_id),
+            rows_sorted[0],
+        )
+        primary_ids.add(preferred.id)
+
+    output_rows: list[dict] = []
+    for row in temp_rows:
+        producto = product_map.get(row.producto_id)
+        factura = factura_map.get(row.factura_id)
+        cliente = cliente_map.get(row.cliente_id) if row.cliente_id else None
+        if not producto or not factura:
+            continue
+        precio = (
+            Decimal(str(row.precio_unitario_usd or 0))
+            if (factura.moneda or "CS") == "USD"
+            else Decimal(str(row.precio_unitario_cs or 0))
+        )
+        comision_unit = commission_map.get(producto.id, Decimal("0"))
+        precio_label = "$" if (factura.moneda or "CS") == "USD" else "C$"
+        qty_int = int(Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        total_qty_int = source_qty_map.get(row.venta_item_id, qty_int)
+        vendedor_origen_nombre = vendor_map.get(row.vendedor_origen_id, "-")
+        vendedor_asignado_nombre = vendor_map.get(
+            row.vendedor_asignado_id, vendedor_origen_nombre
+        )
+        output_rows.append(
+            {
+                "temp_id": row.id,
+                "venta_item_id": row.venta_item_id,
+                "factura_id": row.factura_id,
+                "producto_id": row.producto_id,
+                "factura_numero": factura.numero,
+                "cliente": cliente.nombre if cliente else "Consumidor final",
+                "descripcion": f"{producto.cod_producto} - {producto.descripcion}",
+                "cantidad": qty_int,
+                "precio": float(precio),
+                "precio_label": precio_label,
+                "comision_unit_usd": float(comision_unit),
+                "comision_total_usd": float(comision_unit * Decimal(str(qty_int))),
+                "vendedor_origen_id": row.vendedor_origen_id,
+                "vendedor_origen": vendedor_origen_nombre,
+                "vendedor_id": row.vendedor_asignado_id,
+                "vendedor_nombre": vendedor_asignado_nombre,
+                "is_primary": row.id in primary_ids,
+                "cantidad_total_item": total_qty_int,
+            }
+        )
+
+    output_rows.sort(
+        key=lambda row: (
+            (row.get("vendedor_nombre") or "-").lower(),
+            str(row.get("factura_numero") or ""),
+            str(row.get("descripcion") or ""),
+        )
+    )
+    total_bultos = int(sum(int(row.get("cantidad") or 0) for row in output_rows))
+    total_comision = Decimal("0")
+    by_vendor: dict[str, dict[str, float]] = {}
+    for row in output_rows:
+        vendor_name = row.get("vendedor_nombre") or "-"
+        qty = int(row.get("cantidad") or 0)
+        comision_total = Decimal(str(row.get("comision_total_usd") or 0))
+        total_comision += comision_total
+        if vendor_name not in by_vendor:
+            by_vendor[vendor_name] = {"bultos": 0.0, "comision_usd": 0.0}
+        by_vendor[vendor_name]["bultos"] += qty
+        by_vendor[vendor_name]["comision_usd"] += float(comision_total)
+    return output_rows, total_bultos, len(output_rows), by_vendor, float(total_comision)
+
+
+def _commission_missing_prices(
+    db: Session,
+    fecha_value: date,
+    branch_id: str | None,
+) -> list[dict]:
+    scope_branch_id = _commission_branch_scope(branch_id)
+    temp_query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha == fecha_value
+    )
+    if scope_branch_id:
+        temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    product_ids = {
+        row[0]
+        for row in temp_query.with_entities(VentaComisionAsignacion.producto_id)
+        .distinct()
+        .all()
+    }
+    if not product_ids:
+        return []
+
+    commission_map = {
+        row.producto_id: Decimal(str(row.comision_usd or 0))
+        for row in db.query(ProductoComision)
+        .filter(ProductoComision.producto_id.in_(list(product_ids)))
+        .all()
+    }
+    missing_ids = [pid for pid in product_ids if commission_map.get(pid, Decimal("0")) <= 0]
+    if not missing_ids:
+        return []
+
+    products = (
+        db.query(Producto)
+        .filter(Producto.id.in_(missing_ids))
+        .order_by(Producto.cod_producto, Producto.descripcion)
+        .all()
+    )
+    return [{"id": p.id, "codigo": p.cod_producto or "-", "descripcion": p.descripcion or "-"} for p in products]
+
+
+def _build_commission_reports_data(
+    db: Session,
+    start_date: date,
+    end_date: date,
+    branch_id: str | None,
+    vendedor_id: str | None,
+) -> dict:
+    query = (
+        db.query(VentaComisionFinal, VentaFactura, Producto, Cliente, Vendedor, Branch)
+        .join(VentaFactura, VentaFactura.id == VentaComisionFinal.factura_id)
+        .join(Producto, Producto.id == VentaComisionFinal.producto_id)
+        .join(Cliente, Cliente.id == VentaComisionFinal.cliente_id, isouter=True)
+        .join(Vendedor, Vendedor.id == VentaComisionFinal.vendedor_asignado_id, isouter=True)
+        .join(Branch, Branch.id == VentaComisionFinal.branch_id, isouter=True)
+        .filter(VentaComisionFinal.fecha >= start_date, VentaComisionFinal.fecha <= end_date)
+    )
+    if branch_id and branch_id != "all":
+        try:
+            query = query.filter(VentaComisionFinal.branch_id == int(branch_id))
+        except ValueError:
+            pass
+    if vendedor_id:
+        try:
+            query = query.filter(VentaComisionFinal.vendedor_asignado_id == int(vendedor_id))
+        except ValueError:
+            pass
+
+    rows = query.order_by(
+        VentaComisionFinal.fecha.asc(),
+        Vendedor.nombre.asc(),
+        VentaFactura.numero.asc(),
+        VentaComisionFinal.id.asc(),
+    ).all()
+
+    detail_rows: list[dict] = []
+    summary_map: dict[str, dict[str, Decimal]] = {}
+    pivot_map: dict[date, dict[str, dict[str, Decimal]]] = {}
+    pivot_vendors_set: set[str] = set()
+    total_bultos = Decimal("0")
+    total_comision = Decimal("0")
+    total_ventas_usd = Decimal("0")
+
+    for final_row, factura, producto, cliente, vendedor, branch in rows:
+        qty = Decimal(str(final_row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        comision_unit = Decimal(str(final_row.comision_unit_usd or 0))
+        comision_total = Decimal(str(final_row.comision_total_usd or 0))
+        subtotal_usd = Decimal(str(final_row.subtotal_usd or 0))
+        vendor_name = vendedor.nombre if vendedor else "Sin asignar"
+        fecha_value = final_row.fecha
+
+        detail_rows.append(
+            {
+                "fecha": fecha_value,
+                "fecha_label": fecha_value.strftime("%d/%m/%Y") if fecha_value else "-",
+                "sucursal": branch.name if branch else "-",
+                "factura": factura.numero if factura else "-",
+                "cliente": cliente.nombre if cliente else "Consumidor final",
+                "producto": f"{producto.cod_producto or '-'} - {producto.descripcion or '-'}",
+                "vendedor": vendor_name,
+                "cantidad": int(qty),
+                "subtotal_usd": float(subtotal_usd),
+                "comision_unit_usd": float(comision_unit),
+                "comision_total_usd": float(comision_total),
+            }
+        )
+
+        total_bultos += qty
+        total_comision += comision_total
+        total_ventas_usd += subtotal_usd
+
+        if vendor_name not in summary_map:
+            summary_map[vendor_name] = {
+                "bultos": Decimal("0"),
+                "ventas_usd": Decimal("0"),
+                "comision_usd": Decimal("0"),
+            }
+        summary_map[vendor_name]["bultos"] += qty
+        summary_map[vendor_name]["ventas_usd"] += subtotal_usd
+        summary_map[vendor_name]["comision_usd"] += comision_total
+
+        pivot_vendors_set.add(vendor_name)
+        if fecha_value not in pivot_map:
+            pivot_map[fecha_value] = {}
+        if vendor_name not in pivot_map[fecha_value]:
+            pivot_map[fecha_value][vendor_name] = {
+                "bultos": Decimal("0"),
+                "comision_usd": Decimal("0"),
+            }
+        pivot_map[fecha_value][vendor_name]["bultos"] += qty
+        pivot_map[fecha_value][vendor_name]["comision_usd"] += comision_total
+
+    summary_rows = [
+        {
+            "vendedor": vendor_name,
+            "bultos": int(values["bultos"]),
+            "ventas_usd": float(values["ventas_usd"]),
+            "comision_usd": float(values["comision_usd"]),
+        }
+        for vendor_name, values in sorted(
+            summary_map.items(),
+            key=lambda pair: (pair[0] or "").lower(),
+        )
+    ]
+
+    pivot_vendors = sorted(list(pivot_vendors_set), key=lambda name: (name or "").lower())
+    pivot_rows = []
+    pivot_vendor_totals = {
+        vendor_name: {"bultos": Decimal("0"), "comision_usd": Decimal("0")}
+        for vendor_name in pivot_vendors
+    }
+    for fecha_value in sorted(pivot_map.keys()):
+        by_vendor = pivot_map.get(fecha_value, {})
+        cells = []
+        day_bultos = Decimal("0")
+        day_comision = Decimal("0")
+        for vendor_name in pivot_vendors:
+            values = by_vendor.get(
+                vendor_name, {"bultos": Decimal("0"), "comision_usd": Decimal("0")}
+            )
+            bultos = Decimal(str(values["bultos"]))
+            comision_usd = Decimal(str(values["comision_usd"]))
+            cells.append(
+                {
+                    "vendor": vendor_name,
+                    "bultos": int(bultos),
+                    "comision_usd": float(comision_usd),
+                }
+            )
+            day_bultos += bultos
+            day_comision += comision_usd
+            pivot_vendor_totals[vendor_name]["bultos"] += bultos
+            pivot_vendor_totals[vendor_name]["comision_usd"] += comision_usd
+        pivot_rows.append(
+            {
+                "fecha": fecha_value,
+                "fecha_label": fecha_value.strftime("%d/%m/%Y"),
+                "cells": cells,
+                "day_bultos": int(day_bultos),
+                "day_comision_usd": float(day_comision),
+            }
+        )
+
+    return {
+        "detail_rows": detail_rows,
+        "summary_rows": summary_rows,
+        "pivot_vendors": pivot_vendors,
+        "pivot_rows": pivot_rows,
+        "pivot_vendor_totals": {
+            vendor_name: {
+                "bultos": int(values["bultos"]),
+                "comision_usd": float(values["comision_usd"]),
+            }
+            for vendor_name, values in pivot_vendor_totals.items()
+        },
+        "total_bultos": int(total_bultos),
+        "total_ventas_usd": float(total_ventas_usd),
+        "total_comision_usd": float(total_comision),
+    }
+
+
+def _commission_day_status(
+    db: Session,
+    fecha_value: date,
+    branch_id: str | None,
+) -> dict:
+    scope_branch_id = _commission_branch_scope(branch_id)
+
+    temp_q = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha == fecha_value
+    )
+    final_q = db.query(VentaComisionFinal).filter(VentaComisionFinal.fecha == fecha_value)
+    if scope_branch_id:
+        temp_q = temp_q.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+        final_q = final_q.filter(VentaComisionFinal.branch_id == scope_branch_id)
+
+    temp_rows = temp_q.all()
+    final_rows = final_q.all()
+
+    if not final_rows:
+        return {
+            "code": "abierto",
+            "label": "Abierto",
+            "final_count": 0,
+            "temp_count": len(temp_rows),
+        }
+
+    def pack_temp(row: VentaComisionAsignacion) -> tuple:
+        return (
+            int(row.venta_item_id or 0),
+            int(row.vendedor_asignado_id or 0),
+            int(Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)),
+        )
+
+    def pack_final(row: VentaComisionFinal) -> tuple:
+        return (
+            int(row.venta_item_id or 0),
+            int(row.vendedor_asignado_id or 0),
+            int(Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)),
+        )
+
+    temp_set = sorted(pack_temp(row) for row in temp_rows)
+    final_set = sorted(pack_final(row) for row in final_rows)
+    in_editing = temp_set != final_set
+
+    if in_editing:
+        return {
+            "code": "reabierto",
+            "label": "Reabierto en edicion",
+            "final_count": len(final_rows),
+            "temp_count": len(temp_rows),
+        }
+    return {
+        "code": "cerrado",
+        "label": "Cerrado",
+        "final_count": len(final_rows),
+        "temp_count": len(temp_rows),
+    }
+
+
+@router.get("/sales/comisiones")
+def sales_comisiones(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    (
+        fecha_value,
+        branch_id,
+        vendedor_facturacion_id,
+        vendedor_asignado_id,
+        producto_asig_q,
+        active_tab,
+    ) = _sales_commissions_filters(request)
+    rep_start_date, rep_end_date, rep_branch_id, rep_vendedor_id = (
+        _sales_commissions_report_filters(request)
+    )
+    branches = db.query(Branch).order_by(Branch.name).all()
+    selected_branch_id: Optional[int] = None
+    if branch_id and branch_id != "all":
+        try:
+            selected_branch_id = int(branch_id)
+        except ValueError:
+            selected_branch_id = None
+
+    vendedores = _vendedores_for_branch(db, selected_branch_id)
+    productos = (
+        db.query(Producto)
+        .filter(Producto.activo.is_(True))
+        .order_by(Producto.descripcion)
+        .all()
+    )
+    product_ids = [p.id for p in productos]
+    commission_map = {
+        row.producto_id: float(row.comision_usd or 0)
+        for row in db.query(ProductoComision)
+        .filter(ProductoComision.producto_id.in_(product_ids))
+        .all()
+    } if product_ids else {}
+    product_rows = [
+        {
+            "id": producto.id,
+            "codigo": producto.cod_producto,
+            "descripcion": producto.descripcion,
+            "costo_producto": float(producto.costo_producto or 0),
+            "precio_venta_usd": float(producto.precio_venta1_usd or 0),
+            "comision": float(commission_map.get(producto.id, 0) or 0),
+        }
+        for producto in productos
+    ]
+
+    _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
+    assignment_rows, total_bultos, total_rows, by_vendor, total_comision_usd = _build_commission_assignment_rows(
+        db,
+        fecha_value,
+        branch_id,
+        vendedor_facturacion_id,
+        vendedor_asignado_id,
+        producto_asig_q,
+    )
+    day_status = _commission_day_status(db, fecha_value, branch_id)
+    reports_data = _build_commission_reports_data(
+        db,
+        rep_start_date,
+        rep_end_date,
+        rep_branch_id,
+        rep_vendedor_id,
+    )
+    success = request.query_params.get("success")
+    error = request.query_params.get("error")
+
+    return request.app.state.templates.TemplateResponse(
+        "sales_comisiones.html",
+        {
+            "request": request,
+            "user": user,
+            "branches": branches,
+            "vendedores": vendedores,
+            "product_rows": product_rows,
+            "assignment_rows": assignment_rows,
+            "total_bultos": total_bultos,
+            "total_rows": total_rows,
+            "total_comision_usd": total_comision_usd,
+            "by_vendor": by_vendor,
+            "day_status": day_status,
+            "fecha": fecha_value.isoformat(),
+            "selected_branch": branch_id or "all",
+            "selected_vendedor_facturacion": vendedor_facturacion_id or "",
+            "selected_vendedor_asignado": vendedor_asignado_id or "",
+            "producto_asig_q": producto_asig_q,
+            "rep_start_date": rep_start_date.isoformat(),
+            "rep_end_date": rep_end_date.isoformat(),
+            "rep_selected_branch": rep_branch_id or "all",
+            "rep_selected_vendedor": rep_vendedor_id or "",
+            "rep_detail_rows": reports_data["detail_rows"],
+            "rep_summary_rows": reports_data["summary_rows"],
+            "rep_pivot_vendors": reports_data["pivot_vendors"],
+            "rep_pivot_rows": reports_data["pivot_rows"],
+            "rep_pivot_vendor_totals": reports_data["pivot_vendor_totals"],
+            "rep_total_bultos": reports_data["total_bultos"],
+            "rep_total_ventas_usd": reports_data["total_ventas_usd"],
+            "rep_total_comision_usd": reports_data["total_comision_usd"],
+            "active_tab": active_tab,
+            "success": success,
+            "error": error,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/sales/comisiones/precios")
+async def sales_comisiones_save_prices(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    form = await request.form()
+    fecha_raw = str(form.get("fecha") or "")
+    branch_id = str(form.get("branch_id") or "all")
+    vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
+    vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
+    producto_asig_q = str(form.get("producto_asig_q") or "").strip()
+    updates = 0
+
+    def parse_amount(raw: Optional[str]) -> Decimal:
+        val = str(raw or "").strip()
+        if not val:
+            return Decimal("0")
+        val = val.replace(",", "")
+        try:
+            return Decimal(val)
+        except Exception:
+            return Decimal("0")
+
+    for key, value in form.items():
+        if not key.startswith("comision_"):
+            continue
+        try:
+            product_id = int(key.replace("comision_", ""))
+        except ValueError:
+            continue
+        comision = parse_amount(value)
+        row = (
+            db.query(ProductoComision)
+            .filter(ProductoComision.producto_id == product_id)
+            .first()
+        )
+        if row:
+            row.comision_usd = comision
+            row.usuario_registro = user.full_name
+        else:
+            db.add(
+                ProductoComision(
+                    producto_id=product_id,
+                    comision_usd=comision,
+                    usuario_registro=user.full_name,
+                )
+            )
+        updates += 1
+
+    db.commit()
+    msg = (
+        f"Comisiones registradas ({updates})"
+        if updates
+        else "No se detectaron cambios para guardar"
+    )
+    params = {
+        "tab": "precios",
+        "success": msg,
+        "fecha": fecha_raw,
+        "branch_id": branch_id or "all",
+        "vendedor_facturacion_id": vendedor_facturacion_id,
+        "vendedor_asignado_id": vendedor_asignado_id,
+        "producto_asig_q": producto_asig_q,
+    }
+    return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+
+@router.post("/sales/comisiones/asignaciones")
+async def sales_comisiones_save_assignments(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    form = await request.form()
+    fecha_raw = str(form.get("fecha") or "")
+    branch_id = str(form.get("branch_id") or "all")
+    vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
+    vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
+    producto_asig_q = str(form.get("producto_asig_q") or "").strip()
+    payload_raw = str(form.get("rows_payload") or "[]")
+
+    try:
+        fecha_value = date.fromisoformat(fecha_raw)
+    except ValueError:
+        fecha_value = local_today()
+    try:
+        payload = json.loads(payload_raw)
+    except json.JSONDecodeError:
+        payload = []
+
+    _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
+    scope_branch_id = _commission_branch_scope(branch_id)
+    source_rows = _commission_sales_rows_query(
+        db, fecha_value, branch_id if branch_id else "all", None, ""
+    ).all()
+    source_map = {
+        item.id: (factura, item, producto, cliente, vendedor, branch, bodega)
+        for factura, item, producto, cliente, vendedor, branch, bodega in source_rows
+    }
+    source_qty_map = {
+        item.id: int(
+            Decimal(str(item.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+        for _, item, *_ in source_rows
+    }
+
+    temp_query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha == fecha_value
+    )
+    if scope_branch_id:
+        temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    temp_item_ids = {
+        row[0]
+        for row in temp_query.with_entities(VentaComisionAsignacion.venta_item_id)
+        .distinct()
+        .all()
+    }
+
+    saved = 0
+    rows_by_item: dict[int, list[dict]] = {}
+    for row in payload if isinstance(payload, list) else []:
+        try:
+            venta_item_id = int(row.get("venta_item_id"))
+            vendedor_asignado_id = int(row.get("vendedor_id"))
+            cantidad = int(Decimal(str(row.get("cantidad") or "0")))
+        except Exception:
+            continue
+        if venta_item_id not in temp_item_ids and venta_item_id not in source_map:
+            continue
+        if cantidad <= 0:
+            continue
+        rows_by_item.setdefault(venta_item_id, []).append(
+            {
+                "vendedor_id": vendedor_asignado_id,
+                "cantidad": cantidad,
+            }
+        )
+
+    if not rows_by_item:
+        params = {
+            "tab": "asignacion",
+            "fecha": fecha_value.isoformat(),
+            "branch_id": branch_id or "all",
+            "vendedor_facturacion_id": vendedor_facturacion_id,
+            "vendedor_asignado_id": vendedor_asignado_id,
+            "producto_asig_q": producto_asig_q,
+            "error": "No hay filas validas para guardar asignaciones.",
+        }
+        return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+    invalid_items: list[int] = []
+    for venta_item_id, rows in rows_by_item.items():
+        sold_qty = source_qty_map.get(venta_item_id)
+        if sold_qty is None:
+            invalid_items.append(venta_item_id)
+            continue
+        total_payload_qty = sum(int(r["cantidad"]) for r in rows)
+        if total_payload_qty != sold_qty:
+            invalid_items.append(venta_item_id)
+            continue
+        for r in rows:
+            exists = (
+                db.query(Vendedor.id)
+                .filter(Vendedor.id == int(r["vendedor_id"]), Vendedor.activo.is_(True))
+                .first()
+            )
+            if not exists:
+                invalid_items.append(venta_item_id)
+                break
+    if invalid_items:
+        params = {
+            "tab": "asignacion",
+            "fecha": fecha_value.isoformat(),
+            "branch_id": branch_id or "all",
+            "vendedor_facturacion_id": vendedor_facturacion_id,
+            "vendedor_asignado_id": vendedor_asignado_id,
+            "producto_asig_q": producto_asig_q,
+            "error": "Hay items con cantidades invalidas. Verifica que la suma por item sea igual a la cantidad vendida.",
+        }
+        return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+    touched_item_ids = list(rows_by_item.keys())
+    if touched_item_ids:
+        delete_q = db.query(VentaComisionAsignacion).filter(
+            VentaComisionAsignacion.fecha == fecha_value,
+            VentaComisionAsignacion.venta_item_id.in_(touched_item_ids),
+        )
+        if scope_branch_id:
+            delete_q = delete_q.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+        delete_q.delete(synchronize_session=False)
+
+    for venta_item_id, rows in rows_by_item.items():
+        source = source_map.get(venta_item_id)
+        if not source:
+            continue
+        factura, item, producto, cliente, vendedor, branch, bodega = source
+        precio_usd = Decimal(str(item.precio_unitario_usd or 0))
+        precio_cs = Decimal(str(item.precio_unitario_cs or 0))
+        for row_data in rows:
+            cantidad = Decimal(str(row_data["cantidad"])).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+            vendedor_asignado_id = int(row_data["vendedor_id"])
+            db.add(
+                VentaComisionAsignacion(
+                    venta_item_id=item.id,
+                    factura_id=factura.id,
+                    branch_id=branch.id if branch else None,
+                    bodega_id=bodega.id if bodega else None,
+                    cliente_id=cliente.id if cliente else None,
+                    producto_id=producto.id,
+                    fecha=fecha_value,
+                    vendedor_origen_id=vendedor.id if vendedor else None,
+                    vendedor_asignado_id=vendedor_asignado_id,
+                    cantidad=cantidad,
+                    precio_unitario_usd=precio_usd,
+                    precio_unitario_cs=precio_cs,
+                    subtotal_usd=precio_usd * cantidad,
+                    subtotal_cs=precio_cs * cantidad,
+                    usuario_registro=user.full_name,
+                )
+            )
+            saved += 1
+
+    db.commit()
+    params = {
+        "tab": "asignacion",
+        "fecha": fecha_value.isoformat(),
+        "branch_id": branch_id or "all",
+        "vendedor_facturacion_id": vendedor_facturacion_id,
+        "vendedor_asignado_id": vendedor_asignado_id,
+        "producto_asig_q": producto_asig_q,
+        "success": f"Asignaciones guardadas ({saved})",
+    }
+    return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+
+@router.post("/sales/comisiones/asignaciones/validar-precios")
+async def sales_comisiones_validate_prices(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    form = await request.form()
+    fecha_raw = str(form.get("fecha") or "")
+    branch_id = str(form.get("branch_id") or "all")
+    vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
+    vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
+    producto_asig_q = str(form.get("producto_asig_q") or "").strip()
+
+    try:
+        fecha_value = date.fromisoformat(fecha_raw)
+    except ValueError:
+        fecha_value = local_today()
+
+    _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
+    missing_products = _commission_missing_prices(db, fecha_value, branch_id)
+
+    if missing_products:
+        preview = ", ".join(
+            f"{row['codigo']} ({row['descripcion']})" for row in missing_products[:8]
+        )
+        if len(missing_products) > 8:
+            preview += f" ... +{len(missing_products) - 8} mas"
+        params = {
+            "tab": "asignacion",
+            "fecha": fecha_value.isoformat(),
+            "branch_id": branch_id or "all",
+            "vendedor_facturacion_id": vendedor_facturacion_id,
+            "vendedor_asignado_id": vendedor_asignado_id,
+            "producto_asig_q": producto_asig_q,
+            "error": f"Productos sin precio de comision: {preview}",
+        }
+        return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+    params = {
+        "tab": "asignacion",
+        "fecha": fecha_value.isoformat(),
+        "branch_id": branch_id or "all",
+        "vendedor_facturacion_id": vendedor_facturacion_id,
+        "vendedor_asignado_id": vendedor_asignado_id,
+        "producto_asig_q": producto_asig_q,
+        "success": "Validacion completada. Todos los productos tienen precio de comision.",
+    }
+    return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+
+@router.post("/sales/comisiones/asignaciones/regenerar")
+async def sales_comisiones_regenerate_assignments(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    form = await request.form()
+    fecha_raw = str(form.get("fecha") or "")
+    branch_id = str(form.get("branch_id") or "all")
+    vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
+    vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
+    producto_asig_q = str(form.get("producto_asig_q") or "").strip()
+
+    try:
+        fecha_value = date.fromisoformat(fecha_raw)
+    except ValueError:
+        fecha_value = local_today()
+
+    scope_branch_id = _commission_branch_scope(branch_id)
+    temp_query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha == fecha_value
+    )
+    if scope_branch_id:
+        temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    deleted = 0
+    deleted = temp_query.delete(synchronize_session=False)
+    db.commit()
+    created, _removed = _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
+
+    params = {
+        "tab": "asignacion",
+        "fecha": fecha_value.isoformat(),
+        "branch_id": branch_id or "all",
+        "vendedor_facturacion_id": vendedor_facturacion_id,
+        "vendedor_asignado_id": vendedor_asignado_id,
+        "producto_asig_q": producto_asig_q,
+        "success": f"Regenerado completado. Temporal reiniciado: {deleted} eliminadas, {created} recreadas.",
+    }
+    return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+
+@router.post("/sales/comisiones/asignaciones/finalizar")
+async def sales_comisiones_finalize_day(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    form = await request.form()
+    fecha_raw = str(form.get("fecha") or "")
+    branch_id = str(form.get("branch_id") or "all")
+    vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
+    vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
+    producto_asig_q = str(form.get("producto_asig_q") or "").strip()
+
+    try:
+        fecha_value = date.fromisoformat(fecha_raw)
+    except ValueError:
+        fecha_value = local_today()
+
+    _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
+    scope_branch_id = _commission_branch_scope(branch_id)
+    temp_query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha == fecha_value
+    )
+    if scope_branch_id:
+        temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    temp_rows = temp_query.all()
+    if not temp_rows:
+        params = {
+            "tab": "asignacion",
+            "fecha": fecha_value.isoformat(),
+            "branch_id": branch_id or "all",
+            "vendedor_facturacion_id": vendedor_facturacion_id,
+            "vendedor_asignado_id": vendedor_asignado_id,
+            "producto_asig_q": producto_asig_q,
+            "error": "No hay datos temporales para finalizar.",
+        }
+        return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+    product_ids = list({row.producto_id for row in temp_rows})
+    commission_map = {
+        row.producto_id: Decimal(str(row.comision_usd or 0))
+        for row in db.query(ProductoComision)
+        .filter(ProductoComision.producto_id.in_(product_ids))
+        .all()
+    } if product_ids else {}
+
+    final_query = db.query(VentaComisionFinal).filter(VentaComisionFinal.fecha == fecha_value)
+    if scope_branch_id:
+        final_query = final_query.filter(VentaComisionFinal.branch_id == scope_branch_id)
+    replaced = final_query.delete(synchronize_session=False)
+
+    inserted = 0
+    for row in temp_rows:
+        qty = Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        comision_unit = commission_map.get(row.producto_id, Decimal("0"))
+        comision_total = comision_unit * qty
+        db.add(
+            VentaComisionFinal(
+                fecha=row.fecha,
+                branch_id=row.branch_id,
+                bodega_id=row.bodega_id,
+                factura_id=row.factura_id,
+                venta_item_id=row.venta_item_id,
+                cliente_id=row.cliente_id,
+                producto_id=row.producto_id,
+                vendedor_origen_id=row.vendedor_origen_id,
+                vendedor_asignado_id=row.vendedor_asignado_id,
+                cantidad=qty,
+                precio_unitario_usd=row.precio_unitario_usd,
+                precio_unitario_cs=row.precio_unitario_cs,
+                subtotal_usd=row.subtotal_usd,
+                subtotal_cs=row.subtotal_cs,
+                comision_unit_usd=comision_unit,
+                comision_total_usd=comision_total,
+                usuario_registro=user.full_name,
+            )
+        )
+        inserted += 1
+    db.commit()
+
+    params = {
+        "tab": "asignacion",
+        "fecha": fecha_value.isoformat(),
+        "branch_id": branch_id or "all",
+        "vendedor_facturacion_id": vendedor_facturacion_id,
+        "vendedor_asignado_id": vendedor_asignado_id,
+        "producto_asig_q": producto_asig_q,
+        "success": f"Comisiones finales actualizadas: {inserted} filas (reemplazadas {replaced}).",
+    }
+    return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+
+@router.post("/sales/comisiones/asignaciones/reabrir")
+async def sales_comisiones_reopen_day(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    form = await request.form()
+    fecha_raw = str(form.get("fecha") or "")
+    branch_id = str(form.get("branch_id") or "all")
+    vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
+    vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
+    producto_asig_q = str(form.get("producto_asig_q") or "").strip()
+
+    try:
+        fecha_value = date.fromisoformat(fecha_raw)
+    except ValueError:
+        fecha_value = local_today()
+
+    scope_branch_id = _commission_branch_scope(branch_id)
+    final_query = db.query(VentaComisionFinal).filter(VentaComisionFinal.fecha == fecha_value)
+    if scope_branch_id:
+        final_query = final_query.filter(VentaComisionFinal.branch_id == scope_branch_id)
+    final_rows = final_query.all()
+    if not final_rows:
+        params = {
+            "tab": "asignacion",
+            "fecha": fecha_value.isoformat(),
+            "branch_id": branch_id or "all",
+            "vendedor_facturacion_id": vendedor_facturacion_id,
+            "vendedor_asignado_id": vendedor_asignado_id,
+            "producto_asig_q": producto_asig_q,
+            "error": "No hay cierre final para reabrir en ese dia/sucursal.",
+        }
+        return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+    temp_query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha == fecha_value
+    )
+    if scope_branch_id:
+        temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    temp_query.delete(synchronize_session=False)
+
+    recreated = 0
+    for row in final_rows:
+        db.add(
+            VentaComisionAsignacion(
+                venta_item_id=row.venta_item_id,
+                factura_id=row.factura_id,
+                branch_id=row.branch_id,
+                bodega_id=row.bodega_id,
+                cliente_id=row.cliente_id,
+                producto_id=row.producto_id,
+                fecha=row.fecha,
+                vendedor_origen_id=row.vendedor_origen_id,
+                vendedor_asignado_id=row.vendedor_asignado_id,
+                cantidad=row.cantidad,
+                precio_unitario_usd=row.precio_unitario_usd,
+                precio_unitario_cs=row.precio_unitario_cs,
+                subtotal_usd=row.subtotal_usd,
+                subtotal_cs=row.subtotal_cs,
+                usuario_registro=user.full_name,
+            )
+        )
+        recreated += 1
+    db.commit()
+
+    params = {
+        "tab": "asignacion",
+        "fecha": fecha_value.isoformat(),
+        "branch_id": branch_id or "all",
+        "vendedor_facturacion_id": vendedor_facturacion_id,
+        "vendedor_asignado_id": vendedor_asignado_id,
+        "producto_asig_q": producto_asig_q,
+        "success": f"Cierre reabierto en temporal: {recreated} filas restauradas.",
+    }
+    return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+
+@router.get("/sales/comisiones/reportes/pdf")
+def sales_comisiones_reports_pdf(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    rep_start_date, rep_end_date, rep_branch_id, rep_vendedor_id = (
+        _sales_commissions_report_filters(request)
+    )
+    reports_data = _build_commission_reports_data(
+        db, rep_start_date, rep_end_date, rep_branch_id, rep_vendedor_id
+    )
+    branches = db.query(Branch).order_by(Branch.name).all()
+    selected_branch = None
+    if rep_branch_id and rep_branch_id != "all":
+        try:
+            selected_branch = next((b for b in branches if b.id == int(rep_branch_id)), None)
+        except ValueError:
+            selected_branch = None
+
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4, landscape
+
+    buffer = io.BytesIO()
+    page_size = landscape(A4)
+    page_w, page_h = page_size
+    margin = 24
+    content_w = page_w - (margin * 2)
+    c = canvas.Canvas(buffer, pagesize=page_size)
+    y = page_h - 24
+
+    def draw_header() -> float:
+        header_y = page_h - 24
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(margin, header_y, "Sabana de comisiones por vendedor")
+        c.setFont("Helvetica", 9)
+        branch_label = selected_branch.name if selected_branch else "Todas las sucursales"
+        c.drawString(
+            margin,
+            header_y - 15,
+            f"Rango: {rep_start_date.strftime('%d/%m/%Y')} - {rep_end_date.strftime('%d/%m/%Y')} | Sucursal: {branch_label}",
+        )
+        c.drawString(
+            margin,
+            header_y - 28,
+            f"Vendedor filtro: {rep_vendedor_id or 'Todos'} | Total bultos: {reports_data['total_bultos']} | Total comision USD: ${reports_data['total_comision_usd']:,.2f}",
+        )
+        c.line(margin, header_y - 34, page_w - margin, header_y - 34)
+        return header_y - 48
+
+    def short_vendor(name: str) -> str:
+        clean = (name or "-").strip()
+        if len(clean) <= 14:
+            return clean
+        return clean[:12] + ".."
+
+    y = draw_header()
+    pivot_vendors = reports_data["pivot_vendors"]
+    pivot_rows = reports_data["pivot_rows"]
+    pivot_vendor_totals = reports_data["pivot_vendor_totals"]
+
+    if not pivot_rows or not pivot_vendors:
+        c.setFont("Helvetica", 11)
+        c.drawString(margin, y, "Sin datos de comisiones finales para el rango seleccionado.")
+        c.showPage()
+        c.save()
+        buffer.seek(0)
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline; filename=comisiones_sabana.pdf"},
+        )
+
+    date_col_w = 64
+    pair_col_w = 76
+    total_cols_w = 110
+    available_for_pairs = max(1, content_w - date_col_w - total_cols_w)
+    max_vendors_per_page = max(1, int(available_for_pairs // pair_col_w))
+    vendor_chunks = [
+        pivot_vendors[i : i + max_vendors_per_page]
+        for i in range(0, len(pivot_vendors), max_vendors_per_page)
+    ]
+
+    for chunk_idx, vendors_chunk in enumerate(vendor_chunks):
+        if chunk_idx > 0:
+            c.showPage()
+            y = draw_header()
+
+        col_x = [margin]
+        col_x.append(col_x[-1] + date_col_w)
+        for _ in vendors_chunk:
+            col_x.append(col_x[-1] + pair_col_w / 2)
+            col_x.append(col_x[-1] + pair_col_w / 2)
+        col_x.append(col_x[-1] + total_cols_w / 2)
+        col_x.append(col_x[-1] + total_cols_w / 2)
+
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(col_x[0] + 2, y, "Fecha")
+        header_cursor = 1
+        for vendor_name in vendors_chunk:
+            title = short_vendor(vendor_name)
+            c.drawString(col_x[header_cursor] + 2, y, title)
+            c.drawRightString(col_x[header_cursor + 1] - 2, y - 10, "Bul")
+            c.drawRightString(col_x[header_cursor + 2] - 2, y - 10, "USD")
+            header_cursor += 2
+        c.drawRightString(col_x[-2] - 2, y, "Tot Bul")
+        c.drawRightString(col_x[-1] - 2, y, "Tot USD")
+        y -= 18
+        c.line(margin, y + 4, page_w - margin, y + 4)
+
+        c.setFont("Helvetica", 8)
+        for row in pivot_rows:
+            if y < 50:
+                c.showPage()
+                y = draw_header()
+                c.setFont("Helvetica-Bold", 8)
+                c.drawString(col_x[0] + 2, y, "Fecha")
+                header_cursor = 1
+                for vendor_name in vendors_chunk:
+                    title = short_vendor(vendor_name)
+                    c.drawString(col_x[header_cursor] + 2, y, title)
+                    c.drawRightString(col_x[header_cursor + 1] - 2, y - 10, "Bul")
+                    c.drawRightString(col_x[header_cursor + 2] - 2, y - 10, "USD")
+                    header_cursor += 2
+                c.drawRightString(col_x[-2] - 2, y, "Tot Bul")
+                c.drawRightString(col_x[-1] - 2, y, "Tot USD")
+                y -= 18
+                c.line(margin, y + 4, page_w - margin, y + 4)
+                c.setFont("Helvetica", 8)
+
+            c.drawString(col_x[0] + 2, y, row["fecha_label"])
+            header_cursor = 1
+            row_by_vendor = {
+                cell["vendor"]: cell for cell in row.get("cells", [])
+            }
+            for vendor_name in vendors_chunk:
+                cell = row_by_vendor.get(
+                    vendor_name, {"bultos": 0, "comision_usd": 0.0}
+                )
+                c.drawRightString(col_x[header_cursor + 1] - 2, y, f"{int(cell['bultos'])}")
+                c.drawRightString(
+                    col_x[header_cursor + 2] - 2,
+                    y,
+                    f"{float(cell['comision_usd']):,.2f}",
+                )
+                header_cursor += 2
+            c.drawRightString(col_x[-2] - 2, y, f"{int(row['day_bultos'])}")
+            c.drawRightString(col_x[-1] - 2, y, f"{float(row['day_comision_usd']):,.2f}")
+            y -= 12
+
+        y -= 4
+        c.line(margin, y + 4, page_w - margin, y + 4)
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(col_x[0] + 2, y, "TOTAL")
+        header_cursor = 1
+        for vendor_name in vendors_chunk:
+            total_cell = pivot_vendor_totals.get(vendor_name, {"bultos": 0, "comision_usd": 0})
+            c.drawRightString(col_x[header_cursor + 1] - 2, y, f"{int(total_cell['bultos'])}")
+            c.drawRightString(
+                col_x[header_cursor + 2] - 2,
+                y,
+                f"{float(total_cell['comision_usd']):,.2f}",
+            )
+            header_cursor += 2
+        c.drawRightString(col_x[-2] - 2, y, f"{int(reports_data['total_bultos'])}")
+        c.drawRightString(
+            col_x[-1] - 2,
+            y,
+            f"{float(reports_data['total_comision_usd']):,.2f}",
+        )
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=comisiones_sabana.pdf"},
     )
 
 

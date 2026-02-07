@@ -178,6 +178,86 @@ class VentaItem(Base):
     producto = relationship("Producto")
 
 
+class ProductoComision(Base):
+    __tablename__ = "productos_comisiones"
+    __table_args__ = (UniqueConstraint("producto_id", name="uq_producto_comision_producto"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    comision_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    usuario_registro = Column(String(120), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    producto = relationship("Producto")
+
+
+class VentaComisionAsignacion(Base):
+    __tablename__ = "ventas_comisiones_asignaciones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    venta_item_id = Column(Integer, ForeignKey("ventas_items.id"), nullable=False)
+    factura_id = Column(Integer, ForeignKey("ventas_facturas.id"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    fecha = Column(Date, nullable=False)
+    vendedor_origen_id = Column(Integer, ForeignKey("vendedores.id"), nullable=True)
+    vendedor_asignado_id = Column(Integer, ForeignKey("vendedores.id"), nullable=False)
+    cantidad = Column(Numeric(14, 2), nullable=False, default=0)
+    precio_unitario_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    precio_unitario_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    usuario_registro = Column(String(120), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    venta_item = relationship("VentaItem")
+    factura = relationship("VentaFactura")
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+    cliente = relationship("Cliente")
+    producto = relationship("Producto")
+    vendedor_origen = relationship("Vendedor", foreign_keys=[vendedor_origen_id])
+    vendedor_asignado = relationship("Vendedor", foreign_keys=[vendedor_asignado_id])
+
+
+class VentaComisionFinal(Base):
+    __tablename__ = "ventas_comisiones_finales"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(Date, nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
+    factura_id = Column(Integer, ForeignKey("ventas_facturas.id"), nullable=False)
+    venta_item_id = Column(Integer, ForeignKey("ventas_items.id"), nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    vendedor_origen_id = Column(Integer, ForeignKey("vendedores.id"), nullable=True)
+    vendedor_asignado_id = Column(Integer, ForeignKey("vendedores.id"), nullable=False)
+    cantidad = Column(Numeric(14, 2), nullable=False, default=0)
+    precio_unitario_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    precio_unitario_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    comision_unit_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    comision_total_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    usuario_registro = Column(String(120), nullable=True)
+    finalizado_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+
+    venta_item = relationship("VentaItem")
+    factura = relationship("VentaFactura")
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+    cliente = relationship("Cliente")
+    producto = relationship("Producto")
+    vendedor_origen = relationship("Vendedor", foreign_keys=[vendedor_origen_id])
+    vendedor_asignado = relationship("Vendedor", foreign_keys=[vendedor_asignado_id])
+
+
 class VentaPago(Base):
     __tablename__ = "ventas_pagos"
 
