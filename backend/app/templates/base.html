@@ -36,6 +36,7 @@
     <link rel="stylesheet" href="/static/vendor/select2.min.css?v={{ version }}" />
     <link rel="stylesheet" href="/static/vendor/sweetalert2.min.css?v={{ version }}" />
     <link rel="stylesheet" href="/static/css/app.css?v={{ version }}" />
+    {% block extra_head %}{% endblock %}
   </head>
   <body>
     {% block content %}{% endblock %}
@@ -115,5 +116,6 @@
         }
       });
     </script>
+    {% block extra_scripts %}{% endblock %}
   </body>
 </html>
