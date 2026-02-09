@@ -1,19 +1,41 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
+  body {
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  }
+  .mobile-preventa {
+    padding-bottom: 96px;
+  }
   .mobile-preventa .form-control,
   .mobile-preventa .form-select,
   .mobile-preventa .btn {
     font-size: 16px;
   }
+  .mobile-preventa .form-control,
+  .mobile-preventa .form-select {
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    min-height: 44px;
+  }
   .mobile-preventa .card {
-    border-radius: 14px;
-    border: 1px solid #e2e8f0;
+    border-radius: 18px;
+    border: 1px solid #dbe6f4;
+    box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(4px);
+  }
+  .mobile-preventa .card-header {
+    background: #f1f5f9;
+    border-bottom: 1px solid #e2e8f0;
+    font-weight: 700;
   }
   .mobile-preventa .search-results {
     max-height: 280px;
     overflow-y: auto;
     border-radius: 10px;
+    border: 1px solid #dbeafe;
+    background: #fff;
   }
   .mobile-preventa .search-results:empty {
     display: none;
@@ -51,14 +73,61 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
+  .mobile-preventa .app-topbar {
+    border-radius: 18px;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #2563eb 100%);
+    color: #fff;
+    padding: 0.9rem 1rem;
+    box-shadow: 0 8px 24px rgba(30, 58, 138, 0.25);
+  }
+  .mobile-preventa .app-topbar .subtitle {
+    opacity: 0.85;
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+  }
+  .mobile-preventa .app-topbar .btn {
+    border-radius: 12px;
+    font-weight: 600;
+  }
+  .mobile-preventa .app-actionbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1040;
+    background: rgba(255, 255, 255, 0.94);
+    border-top: 1px solid #dbeafe;
+    backdrop-filter: blur(8px);
+    padding: 0.65rem 0.75rem max(0.65rem, env(safe-area-inset-bottom));
+  }
+  .mobile-preventa .app-actionbar .btn {
+    min-height: 48px;
+    border-radius: 14px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
 </style>
 
 <div class="container py-3 mobile-preventa" style="max-width: 780px;">
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <h4 class="m-0">Preventa movil</h4>
-    <a class="btn btn-outline-secondary btn-sm" href="/sales/preventas">Panel web</a>
+  <div class="app-topbar mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-2">
+      <div>
+        <h4 class="m-0 fw-bold">Preventa movil</h4>
+        <div class="subtitle">Registro rapido de prefactura</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-light btn-sm" href="/home">
+          <i class="bi bi-house-door"></i>
+          Home
+        </a>
+        <a class="btn btn-outline-light btn-sm" href="/sales/preventas">
+          <i class="bi bi-grid"></i>
+          Panel
+        </a>
+      </div>
+    </div>
+    <div class="small mt-2 opacity-75">Sucursal: {{ branch.name }} &middot; Bodega: {{ bodega.name }}</div>
   </div>
-  <div class="small text-muted mb-3">Sucursal: {{ branch.name }} &middot; Bodega: {{ bodega.name }}</div>
 
   {% if success %}
   <div class="alert alert-success">{{ success }}</div>
@@ -156,10 +225,19 @@
       </div>
     </div>
 
-    <div class="d-grid">
+    <div class="d-grid d-none">
       <button class="btn btn-primary btn-lg" type="submit">Enviar preventa</button>
     </div>
   </form>
+</div>
+
+<div class="app-actionbar">
+  <div class="container" style="max-width: 780px;">
+    <button class="btn btn-primary w-100" type="submit" form="preventaForm">
+      <i class="bi bi-send-check me-1"></i>
+      Enviar preventa
+    </button>
+  </div>
 </div>
 
 <div class="modal fade" id="combo-modal" tabindex="-1" aria-hidden="true">
