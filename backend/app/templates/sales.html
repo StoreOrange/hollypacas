@@ -18,6 +18,47 @@
   .cash-qty-input {
     max-width: 110px;
   }
+  .preventa-live-inline {
+    display: none;
+    align-items: center;
+    gap: 0.45rem;
+    margin-left: 0.35rem;
+    max-width: 100%;
+  }
+  .preventa-live-inline.show {
+    display: inline-flex;
+  }
+  .preventa-live-btn {
+    border: 1px solid #16a34a;
+    color: #fff;
+    background: #16a34a;
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    animation: preventaPulse 1.2s ease-in-out infinite;
+    white-space: nowrap;
+  }
+  .preventa-live-btn:hover {
+    background: #15803d;
+    border-color: #15803d;
+    color: #fff;
+  }
+  .preventa-live-text {
+    color: #14532d;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+  }
+  @keyframes preventaPulse {
+    0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.50); }
+    70% { box-shadow: 0 0 0 10px rgba(22, 163, 74, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+  }
 </style>
 <div id="layout" x-data="{ clienteOpen: false, vendedorOpen: false }" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -74,6 +115,7 @@
             <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
               <div class="text-xs uppercase tracking-[0.2em] text-slate">Total</div>
               <div id="sales-total-display" class="text-sm font-semibold text-brand">C$ 0.00</div>
+            </div>
           </div>
         </div>
         <ul class="nav nav-tabs mt-3">
@@ -254,6 +296,12 @@
                       <i class="bi bi-boxes"></i>
                       Combos
                     </button>
+                    <div id="preventa-live-inline" class="preventa-live-inline">
+                      <span id="preventa-live-text" class="preventa-live-text">Nueva preventa recibida</span>
+                      <a id="preventa-live-btn" class="preventa-live-btn text-decoration-none" href="/sales/preventas">
+                        Ver preventas
+                      </a>
+                    </div>
                   </div>
                   <div class="text-sm text-slate">Busca para cargar articulos al ticket.</div>
                 </div>
@@ -773,9 +821,16 @@
   const comboApply = document.getElementById("combo-apply");
   const comboStatus = document.getElementById("combo-status");
   const comboPreview = document.getElementById("combo-preview");
+  const preventaLiveInline = document.getElementById("preventa-live-inline");
+  const preventaLiveText = document.getElementById("preventa-live-text");
+  const preventaLiveBtn = document.getElementById("preventa-live-btn");
   const rateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
   const activeBodegaId = Number({{ user.default_bodega.id if user.default_bodega else 0 }}) || 0;
   const initialPreventa = {{ (initial_preventa or None) | tojson }};
+  let preventaLastId = Number(initialPreventa?.id || 0) || 0;
+  let preventaLiveSource = null;
+  let preventaReconnectTimer = null;
+  let preventaPollTimer = null;
   let currentTotals = { usd: 0, cs: 0 };
   let paymentItems = [];
   let paymentEnterStage = 0;
@@ -843,6 +898,95 @@
       maximumFractionDigits: 2,
     }).format(number);
     return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
+  };
+
+  const showPreventaLiveNotice = (payload) => {
+    const numero = payload?.numero || "Nueva preventa";
+    const vendedor = payload?.vendedor || "Vendedor";
+    const cliente = payload?.cliente || "Consumidor final";
+    const fecha = payload?.fecha || "";
+    const text = `${numero} - ${vendedor} - ${cliente}${fecha ? ` (${fecha})` : ""}`;
+    if (preventaLiveText) {
+      preventaLiveText.textContent = text;
+    }
+    if (preventaLiveInline) {
+      preventaLiveInline.classList.add("show");
+    }
+    if (preventaLiveBtn && payload?.url) {
+      preventaLiveBtn.setAttribute("href", payload.url);
+    }
+    if (typeof Swal !== "undefined") {
+      Swal.fire({
+        toast: true,
+        position: "bottom-end",
+        icon: "success",
+        title: "Nueva preventa recibida",
+        text,
+        showConfirmButton: true,
+        confirmButtonText: "Ver",
+        showCloseButton: true,
+        timer: 8500,
+        timerProgressBar: true,
+      }).then((result) => {
+        if (result.isConfirmed) {
+          window.location.href = "/sales/preventas";
+        }
+      });
+    }
+  };
+
+  const startPreventaLiveStream = () => {
+    if (typeof EventSource === "undefined") return;
+    if (preventaLiveSource) {
+      preventaLiveSource.close();
+      preventaLiveSource = null;
+    }
+    const streamUrl = `/sales/preventas/notifications/stream?last_id=${encodeURIComponent(String(preventaLastId || 0))}`;
+    const source = new EventSource(streamUrl);
+    preventaLiveSource = source;
+
+    source.addEventListener("preventa", (event) => {
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data || "{}");
+      } catch (_) {
+        payload = null;
+      }
+      if (!payload || !payload.id) return;
+      preventaLastId = Math.max(preventaLastId, Number(payload.id) || 0);
+      showPreventaLiveNotice(payload);
+    });
+
+    source.onerror = () => {
+      if (preventaLiveSource) {
+        preventaLiveSource.close();
+        preventaLiveSource = null;
+      }
+      if (preventaReconnectTimer) {
+        clearTimeout(preventaReconnectTimer);
+      }
+      preventaReconnectTimer = setTimeout(() => {
+        startPreventaLiveStream();
+      }, 5000);
+    };
+  };
+
+  const pollPreventaNotifications = async () => {
+    try {
+      const resp = await fetch(`/sales/preventas/notifications/poll?last_id=${encodeURIComponent(String(preventaLastId || 0))}`, {
+        headers: { "X-Requested-With": "fetch" },
+      });
+      if (!resp.ok) return;
+      const payload = await resp.json().catch(() => null);
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      items.forEach((item) => {
+        if (!item || !item.id) return;
+        preventaLastId = Math.max(preventaLastId, Number(item.id) || 0);
+        showPreventaLiveNotice(item);
+      });
+    } catch (_) {
+      // noop
+    }
   };
 
   const getRemainingByCurrency = (targetCurrency) => {
@@ -2860,6 +3004,20 @@
     updateTotals();
     updateClock();
     setInterval(updateClock, 60000);
+    startPreventaLiveStream();
+    pollPreventaNotifications();
+    preventaPollTimer = setInterval(pollPreventaNotifications, 7000);
+  });
+
+  window.addEventListener("beforeunload", () => {
+    if (preventaLiveSource) {
+      preventaLiveSource.close();
+      preventaLiveSource = null;
+    }
+    if (preventaPollTimer) {
+      clearInterval(preventaPollTimer);
+      preventaPollTimer = null;
+    }
   });
 
   const paymentModal = document.getElementById("payment-modal");

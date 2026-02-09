@@ -1,5 +1,6 @@
 from collections import defaultdict
 from typing import Optional
+import asyncio
 
 import csv
 import json
@@ -1508,13 +1509,12 @@ def home(
                 Preventa.fecha >= start_dt,
                 Preventa.fecha < end_dt,
             )
-            .order_by(Preventa.fecha.desc(), Preventa.id.desc())
-            .limit(20)
         )
         if bodega:
             query = query.filter(Preventa.bodega_id == bodega.id)
         elif branch:
             query = query.filter(Preventa.branch_id == branch.id)
+        query = query.order_by(Preventa.fecha.desc(), Preventa.id.desc()).limit(20)
 
         estado_bootstrap = {
             "PENDIENTE": "text-bg-danger",
@@ -2112,6 +2112,120 @@ def sales_page(
             "version": settings.UI_VERSION,
         },
     )
+
+
+@router.get("/sales/preventas/notifications/stream")
+async def sales_preventas_notifications_stream(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales")
+    branch, bodega = _resolve_branch_bodega(db, user)
+    last_id_raw = (request.query_params.get("last_id") or "0").strip()
+    last_id = int(last_id_raw) if last_id_raw.isdigit() else 0
+
+    async def event_stream():
+        nonlocal last_id
+        headers_payload = {"ok": True}
+        yield f"event: ready\ndata: {json.dumps(headers_payload, ensure_ascii=False)}\n\n"
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                query = (
+                    db.query(
+                        Preventa.id,
+                        Preventa.numero,
+                        Preventa.fecha,
+                        Vendedor.nombre.label("vendedor_nombre"),
+                        Cliente.nombre.label("cliente_nombre"),
+                    )
+                    .join(Vendedor, Vendedor.id == Preventa.vendedor_id)
+                    .outerjoin(Cliente, Cliente.id == Preventa.cliente_id)
+                    .filter(Preventa.estado == "PENDIENTE", Preventa.id > last_id)
+                    .order_by(Preventa.id.asc())
+                    .limit(10)
+                )
+                if bodega:
+                    query = query.filter(Preventa.bodega_id == bodega.id)
+                elif branch:
+                    query = query.filter(Preventa.branch_id == branch.id)
+
+                rows = query.all()
+                for row in rows:
+                    last_id = max(last_id, int(row.id or 0))
+                    payload = {
+                        "id": int(row.id),
+                        "numero": row.numero,
+                        "fecha": row.fecha.strftime("%Y-%m-%d %H:%M") if row.fecha else "-",
+                        "vendedor": row.vendedor_nombre or "Sin vendedor",
+                        "cliente": row.cliente_nombre or "Consumidor final",
+                        "url": "/sales/preventas",
+                    }
+                    yield f"event: preventa\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+                yield "event: ping\ndata: {}\n\n"
+            except Exception:
+                yield "event: error\ndata: {\"message\":\"stream_error\"}\n\n"
+            await asyncio.sleep(8)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/sales/preventas/notifications/poll")
+def sales_preventas_notifications_poll(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales")
+    branch, bodega = _resolve_branch_bodega(db, user)
+    last_id_raw = (request.query_params.get("last_id") or "0").strip()
+    last_id = int(last_id_raw) if last_id_raw.isdigit() else 0
+
+    query = (
+        db.query(
+            Preventa.id,
+            Preventa.numero,
+            Preventa.fecha,
+            Vendedor.nombre.label("vendedor_nombre"),
+            Cliente.nombre.label("cliente_nombre"),
+        )
+        .join(Vendedor, Vendedor.id == Preventa.vendedor_id)
+        .outerjoin(Cliente, Cliente.id == Preventa.cliente_id)
+        .filter(
+            Preventa.id > last_id,
+            Preventa.estado.in_(["PENDIENTE", "REVISION"]),
+        )
+    )
+    if bodega:
+        query = query.filter(Preventa.bodega_id == bodega.id)
+    elif branch:
+        query = query.filter(Preventa.branch_id == branch.id)
+    query = query.order_by(Preventa.id.asc()).limit(20)
+
+    items = []
+    for row in query.all():
+        items.append(
+            {
+                "id": int(row.id),
+                "numero": row.numero,
+                "fecha": row.fecha.strftime("%Y-%m-%d %H:%M") if row.fecha else "-",
+                "vendedor": row.vendedor_nombre or "Sin vendedor",
+                "cliente": row.cliente_nombre or "Consumidor final",
+                "url": "/sales/preventas",
+            }
+        )
+    return {"ok": True, "items": items}
 
 
 @router.get("/m/preventas")
