@@ -1,11 +1,64 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container py-3" style="max-width: 780px;">
+<style>
+  .mobile-preventa .form-control,
+  .mobile-preventa .form-select,
+  .mobile-preventa .btn {
+    font-size: 16px;
+  }
+  .mobile-preventa .card {
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+  }
+  .mobile-preventa .search-results {
+    max-height: 280px;
+    overflow-y: auto;
+    border-radius: 10px;
+  }
+  .mobile-preventa .search-results:empty {
+    display: none;
+  }
+  .mobile-preventa .table td,
+  .mobile-preventa .table th {
+    vertical-align: middle;
+  }
+  .mobile-preventa .table .item-qty {
+    min-width: 92px;
+  }
+  .mobile-preventa .combo-parent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 999px;
+    padding: 0.12rem 0.45rem;
+    background: #e0f2fe;
+    color: #1d4ed8;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .mobile-preventa .combo-gift-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 999px;
+    padding: 0.12rem 0.45rem;
+    background: #dcfce7;
+    color: #166534;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+</style>
+
+<div class="container py-3 mobile-preventa" style="max-width: 780px;">
   <div class="d-flex justify-content-between align-items-center mb-2">
     <h4 class="m-0">Preventa movil</h4>
     <a class="btn btn-outline-secondary btn-sm" href="/sales/preventas">Panel web</a>
   </div>
-  <div class="small text-muted mb-3">Sucursal: {{ branch.name }} · Bodega: {{ bodega.name }}</div>
+  <div class="small text-muted mb-3">Sucursal: {{ branch.name }} &middot; Bodega: {{ bodega.name }}</div>
 
   {% if success %}
   <div class="alert alert-success">{{ success }}</div>
@@ -14,18 +67,31 @@
   <div class="alert alert-danger">{{ error }}</div>
   {% endif %}
 
-  <form method="post" action="/m/preventas" id="preventaForm">
+  <form method="post" action="/m/preventas" id="preventaForm" autocomplete="off">
     <div class="card mb-3">
       <div class="card-body">
         <div class="row g-2">
           <div class="col-12 col-md-6">
             <label class="form-label">Cliente</label>
             <div class="input-group">
-              <input id="clienteSearch" class="form-control" type="text" placeholder="Buscar cliente">
+              <input id="clienteSearch" class="form-control" type="text" placeholder="Buscar cliente por nombre o telefono">
               <button class="btn btn-outline-secondary" type="button" id="btnClienteSearch">
                 <i class="bi bi-search"></i>
               </button>
             </div>
+            <div class="d-flex justify-content-between align-items-center mt-2">
+              <button class="btn btn-link p-0 small text-decoration-none" type="button" id="btnNuevoClienteToggle">
+                + Nuevo cliente
+              </button>
+              <div id="clienteCreateMsg" class="small text-muted"></div>
+            </div>
+            <div id="clienteCreateBox" class="mt-2 d-none">
+              <div class="input-group">
+                <input id="clienteNuevoNombre" class="form-control" type="text" placeholder="Nombre del cliente">
+                <button class="btn btn-success" type="button" id="btnCrearCliente">Guardar</button>
+              </div>
+            </div>
+            <div id="clienteSearchResults" class="list-group search-results mt-2"></div>
             <input type="hidden" name="cliente_id" id="clienteId" value="{{ consumidor_final_id }}">
             <div id="clientePicked" class="small mt-1">Seleccionado: <strong>{{ consumidor_final_nombre }}</strong></div>
           </div>
@@ -50,14 +116,19 @@
 
     <div class="card mb-3">
       <div class="card-body">
-        <label class="form-label">Agregar producto</label>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <label class="form-label m-0">Agregar producto</label>
+          <button id="btnOpenCombo" class="btn btn-outline-primary btn-sm" type="button">
+            <i class="bi bi-boxes"></i> Armar combo
+          </button>
+        </div>
         <div class="input-group mb-2">
           <input id="productSearch" class="form-control" type="text" placeholder="Codigo o descripcion">
           <button class="btn btn-outline-primary" type="button" id="btnProductSearch">
             <i class="bi bi-search"></i>
           </button>
         </div>
-        <div id="productSearchResults" class="list-group"></div>
+        <div id="productSearchResults" class="list-group search-results"></div>
       </div>
     </div>
 
@@ -91,6 +162,51 @@
   </form>
 </div>
 
+<div class="modal fade" id="combo-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow">
+      <div class="modal-header border-0 pb-1">
+        <div>
+          <div class="text-uppercase small text-muted">Combos y ofertas</div>
+          <h5 class="m-0">Armar combo</h5>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-1">
+        <label class="form-label">Producto oferta</label>
+        <div class="input-group mb-2">
+          <input id="comboParentSearch" class="form-control" type="text" placeholder="Buscar oferta por codigo o descripcion">
+          <button id="btnComboParentSearch" class="btn btn-outline-primary" type="button"><i class="bi bi-search"></i></button>
+        </div>
+        <div id="comboParentResults" class="list-group search-results"></div>
+
+        <div class="mt-3 p-2 border rounded-3 bg-light">
+          <div class="small text-uppercase text-muted">Oferta seleccionada</div>
+          <div id="comboParentSelected" class="fw-semibold">Sin seleccionar</div>
+          <div class="d-flex align-items-center gap-2 mt-2">
+            <label class="small mb-0">Cantidad</label>
+            <input id="comboParentQty" type="number" min="1" step="1" class="form-control form-control-sm" style="max-width: 100px;" value="1">
+          </div>
+          <div class="small mt-2">Saldo disponible: <strong id="comboParentAvailable">0</strong></div>
+          <div class="small">Precio combo: <strong id="comboParentPrice">C$0.00</strong></div>
+        </div>
+
+        <div class="mt-3">
+          <div class="small text-uppercase text-muted">Regalias del combo</div>
+          <div id="comboGiftList" class="mt-2"></div>
+        </div>
+
+        <div id="comboStatus" class="small text-muted mt-2"></div>
+      </div>
+      <div class="modal-footer border-0">
+        <button id="comboApply" class="btn btn-primary" type="button">
+          <i class="bi bi-check2-circle"></i> Agregar combo
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   (() => {
     const productSearch = document.getElementById("productSearch");
@@ -99,13 +215,43 @@
     const itemsBody = document.getElementById("itemsBody");
     const noItemsRow = document.getElementById("noItemsRow");
 
+    const btnOpenCombo = document.getElementById("btnOpenCombo");
+    const comboModalEl = document.getElementById("combo-modal");
+    const comboParentSearch = document.getElementById("comboParentSearch");
+    const btnComboParentSearch = document.getElementById("btnComboParentSearch");
+    const comboParentResults = document.getElementById("comboParentResults");
+    const comboParentSelected = document.getElementById("comboParentSelected");
+    const comboParentQty = document.getElementById("comboParentQty");
+    const comboParentAvailable = document.getElementById("comboParentAvailable");
+    const comboParentPrice = document.getElementById("comboParentPrice");
+    const comboGiftList = document.getElementById("comboGiftList");
+    const comboApply = document.getElementById("comboApply");
+    const comboStatus = document.getElementById("comboStatus");
+
     const clienteSearch = document.getElementById("clienteSearch");
     const btnClienteSearch = document.getElementById("btnClienteSearch");
+    const clienteResults = document.getElementById("clienteSearchResults");
     const clienteId = document.getElementById("clienteId");
     const clientePicked = document.getElementById("clientePicked");
+    const btnNuevoClienteToggle = document.getElementById("btnNuevoClienteToggle");
+    const clienteCreateBox = document.getElementById("clienteCreateBox");
+    const clienteNuevoNombre = document.getElementById("clienteNuevoNombre");
+    const btnCrearCliente = document.getElementById("btnCrearCliente");
+    const clienteCreateMsg = document.getElementById("clienteCreateMsg");
 
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m]));
     const fmt = (n, p = "") => `${p}${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    let comboParent = null;
+    let comboGifts = [];
+
+    function notify(icon, title, text) {
+      if (typeof Swal !== "undefined") {
+        Swal.fire({ icon, title, text });
+      } else {
+        alert(text || title);
+      }
+    }
 
     function hideNoItems() {
       if (noItemsRow) noItemsRow.style.display = "none";
@@ -116,49 +262,142 @@
       if (!rows.length && noItemsRow) noItemsRow.style.display = "";
     }
 
-    function addItem(item) {
-      const existing = itemsBody.querySelector(`tr[data-product-id="${item.id}"]`);
-      if (existing) {
+    function clearProductResults() { productResults.innerHTML = ""; }
+    function clearClienteResults() { clienteResults.innerHTML = ""; }
+
+    function getCurrentQty(productId) {
+      let sum = 0;
+      itemsBody.querySelectorAll(`tr[data-item-row][data-product-id="${productId}"]`).forEach((row) => {
+        const qty = Number(row.querySelector('input[name="item_cantidad"]')?.value || 0);
+        sum += qty;
+      });
+      return sum;
+    }
+
+    function getAvailableQty(productId, existencia) {
+      return Math.max(0, Number(existencia || 0) - getCurrentQty(productId));
+    }
+
+    function setClientePicked(cliente) {
+      clienteId.value = cliente.id;
+      clientePicked.innerHTML = `Seleccionado: <strong>${esc(cliente.nombre)}</strong>`;
+      clienteSearch.value = cliente.nombre;
+      clearClienteResults();
+    }
+
+    function makeRowKey(productId, role, comboGroup) {
+      return `${productId}|${role || ""}|${comboGroup || ""}`;
+    }
+
+    function addItem(item, extra = {}) {
+      const role = extra.role || "";
+      const comboGroup = extra.comboGroup || "";
+      const lockPrice = !!extra.lockPrice;
+      const qty = Math.max(1, Math.round(Number(extra.qty || 1)));
+      const priceUsd = Number(extra.priceUsd ?? item.precio_venta1_usd ?? 0);
+      const priceCs = Number(extra.priceCs ?? item.precio_venta1 ?? 0);
+      const rowKey = makeRowKey(item.id, role, comboGroup);
+
+      const existing = itemsBody.querySelector(`tr[data-row-key="${rowKey}"]`);
+      if (existing && !comboGroup) {
         const qtyInput = existing.querySelector(".item-qty");
-        qtyInput.value = `${Number(qtyInput.value || 0) + 1}`;
+        qtyInput.value = `${Math.max(1, Math.round(Number(qtyInput.value || 0) + qty))}`;
+        existing.querySelector('input[name="item_cantidad"]').value = qtyInput.value;
+        productSearch.value = "";
+        clearProductResults();
         return;
       }
+
       hideNoItems();
       const tr = document.createElement("tr");
       tr.setAttribute("data-item-row", "1");
       tr.setAttribute("data-product-id", String(item.id));
+      tr.setAttribute("data-row-key", rowKey);
+      if (comboGroup) {
+        tr.setAttribute("data-combo-group", comboGroup);
+      }
+
+      const badge = role === "parent"
+        ? '<span class="combo-parent-badge"><i class="bi bi-boxes"></i>Oferta</span>'
+        : role === "gift"
+          ? '<span class="combo-gift-badge"><i class="bi bi-gift"></i>Regalia</span>'
+          : "";
+
+      const unitPriceDisplay = role === "gift" ? 0 : (Number(extra.priceDisplay ?? priceUsd));
+
       tr.innerHTML = `
         <td>
-          <div class="fw-semibold">${esc(item.cod_producto)}</div>
+          <div class="fw-semibold">${esc(item.cod_producto)} ${badge}</div>
           <div class="small">${esc(item.descripcion)}</div>
           <input type="hidden" name="item_producto_id" value="${item.id}">
+          <input type="hidden" name="item_precio" value="${unitPriceDisplay}">
+          <input type="hidden" name="item_role" value="${role}">
+          <input type="hidden" name="item_combo_group" value="${comboGroup}">
+          <input type="hidden" name="item_cantidad" value="${qty}">
         </td>
         <td class="text-end">
-          <input class="form-control form-control-sm text-end item-qty" type="number" name="item_cantidad" min="1" step="1" value="1" style="max-width: 90px; margin-left:auto;">
+          <input class="form-control form-control-sm text-end item-qty" type="number" min="1" step="1" value="${qty}" style="max-width: 90px; margin-left:auto;" ${comboGroup ? "readonly" : ""}>
         </td>
         <td class="text-end">
-          <div>${fmt(item.precio_venta1_usd, "$")}</div>
-          <div class="small text-muted">${fmt(item.precio_venta1, "C$")}</div>
+          <div>${fmt(unitPriceDisplay, "$")}</div>
+          <div class="small text-muted">${fmt(role === "gift" ? 0 : priceCs, "C$")}</div>
         </td>
         <td class="text-end">${Number(item.existencia || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</td>
         <td class="text-end">
           <button class="btn btn-outline-danger btn-sm item-remove" type="button"><i class="bi bi-x"></i></button>
         </td>
       `;
+
+      const qtyInput = tr.querySelector(".item-qty");
+      const hiddenQty = tr.querySelector('input[name="item_cantidad"]');
+      if (qtyInput && !comboGroup) {
+        qtyInput.addEventListener("input", () => {
+          const clean = Math.max(1, Math.round(Number(qtyInput.value || 1)));
+          qtyInput.value = String(clean);
+          hiddenQty.value = String(clean);
+        });
+      }
+
       tr.querySelector(".item-remove").addEventListener("click", () => {
+        const group = tr.dataset.comboGroup || "";
+        if (group) {
+          const doRemove = () => {
+            itemsBody.querySelectorAll(`tr[data-combo-group="${group}"]`).forEach((row) => row.remove());
+            ensureNoItems();
+          };
+          if (typeof Swal !== "undefined") {
+            Swal.fire({
+              icon: "warning",
+              title: "Eliminar combo",
+              text: "Este item pertenece a un combo. Se eliminara todo el combo.",
+              showCancelButton: true,
+              confirmButtonText: "Eliminar",
+              cancelButtonText: "Cancelar",
+            }).then((r) => { if (r.isConfirmed) doRemove(); });
+          } else if (confirm("Eliminar todo el combo?")) {
+            doRemove();
+          }
+          return;
+        }
         tr.remove();
         ensureNoItems();
       });
+
       itemsBody.appendChild(tr);
+      productSearch.value = "";
+      clearProductResults();
     }
 
     async function searchProducts() {
       const q = (productSearch.value || "").trim();
-      if (q.length < 2) return;
+      if (q.length < 2) {
+        clearProductResults();
+        return;
+      }
       const res = await fetch(`/m/preventas/productos/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
       const data = await res.json();
       if (!data.ok) {
-        alert(data.message || "No se pudo buscar productos");
+        notify("error", "Error", data.message || "No se pudo buscar productos");
         return;
       }
       productResults.innerHTML = "";
@@ -168,10 +407,13 @@
         btn.type = "button";
         btn.className = "list-group-item list-group-item-action";
         btn.disabled = !canUse;
+        const comboBadge = Number(item.combo_count || 0) > 0
+          ? '<span class="badge text-bg-info ms-1">Combo</span>'
+          : "";
         btn.innerHTML = `
-          <div class="d-flex justify-content-between">
+          <div class="d-flex justify-content-between gap-2">
             <div>
-              <div class="fw-semibold">${esc(item.cod_producto)} · ${esc(item.descripcion)}</div>
+              <div class="fw-semibold">${esc(item.cod_producto)} &middot; ${esc(item.descripcion)} ${comboBadge}</div>
               <div class="small text-muted">${fmt(item.precio_venta1_usd, "$")} / ${fmt(item.precio_venta1, "C$")}</div>
             </div>
             <div class="text-end small ${canUse ? "text-success" : "text-danger"}">
@@ -189,33 +431,340 @@
 
     async function searchClientes() {
       const q = (clienteSearch.value || "").trim();
-      if (q.length < 2) return;
-      const res = await fetch(`/m/preventas/clientes/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
-      const data = await res.json();
-      if (!data.ok) return;
-      if (!data.items || !data.items.length) {
-        alert("Cliente no encontrado");
+      if (q.length < 2) {
+        clearClienteResults();
         return;
       }
-      const c = data.items[0];
-      clienteId.value = c.id;
-      clientePicked.innerHTML = `Seleccionado: <strong>${esc(c.nombre)}</strong>`;
+      const res = await fetch(`/m/preventas/clientes/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
+      const data = await res.json();
+      if (!data.ok) {
+        clearClienteResults();
+        return;
+      }
+      clienteResults.innerHTML = "";
+      if (!data.items || !data.items.length) {
+        clienteResults.innerHTML = '<div class="list-group-item text-muted small">Sin resultados</div>';
+        return;
+      }
+      data.items.forEach((c) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "list-group-item list-group-item-action";
+        btn.innerHTML = `
+          <div class="d-flex justify-content-between gap-2">
+            <div class="fw-semibold">${esc(c.nombre)}</div>
+            <div class="small text-muted">${esc(c.telefono || "")}</div>
+          </div>
+        `;
+        btn.addEventListener("click", () => {
+          setClientePicked(c);
+        });
+        clienteResults.appendChild(btn);
+      });
+    }
+
+    async function crearClienteRapido() {
+      const nombre = (clienteNuevoNombre.value || "").trim();
+      if (!nombre) {
+        clienteCreateMsg.textContent = "Escribe un nombre.";
+        clienteCreateMsg.className = "small text-danger";
+        clienteNuevoNombre.focus();
+        return;
+      }
+      const body = new URLSearchParams();
+      body.set("nombre", nombre);
+      btnCrearCliente.disabled = true;
+      clienteCreateMsg.textContent = "Guardando...";
+      clienteCreateMsg.className = "small text-muted";
+      try {
+        const res = await fetch("/m/preventas/cliente", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "fetch" },
+          body: body.toString(),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          clienteCreateMsg.textContent = data.message || "No se pudo guardar.";
+          clienteCreateMsg.className = "small text-danger";
+          return;
+        }
+        setClientePicked({ id: data.id, nombre: data.nombre });
+        clienteCreateMsg.textContent = data.existing ? "Cliente ya existia y fue seleccionado." : "Cliente creado y seleccionado.";
+        clienteCreateMsg.className = "small text-success";
+        clienteNuevoNombre.value = "";
+        clienteCreateBox.classList.add("d-none");
+      } catch (e) {
+        clienteCreateMsg.textContent = "Error de red al guardar cliente.";
+        clienteCreateMsg.className = "small text-danger";
+      } finally {
+        btnCrearCliente.disabled = false;
+      }
+    }
+
+    async function fetchComboChildren(parentId) {
+      const res = await fetch(`/m/preventas/product/${parentId}/combo`, { headers: { "X-Requested-With": "fetch" }});
+      const data = await res.json();
+      if (!data.ok) return [];
+      return data.items || [];
+    }
+
+    function resetCombo() {
+      comboParent = null;
+      comboGifts = [];
+      comboParentSearch.value = "";
+      comboParentResults.innerHTML = "";
+      comboParentSelected.textContent = "Sin seleccionar";
+      comboParentQty.value = "1";
+      comboParentAvailable.textContent = "0";
+      comboParentPrice.textContent = fmt(0, "C$");
+      comboGiftList.innerHTML = "<div class=\"small text-muted\">Sin regalias cargadas.</div>";
+      comboStatus.textContent = "";
+    }
+
+    function renderComboGifts() {
+      if (!comboGifts.length) {
+        comboGiftList.innerHTML = '<div class="small text-muted">Sin regalias cargadas.</div>';
+        return;
+      }
+      comboGiftList.innerHTML = comboGifts.map((gift, idx) => `
+        <div class="d-flex justify-content-between align-items-center border rounded-3 px-2 py-1 mb-1">
+          <div>
+            <div class="small fw-semibold">${esc(gift.cod_producto)} - ${esc(gift.descripcion)}</div>
+            <div class="small text-muted">Existencia: ${Number(gift.existencia || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="small text-muted">x</span>
+            <input class="form-control form-control-sm combo-gift-qty" data-idx="${idx}" type="number" min="1" step="1" value="${Math.max(1, Math.round(gift.cantidad || 1))}" style="max-width:76px;">
+          </div>
+        </div>
+      `).join("");
+      comboGiftList.querySelectorAll(".combo-gift-qty").forEach((input) => {
+        input.addEventListener("input", () => {
+          const idx = Number(input.dataset.idx || 0);
+          const qty = Math.max(1, Math.round(Number(input.value || 1)));
+          comboGifts[idx].cantidad = qty;
+          input.value = String(qty);
+          clampComboQty();
+          renderComboPrice();
+        });
+      });
+    }
+
+    function renderComboPrice() {
+      if (!comboParent) {
+        comboParentPrice.textContent = fmt(0, "C$");
+        comboParentAvailable.textContent = "0";
+        return;
+      }
+      const comboQty = Math.max(1, Math.round(Number(comboParentQty.value || 1)));
+      const parentUnitUsd = Number(comboParent.precio_venta1_usd || 0);
+      const giftsUsd = comboGifts.reduce((acc, g) => acc + (Number(g.precio_venta1_usd || 0) * Number(g.cantidad || 1)), 0);
+      const comboUnitUsd = parentUnitUsd + giftsUsd;
+      comboParentPrice.textContent = fmt(comboUnitUsd, "$");
+      comboParentAvailable.textContent = Number(getAvailableQty(comboParent.id, comboParent.existencia)).toLocaleString("en-US", { maximumFractionDigits: 0 });
+      comboStatus.textContent = `Combo x${comboQty} | Precio unitario ${fmt(comboUnitUsd, "$")}`;
+    }
+
+    function clampComboQty() {
+      if (!comboParent) return;
+      let maxQty = Math.floor(getAvailableQty(comboParent.id, comboParent.existencia));
+      comboGifts.forEach((gift) => {
+        const available = getAvailableQty(gift.child_id, gift.existencia);
+        const cap = Math.floor(available / Math.max(1, Number(gift.cantidad || 1)));
+        maxQty = Math.min(maxQty, cap);
+      });
+      maxQty = Math.max(1, maxQty);
+      const current = Math.max(1, Math.round(Number(comboParentQty.value || 1)));
+      if (current > maxQty) comboParentQty.value = String(maxQty);
+    }
+
+    async function pickComboParent(item) {
+      comboParent = item;
+      comboParentSelected.textContent = `${item.cod_producto} - ${item.descripcion}`;
+      comboParentQty.value = "1";
+      comboGifts = await fetchComboChildren(item.id);
+      if (!comboGifts.length) {
+        comboGiftList.innerHTML = '<div class="small text-warning">Este producto no tiene regalias configuradas.</div>';
+      } else {
+        renderComboGifts();
+      }
+      clampComboQty();
+      renderComboPrice();
+    }
+
+    async function searchComboParents() {
+      const q = (comboParentSearch.value || "").trim();
+      if (q.length < 2) {
+        comboParentResults.innerHTML = "";
+        return;
+      }
+      const res = await fetch(`/m/preventas/productos/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
+      const data = await res.json();
+      if (!data.ok) {
+        comboParentResults.innerHTML = '<div class="list-group-item text-danger small">Error al buscar.</div>';
+        return;
+      }
+      const items = (data.items || []).filter((x) => Number(x.combo_count || 0) > 0);
+      if (!items.length) {
+        comboParentResults.innerHTML = '<div class="list-group-item text-muted small">Sin ofertas con combo.</div>';
+        return;
+      }
+      comboParentResults.innerHTML = "";
+      items.forEach((item) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "list-group-item list-group-item-action";
+        btn.innerHTML = `
+          <div class="d-flex justify-content-between gap-2">
+            <div>
+              <div class="fw-semibold">${esc(item.cod_producto)} - ${esc(item.descripcion)}</div>
+              <div class="small text-muted">${fmt(item.precio_venta1_usd, "$")}</div>
+            </div>
+            <div class="small text-success">Exist: ${Number(item.existencia || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+          </div>
+        `;
+        btn.addEventListener("click", () => pickComboParent(item));
+        comboParentResults.appendChild(btn);
+      });
+    }
+
+    function validateComboStock() {
+      if (!comboParent) {
+        notify("warning", "Combo", "Selecciona un producto oferta.");
+        return false;
+      }
+      if (!comboGifts.length) {
+        notify("warning", "Combo", "La oferta no tiene regalias configuradas.");
+        return false;
+      }
+      const comboQty = Math.max(1, Math.round(Number(comboParentQty.value || 1)));
+      const required = [];
+      required.push({ id: comboParent.id, code: comboParent.cod_producto, qty: comboQty, existencia: comboParent.existencia });
+      comboGifts.forEach((gift) => {
+        required.push({
+          id: gift.child_id,
+          code: gift.cod_producto,
+          qty: comboQty * Math.max(1, Number(gift.cantidad || 1)),
+          existencia: gift.existencia,
+        });
+      });
+      for (const item of required) {
+        const available = getAvailableQty(item.id, item.existencia);
+        if (available < item.qty) {
+          notify("warning", "Saldo insuficiente", `Producto ${item.code}: disponible ${available}`);
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function applyComboToItems() {
+      if (!validateComboStock()) return;
+      const comboQty = Math.max(1, Math.round(Number(comboParentQty.value || 1)));
+      const comboGroup = `combo-${Date.now()}-${comboParent.id}`;
+
+      const parentUnitUsd = Number(comboParent.precio_venta1_usd || 0);
+      const parentUnitCs = Number(comboParent.precio_venta1 || 0);
+      const giftUsdTotal = comboGifts.reduce((acc, g) => acc + (Number(g.precio_venta1_usd || 0) * Number(g.cantidad || 1)), 0);
+      const giftCsTotal = comboGifts.reduce((acc, g) => acc + (Number(g.precio_venta1 || 0) * Number(g.cantidad || 1)), 0);
+
+      addItem(comboParent, {
+        qty: comboQty,
+        priceUsd: parentUnitUsd + giftUsdTotal,
+        priceCs: parentUnitCs + giftCsTotal,
+        priceDisplay: parentUnitUsd + giftUsdTotal,
+        role: "parent",
+        comboGroup,
+        lockPrice: true,
+      });
+
+      comboGifts.forEach((gift) => {
+        const giftQty = comboQty * Math.max(1, Number(gift.cantidad || 1));
+        addItem(
+          {
+            id: gift.child_id,
+            cod_producto: gift.cod_producto,
+            descripcion: gift.descripcion,
+            existencia: gift.existencia,
+            precio_venta1_usd: Number(gift.precio_venta1_usd || 0),
+            precio_venta1: Number(gift.precio_venta1 || 0),
+          },
+          {
+            qty: giftQty,
+            priceUsd: 0,
+            priceCs: 0,
+            priceDisplay: 0,
+            role: "gift",
+            comboGroup,
+            lockPrice: true,
+          }
+        );
+      });
+
+      if (window.bootstrap) {
+        const modal = bootstrap.Modal.getInstance(comboModalEl);
+        if (modal) modal.hide();
+      }
+      resetCombo();
+    }
+
+    function debounce(fn, delay = 260) {
+      let timer = null;
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delay);
+      };
     }
 
     btnProductSearch?.addEventListener("click", searchProducts);
+    const searchProductsDebounced = debounce(searchProducts);
     productSearch?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
         searchProducts();
       }
     });
+    productSearch?.addEventListener("input", searchProductsDebounced);
+
     btnClienteSearch?.addEventListener("click", searchClientes);
+    const searchClientesDebounced = debounce(searchClientes);
     clienteSearch?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
         searchClientes();
       }
     });
+    clienteSearch?.addEventListener("input", searchClientesDebounced);
+
+    btnNuevoClienteToggle?.addEventListener("click", () => {
+      clienteCreateBox.classList.toggle("d-none");
+      if (!clienteCreateBox.classList.contains("d-none")) {
+        clienteNuevoNombre.focus();
+      }
+    });
+    btnCrearCliente?.addEventListener("click", crearClienteRapido);
+    clienteNuevoNombre?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        crearClienteRapido();
+      }
+    });
+
+    btnOpenCombo?.addEventListener("click", () => {
+      resetCombo();
+      if (window.bootstrap && comboModalEl) {
+        const modal = new bootstrap.Modal(comboModalEl);
+        modal.show();
+      }
+    });
+    btnComboParentSearch?.addEventListener("click", searchComboParents);
+    comboParentSearch?.addEventListener("input", debounce(searchComboParents, 240));
+    comboParentQty?.addEventListener("input", () => {
+      comboParentQty.value = String(Math.max(1, Math.round(Number(comboParentQty.value || 1))));
+      clampComboQty();
+      renderComboPrice();
+    });
+    comboApply?.addEventListener("click", applyComboToItems);
   })();
 </script>
 {% endblock %}

@@ -561,6 +561,14 @@ def init_db() -> None:
         if "combo_group" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_items ADD COLUMN combo_group VARCHAR(60)"))
+    if "ventas_preventas_items" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("ventas_preventas_items")}
+        if "combo_role" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_preventas_items ADD COLUMN combo_role VARCHAR(20)"))
+        if "combo_group" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_preventas_items ADD COLUMN combo_group VARCHAR(60)"))
     if "cobranza_abonos" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("cobranza_abonos")}
         if "secuencia" not in columns:

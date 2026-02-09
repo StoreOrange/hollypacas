@@ -1,5 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  .combo-role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .combo-role-badge.parent {
+    background: #e0f2fe;
+    color: #1d4ed8;
+  }
+  .combo-role-badge.gift {
+    background: #dcfce7;
+    color: #166534;
+  }
+  .combo-group-chip {
+    display: inline-block;
+    margin-top: 0.2rem;
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.68rem;
+    font-weight: 600;
+  }
+</style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
@@ -180,15 +211,25 @@
           return;
         }
         const p = data.preventa || {};
-        header.innerHTML = `Preventa <strong>${esc(p.numero)}</strong> · Cliente: ${esc(p.cliente)} · Vendedor: ${esc(p.vendedor)} · Estado: ${esc(p.estado)}`;
+        header.innerHTML = `Preventa <strong>${esc(p.numero)}</strong> &middot; Cliente: ${esc(p.cliente)} &middot; Vendedor: ${esc(p.vendedor)} &middot; Estado: ${esc(p.estado)}`;
         const rows = (data.items || []).map((it) => `
           <tr class="${it.ok_stock ? "" : "table-warning"}">
             <td>${esc(it.codigo)}</td>
-            <td>${esc(it.descripcion)}</td>
+            <td>
+              <div>${esc(it.descripcion)}</div>
+              ${
+                it.combo_role === "parent"
+                  ? '<span class="combo-role-badge parent"><i class="bi bi-boxes"></i>Oferta</span>'
+                  : it.combo_role === "gift"
+                    ? '<span class="combo-role-badge gift"><i class="bi bi-gift"></i>Regalia</span>'
+                    : ""
+              }
+              ${it.combo_group ? `<div class="combo-group-chip">Grupo: ${esc(it.combo_group)}</div>` : ""}
+            </td>
             <td class="text-end">${Number(it.cantidad || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</td>
             <td class="text-end">${Number(it.existencia || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</td>
-            <td class="text-end">${fmt(it.precio_usd, "$")} / ${fmt(it.precio_cs, "C$")}</td>
-            <td class="text-end">${fmt(it.subtotal_usd, "$")} / ${fmt(it.subtotal_cs, "C$")}</td>
+            <td class="text-end">${fmt(it.precio_usd, "$" )} / ${fmt(it.precio_cs, "C$")}</td>
+            <td class="text-end">${fmt(it.subtotal_usd, "$" )} / ${fmt(it.subtotal_cs, "C$")}</td>
           </tr>
         `).join("");
         body.innerHTML = rows || '<tr><td colspan="6" class="text-center text-muted py-3">Sin items</td></tr>';

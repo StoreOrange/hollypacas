@@ -302,6 +302,8 @@ class PreventaItem(Base):
     precio_unitario_cs = Column(Numeric(14, 2), nullable=False, default=0)
     subtotal_usd = Column(Numeric(14, 2), nullable=False, default=0)
     subtotal_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    combo_role = Column(String(20), nullable=True)
+    combo_group = Column(String(60), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     preventa = relationship("Preventa", back_populates="items")

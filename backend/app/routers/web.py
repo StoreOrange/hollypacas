@@ -1986,6 +1986,7 @@ def mobile_preventas_products_search(
                 "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
                 "precio_venta1": float(producto.precio_venta1 or 0),
                 "existencia": existencia,
+                "combo_count": len(producto.combo_children or []),
             }
         )
     return JSONResponse(
@@ -1996,6 +1997,49 @@ def mobile_preventas_products_search(
             "bodega": bodega.name,
         }
     )
+
+
+@router.get("/m/preventas/product/{product_id}/combo")
+def mobile_preventas_product_combo(
+    request: Request,
+    product_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preventas_mobile_access(request, user)
+    _, bodega = _resolve_branch_bodega(db, user)
+    if not bodega:
+        return JSONResponse({"ok": False, "message": "Usuario sin bodega asignada"}, status_code=400)
+    producto = db.query(Producto).filter(Producto.id == product_id, Producto.activo.is_(True)).first()
+    if not producto:
+        return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
+    combos = (
+        db.query(ProductoCombo)
+        .filter(ProductoCombo.parent_producto_id == product_id, ProductoCombo.activo.is_(True))
+        .order_by(ProductoCombo.id)
+        .all()
+    )
+    child_ids = [c.child_producto_id for c in combos if c.child_producto_id]
+    balances = _balances_by_bodega(db, [bodega.id], child_ids) if child_ids else {}
+    items = []
+    for combo in combos:
+        child = combo.child
+        if not child:
+            continue
+        existencia = float(balances.get((child.id, bodega.id), Decimal("0")) or 0)
+        items.append(
+            {
+                "id": combo.id,
+                "child_id": child.id,
+                "cod_producto": child.cod_producto,
+                "descripcion": child.descripcion,
+                "cantidad": float(combo.cantidad or 0),
+                "precio_venta1_usd": float(child.precio_venta1_usd or 0),
+                "precio_venta1": float(child.precio_venta1 or 0),
+                "existencia": existencia,
+            }
+        )
+    return JSONResponse({"ok": True, "items": items})
 
 
 @router.get("/m/preventas/clientes/search")
@@ -2076,6 +2120,8 @@ async def mobile_preventas_create(
     item_ids = form.getlist("item_producto_id")
     item_qtys = form.getlist("item_cantidad")
     item_prices = form.getlist("item_precio")
+    item_roles = form.getlist("item_role")
+    item_combo_groups = form.getlist("item_combo_group")
 
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch or not bodega:
@@ -2153,6 +2199,10 @@ async def mobile_preventas_create(
         price_input = _to_dec(item_prices[idx] if idx < len(item_prices) else "0")
         if price_input <= 0:
             price_input = _to_dec(producto.precio_venta1 if moneda == "CS" else producto.precio_venta1_usd)
+        combo_role = item_roles[idx] if idx < len(item_roles) else None
+        combo_group = item_combo_groups[idx] if idx < len(item_combo_groups) else None
+        combo_role = str(combo_role or "").strip() or None
+        combo_group = str(combo_group or "").strip() or None
         if moneda == "USD":
             precio_usd = price_input
             precio_cs = (price_input * tasa).quantize(Decimal("0.01"))
@@ -2167,6 +2217,8 @@ async def mobile_preventas_create(
                 "precio_cs": precio_cs,
                 "subtotal_usd": (precio_usd * qty).quantize(Decimal("0.01")),
                 "subtotal_cs": (precio_cs * qty).quantize(Decimal("0.01")),
+                "combo_role": combo_role,
+                "combo_group": combo_group,
             }
         )
 
@@ -2204,6 +2256,8 @@ async def mobile_preventas_create(
                 precio_unitario_cs=item["precio_cs"],
                 subtotal_usd=item["subtotal_usd"],
                 subtotal_cs=item["subtotal_cs"],
+                combo_role=item["combo_role"],
+                combo_group=item["combo_group"],
             )
         )
     db.commit()
@@ -2307,6 +2361,8 @@ def sales_preventas_detail(
     for item, producto in rows:
         existencia = float(balances.get((producto.id, preventa.bodega_id), Decimal("0")) or 0)
         qty = float(item.cantidad or 0)
+        combo_role = (item.combo_role or "").strip().lower() if getattr(item, "combo_role", None) else ""
+        combo_group = (item.combo_group or "").strip() if getattr(item, "combo_group", None) else ""
         items.append(
             {
                 "codigo": producto.cod_producto,
@@ -2318,6 +2374,8 @@ def sales_preventas_detail(
                 "subtotal_cs": float(item.subtotal_cs or 0),
                 "existencia": existencia,
                 "ok_stock": existencia >= qty,
+                "combo_role": combo_role,
+                "combo_group": combo_group,
             }
         )
     if preventa.estado == "PENDIENTE":
