@@ -2253,15 +2253,21 @@
       return;
     }
     if (productNavMode !== "panel") return;
-    if (document.activeElement === productSearch) return;
+    if (!["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) return;
+    const activeEl = document.activeElement;
+    const isTypingField = activeEl instanceof HTMLElement && (
+      activeEl.tagName === "INPUT" ||
+      activeEl.tagName === "TEXTAREA" ||
+      activeEl.tagName === "SELECT" ||
+      activeEl.isContentEditable
+    );
+    if (document.activeElement === productSearch || isTypingField) return;
     if (!productListPanel || !productListPanel.contains(document.activeElement)) {
       productListPanel?.focus();
     }
-    if (["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) {
-      if (event.repeat) return;
-      if (document.activeElement === productListPanel) return;
-      handleProductNav(event);
-    }
+    if (event.repeat) return;
+    if (document.activeElement === productListPanel) return;
+    handleProductNav(event);
   });
 
   if (addPayment) {
