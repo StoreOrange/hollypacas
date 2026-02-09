@@ -21,7 +21,7 @@ from reportlab.lib import colors
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from jose import JWTError, jwt
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -2027,7 +2027,10 @@ def mobile_preventas_combos_search(
             ProductoCombo,
             and_(
                 ProductoCombo.parent_producto_id == Producto.id,
-                ProductoCombo.activo.is_(True),
+                or_(
+                    ProductoCombo.activo.is_(True),
+                    ProductoCombo.activo.is_(None),
+                ),
             ),
         )
         .filter(Producto.activo.is_(True))
@@ -2088,7 +2091,13 @@ def mobile_preventas_product_combo(
         return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
     combos = (
         db.query(ProductoCombo)
-        .filter(ProductoCombo.parent_producto_id == product_id, ProductoCombo.activo.is_(True))
+        .filter(
+            ProductoCombo.parent_producto_id == product_id,
+            or_(
+                ProductoCombo.activo.is_(True),
+                ProductoCombo.activo.is_(None),
+            ),
+        )
         .order_by(ProductoCombo.id)
         .all()
     )
