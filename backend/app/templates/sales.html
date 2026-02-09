@@ -184,6 +184,7 @@
                       <i class="bi bi-person-check"></i>
                     </button>
                     <input id="cliente-id" type="hidden" name="cliente_id" form="sales-form" />
+                    <input id="preventa-id" type="hidden" name="preventa_id" form="sales-form" />
                   </div>
                   <div class="mt-3 border border-slate-200 rounded-2xl p-3 bg-slate-50">
                     <div class="text-sm font-semibold text-ink mb-2">Nuevo cliente</div>
@@ -731,6 +732,7 @@
   const productSearch = document.getElementById("product-search");
   const itemsTable = document.getElementById("items-table");
   const emptyItems = document.getElementById("empty-items");
+  const preventaIdInput = document.getElementById("preventa-id");
   const totalUsd = document.getElementById("total-usd");
   const totalCs = document.getElementById("total-cs");
   const totalItems = document.getElementById("total-items");
@@ -773,6 +775,7 @@
   const comboPreview = document.getElementById("combo-preview");
   const rateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
   const activeBodegaId = Number({{ user.default_bodega.id if user.default_bodega else 0 }}) || 0;
+  const initialPreventa = {{ (initial_preventa or None) | tojson }};
   let currentTotals = { usd: 0, cs: 0 };
   let paymentItems = [];
   let paymentEnterStage = 0;
@@ -825,6 +828,10 @@
     const params = new URLSearchParams({ q: term || "" });
     if (activeBodegaId > 0) {
       params.set("bodega_id", String(activeBodegaId));
+    }
+    const vendedorSelectEl = document.getElementById("vendedor-select");
+    if (vendedorSelectEl?.value) {
+      params.set("vendedor_id", String(vendedorSelectEl.value));
     }
     return `/sales/products/search?${params.toString()}`;
   };
@@ -1089,19 +1096,148 @@
     });
   };
 
-  const handleAddItem = (button) => {
+  const parseReservedDetails = (raw) => {
+    if (!raw) return [];
+    try {
+      return JSON.parse(decodeURIComponent(raw));
+    } catch (_) {
+      return [];
+    }
+  };
+
+  const releasePreventaReservations = async (details) => {
+    const uniqueIds = Array.from(new Set((details || []).map((d) => Number(d.preventa_id || 0)).filter((v) => v > 0)));
+    for (const preventaId of uniqueIds) {
+      const resp = await fetch(`/sales/preventas/${preventaId}/release`, {
+        method: "POST",
+        headers: { "X-Requested-With": "fetch" },
+      });
+      const payload = await resp.json().catch(() => null);
+      if (!resp.ok || !payload?.ok) {
+        throw new Error(payload?.message || "No se pudo liberar la reserva");
+      }
+    }
+  };
+
+  const askReservedAction = async ({ code, name, requested, available, details }) => {
+    const vendedorSelect = document.getElementById("vendedor-select");
+    const currentVendedorId = Number(vendedorSelect?.value || 0);
+    const detailList = (details || []).map((d) => ({
+      ...d,
+      vendedor_id: Number(d?.vendedor_id || 0),
+      same_vendedor: currentVendedorId > 0 && Number(d?.vendedor_id || 0) === currentVendedorId,
+    }));
+    const sameVendorCount = detailList.filter((d) => d.same_vendedor).length;
+    const otherVendorCount = detailList.length - sameVendorCount;
+    const isSameVendorOnly = detailList.length > 0 && sameVendorCount > 0 && otherVendorCount === 0;
+
+    const detailRows = (details || [])
+      .map((d) => {
+        const qty = Number(d.qty || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
+        return `<li><strong>${d.numero}</strong> - ${d.vendedor} - ${qty}</li>`;
+      })
+      .join("");
+    if (typeof Swal === "undefined") {
+      alert(`Reserva activa para ${code} - ${name}. Disponible ${available}, solicitado ${requested}.`);
+      return "cancel";
+    }
+    const result = await Swal.fire({
+      icon: "warning",
+      title: "Producto reservado en preventa",
+      html: `
+        <div style="text-align:left">
+          <div><strong>${code}</strong> - ${name}</div>
+          <div>Disponible libre: <strong>${available}</strong></div>
+          <div>Solicitado: <strong>${requested}</strong></div>
+          ${detailRows ? `<ul style="margin-top:8px; padding-left:16px;">${detailRows}</ul>` : ""}
+          <div style="margin-top:8px;">
+            ${isSameVendorOnly
+              ? "La reserva pertenece al mismo vendedor. Debes anular la preventa para facturar en venta directa."
+              : "Puedes liberar la(s) reserva(s) y continuar."}
+          </div>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: isSameVendorOnly ? "Anular preventa y continuar" : "Liberar reserva y continuar",
+      cancelButtonText: "Cancelar",
+      focusCancel: true,
+    });
+    if (!result.isConfirmed) return "cancel";
+    try {
+      await releasePreventaReservations(details || []);
+      await Swal.fire({ icon: "success", title: "Reserva liberada", timer: 1100, showConfirmButton: false });
+      return "released";
+    } catch (error) {
+      await Swal.fire({ icon: "error", title: "No se pudo liberar", text: error?.message || "Error de liberacion" });
+      return "cancel";
+    }
+  };
+
+  const refreshProductAvailability = async (productId, queryHint) => {
+    const searchTerm = (queryHint || "").trim();
+    if (!searchTerm) return null;
+    const response = await fetch(buildProductSearchUrl(searchTerm));
+    const payload = await response.json().catch(() => null);
+    if (!payload?.ok) return null;
+    return (payload.items || []).find((item) => Number(item.id) === Number(productId)) || null;
+  };
+
+  const handleAddItem = async (button) => {
     const row = button.closest(".product-pick-row");
     if (!row) return false;
     const qtyInput = row.querySelector(".qty-input");
     const qty = parseQty(qtyInput.value);
     const maxQty = parseFloat(button.dataset.existencia || 0);
+    let freeQty = parseFloat(button.dataset.freeQty || maxQty || 0);
+    let reservedDetails = parseReservedDetails(button.dataset.reservedDetails || "");
     if (qty <= 0) return false;
     if (!maxQty || maxQty <= 0) {
       pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "No hay saldo disponible." });
       return false;
     }
-    if (qty > maxQty) {
-      pauseNavForAlert({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible: ${maxQty}` });
+    if ((reservedDetails || []).length > 0) {
+      const action = await askReservedAction({
+        code: button.dataset.code,
+        name: button.dataset.name,
+        requested: qty,
+        available: freeQty,
+        details: reservedDetails,
+      });
+      if (action !== "released") return false;
+      if (action === "released") {
+        const refreshed = await refreshProductAvailability(button.dataset.productId, button.dataset.code || button.dataset.name || "");
+        if (refreshed) {
+          button.dataset.existencia = String(refreshed.existencia || 0);
+          button.dataset.freeQty = String(refreshed.free_qty ?? refreshed.existencia ?? 0);
+          button.dataset.reservedDetails = encodeURIComponent(JSON.stringify(refreshed.reserved_details || []));
+          if (qtyInput) qtyInput.max = String(refreshed.existencia || 0);
+          freeQty = parseFloat(button.dataset.freeQty || button.dataset.existencia || 0);
+          reservedDetails = parseReservedDetails(button.dataset.reservedDetails || "");
+        }
+      }
+    }
+    if (qty > freeQty) {
+      const action = await askReservedAction({
+        code: button.dataset.code,
+        name: button.dataset.name,
+        requested: qty,
+        available: freeQty,
+        details: reservedDetails,
+      });
+      if (action !== "released") return false;
+      if (action === "released") {
+        const refreshed = await refreshProductAvailability(button.dataset.productId, button.dataset.code || button.dataset.name || "");
+        if (refreshed) {
+          button.dataset.existencia = String(refreshed.existencia || 0);
+          button.dataset.freeQty = String(refreshed.free_qty ?? refreshed.existencia ?? 0);
+          button.dataset.reservedDetails = encodeURIComponent(JSON.stringify(refreshed.reserved_details || []));
+          if (qtyInput) qtyInput.max = String(refreshed.existencia || 0);
+          freeQty = parseFloat(button.dataset.freeQty || button.dataset.existencia || 0);
+        }
+      }
+    }
+    if (qty > freeQty) {
+      pauseNavForAlert({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible libre: ${freeQty}` });
       return false;
     }
     const productId = button.dataset.productId;
@@ -1110,11 +1246,11 @@
       const qtyHidden = existingRow.querySelector("input[name='item_cantidad']");
       const currentQty = parseFloat(qtyHidden?.value || 0);
       const newQty = currentQty + qty;
-      if (newQty > maxQty) {
+      if (newQty > freeQty) {
         pauseNavForAlert({
           icon: "warning",
           title: "Saldo insuficiente",
-          text: `Disponible: ${maxQty} | En factura: ${currentQty}`,
+          text: `Disponible libre: ${freeQty} | En factura: ${currentQty}`,
         });
         return false;
       }
@@ -1226,7 +1362,7 @@
     const currency = monedaField?.value || "CS";
     const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
     if (comboParentAvailable) {
-      comboParentAvailable.textContent = getAvailableQty(comboParent.id, comboParent.existencia).toFixed(0);
+      comboParentAvailable.textContent = getAvailableQty(comboParent.id, comboParent.freeQty ?? comboParent.existencia).toFixed(0);
     }
     const parentUnit = currency === "USD" ? comboParent.precioUsd : comboParent.precioCs;
     const giftsTotal = comboGifts.reduce((acc, gift) => {
@@ -1285,14 +1421,14 @@
       id: comboParent.id,
       codigo: comboParent.codigo,
       perUnit: 1,
-      existencia: comboParent.existencia || 0,
+      existencia: comboParent.freeQty ?? comboParent.existencia ?? 0,
     });
     comboGifts.forEach((gift) => {
       required.push({
         id: gift.id,
         codigo: gift.codigo,
         perUnit: gift.cantidad,
-        existencia: gift.existencia || 0,
+        existencia: gift.freeQty ?? gift.existencia ?? 0,
       });
     });
     for (const item of required) {
@@ -1312,11 +1448,11 @@
   const clampComboQty = () => {
     if (!comboParent) return;
     const perUnitList = [
-      { id: comboParent.id, perUnit: 1, existencia: comboParent.existencia || 0 },
+      { id: comboParent.id, perUnit: 1, existencia: comboParent.freeQty ?? comboParent.existencia ?? 0 },
       ...comboGifts.map((gift) => ({
         id: gift.id,
         perUnit: gift.cantidad,
-        existencia: gift.existencia || 0,
+        existencia: gift.freeQty ?? gift.existencia ?? 0,
       })),
     ];
     let maxQty = Infinity;
@@ -1344,12 +1480,13 @@
     }
     comboParentResults.innerHTML = items
       .map((item) => {
-        const disabled = (item.existencia || 0) <= 0;
+        const freeQty = Number(item.free_qty ?? item.existencia ?? 0);
+        const disabled = freeQty <= 0;
         return `
           <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
             <div>
               <div class="font-semibold text-ink">${item.cod_producto} - ${item.descripcion}</div>
-              <div class="text-xs text-slate">Existencia: ${item.existencia}</div>
+              <div class="text-xs text-slate">Libre: ${freeQty}${Number(item.reserved_qty || 0) > 0 ? ` · Reservado: ${item.reserved_qty}` : ""}</div>
             </div>
             <button
               class="btn btn-outline-primary btn-sm combo-parent-pick"
@@ -1360,6 +1497,8 @@
               data-price-usd="${item.precio_venta1_usd}"
               data-price-cs="${item.precio_venta1}"
               data-existencia="${item.existencia}"
+              data-free-qty="${freeQty}"
+              data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
               ${disabled ? "disabled" : ""}
             >
               <i class="bi bi-check2-circle"></i>
@@ -1379,12 +1518,13 @@
     }
     comboGiftResults.innerHTML = items
       .map((item) => {
-        const disabled = (item.existencia || 0) <= 0;
+        const freeQty = Number(item.free_qty ?? item.existencia ?? 0);
+        const disabled = freeQty <= 0;
         return `
           <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
             <div>
               <div class="font-semibold text-ink">${item.cod_producto} - ${item.descripcion}</div>
-              <div class="text-xs text-slate">Existencia: ${item.existencia}</div>
+              <div class="text-xs text-slate">Libre: ${freeQty}${Number(item.reserved_qty || 0) > 0 ? ` · Reservado: ${item.reserved_qty}` : ""}</div>
             </div>
             <button
               class="btn btn-outline-secondary btn-sm combo-gift-pick"
@@ -1395,6 +1535,8 @@
               data-price-usd="${item.precio_venta1_usd}"
               data-price-cs="${item.precio_venta1}"
               data-existencia="${item.existencia}"
+              data-free-qty="${freeQty}"
+              data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
               ${disabled ? "disabled" : ""}
             >
               <i class="bi bi-plus-circle"></i>
@@ -1407,7 +1549,11 @@
   };
 
   const fetchComboItems = async (parentId) => {
-    const response = await fetch(`/inventory/product/${parentId}/combo`);
+    const params = new URLSearchParams();
+    if (activeBodegaId > 0) params.set("bodega_id", String(activeBodegaId));
+    const vendedorSelectEl = document.getElementById("vendedor-select");
+    if (vendedorSelectEl?.value) params.set("vendedor_id", String(vendedorSelectEl.value));
+    const response = await fetch(`/sales/combo/${parentId}/items?${params.toString()}`);
     const payload = await response.json().catch(() => null);
     if (!payload || !payload.ok) return [];
     return payload.items || [];
@@ -1424,6 +1570,8 @@
       precioUsd: item.precio_venta1_usd || 0,
       precioCs: item.precio_venta1 || 0,
       existencia: item.existencia || 0,
+      freeQty: item.free_qty ?? item.existencia ?? 0,
+      reservedDetails: item.reserved_details || [],
     }));
     renderComboGifts();
     renderComboPrice();
@@ -1505,7 +1653,7 @@
     comboParentResults.addEventListener("click", async (event) => {
       const button = event.target.closest(".combo-parent-pick");
       if (!button) return;
-      if (parseFloat(button.dataset.existencia || 0) <= 0) {
+      if (parseFloat(button.dataset.freeQty || button.dataset.existencia || 0) <= 0) {
         pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Este producto no tiene saldo." });
         return;
       }
@@ -1516,6 +1664,8 @@
         precioUsd: parseFloat(button.dataset.priceUsd || 0),
         precioCs: parseFloat(button.dataset.priceCs || 0),
         existencia: parseFloat(button.dataset.existencia || 0),
+        freeQty: parseFloat(button.dataset.freeQty || button.dataset.existencia || 0),
+        reservedDetails: parseReservedDetails(button.dataset.reservedDetails || ""),
       };
       if (comboParentSelected) {
         comboParentSelected.textContent = `${comboParent.codigo} - ${comboParent.descripcion}`;
@@ -1532,14 +1682,15 @@
       if (!button) return;
       const id = button.dataset.id;
       const existencia = parseFloat(button.dataset.existencia || 0);
-      if (existencia <= 0) {
+      const freeQty = parseFloat(button.dataset.freeQty || existencia || 0);
+      if (freeQty <= 0) {
         pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Esta regalia no tiene saldo." });
         return;
       }
       const existing = comboGifts.find((gift) => String(gift.id) === String(id));
       if (existing) {
         const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
-        const available = getAvailableQty(existing.id, existencia);
+        const available = Math.max(0, freeQty - getInvoiceQty(existing.id));
         if ((existing.cantidad + 1) * comboQty > available) {
           pauseNavForAlert({
             icon: "warning",
@@ -1558,6 +1709,8 @@
           precioUsd: parseFloat(button.dataset.priceUsd || 0),
           precioCs: parseFloat(button.dataset.priceCs || 0),
           existencia: existencia,
+          freeQty: freeQty,
+          reservedDetails: parseReservedDetails(button.dataset.reservedDetails || ""),
         });
       }
       clampComboQty();
@@ -1578,7 +1731,7 @@
       const qty = Math.max(1, Math.round(parseFloat(qtyInput.value || 1)));
       const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
       const gift = comboGifts[index];
-      const available = getAvailableQty(gift.id, gift.existencia);
+      const available = getAvailableQty(gift.id, gift.freeQty ?? gift.existencia);
       const maxQty = Math.max(1, Math.floor(available / comboQty));
       if (qty > maxQty) {
         gift.cantidad = maxQty;
@@ -1615,7 +1768,7 @@
   }
 
   if (comboApply) {
-    comboApply.addEventListener("click", () => {
+    comboApply.addEventListener("click", async () => {
       if (!comboParent) {
         if (comboStatus) comboStatus.textContent = "Selecciona un producto oferta.";
         return;
@@ -1635,13 +1788,32 @@
       });
       for (const [id, qty] of requiredMap.entries()) {
         const producto = id === comboParent.id ? comboParent : comboGifts.find((g) => String(g.id) === String(id));
-        const existencia = producto?.existencia || 0;
+        const existencia = Number(producto?.existencia || 0);
+        const freeQty = Number(producto?.freeQty ?? existencia);
         const existingQty = getInvoiceQty(id);
-        if (!existencia || existingQty + qty > existencia) {
+        const hasReserved = (producto?.reservedDetails || []).length > 0;
+        if (hasReserved || !existencia || existingQty + qty > freeQty) {
+          const action = await askReservedAction({
+            code: producto?.codigo || "",
+            name: producto?.descripcion || "",
+            requested: existingQty + qty,
+            available: freeQty,
+            details: producto?.reservedDetails || [],
+          });
+          if (action === "released") {
+            const refreshed = await refreshProductAvailability(id, producto?.codigo || producto?.descripcion || "");
+            if (refreshed) {
+              producto.existencia = Number(refreshed.existencia || 0);
+              producto.freeQty = Number(refreshed.free_qty ?? refreshed.existencia ?? 0);
+              producto.reservedDetails = refreshed.reserved_details || [];
+              continue;
+            }
+          }
+          if (action !== "released") return;
           pauseNavForAlert({
             icon: "warning",
             title: "Saldo insuficiente",
-            text: `Producto ${producto?.codigo || ""} disponible: ${existencia}`,
+            text: `Producto ${producto?.codigo || ""} disponible libre: ${freeQty}`,
           });
           return;
         }
@@ -1664,7 +1836,7 @@
         qtyValue: comboQty.toFixed(2),
         qtyValueDisplay: comboQty.toString(),
         qtyStep: "1",
-        maxQty: comboParent.existencia || comboQty,
+        maxQty: comboParent.freeQty ?? comboParent.existencia ?? comboQty,
         priceValue: comboPrice.toFixed(2),
         subtotalLabel: formatMoney(subtotal, currency),
         subtotalUsd,
@@ -1684,7 +1856,7 @@
           qtyValue: giftQty.toFixed(2),
           qtyValueDisplay: giftQty.toString(),
           qtyStep: "1",
-          maxQty: gift.existencia || giftQty,
+          maxQty: gift.freeQty ?? gift.existencia ?? giftQty,
           priceValue: "0.00",
           subtotalLabel: formatMoney(0, currency),
           subtotalUsd: giftSubtotalUsd,
@@ -1761,8 +1933,14 @@
               <div class="mt-1 flex flex-wrap items-center justify-between gap-3 text-sm">
                 <div class="flex items-center gap-2">
                   <span class="text-xs uppercase tracking-[0.18em] text-slate">Saldo</span>
-                  <span class="font-semibold text-red-600">${item.existencia}</span>
+                  <span class="font-semibold text-red-600">${item.free_qty ?? item.existencia}</span>
                 </div>
+                ${(Number(item.reserved_qty || 0) > 0)
+                  ? `<div class="flex items-center gap-2 text-amber-700">
+                      <span class="text-xs uppercase tracking-[0.18em]">Reservado</span>
+                      <span class="font-semibold">${item.reserved_qty}</span>
+                    </div>`
+                  : ""}
                 <div class="flex flex-wrap items-center gap-3 text-right">
                   <div class="flex items-center gap-2">
                     <span class="text-xs uppercase tracking-[0.18em] text-slate">USD</span>
@@ -1774,7 +1952,7 @@
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="text-xs uppercase tracking-[0.18em] text-slate">Cantidad</span>
-                    <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" max="${item.existencia}" value="1" />
+                    <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" max="${item.free_qty ?? item.existencia}" value="1" />
                   </div>
                 </div>
               </div>
@@ -1786,6 +1964,8 @@
               data-code="${item.cod_producto}"
               data-name="${item.descripcion}"
               data-existencia="${item.existencia}"
+              data-free-qty="${item.free_qty ?? item.existencia}"
+              data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
               data-price-usd="${item.precio_venta1_usd.toFixed(2)}"
               data-price-cs="${item.precio_venta1.toFixed(2)}"
               aria-label="Agregar producto"
@@ -1817,10 +1997,10 @@
   };
 
   if (productList) {
-    productList.addEventListener("click", (event) => {
+    productList.addEventListener("click", async (event) => {
       const button = event.target.closest(".add-item");
       if (!button) return;
-      handleAddItem(button);
+      await handleAddItem(button);
     });
   }
 
@@ -1846,12 +2026,12 @@
   let lastNavAt = 0;
   const NAV_DELAY = 80;
 
-  const addActiveProduct = () => {
+  const addActiveProduct = async () => {
     refreshActiveRows();
     if (activeProductIndex < 0 || !activeProductRows[activeProductIndex]) return;
     const button = activeProductRows[activeProductIndex].querySelector(".add-item");
     if (button) {
-      const added = handleAddItem(button);
+      const added = await handleAddItem(button);
       if (added && productSearch) {
         productSearch.value = "";
         if (productList && productEmptyRow) {
@@ -1906,12 +2086,12 @@
         productListPanel.focus();
       }
     });
-    productListPanel.addEventListener("dblclick", (event) => {
+    productListPanel.addEventListener("dblclick", async (event) => {
       const row = event.target.closest(".product-pick-row");
       if (!row) return;
       const button = row.querySelector("[data-add-item]");
       if (!button) return;
-      const added = handleAddItem(button);
+      const added = await handleAddItem(button);
       if (added) {
         setTimeout(() => {
           productSearchInput?.focus();
@@ -2429,6 +2609,73 @@
     }
   };
 
+  const loadInitialPreventa = () => {
+    if (!initialPreventa || !Array.isArray(initialPreventa.items) || initialPreventa.items.length === 0) {
+      return;
+    }
+    if (preventaIdInput) {
+      preventaIdInput.value = String(initialPreventa.id || "");
+    }
+    if (fechaInput && initialPreventa.fecha) {
+      fechaInput.value = initialPreventa.fecha;
+    }
+    if (monedaField && initialPreventa.moneda) {
+      monedaField.value = initialPreventa.moneda;
+      if (window.$ && $.fn.select2) {
+        $(monedaField).trigger("change.select2");
+      } else {
+        monedaField.dispatchEvent(new Event("change"));
+      }
+    }
+    setClienteSelection(initialPreventa.cliente_id || "", initialPreventa.cliente_nombre || "Consumidor final");
+    if (vendedorSelect && initialPreventa.vendedor_id) {
+      vendedorSelect.value = String(initialPreventa.vendedor_id);
+      if (window.$ && $.fn.select2) {
+        $(vendedorSelect).trigger("change.select2");
+      } else {
+        vendedorSelect.dispatchEvent(new Event("change"));
+      }
+    }
+    if (itemsTable) {
+      itemsTable.innerHTML = "";
+    }
+    const invoiceCurrency = (monedaField?.value || "USD").toUpperCase();
+    initialPreventa.items.forEach((it) => {
+      const qty = Math.max(1, Math.round(Number(it.cantidad || 1)));
+      const priceUsd = Number(it.precio_usd || 0);
+      const priceCs = Number(it.precio_cs || 0);
+      const priceForInvoice = invoiceCurrency === "USD" ? priceUsd : priceCs;
+      const subtotalUsd = priceUsd * qty;
+      const subtotalCs = priceCs * qty;
+      addItemRow({
+        productId: Number(it.product_id),
+        code: String(it.cod_producto || ""),
+        name: String(it.descripcion || ""),
+        qtyValue: qty.toFixed(2),
+        qtyValueDisplay: String(qty),
+        maxQty: Number(it.existencia || qty || 0),
+        priceValue: priceForInvoice.toFixed(2),
+        subtotalUsd,
+        subtotalCs,
+        subtotalLabel: formatMoney(invoiceCurrency === "USD" ? subtotalUsd : subtotalCs, invoiceCurrency),
+        role: it.combo_role || "",
+        comboGroup: it.combo_group || "",
+        lockPrice: Boolean(it.combo_role),
+      });
+    });
+    updatePartySummary();
+    updateTotals();
+    if (typeof Swal !== "undefined") {
+      Swal.fire({
+        icon: "info",
+        title: "Preventa cargada",
+        text: `Se cargo la preventa ${initialPreventa.numero || ""} en la factura virtual.`,
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    }
+  };
+
     const clienteDefault = partyRoot ? partyRoot.querySelector("#cliente-default") : document.getElementById("cliente-default");
     if (clienteDefault) {
       clienteDefault.addEventListener("click", () => {
@@ -2608,6 +2855,7 @@
         });
       }
     syncPaymentFields();
+    loadInitialPreventa();
     updatePartySummary();
     updateTotals();
     updateClock();
@@ -2709,3 +2957,5 @@
   // La impresion se hace manual con el boton de vista previa.
 </script>
 {% endblock %}
+
+

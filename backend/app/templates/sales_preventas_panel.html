@@ -30,6 +30,10 @@
     font-size: 0.68rem;
     font-weight: 600;
   }
+  .preventa-fallback-show {
+    display: block !important;
+    background: rgba(15, 23, 42, 0.55);
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -180,11 +184,20 @@
                 <th>Descripcion</th>
                 <th class="text-end">Cantidad</th>
                 <th class="text-end">Existencia</th>
-                <th class="text-end">Precio</th>
-                <th class="text-end">Subtotal</th>
+                <th class="text-end">Precio USD</th>
+                <th class="text-end">Precio C$</th>
+                <th class="text-end">Subtotal USD</th>
+                <th class="text-end">Subtotal C$</th>
               </tr>
             </thead>
             <tbody id="preventaDetailBody"></tbody>
+            <tfoot>
+              <tr class="fw-semibold">
+                <td colspan="7" class="text-end">Totales preventa:</td>
+                <td class="text-end" id="preventaDetailTotalUsd">$0.00</td>
+                <td class="text-end" id="preventaDetailTotalCs">C$0.00</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
@@ -199,12 +212,29 @@
     const bsModal = window.bootstrap ? new bootstrap.Modal(modalEl) : null;
     const header = document.getElementById("preventaDetailHeader");
     const body = document.getElementById("preventaDetailBody");
+    const totalUsdEl = document.getElementById("preventaDetailTotalUsd");
+    const totalCsEl = document.getElementById("preventaDetailTotalCs");
     const fmt = (n, p = "") => `${p}${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m]));
+
+    function showDetailModal() {
+      if (bsModal) {
+        bsModal.show();
+        return;
+      }
+      // Fallback if Bootstrap JS is not available.
+      modalEl.classList.add("show", "preventa-fallback-show");
+      modalEl.removeAttribute("aria-hidden");
+      modalEl.setAttribute("aria-modal", "true");
+    }
 
     async function openDetail(id) {
       try {
         const res = await fetch(`/sales/preventas/${id}/detail`, { headers: { "X-Requested-With": "fetch" } });
+        if (!res.ok) {
+          alert("No se pudo cargar detalle de preventa.");
+          return;
+        }
         const data = await res.json();
         if (!data.ok) {
           alert(data.message || "No se pudo cargar detalle");
@@ -228,22 +258,34 @@
             </td>
             <td class="text-end">${Number(it.cantidad || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</td>
             <td class="text-end">${Number(it.existencia || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</td>
-            <td class="text-end">${fmt(it.precio_usd, "$" )} / ${fmt(it.precio_cs, "C$")}</td>
-            <td class="text-end">${fmt(it.subtotal_usd, "$" )} / ${fmt(it.subtotal_cs, "C$")}</td>
+            <td class="text-end">${fmt(it.precio_usd, "$" )}</td>
+            <td class="text-end">${fmt(it.precio_cs, "C$")}</td>
+            <td class="text-end">${fmt(it.subtotal_usd, "$" )}</td>
+            <td class="text-end">${fmt(it.subtotal_cs, "C$")}</td>
           </tr>
         `).join("");
-        body.innerHTML = rows || '<tr><td colspan="6" class="text-center text-muted py-3">Sin items</td></tr>';
-        if (bsModal) bsModal.show();
+        body.innerHTML = rows || '<tr><td colspan="9" class="text-center text-muted py-3">Sin items</td></tr>';
+        if (totalUsdEl) totalUsdEl.textContent = fmt(p.total_usd, "$");
+        if (totalCsEl) totalCsEl.textContent = fmt(p.total_cs, "C$");
+        showDetailModal();
       } catch (err) {
         alert("Error cargando detalle");
       }
     }
 
-    document.querySelectorAll(".js-preview-detail").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const id = btn.getAttribute("data-preventa-id");
+    document.addEventListener("click", (event) => {
+      const btn = event.target.closest(".js-preview-detail");
+      if (!btn) return;
+      const id = btn.getAttribute("data-preventa-id");
         if (id) openDetail(id);
-      });
+    });
+
+    modalEl.addEventListener("click", (event) => {
+      if (event.target === modalEl && !bsModal) {
+        modalEl.classList.remove("show", "preventa-fallback-show");
+        modalEl.setAttribute("aria-hidden", "true");
+        modalEl.removeAttribute("aria-modal");
+      }
     });
 
     document.querySelectorAll("tr[data-preventa-row]").forEach((tr) => {

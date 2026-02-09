@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Optional
 
 import csv
@@ -475,6 +476,146 @@ def _preventa_active_conflict(
         .first()
     )
     return row if row else None
+
+
+def _preventa_reserved_by_others(
+    db: Session,
+    *,
+    bodega_id: int,
+    producto_id: int,
+    vendedor_id: int,
+) -> tuple[Decimal, list[tuple[str, str, Decimal]]]:
+    rows = (
+        db.query(
+            Preventa.numero,
+            Vendedor.nombre,
+            func.sum(PreventaItem.cantidad).label("qty"),
+        )
+        .join(PreventaItem, PreventaItem.preventa_id == Preventa.id)
+        .join(Vendedor, Vendedor.id == Preventa.vendedor_id, isouter=True)
+        .filter(
+            Preventa.bodega_id == bodega_id,
+            Preventa.estado.in_(["PENDIENTE", "REVISION"]),
+            PreventaItem.producto_id == producto_id,
+            Preventa.vendedor_id != vendedor_id,
+        )
+        .group_by(Preventa.numero, Vendedor.nombre)
+        .order_by(Preventa.numero.asc())
+        .all()
+    )
+    details: list[tuple[str, str, Decimal]] = []
+    total = Decimal("0")
+    for numero, vendedor_nombre, qty in rows:
+        qty_dec = Decimal(str(qty or 0))
+        details.append((str(numero or "-"), str(vendedor_nombre or "Vendedor"), qty_dec))
+        total += qty_dec
+    return total, details
+
+
+def _preventa_reserved_bulk_by_others(
+    db: Session,
+    *,
+    bodega_id: int,
+    producto_ids: list[int],
+    vendedor_id: Optional[int] = None,
+    include_same_vendedor: bool = False,
+) -> tuple[dict[int, Decimal], dict[int, list[dict[str, object]]]]:
+    if not producto_ids:
+        return {}, {}
+    base = (
+        db.query(
+            PreventaItem.producto_id.label("producto_id"),
+            Preventa.id.label("preventa_id"),
+            Preventa.numero.label("numero"),
+            Preventa.vendedor_id.label("vendedor_id"),
+            Vendedor.nombre.label("vendedor_nombre"),
+            func.sum(PreventaItem.cantidad).label("qty"),
+        )
+        .join(Preventa, Preventa.id == PreventaItem.preventa_id)
+        .join(Vendedor, Vendedor.id == Preventa.vendedor_id, isouter=True)
+        .filter(
+            Preventa.bodega_id == bodega_id,
+            Preventa.estado.in_(["PENDIENTE", "REVISION"]),
+            PreventaItem.producto_id.in_(producto_ids),
+        )
+    )
+    if vendedor_id and not include_same_vendedor:
+        base = base.filter(Preventa.vendedor_id != vendedor_id)
+    rows = (
+        base.group_by(
+            PreventaItem.producto_id,
+            Preventa.id,
+            Preventa.numero,
+            Preventa.vendedor_id,
+            Vendedor.nombre,
+        )
+        .order_by(PreventaItem.producto_id.asc(), Preventa.id.asc())
+        .all()
+    )
+    totals: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    details: dict[int, list[dict[str, object]]] = defaultdict(list)
+    for producto_id, preventa_id, numero, row_vendedor_id, vendedor_nombre, qty in rows:
+        qty_dec = Decimal(str(qty or 0))
+        pid = int(producto_id)
+        totals[pid] += qty_dec
+        vend_id = int(row_vendedor_id) if row_vendedor_id else 0
+        details[pid].append(
+            {
+                "preventa_id": int(preventa_id),
+                "numero": str(numero or "-"),
+                "vendedor_id": vend_id,
+                "vendedor": str(vendedor_nombre or "Vendedor"),
+                "same_vendedor": bool(vendedor_id and vend_id and int(vendedor_id) == vend_id),
+                "qty": float(qty_dec),
+            }
+        )
+    return dict(totals), dict(details)
+
+
+def _preventa_required_qty_map(
+    item_rows: list[tuple["PreventaItem", "Producto"]],
+) -> dict[int, Decimal]:
+    required: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    for row, _producto in item_rows:
+        required[int(row.producto_id)] += Decimal(str(row.cantidad or 0))
+    return required
+
+
+def _repair_preventa_currency_if_needed(db: Session, preventa: Optional[Preventa]) -> bool:
+    if not preventa or preventa.estado not in {"PENDIENTE", "REVISION"}:
+        return False
+    rows = (
+        db.query(PreventaItem, Producto)
+        .join(Producto, Producto.id == PreventaItem.producto_id)
+        .filter(PreventaItem.preventa_id == preventa.id)
+        .all()
+    )
+    touched = False
+    total_usd = Decimal("0")
+    total_cs = Decimal("0")
+    total_items = Decimal("0")
+    for item, producto in rows:
+        qty = Decimal(str(item.cantidad or 0))
+        role = (item.combo_role or "").strip().lower() if getattr(item, "combo_role", None) else ""
+        if role == "":
+            item_cs = Decimal(str(item.precio_unitario_cs or 0))
+            prod_usd = Decimal(str(producto.precio_venta1_usd or 0))
+            prod_cs = Decimal(str(producto.precio_venta1 or 0))
+            bug_pattern = prod_usd > 0 and prod_cs > 0 and abs(item_cs - prod_usd) <= Decimal("0.01")
+            if bug_pattern:
+                item.precio_unitario_usd = prod_usd
+                item.precio_unitario_cs = prod_cs
+                item.subtotal_usd = (prod_usd * qty).quantize(Decimal("0.01"))
+                item.subtotal_cs = (prod_cs * qty).quantize(Decimal("0.01"))
+                touched = True
+        total_usd += Decimal(str(item.subtotal_usd or 0))
+        total_cs += Decimal(str(item.subtotal_cs or 0))
+        total_items += qty
+    if touched:
+        preventa.total_usd = total_usd.quantize(Decimal("0.01"))
+        preventa.total_cs = total_cs.quantize(Decimal("0.01"))
+        preventa.total_items = total_items.quantize(Decimal("0.01"))
+    return touched
 
 
 def _get_sumatra_path(config_path: Optional[str] = None) -> Optional[Path]:
@@ -1342,13 +1483,74 @@ def root():
 
 
 @router.get("/home")
-def home(request: Request, user: User = Depends(_require_admin_web)):
+def home(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    def _fmt_money(value: Optional[Decimal], symbol: str) -> str:
+        amount = Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return f"{symbol}{amount:,.2f}"
+
+    branch, bodega = _resolve_branch_bodega(db, user)
+    vendedor_id = _vendedor_id_for_user(db, user, bodega)
+    home_preventas: list[dict] = []
+
+    if vendedor_id:
+        start_dt = datetime.combine(local_today() - timedelta(days=1), datetime.min.time())
+        end_dt = datetime.combine(local_today() + timedelta(days=1), datetime.min.time())
+
+        query = (
+            db.query(Preventa, Cliente)
+            .outerjoin(Cliente, Cliente.id == Preventa.cliente_id)
+            .filter(
+                Preventa.vendedor_id == vendedor_id,
+                Preventa.fecha >= start_dt,
+                Preventa.fecha < end_dt,
+            )
+            .order_by(Preventa.fecha.desc(), Preventa.id.desc())
+            .limit(20)
+        )
+        if bodega:
+            query = query.filter(Preventa.bodega_id == bodega.id)
+        elif branch:
+            query = query.filter(Preventa.branch_id == branch.id)
+
+        estado_bootstrap = {
+            "PENDIENTE": "text-bg-danger",
+            "REVISION": "text-bg-warning",
+            "FACTURADA": "text-bg-success",
+            "ANULADA": "text-bg-secondary",
+        }
+
+        for preventa, cliente in query.all():
+            total_usd = Decimal(str(preventa.total_usd or 0))
+            total_cs = Decimal(str(preventa.total_cs or 0))
+            if total_usd > 0:
+                monto_label = _fmt_money(total_usd, "$")
+            else:
+                monto_label = _fmt_money(total_cs, "C$")
+            estado = (preventa.estado or "").upper()
+            badge = _preventa_estado_badge(estado)
+            home_preventas.append(
+                {
+                    "numero": preventa.numero,
+                    "fecha": preventa.fecha,
+                    "fecha_label": preventa.fecha.strftime("%Y-%m-%d %H:%M") if preventa.fecha else "-",
+                    "cliente": cliente.nombre if cliente else "Consumidor final",
+                    "monto_label": monto_label,
+                    "estado_label": badge["label"],
+                    "estado_class": estado_bootstrap.get(estado, "text-bg-light"),
+                }
+            )
+
     return request.app.state.templates.TemplateResponse(
         "home.html",
         {
             "request": request,
             "user": user,
             "version": settings.UI_VERSION,
+            "home_preventas": home_preventas,
         },
     )
 
@@ -1849,13 +2051,15 @@ def sales_page(
             )
             product_ids = [producto.id for _, producto in item_rows]
             balances = _balances_by_bodega(db, [preventa.bodega_id], product_ids) if product_ids else {}
+            required_by_product = _preventa_required_qty_map(item_rows)
             items = []
             for row, producto in item_rows:
                 existencia = float(balances.get((producto.id, preventa.bodega_id), Decimal("0")) or 0)
                 qty = float(row.cantidad or 0)
-                if existencia < qty:
+                required_qty = float(required_by_product.get(int(producto.id), Decimal("0")) or 0)
+                if existencia < required_qty:
                     return RedirectResponse(
-                        "/sales/preventas?error=La+preventa+tiene+items+sin+saldo+actualizado",
+                        f"/sales/preventas?error=Sin+saldo+actual+para+{producto.cod_producto}+en+preventa",
                         status_code=303,
                     )
                 items.append(
@@ -1864,8 +2068,11 @@ def sales_page(
                         "cod_producto": producto.cod_producto,
                         "descripcion": producto.descripcion,
                         "cantidad": qty,
+                        "existencia": existencia,
                         "precio_usd": float(row.precio_unitario_usd or 0),
                         "precio_cs": float(row.precio_unitario_cs or 0),
+                        "combo_role": row.combo_role,
+                        "combo_group": row.combo_group,
                     }
                 )
             initial_preventa = {
@@ -1875,6 +2082,7 @@ def sales_page(
                 "cliente_nombre": preventa.cliente.nombre if preventa.cliente else "Consumidor final",
                 "vendedor_id": preventa.vendedor_id,
                 "fecha": preventa.fecha.date().isoformat() if preventa.fecha else local_today().isoformat(),
+                "moneda": "USD",
                 "items": items,
             }
             if preventa.estado == "PENDIENTE":
@@ -2025,13 +2233,7 @@ def mobile_preventas_combos_search(
         )
         .join(
             ProductoCombo,
-            and_(
-                ProductoCombo.parent_producto_id == Producto.id,
-                or_(
-                    ProductoCombo.activo.is_(True),
-                    ProductoCombo.activo.is_(None),
-                ),
-            ),
+            ProductoCombo.parent_producto_id == Producto.id,
         )
         .filter(Producto.activo.is_(True))
         .filter(
@@ -2093,10 +2295,6 @@ def mobile_preventas_product_combo(
         db.query(ProductoCombo)
         .filter(
             ProductoCombo.parent_producto_id == product_id,
-            or_(
-                ProductoCombo.activo.is_(True),
-                ProductoCombo.activo.is_(None),
-            ),
         )
         .order_by(ProductoCombo.id)
         .all()
@@ -2197,13 +2395,18 @@ async def mobile_preventas_create(
     cliente_id = form.get("cliente_id") or None
     vendedor_id = form.get("vendedor_id") or None
     fecha = form.get("fecha")
-    moneda = (form.get("moneda") or "CS").upper()
+    moneda = (form.get("moneda") or "USD").upper()
+    if moneda not in {"USD", "CS"}:
+        moneda = "USD"
     observacion = (form.get("observacion") or "").strip() or None
     item_ids = form.getlist("item_producto_id")
     item_qtys = form.getlist("item_cantidad")
     item_prices = form.getlist("item_precio")
+    item_price_usds = form.getlist("item_precio_usd")
+    item_price_css = form.getlist("item_precio_cs")
     item_roles = form.getlist("item_role")
     item_combo_groups = form.getlist("item_combo_group")
+    preventa_id_raw = str(form.get("preventa_id") or "").strip()
 
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch or not bodega:
@@ -2260,37 +2463,53 @@ async def mobile_preventas_create(
         if not producto:
             return RedirectResponse("/m/preventas?error=Producto+no+encontrado", status_code=303)
         existencia = Decimal(str(balances.get((producto.id, bodega.id), Decimal("0")) or 0))
-        if existencia < qty:
-            return RedirectResponse(
-                f"/m/preventas?error=Sin+saldo+para+{producto.cod_producto}",
-                status_code=303,
-            )
-        conflict = _preventa_active_conflict(
+        reserved_qty, reserved_details = _preventa_reserved_by_others(
             db,
             bodega_id=bodega.id,
             producto_id=producto.id,
             vendedor_id=vendedor.id,
         )
-        if conflict:
-            preventa_conflict, vendedor_conflict = conflict
-            vendedor_name = vendedor_conflict.nombre if vendedor_conflict else "otro vendedor"
-            return RedirectResponse(
-                f"/m/preventas?error=Producto+{producto.cod_producto}+ya+esta+en+preventa+activa+de+{vendedor_name}+({preventa_conflict.numero})",
-                status_code=303,
-            )
+        libre = max(Decimal("0"), existencia - reserved_qty)
+        if qty > libre:
+            if reserved_details:
+                detail_parts = [
+                    f"{vend} ({numero}): {int(det_qty) if det_qty == det_qty.to_integral() else det_qty}"
+                    for numero, vend, det_qty in reserved_details
+                ]
+                detail_txt = "; ".join(detail_parts)
+                msg = (
+                    f"Saldo libre insuficiente para {producto.cod_producto}. "
+                    f"Solicitas {int(qty) if qty == qty.to_integral() else qty}, "
+                    f"libre {int(libre) if libre == libre.to_integral() else libre} "
+                    f"(existencia {int(existencia) if existencia == existencia.to_integral() else existencia}, "
+                    f"reservado en preventas activas: {detail_txt})."
+                )
+            else:
+                msg = f"Sin saldo para {producto.cod_producto}. Disponible {int(existencia) if existencia == existencia.to_integral() else existencia}."
+            return RedirectResponse(f"/m/preventas?{urlencode({'error': msg})}", status_code=303)
         price_input = _to_dec(item_prices[idx] if idx < len(item_prices) else "0")
-        if price_input <= 0:
-            price_input = _to_dec(producto.precio_venta1 if moneda == "CS" else producto.precio_venta1_usd)
+        price_usd_input = _to_dec(item_price_usds[idx] if idx < len(item_price_usds) else "0")
+        price_cs_input = _to_dec(item_price_css[idx] if idx < len(item_price_css) else "0")
         combo_role = item_roles[idx] if idx < len(item_roles) else None
         combo_group = item_combo_groups[idx] if idx < len(item_combo_groups) else None
         combo_role = str(combo_role or "").strip() or None
         combo_group = str(combo_group or "").strip() or None
-        if moneda == "USD":
-            precio_usd = price_input
-            precio_cs = (price_input * tasa).quantize(Decimal("0.01"))
+        if price_usd_input > 0 or price_cs_input > 0:
+            precio_usd = price_usd_input
+            precio_cs = price_cs_input
+            if precio_usd <= 0 and tasa > 0:
+                precio_usd = (precio_cs / tasa).quantize(Decimal("0.01"))
+            if precio_cs <= 0:
+                precio_cs = (precio_usd * tasa).quantize(Decimal("0.01")) if tasa > 0 else Decimal("0")
         else:
-            precio_cs = price_input
-            precio_usd = (price_input / tasa).quantize(Decimal("0.01")) if tasa > 0 else Decimal("0")
+            if price_input <= 0:
+                price_input = _to_dec(producto.precio_venta1 if moneda == "CS" else producto.precio_venta1_usd)
+            if moneda == "USD":
+                precio_usd = price_input
+                precio_cs = (price_input * tasa).quantize(Decimal("0.01"))
+            else:
+                precio_cs = price_input
+                precio_usd = (price_input / tasa).quantize(Decimal("0.01")) if tasa > 0 else Decimal("0")
         parsed_items.append(
             {
                 "producto": producto,
@@ -2383,6 +2602,12 @@ def sales_preventas_panel(
     if estado:
         query = query.filter(Preventa.estado == estado)
     preventas = query.order_by(Preventa.id.desc()).all()
+    repaired_any = False
+    for p in preventas:
+        if _repair_preventa_currency_if_needed(db, p):
+            repaired_any = True
+    if repaired_any:
+        db.commit()
     branches = db.query(Branch).order_by(Branch.name).all()
     vendedores = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre).all()
     rows = [
@@ -2431,6 +2656,8 @@ def sales_preventas_detail(
     preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
     if not preventa:
         return JSONResponse({"ok": False, "message": "Preventa no encontrada"}, status_code=404)
+    if _repair_preventa_currency_if_needed(db, preventa):
+        db.commit()
     rows = (
         db.query(PreventaItem, Producto)
         .join(Producto, Producto.id == PreventaItem.producto_id)
@@ -2440,6 +2667,8 @@ def sales_preventas_detail(
     )
     balances = _balances_by_bodega(db, [preventa.bodega_id], [p.id for _, p in rows]) if rows else {}
     items = []
+    total_usd_items = Decimal("0")
+    total_cs_items = Decimal("0")
     for item, producto in rows:
         existencia = float(balances.get((producto.id, preventa.bodega_id), Decimal("0")) or 0)
         qty = float(item.cantidad or 0)
@@ -2460,6 +2689,8 @@ def sales_preventas_detail(
                 "combo_group": combo_group,
             }
         )
+        total_usd_items += Decimal(str(item.subtotal_usd or 0))
+        total_cs_items += Decimal(str(item.subtotal_cs or 0))
     if preventa.estado == "PENDIENTE":
         preventa.estado = "REVISION"
         preventa.reviewed_at = local_now_naive()
@@ -2474,8 +2705,8 @@ def sales_preventas_detail(
                 "cliente": preventa.cliente.nombre if preventa.cliente else "Consumidor final",
                 "vendedor": preventa.vendedor.nombre if preventa.vendedor else "-",
                 "fecha": preventa.fecha.isoformat() if preventa.fecha else "",
-                "total_usd": float(preventa.total_usd or 0),
-                "total_cs": float(preventa.total_cs or 0),
+                "total_usd": float(total_usd_items),
+                "total_cs": float(total_cs_items),
             },
             "items": items,
         }
@@ -2525,9 +2756,13 @@ async def sales_preventas_usar_en_factura(
         .all()
     )
     balances = _balances_by_bodega(db, [preventa.bodega_id], [p.id for _, p in item_rows]) if item_rows else {}
-    for item, producto in item_rows:
+    required_by_product = _preventa_required_qty_map(item_rows)
+    for producto_id, required_qty in required_by_product.items():
+        producto = next((p for _item, p in item_rows if int(p.id) == int(producto_id)), None)
+        if not producto:
+            continue
         existencia = Decimal(str(balances.get((producto.id, preventa.bodega_id), Decimal("0")) or 0))
-        if existencia < Decimal(str(item.cantidad or 0)):
+        if existencia < required_qty:
             return RedirectResponse(
                 f"/sales/preventas?error=Sin+saldo+actual+para+{producto.cod_producto}",
                 status_code=303,
@@ -2535,8 +2770,33 @@ async def sales_preventas_usar_en_factura(
     if preventa.estado == "PENDIENTE":
         preventa.estado = "REVISION"
         preventa.reviewed_at = local_now_naive()
-        db.commit()
+    db.commit()
     return RedirectResponse(f"/sales?preventa_id={preventa.id}", status_code=303)
+
+
+@router.post("/sales/preventas/{preventa_id}/release")
+async def sales_preventas_release_from_sales(
+    request: Request,
+    preventa_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    if not preventa:
+        return JSONResponse({"ok": False, "message": "Preventa no encontrada"}, status_code=404)
+    if preventa.estado == "FACTURADA":
+        return JSONResponse(
+            {"ok": False, "message": "No se puede liberar una preventa facturada"},
+            status_code=400,
+        )
+    if preventa.estado == "ANULADA":
+        return JSONResponse({"ok": True, "message": "La preventa ya estaba anulada"})
+    preventa.estado = "ANULADA"
+    preventa.anulada_at = local_now_naive()
+    preventa.anulada_por = user.full_name or user.email
+    db.commit()
+    return JSONResponse({"ok": True, "message": f"Preventa {preventa.numero} liberada"})
 
 
 @router.get("/sales/utilitario")
@@ -9055,6 +9315,7 @@ def data_update_cliente(
 def sales_products_search(
     q: str = "",
     bodega_id: Optional[int] = None,
+    vendedor_id: Optional[int] = None,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -9090,11 +9351,24 @@ def sales_products_search(
     if bodega and productos:
         product_ids = [p.id for p in productos]
         balances = _balances_by_bodega(db, [bodega.id], product_ids)
+    reserved_totals: dict[int, Decimal] = {}
+    reserved_details: dict[int, list[dict[str, object]]] = {}
+    if bodega and productos:
+        reserved_totals, reserved_details = _preventa_reserved_bulk_by_others(
+            db,
+            bodega_id=bodega.id,
+            producto_ids=[p.id for p in productos],
+            vendedor_id=vendedor_id,
+            include_same_vendedor=True,
+        )
+
     items = []
     for producto in productos:
         existencia = 0.0
         if bodega and balances:
             existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0)
+        reserved_qty = float(reserved_totals.get(producto.id, Decimal("0")) or 0)
+        free_qty = max(0.0, existencia - reserved_qty)
         items.append(
             {
                 "id": producto.id,
@@ -9103,7 +9377,78 @@ def sales_products_search(
                 "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
                 "precio_venta1": float(producto.precio_venta1 or 0),
                 "existencia": existencia,
+                "reserved_qty": reserved_qty,
+                "free_qty": free_qty,
+                "reserved_details": reserved_details.get(producto.id, []),
                 "combo_count": len(producto.combo_children or []),
+            }
+        )
+    return JSONResponse({"ok": True, "items": items})
+
+
+@router.get("/sales/combo/{parent_id}/items")
+def sales_combo_items(
+    request: Request,
+    parent_id: int,
+    bodega_id: Optional[int] = None,
+    vendedor_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    parent = db.query(Producto).filter(Producto.id == parent_id, Producto.activo.is_(True)).first()
+    if not parent:
+        return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
+    _, resolved_bodega = _resolve_branch_bodega(db, user)
+    bodega = resolved_bodega
+    if bodega_id:
+        allowed_branch_ids = {b.id for b in (user.branches or [])}
+        requested = (
+            db.query(Bodega)
+            .filter(Bodega.id == bodega_id, Bodega.activo.is_(True))
+            .first()
+        )
+        if requested and (not allowed_branch_ids or requested.branch_id in allowed_branch_ids):
+            bodega = requested
+    rows = (
+        db.query(ProductoCombo, Producto)
+        .join(Producto, Producto.id == ProductoCombo.child_producto_id)
+        .filter(ProductoCombo.parent_producto_id == parent_id)
+        .order_by(ProductoCombo.id.asc())
+        .all()
+    )
+    children = [producto for _, producto in rows]
+    balances: dict[tuple[int, int], Decimal] = {}
+    reserved_totals: dict[int, Decimal] = {}
+    reserved_details: dict[int, list[dict[str, object]]] = {}
+    if bodega and children:
+        product_ids = [p.id for p in children]
+        balances = _balances_by_bodega(db, [bodega.id], product_ids)
+        reserved_totals, reserved_details = _preventa_reserved_bulk_by_others(
+            db,
+            bodega_id=bodega.id,
+            producto_ids=product_ids,
+            vendedor_id=vendedor_id,
+            include_same_vendedor=True,
+        )
+    items: list[dict[str, object]] = []
+    for combo, producto in rows:
+        existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0) if bodega else 0.0
+        reserved_qty = float(reserved_totals.get(producto.id, Decimal("0")) or 0)
+        free_qty = max(0.0, existencia - reserved_qty)
+        items.append(
+            {
+                "id": int(combo.id),
+                "child_id": int(producto.id),
+                "cod_producto": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "cantidad": float(combo.cantidad or 1),
+                "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
+                "precio_venta1": float(producto.precio_venta1 or 0),
+                "existencia": existencia,
+                "reserved_qty": reserved_qty,
+                "free_qty": free_qty,
+                "reserved_details": reserved_details.get(producto.id, []),
             }
         )
     return JSONResponse({"ok": True, "items": items})
@@ -10660,6 +11005,7 @@ async def sales_create_invoice(
     item_prices = form.getlist("item_precio")
     item_roles = form.getlist("item_role")
     item_combo_groups = form.getlist("item_combo_group")
+    preventa_id_raw = str(form.get("preventa_id") or "").strip()
 
     if not fecha:
         fecha = local_today().isoformat()
@@ -10671,7 +11017,7 @@ async def sales_create_invoice(
             vendedor_id = str(vendedor.id)
     if not vendedor_id or not fecha or not moneda:
         return RedirectResponse("/sales?error=Faltan+datos+obligatorios", status_code=303)
-    if not item_ids:
+    if not item_ids and not preventa_id_raw:
         return RedirectResponse("/sales?error=Agrega+productos+a+la+venta", status_code=303)
 
     rate_today = (
@@ -10732,15 +11078,73 @@ async def sales_create_invoice(
     )
     db.add(factura)
     db.flush()
+    preventa: Optional[Preventa] = None
+    source_items: list[dict[str, object]] = []
+    if preventa_id_raw:
+        if not preventa_id_raw.isdigit():
+            db.rollback()
+            return RedirectResponse("/sales?error=Preventa+invalida", status_code=303)
+        preventa = (
+            db.query(Preventa)
+            .filter(Preventa.id == int(preventa_id_raw))
+            .first()
+        )
+        if not preventa:
+            db.rollback()
+            return RedirectResponse("/sales?error=Preventa+no+encontrada", status_code=303)
+        if preventa.estado not in {"PENDIENTE", "REVISION"}:
+            db.rollback()
+            return RedirectResponse("/sales?error=Preventa+no+disponible+para+facturar", status_code=303)
+        if int(preventa.bodega_id or 0) != int(bodega.id):
+            db.rollback()
+            return RedirectResponse("/sales?error=Preventa+de+otra+bodega", status_code=303)
+        p_items = (
+            db.query(PreventaItem)
+            .filter(PreventaItem.preventa_id == preventa.id)
+            .order_by(PreventaItem.id.asc())
+            .all()
+        )
+        if not p_items:
+            db.rollback()
+            return RedirectResponse("/sales?error=Preventa+sin+items", status_code=303)
+        for p_item in p_items:
+            source_items.append(
+                {
+                    "product_id": int(p_item.producto_id),
+                    "qty": to_float(str(p_item.cantidad or 0)),
+                    "price_usd": to_float(str(p_item.precio_unitario_usd or 0)),
+                    "price_cs": to_float(str(p_item.precio_unitario_cs or 0)),
+                    "role": p_item.combo_role or None,
+                    "combo_group": p_item.combo_group or None,
+                }
+            )
+    else:
+        for index, product_id in enumerate(item_ids):
+            if not str(product_id).isdigit():
+                continue
+            source_items.append(
+                {
+                    "product_id": int(product_id),
+                    "qty": to_float(item_qtys[index] if index < len(item_qtys) else 0),
+                    "price_usd": None,
+                    "price_cs": None,
+                    "price_input": to_float(item_prices[index] if index < len(item_prices) else 0),
+                    "role": item_roles[index] if index < len(item_roles) else None,
+                    "combo_group": item_combo_groups[index] if index < len(item_combo_groups) else None,
+                }
+            )
+    if not source_items:
+        db.rollback()
+        return RedirectResponse("/sales?error=No+hay+items+validos", status_code=303)
 
     total_usd = 0.0
     total_cs = 0.0
     total_items = 0.0
-    product_ids = [int(pid) for pid in item_ids if str(pid).isdigit()]
+    product_ids = [int(it["product_id"]) for it in source_items if int(it["product_id"]) > 0]
     balances = _balances_by_bodega(db, [bodega.id], list(set(product_ids))) if product_ids else {}
-    for index, product_id in enumerate(item_ids):
-        qty = to_float(item_qtys[index] if index < len(item_qtys) else 0)
-        price = to_float(item_prices[index] if index < len(item_prices) else 0)
+    for src in source_items:
+        product_id = int(src["product_id"])
+        qty = to_float(str(src.get("qty") or 0))
         if qty <= 0:
             continue
 
@@ -10756,12 +11160,17 @@ async def sales_create_invoice(
             return RedirectResponse(f"/sales?error={mensaje}", status_code=303)
         balances[(producto.id, bodega.id)] = Decimal(str(existencia)) - to_decimal(qty)
 
-        if moneda == "USD":
-            precio_usd = price
-            precio_cs = price * tasa
+        if preventa:
+            precio_usd = to_float(str(src.get("price_usd") or 0))
+            precio_cs = to_float(str(src.get("price_cs") or 0))
         else:
-            precio_cs = price
-            precio_usd = price / tasa if tasa else 0
+            price = to_float(str(src.get("price_input") or 0))
+            if moneda == "USD":
+                precio_usd = price
+                precio_cs = price * tasa
+            else:
+                precio_cs = price
+                precio_usd = price / tasa if tasa else 0
 
         subtotal_usd = precio_usd * qty
         subtotal_cs = precio_cs * qty
@@ -10769,8 +11178,8 @@ async def sales_create_invoice(
         total_cs += subtotal_cs
         total_items += qty
 
-        combo_role = item_roles[index] if index < len(item_roles) else None
-        combo_group = item_combo_groups[index] if index < len(item_combo_groups) else None
+        combo_role = src.get("role")
+        combo_group = src.get("combo_group")
         combo_role = combo_role or None
         combo_group = combo_group or None
         item = VentaItem(
@@ -10842,6 +11251,10 @@ async def sales_create_invoice(
         return RedirectResponse("/sales?error=Pago+incompleto", status_code=303)
 
     factura.estado_cobranza = "PAGADA"
+    if preventa:
+        preventa.estado = "FACTURADA"
+        preventa.facturada_at = local_now_naive()
+        preventa.venta_factura_id = factura.id
     for pago in pagos:
         db.add(pago)
 

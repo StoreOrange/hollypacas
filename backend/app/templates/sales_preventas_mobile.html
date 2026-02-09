@@ -47,6 +47,12 @@
   .mobile-preventa .table .item-qty {
     min-width: 92px;
   }
+  .mobile-preventa .table .item-qty.is-combo {
+    background: #f1f5f9;
+    color: #64748b;
+    border-color: #cbd5e1;
+    pointer-events: none;
+  }
   .mobile-preventa .combo-parent-badge {
     display: inline-flex;
     align-items: center;
@@ -132,6 +138,60 @@
     font-weight: 700;
     letter-spacing: 0.01em;
   }
+  .swal2-popup.mobile-swal {
+    border-radius: 18px;
+    border: 1px solid #dbe6f4;
+    box-shadow: 0 14px 36px rgba(15, 23, 42, 0.22);
+    padding: 1rem 0.95rem 0.9rem;
+    width: min(92vw, 420px) !important;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .swal2-title.mobile-swal-title {
+    font-size: 1.02rem !important;
+    font-weight: 800 !important;
+    line-height: 1.2 !important;
+    color: #0f172a !important;
+    margin: 0.15rem 0 0.2rem !important;
+  }
+  .swal2-html-container.mobile-swal-text {
+    font-size: 0.92rem !important;
+    line-height: 1.38 !important;
+    color: #334155 !important;
+    margin: 0.12rem 0 0 !important;
+  }
+  .swal2-confirm.mobile-swal-confirm {
+    border: 0 !important;
+    border-radius: 12px !important;
+    background: linear-gradient(135deg, #0f3b82, #2563eb) !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.01em !important;
+    padding: 0.6rem 1rem !important;
+    min-width: 132px !important;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.28) !important;
+  }
+  .swal2-cancel.mobile-swal-cancel {
+    border-radius: 12px !important;
+    padding: 0.6rem 1rem !important;
+    font-weight: 700 !important;
+  }
+  .swal2-close.mobile-swal-close {
+    color: #64748b !important;
+    width: 2rem !important;
+    height: 2rem !important;
+    font-size: 1.2rem !important;
+  }
+  @media (max-width: 576px) {
+    .swal2-popup.mobile-swal {
+      padding: 0.95rem 0.85rem 0.8rem;
+    }
+    .swal2-title.mobile-swal-title {
+      font-size: 0.98rem !important;
+    }
+    .swal2-html-container.mobile-swal-text {
+      font-size: 0.88rem !important;
+    }
+  }
 </style>
 
 <div class="container py-3 mobile-preventa" style="max-width: 780px;">
@@ -169,6 +229,7 @@
   {% endif %}
 
   <form method="post" action="/m/preventas" id="preventaForm" autocomplete="off">
+    <input type="hidden" name="moneda" value="USD">
     <div class="card mb-3">
       <div class="card-body">
         <div class="row g-2">
@@ -309,6 +370,7 @@
               <i class="bi bi-search"></i>
             </button>
           </div>
+          <div id="comboGiftResults" class="list-group search-results mt-2"></div>
           <div id="comboGiftList" class="mt-2"></div>
         </div>
 
@@ -325,6 +387,8 @@
 
 <script>
   (() => {
+    const flashError = {{ (error or "") | tojson }};
+    const flashSuccess = {{ (success or "") | tojson }};
     const productSearch = document.getElementById("productSearch");
     const btnProductSearch = document.getElementById("btnProductSearch");
     const productResults = document.getElementById("productSearchResults");
@@ -343,6 +407,7 @@
     const comboGiftList = document.getElementById("comboGiftList");
     const comboGiftSearch = document.getElementById("comboGiftSearch");
     const btnComboGiftSearch = document.getElementById("btnComboGiftSearch");
+    const comboGiftResults = document.getElementById("comboGiftResults");
     const comboApply = document.getElementById("comboApply");
     const comboStatus = document.getElementById("comboStatus");
 
@@ -366,10 +431,30 @@
 
     function notify(icon, title, text) {
       if (typeof Swal !== "undefined") {
-        Swal.fire({ icon, title, text });
+        Swal.fire({
+          icon,
+          title,
+          html: `<div>${esc(String(text || ""))}</div>`,
+          showCloseButton: true,
+          confirmButtonText: "Entendido",
+          buttonsStyling: false,
+          customClass: {
+            popup: "mobile-swal",
+            title: "mobile-swal-title",
+            htmlContainer: "mobile-swal-text",
+            confirmButton: "mobile-swal-confirm",
+            closeButton: "mobile-swal-close",
+          },
+        });
       } else {
         alert(text || title);
       }
+    }
+
+    if (flashError) {
+      notify("warning", "Validacion de inventario", flashError);
+    } else if (flashSuccess) {
+      notify("success", "Preventa", flashSuccess);
     }
 
     function hideNoItems() {
@@ -450,12 +535,23 @@
           <div class="small">${esc(item.descripcion)}</div>
           <input type="hidden" name="item_producto_id" value="${item.id}">
           <input type="hidden" name="item_precio" value="${unitPriceDisplay}">
+          <input type="hidden" name="item_precio_usd" value="${role === "gift" ? 0 : priceUsd}">
+          <input type="hidden" name="item_precio_cs" value="${role === "gift" ? 0 : priceCs}">
           <input type="hidden" name="item_role" value="${role}">
           <input type="hidden" name="item_combo_group" value="${comboGroup}">
           <input type="hidden" name="item_cantidad" value="${qty}">
         </td>
         <td class="text-end">
-          <input class="form-control form-control-sm text-end item-qty" type="number" min="1" step="1" value="${qty}" style="max-width: 90px; margin-left:auto;" ${comboGroup ? "readonly" : ""}>
+          <input
+            class="form-control form-control-sm text-end item-qty ${comboGroup ? "is-combo" : ""}"
+            type="number"
+            min="1"
+            step="1"
+            value="${qty}"
+            inputmode="numeric"
+            style="max-width: 90px; margin-left:auto;"
+            ${comboGroup ? "readonly disabled tabindex=\"-1\" aria-readonly=\"true\"" : ""}
+          >
         </td>
         <td class="text-end">
           <div>${fmt(unitPriceDisplay, "$")}</div>
@@ -470,7 +566,24 @@
       const qtyInput = tr.querySelector(".item-qty");
       const hiddenQty = tr.querySelector('input[name="item_cantidad"]');
       if (qtyInput && !comboGroup) {
+        const selectAllQty = () => {
+          try {
+            qtyInput.focus();
+            qtyInput.select();
+            qtyInput.setSelectionRange?.(0, qtyInput.value.length);
+          } catch (_) {}
+        };
+        qtyInput.addEventListener("focus", selectAllQty);
+        qtyInput.addEventListener("click", selectAllQty);
+        qtyInput.addEventListener("touchstart", () => {
+          setTimeout(selectAllQty, 0);
+        }, { passive: true });
         qtyInput.addEventListener("input", () => {
+          const clean = Math.max(1, Math.round(Number(qtyInput.value || 1)));
+          qtyInput.value = String(clean);
+          hiddenQty.value = String(clean);
+        });
+        qtyInput.addEventListener("change", () => {
           const clean = Math.max(1, Math.round(Number(qtyInput.value || 1)));
           qtyInput.value = String(clean);
           hiddenQty.value = String(clean);
@@ -488,10 +601,19 @@
             Swal.fire({
               icon: "warning",
               title: "Eliminar combo",
-              text: "Este item pertenece a un combo. Se eliminara todo el combo.",
+              html: "<div>Este item pertenece a un combo.<br>Se eliminara todo el combo.</div>",
               showCancelButton: true,
               confirmButtonText: "Eliminar",
               cancelButtonText: "Cancelar",
+              buttonsStyling: false,
+              customClass: {
+                popup: "mobile-swal",
+                title: "mobile-swal-title",
+                htmlContainer: "mobile-swal-text",
+                confirmButton: "mobile-swal-confirm",
+                cancelButton: "mobile-swal-cancel",
+                closeButton: "mobile-swal-close",
+              },
             }).then((r) => { if (r.isConfirmed) doRemove(); });
           } else if (confirm("Eliminar todo el combo?")) {
             doRemove();
@@ -637,31 +759,21 @@
       comboParentAvailable.textContent = "0";
       comboParentPrice.textContent = fmt(0, "C$");
       comboGiftList.innerHTML = "<div class=\"small text-muted\">Sin regalias cargadas.</div>";
+      if (comboGiftResults) comboGiftResults.innerHTML = "";
       if (comboGiftSearch) comboGiftSearch.value = "";
       comboStatus.textContent = "";
     }
 
     function renderComboGifts() {
       if (!comboParent) {
-        comboGiftList.innerHTML = '<div class="small text-muted">Selecciona una oferta para ver y filtrar sus regalias.</div>';
+        comboGiftList.innerHTML = '<div class="small text-muted">Selecciona una oferta para ver o agregar regalias.</div>';
         return;
       }
       if (!comboGifts.length) {
         comboGiftList.innerHTML = '<div class="small text-muted">Sin regalias cargadas.</div>';
         return;
       }
-      const term = normalizeText(comboGiftSearch?.value || "");
-      const visibleGifts = comboGifts
-        .map((gift, idx) => ({ gift, idx }))
-        .filter(({ gift }) => {
-          if (!term) return true;
-          const text = normalizeText(`${gift.cod_producto || ""} ${gift.descripcion || ""}`);
-          return text.includes(term);
-        });
-      if (!visibleGifts.length) {
-        comboGiftList.innerHTML = '<div class="small text-muted">Sin coincidencias para ese filtro.</div>';
-        return;
-      }
+      const visibleGifts = comboGifts.map((gift, idx) => ({ gift, idx }));
       comboGiftList.innerHTML = visibleGifts.map(({ gift, idx }) => `
         <div class="d-flex justify-content-between align-items-center border rounded-3 px-2 py-1 mb-1">
           <div>
@@ -671,6 +783,7 @@
           <div class="d-flex align-items-center gap-2">
             <span class="small text-muted">x</span>
             <input class="form-control form-control-sm combo-gift-qty" data-idx="${idx}" type="number" min="1" step="1" value="${Math.max(1, Math.round(gift.cantidad || 1))}" style="max-width:76px;">
+            <button class="btn btn-outline-danger btn-sm combo-gift-remove" data-idx="${idx}" type="button"><i class="bi bi-x"></i></button>
           </div>
         </div>
       `).join("");
@@ -682,6 +795,17 @@
           input.value = String(qty);
           clampComboQty();
           renderComboPrice();
+        });
+      });
+      comboGiftList.querySelectorAll(".combo-gift-remove").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.dataset.idx || -1);
+          if (idx >= 0) {
+            comboGifts.splice(idx, 1);
+            clampComboQty();
+            renderComboGifts();
+            renderComboPrice();
+          }
         });
       });
     }
@@ -740,7 +864,7 @@
       comboParentResults.innerHTML = '<div class="list-group-item text-muted small">Buscando ofertas...</div>';
       let items = [];
       try {
-        const res = await fetch(`/m/preventas/combos/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
+        const res = await fetch(`/m/preventas/productos/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
         const data = await res.json();
         if (data?.ok) {
           items = (data.items || []);
@@ -749,22 +873,83 @@
         items = [];
       }
       if (!items.length) {
-        try {
-          // Fallback: catalogo general + filtro por productos que tienen combos
-          const res2 = await fetch(`/m/preventas/productos/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
-          const data2 = await res2.json();
-          if (data2?.ok) {
-            items = (data2.items || []).filter((it) => Number(it.combo_count || 0) > 0);
-          }
-        } catch (err) {
-          items = [];
-        }
-      }
-      if (!items.length) {
-        comboParentResults.innerHTML = '<div class="list-group-item text-muted small">Sin ofertas con combo.</div>';
+        comboParentResults.innerHTML = '<div class="list-group-item text-muted small">Sin resultados.</div>';
         return;
       }
       comboParentResults.innerHTML = "";
+      items.forEach((item) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "list-group-item list-group-item-action";
+        btn.innerHTML = `
+          <div class="d-flex justify-content-between gap-2">
+            <div>
+              <div class="fw-semibold">${esc(item.cod_producto)} - ${esc(item.descripcion)}</div>
+              <div class="small text-muted">${fmt(item.precio_venta1_usd, "$")} ${Number(item.combo_count || 0) > 0 ? "• combo configurado" : ""}</div>
+            </div>
+            <div class="small text-success">Exist: ${Number(item.existencia || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+          </div>
+        `;
+        btn.addEventListener("click", () => pickComboParent(item));
+        comboParentResults.appendChild(btn);
+      });
+    }
+
+    function addGiftToCombo(item) {
+      if (!comboParent) {
+        notify("warning", "Combo", "Selecciona primero una oferta.");
+        return;
+      }
+      if (Number(item.id) === Number(comboParent.id)) {
+        notify("warning", "Combo", "La oferta no puede ser regalia de si misma.");
+        return;
+      }
+      const existing = comboGifts.find((g) => Number(g.child_id) === Number(item.id));
+      if (existing) {
+        existing.cantidad = Math.max(1, Number(existing.cantidad || 1) + 1);
+      } else {
+        comboGifts.push({
+          child_id: item.id,
+          cod_producto: item.cod_producto,
+          descripcion: item.descripcion,
+          cantidad: 1,
+          precio_venta1_usd: Number(item.precio_venta1_usd || 0),
+          precio_venta1: Number(item.precio_venta1 || 0),
+          existencia: Number(item.existencia || 0),
+        });
+      }
+      comboGiftSearch.value = "";
+      if (comboGiftResults) comboGiftResults.innerHTML = "";
+      clampComboQty();
+      renderComboGifts();
+      renderComboPrice();
+    }
+
+    async function searchComboGifts() {
+      if (!comboParent) {
+        if (comboGiftResults) comboGiftResults.innerHTML = '<div class="list-group-item text-muted small">Selecciona oferta primero.</div>';
+        return;
+      }
+      const q = (comboGiftSearch.value || "").trim();
+      if (q.length < 2) {
+        if (comboGiftResults) comboGiftResults.innerHTML = "";
+        return;
+      }
+      if (comboGiftResults) comboGiftResults.innerHTML = '<div class="list-group-item text-muted small">Buscando regalias...</div>';
+      let items = [];
+      try {
+        const res = await fetch(`/m/preventas/productos/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
+        const data = await res.json();
+        if (data?.ok) items = data.items || [];
+      } catch (err) {
+        items = [];
+      }
+      if (!comboGiftResults) return;
+      if (!items.length) {
+        comboGiftResults.innerHTML = '<div class="list-group-item text-muted small">Sin resultados.</div>';
+        return;
+      }
+      comboGiftResults.innerHTML = "";
       items.forEach((item) => {
         const btn = document.createElement("button");
         btn.type = "button";
@@ -778,8 +963,8 @@
             <div class="small text-success">Exist: ${Number(item.existencia || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
           </div>
         `;
-        btn.addEventListener("click", () => pickComboParent(item));
-        comboParentResults.appendChild(btn);
+        btn.addEventListener("click", () => addGiftToCombo(item));
+        comboGiftResults.appendChild(btn);
       });
     }
 
@@ -914,12 +1099,12 @@
     });
     btnComboParentSearch?.addEventListener("click", searchComboParents);
     comboParentSearch?.addEventListener("input", debounce(searchComboParents, 240));
-    btnComboGiftSearch?.addEventListener("click", renderComboGifts);
-    comboGiftSearch?.addEventListener("input", renderComboGifts);
+    btnComboGiftSearch?.addEventListener("click", searchComboGifts);
+    comboGiftSearch?.addEventListener("input", debounce(searchComboGifts, 220));
     comboGiftSearch?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
-        renderComboGifts();
+        searchComboGifts();
       }
     });
     comboParentQty?.addEventListener("input", () => {
