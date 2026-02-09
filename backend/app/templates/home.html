@@ -31,7 +31,7 @@
               <i class="bi bi-box-seam"></i>
               Catalogo de productos
             </a>
-            {% if not has_perms or 'menu.sales.preventas' in perms %}
+            {% if not has_perms or 'menu.sales.preventas.mobile' in perms or 'menu.sales.preventas' in perms %}
             <a class="btn btn-outline-primary btn-sm shadow-sm d-inline-flex align-items-center gap-2" href="/m/preventas">
               <i class="bi bi-phone"></i>
               Nueva preventa movil
@@ -106,7 +106,7 @@
             <i class="bi bi-layout-sidebar-inset"></i>
             Ver mas modulos
           </button>
-          {% if not has_perms or 'menu.sales.preventas' in perms %}
+          {% if not has_perms or 'menu.sales.preventas.mobile' in perms or 'menu.sales.preventas' in perms %}
           <a class="btn btn-primary btn-sm" href="/m/preventas">
             <i class="bi bi-phone"></i>
             Nueva preventa movil
@@ -143,7 +143,7 @@
               </div>
             </a>
           </div>
-          {% if not has_perms or 'menu.sales.preventas' in perms %}
+          {% if not has_perms or 'menu.sales.preventas.mobile' in perms or 'menu.sales.preventas' in perms %}
           <div class="col-md-6 col-xl-4">
             <a class="text-decoration-none" href="/m/preventas">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">

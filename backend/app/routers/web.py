@@ -226,6 +226,7 @@ PERMISSION_GROUPS = [
             {"name": "menu.sales.cierre", "label": "Cierre de caja"},
             {"name": "menu.sales.comisiones", "label": "Registro de comisiones"},
             {"name": "menu.sales.preventas", "label": "Panel de preventas"},
+            {"name": "menu.sales.preventas.mobile", "label": "Nueva preventa movil"},
         ],
     },
     {
@@ -250,6 +251,7 @@ PERMISSION_GROUPS = [
             {"name": "access.sales.reversion", "label": "Reversion de facturas"},
             {"name": "access.sales.comisiones", "label": "Registro de comisiones"},
             {"name": "access.sales.preventas", "label": "Gestion de preventas"},
+            {"name": "access.sales.preventas.mobile", "label": "Crear preventas (movil)"},
             {"name": "access.inventory", "label": "Acceso a inventarios"},
             {"name": "access.inventory.caliente", "label": "Inventario en caliente"},
             {"name": "access.inventory.ingresos", "label": "Ingresos de inventario"},
@@ -274,6 +276,19 @@ def _permission_catalog_names() -> set[str]:
         for item in group["items"]:
             names.add(item["name"])
     return names
+
+
+def _ensure_permission_catalog_in_db(db: Session) -> None:
+    catalog_names = _permission_catalog_names()
+    existing_names = {
+        name
+        for (name,) in db.query(Permission.name).filter(Permission.name.in_(catalog_names)).all()
+    }
+    missing_names = sorted(catalog_names - existing_names)
+    if not missing_names:
+        return
+    db.add_all([Permission(name=name) for name in missing_names])
+    db.commit()
 
 
 def _require_admin_web(
@@ -389,6 +404,14 @@ def _vendedor_id_for_user(db: Session, user: User, bodega: Optional[Bodega]) -> 
 
 def _is_vendedor_role(user: User) -> bool:
     return any((role.name or "").lower() == "vendedor" for role in (user.roles or []))
+
+
+def _enforce_preventas_mobile_access(request: Request, user: User) -> None:
+    if _has_permission(user, "access.sales.preventas.mobile") or _has_permission(
+        user, "access.sales.preventas"
+    ):
+        return
+    _enforce_permission(request, user, "access.sales.preventas.mobile")
 
 
 def _preventa_estado_badge(estado: str) -> dict[str, str]:
@@ -1886,7 +1909,7 @@ def mobile_preventas_page(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
-    _enforce_permission(request, user, "access.sales.preventas")
+    _enforce_preventas_mobile_access(request, user)
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch or not bodega:
         raise HTTPException(status_code=400, detail="Usuario sin sucursal/bodega asignada")
@@ -1928,7 +1951,7 @@ def mobile_preventas_products_search(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
-    _enforce_permission(request, user, "access.sales.preventas")
+    _enforce_preventas_mobile_access(request, user)
     query = q.strip()
     if len(query) < 2:
         return JSONResponse({"ok": True, "items": []})
@@ -1982,7 +2005,7 @@ def mobile_preventas_clientes_search(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
-    _enforce_permission(request, user, "access.sales.preventas")
+    _enforce_preventas_mobile_access(request, user)
     query = (q or "").strip().lower()
     if len(query) < 2:
         return JSONResponse({"ok": True, "items": []})
@@ -2014,7 +2037,7 @@ async def mobile_preventas_create_cliente(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
-    _enforce_permission(request, user, "access.sales.preventas")
+    _enforce_preventas_mobile_access(request, user)
     form = await request.form()
     nombre = str(form.get("nombre") or "").strip()
     telefono = str(form.get("telefono") or "").strip() or None
@@ -2043,7 +2066,7 @@ async def mobile_preventas_create(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
-    _enforce_permission(request, user, "access.sales.preventas")
+    _enforce_preventas_mobile_access(request, user)
     form = await request.form()
     cliente_id = form.get("cliente_id") or None
     vendedor_id = form.get("vendedor_id") or None
@@ -8589,6 +8612,7 @@ def data_permisos(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.data.permissions")
+    _ensure_permission_catalog_in_db(db)
     role_id = request.query_params.get("role_id")
     error = request.query_params.get("error")
     success = request.query_params.get("success")
@@ -8629,6 +8653,7 @@ def data_permisos_update(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.data.permissions")
+    _ensure_permission_catalog_in_db(db)
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         return RedirectResponse("/data/permisos?error=Rol+no+existe", status_code=303)

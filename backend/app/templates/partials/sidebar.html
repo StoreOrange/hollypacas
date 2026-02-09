@@ -85,6 +85,8 @@
         <i class="bi bi-journal-richtext text-primary fs-5"></i>
         <span class="nav-text fw-semibold">Panel de preventas</span>
       </a>
+      {% endif %}
+      {% if not has_perms or 'menu.sales.preventas.mobile' in perms or 'menu.sales.preventas' in perms %}
       <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/m/preventas">
         <i class="bi bi-phone text-primary fs-5"></i>
         <span class="nav-text fw-semibold">Nueva preventa movil</span>
@@ -222,6 +224,8 @@
           <i class="bi bi-journal-richtext text-primary fs-5"></i>
           <span class="nav-text fw-semibold">Panel de preventas</span>
         </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales.preventas.mobile' in perms or 'menu.sales.preventas' in perms %}
         <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/m/preventas">
           <i class="bi bi-phone text-primary fs-5"></i>
           <span class="nav-text fw-semibold">Nueva preventa movil</span>
