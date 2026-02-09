@@ -772,6 +772,7 @@
   const comboStatus = document.getElementById("combo-status");
   const comboPreview = document.getElementById("combo-preview");
   const rateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
+  const activeBodegaId = Number({{ user.default_bodega.id if user.default_bodega else 0 }}) || 0;
   let currentTotals = { usd: 0, cs: 0 };
   let paymentItems = [];
   let paymentEnterStage = 0;
@@ -818,6 +819,14 @@
       }
     }
     return parseFloat(normalized) || 0;
+  };
+
+  const buildProductSearchUrl = (term) => {
+    const params = new URLSearchParams({ q: term || "" });
+    if (activeBodegaId > 0) {
+      params.set("bodega_id", String(activeBodegaId));
+    }
+    return `/sales/products/search?${params.toString()}`;
   };
 
   const formatMoneyInput = (value, currency) => {
@@ -1448,7 +1457,7 @@
         return;
       }
       try {
-        const response = await fetch(`/sales/products/search?q=${encodeURIComponent(value)}`);
+        const response = await fetch(buildProductSearchUrl(value));
         const payload = await response.json().catch(() => null);
         renderComboParentResults(payload?.items || []);
       } catch (error) {
@@ -1480,7 +1489,7 @@
         return;
       }
       try {
-        const response = await fetch(`/sales/products/search?q=${encodeURIComponent(value)}`);
+        const response = await fetch(buildProductSearchUrl(value));
         const payload = await response.json().catch(() => null);
         const items = payload?.items || [];
         renderComboGiftResults(items);
@@ -1797,7 +1806,7 @@
       }
       return;
     }
-    const response = await fetch(`/sales/products/search?q=${encodeURIComponent(query)}`);
+    const response = await fetch(buildProductSearchUrl(query));
     const payload = await response.json().catch(() => null);
     if (!payload || !payload.ok) {
       renderProducts([]);

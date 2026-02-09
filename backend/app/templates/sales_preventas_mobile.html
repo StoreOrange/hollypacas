@@ -726,13 +726,13 @@
         comboParentResults.innerHTML = "";
         return;
       }
-      const res = await fetch(`/m/preventas/productos/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
+      const res = await fetch(`/m/preventas/combos/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
       const data = await res.json();
       if (!data.ok) {
         comboParentResults.innerHTML = '<div class="list-group-item text-danger small">Error al buscar.</div>';
         return;
       }
-      const items = (data.items || []).filter((x) => Number(x.combo_count || 0) > 0);
+      const items = (data.items || []);
       if (!items.length) {
         comboParentResults.innerHTML = '<div class="list-group-item text-muted small">Sin ofertas con combo.</div>';
         return;

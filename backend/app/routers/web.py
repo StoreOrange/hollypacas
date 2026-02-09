@@ -317,30 +317,33 @@ def _require_user_web(
 
 def _resolve_branch_bodega(db: Session, user: User) -> tuple[Optional[Branch], Optional[Bodega]]:
     user_branches = list(user.branches or [])
+    allowed_branch_ids = {b.id for b in user_branches}
+    bodega = None
+    if user.default_bodega_id:
+        bodega = (
+            db.query(Bodega)
+            .filter(Bodega.id == user.default_bodega_id, Bodega.activo.is_(True))
+            .first()
+        )
+        if bodega and allowed_branch_ids and bodega.branch_id not in allowed_branch_ids:
+            bodega = None
+
     branch = None
-    if user.default_branch_id:
-        branch = db.query(Branch).filter(Branch.id == user.default_branch_id).first()
-    if not branch:
-        branch = next((b for b in user_branches if b.code == "central"), None)
+    if bodega:
+        branch = db.query(Branch).filter(Branch.id == bodega.branch_id).first()
+    if not branch and user.default_branch_id:
+        if not allowed_branch_ids or user.default_branch_id in allowed_branch_ids:
+            branch = db.query(Branch).filter(Branch.id == user.default_branch_id).first()
     if not branch and user_branches:
         branch = user_branches[0]
-    bodega = None
-    if branch:
-        if user.default_bodega_id:
-            bodega = (
-                db.query(Bodega)
-                .filter(Bodega.id == user.default_bodega_id, Bodega.activo.is_(True))
-                .first()
-            )
-            if bodega and bodega.branch_id != branch.id:
-                bodega = None
-        if not bodega:
-            bodega = (
-                db.query(Bodega)
-                .filter(Bodega.branch_id == branch.id, Bodega.activo.is_(True))
-                .order_by(Bodega.id)
-                .first()
-            )
+
+    if branch and (not bodega or bodega.branch_id != branch.id):
+        bodega = (
+            db.query(Bodega)
+            .filter(Bodega.branch_id == branch.id, Bodega.activo.is_(True))
+            .order_by(Bodega.id)
+            .first()
+        )
     return branch, bodega
 
 
@@ -1987,6 +1990,76 @@ def mobile_preventas_products_search(
                 "precio_venta1": float(producto.precio_venta1 or 0),
                 "existencia": existencia,
                 "combo_count": len(producto.combo_children or []),
+            }
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "items": items,
+            "branch": branch.name if branch else "-",
+            "bodega": bodega.name,
+        }
+    )
+
+
+@router.get("/m/preventas/combos/search")
+def mobile_preventas_combos_search(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preventas_mobile_access(request, user)
+    query = (q or "").strip()
+    if len(query) < 2:
+        return JSONResponse({"ok": True, "items": []})
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not bodega:
+        return JSONResponse({"ok": False, "message": "Usuario sin bodega asignada"}, status_code=400)
+
+    like = f"%{query.lower()}%"
+    rows = (
+        db.query(
+            Producto,
+            func.count(ProductoCombo.id).label("combo_count"),
+        )
+        .join(
+            ProductoCombo,
+            and_(
+                ProductoCombo.parent_producto_id == Producto.id,
+                ProductoCombo.activo.is_(True),
+            ),
+        )
+        .filter(Producto.activo.is_(True))
+        .filter(
+            or_(
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+            )
+        )
+        .group_by(Producto.id)
+        .order_by(Producto.descripcion)
+        .limit(100)
+        .all()
+    )
+
+    productos = [producto for producto, _ in rows]
+    balances: dict[tuple[int, int], Decimal] = {}
+    if productos:
+        balances = _balances_by_bodega(db, [bodega.id], [p.id for p in productos])
+
+    items = []
+    for producto, combo_count in rows:
+        existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0)
+        items.append(
+            {
+                "id": producto.id,
+                "cod_producto": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
+                "precio_venta1": float(producto.precio_venta1 or 0),
+                "existencia": existencia,
+                "combo_count": int(combo_count or 0),
             }
         )
     return JSONResponse(
@@ -8972,6 +9045,7 @@ def data_update_cliente(
 @router.get("/sales/products/search")
 def sales_products_search(
     q: str = "",
+    bodega_id: Optional[int] = None,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -8992,7 +9066,17 @@ def sales_products_search(
         .limit(100)
         .all()
     )
-    _, bodega = _resolve_branch_bodega(db, user)
+    _, resolved_bodega = _resolve_branch_bodega(db, user)
+    bodega = resolved_bodega
+    if bodega_id:
+        allowed_branch_ids = {b.id for b in (user.branches or [])}
+        requested = (
+            db.query(Bodega)
+            .filter(Bodega.id == bodega_id, Bodega.activo.is_(True))
+            .first()
+        )
+        if requested and (not allowed_branch_ids or requested.branch_id in allowed_branch_ids):
+            bodega = requested
     balances: dict[tuple[int, int], Decimal] = {}
     if bodega and productos:
         product_ids = [p.id for p in productos]
@@ -9002,8 +9086,6 @@ def sales_products_search(
         existencia = 0.0
         if bodega and balances:
             existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0)
-        elif producto.saldo:
-            existencia = float(producto.saldo.existencia or 0)
         items.append(
             {
                 "id": producto.id,
