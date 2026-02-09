@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block extra_head %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flowbite@2.5.2/dist/flowbite.min.css" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/daisyui.css" />
@@ -12,8 +12,8 @@
   :root {
     --grid-border: #d8e0ea;
     --grid-head-bg: #f1f5fb;
-    --grid-row-alt: #fbfdff;
-    --grid-row-hover: #eef4ff;
+    --grid-row-alt: #fcfdfd;
+    --grid-row-hover: #eefaf6;
     --grid-text: #0f172a;
   }
   .commission-module {
@@ -54,6 +54,12 @@
     min-width: 1040px;
     table-layout: fixed;
   }
+  .assignment-grid thead th {
+    text-align: center;
+    vertical-align: middle;
+    line-height: 1.2;
+    white-space: normal;
+  }
   .commission-grid thead th {
     position: sticky;
     top: 0;
@@ -67,7 +73,7 @@
     border-right: 1px solid #e7edf5;
     padding: 10px 9px;
     vertical-align: middle;
-    white-space: nowrap;
+    white-space: normal;
   }
   .commission-grid thead th:last-child {
     border-right: 0;
@@ -114,32 +120,56 @@
   .commission-grid tfoot th:last-child {
     border-right: 0;
   }
-  .commission-grid tbody tr:nth-child(even):not(.table-light) td {
+  .commission-grid tbody tr:nth-child(even):not(.assignment-group-row) td {
     background: var(--grid-row-alt);
   }
-  .commission-grid tbody tr:hover:not(.table-light) td {
+  .commission-grid tbody tr:hover:not(.assignment-group-row) td {
     background: var(--grid-row-hover);
+  }
+  .commission-grid.table-hover > tbody > tr:hover > * {
+    background-color: var(--grid-row-hover) !important;
+    color: var(--grid-text) !important;
+  }
+  .assignment-group-row td {
+    background: #f8fafc !important;
   }
   .commission-grid tfoot th {
     position: sticky;
     bottom: 0;
     z-index: 1;
-    background: #edf3ff;
-    color: #0f2f5e;
-    border-top: 1px solid #c8d7ef;
+    background: #f1f5f9;
+    color: #0f172a;
+    border-top: 1px solid #d7e0ea;
     font-weight: 800;
   }
   .assignment-row-updated td {
-    background: rgba(59, 130, 246, 0.14) !important;
+    background: rgba(16, 185, 129, 0.16) !important;
+  }
+  tr[data-assignment-row].assignment-row-active td {
+    background: #1d4ed8 !important;
+    color: #ffffff !important;
+    border-right-color: rgba(255, 255, 255, 0.24) !important;
+    border-bottom-color: rgba(255, 255, 255, 0.24) !important;
+  }
+  tr[data-assignment-row].assignment-row-active .assignment-qty,
+  tr[data-assignment-row].assignment-row-active .assignment-vendedor {
+    background: rgba(255, 255, 255, 0.95) !important;
+    color: #0f172a !important;
+    border-color: rgba(255, 255, 255, 0.95) !important;
+  }
+  tr[data-assignment-row].assignment-row-active .assignment-total-item,
+  tr[data-assignment-row].assignment-row-active .assignment-commission-unit,
+  tr[data-assignment-row].assignment-row-active .assignment-commission-total {
+    color: #ffffff !important;
   }
   .assignment-group-title {
     color: #7f1d1d;
     font-size: 1.15rem;
     font-weight: 800;
     letter-spacing: 0.01em;
-    background: #eef3fb !important;
-    border-top: 1px solid #dce7f8;
-    border-bottom: 1px solid #dce7f8;
+    background: #f8fafc !important;
+    border-top: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
     padding-top: 10px !important;
     padding-bottom: 10px !important;
   }
@@ -183,10 +213,13 @@
     box-shadow: 0 0 0 0.18rem rgba(79, 132, 217, 0.2);
   }
   .grid-tools {
-    background: #f8fbff;
+    background: linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);
     border: 1px solid #dbe6f5;
-    border-radius: 10px;
-    padding: 10px;
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .flow-grid-tools {
+    box-shadow: 0 10px 24px -16px rgba(15, 23, 42, 0.25);
   }
   .grid-tools .form-label {
     margin-bottom: 3px;
@@ -199,6 +232,68 @@
   .grid-tools .form-control,
   .grid-tools .form-select {
     min-height: 34px;
+  }
+  .grid-tools .toolbar-field {
+    min-width: 0;
+  }
+  .grid-tools .toolbar-field .input,
+  .grid-tools .toolbar-field .select,
+  .grid-tools .toolbar-field .btn {
+    height: 36px;
+  }
+  .grid-tools .toolbar-field .flow-grid-control {
+    font-size: 0.84rem;
+    border-color: #cfd9ea;
+    background: #fff;
+    border-radius: 0.55rem;
+    padding: 0.45rem 0.65rem;
+    border-width: 1px;
+    color: #0f172a;
+  }
+  .grid-tools .toolbar-field .flow-grid-control::placeholder {
+    color: #64748b;
+  }
+  .grid-tools .toolbar-field .flow-grid-control:focus {
+    border-color: #4f84d9;
+    box-shadow: 0 0 0 0.18rem rgba(79, 132, 217, 0.16);
+    outline: none;
+  }
+  .grid-tools .toolbar-field .flow-grid-btn {
+    border-radius: 0.55rem;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #0f172a;
+    font-size: 0.82rem;
+    font-weight: 700;
+    transition: all .15s ease;
+  }
+  .grid-tools .toolbar-field .flow-grid-btn:hover {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+  }
+  .grid-tools .toolbar-page {
+    height: 36px;
+    border: 1px solid #cfd9ea;
+    border-radius: 8px;
+    background: #fff;
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .top-filters .form-label {
+    margin-bottom: 3px;
+    white-space: nowrap;
+  }
+  .top-filters .form-control,
+  .top-filters .form-select,
+  .top-filters .btn {
+    width: 100%;
+    min-height: 34px;
+  }
+  .top-filters .btn {
+    white-space: nowrap;
   }
   @media (max-width: 1400px) {
     .commission-grid thead th {
@@ -332,13 +427,13 @@
 
       <section id="tab-asignacion" class="{% if active_tab != 'asignacion' %}d-none{% endif %}">
         <div class="odoo-card mb-3">
-          <form class="grid grid-cols-1 md:grid-cols-12 gap-2 items-end" method="get" action="/sales/comisiones">
+          <form class="top-filters grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-12 gap-2 items-end" method="get" action="/sales/comisiones">
             <input type="hidden" name="tab" value="asignacion">
-            <div class="md:col-span-2">
+            <div class="xl:col-span-2 min-w-0">
               <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Dia</label>
               <input name="fecha" type="date" class="form-control form-control-sm" value="{{ fecha }}">
             </div>
-            <div class="md:col-span-3">
+            <div class="xl:col-span-3 min-w-0">
               <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
               <select name="branch_id" class="form-select form-select-sm">
                 <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
@@ -347,7 +442,7 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="md:col-span-2">
+            <div class="xl:col-span-2 min-w-0">
               <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor facturacion</label>
               <select name="vendedor_facturacion_id" class="form-select form-select-sm">
                 <option value="">Todos</option>
@@ -356,7 +451,7 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="md:col-span-2">
+            <div class="xl:col-span-2 min-w-0">
               <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor asignado</label>
               <select name="vendedor_asignado_id" class="form-select form-select-sm">
                 <option value="">Todos</option>
@@ -365,12 +460,12 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="md:col-span-2">
+            <div class="xl:col-span-2 min-w-0">
               <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto</label>
               <input name="producto_asig_q" class="form-control form-control-sm" placeholder="Codigo o descripcion" value="{{ producto_asig_q }}">
             </div>
-            <div class="md:col-span-1">
-              <button class="btn btn-outline-secondary btn-sm w-full" type="submit">
+            <div class="xl:col-span-1 min-w-0">
+              <button class="btn btn-outline-secondary btn-sm" type="submit">
                 <i class="bi bi-search"></i>
                 Filtrar
               </button>
@@ -444,15 +539,15 @@
             </div>
           </div>
 
-          <div class="grid-tools mb-3 p-3 rounded-xl border border-slate-200 bg-slate-50/70" data-theme="corporate">
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
-              <div class="md:col-span-4">
+          <div class="grid-tools flow-grid-tools mb-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 xl:grid-cols-12 gap-2 items-end">
+              <div class="toolbar-field xl:col-span-4">
                 <label class="form-label">Buscar</label>
-                <input id="assignment-grid-search" class="input input-bordered input-sm w-full" type="text" placeholder="Factura, cliente, descripcion, vendedor...">
+                <input id="assignment-grid-search" class="flow-grid-control w-full" type="text" placeholder="Factura, cliente, descripcion, vendedor...">
               </div>
-              <div class="md:col-span-3">
+              <div class="toolbar-field xl:col-span-2">
                 <label class="form-label">Ordenar por</label>
-                <select id="assignment-grid-sort" class="select select-bordered select-sm w-full">
+                <select id="assignment-grid-sort" class="flow-grid-control w-full">
                   <option value="factura">Factura</option>
                   <option value="cliente">Cliente</option>
                   <option value="descripcion">Descripcion</option>
@@ -463,53 +558,53 @@
                   <option value="vendedor_asignado">Vendedor asignado</option>
                 </select>
               </div>
-              <div class="md:col-span-2">
+              <div class="toolbar-field xl:col-span-2">
                 <label class="form-label">Direccion</label>
-                <button id="assignment-grid-dir" type="button" class="btn btn-outline btn-sm w-full" data-dir="asc">
+                <button id="assignment-grid-dir" type="button" class="flow-grid-btn w-full" data-dir="asc">
                   Ascendente
                 </button>
               </div>
-              <div class="md:col-span-1">
+              <div class="toolbar-field xl:col-span-2">
                 <label class="form-label">Filas</label>
-                <select id="assignment-grid-size" class="select select-bordered select-sm w-full">
+                <select id="assignment-grid-size" class="flow-grid-control w-full">
                   <option value="15">15</option>
                   <option value="25" selected>25</option>
                   <option value="50">50</option>
                   <option value="100">100</option>
                 </select>
               </div>
-              <div class="md:col-span-2">
+              <div class="toolbar-field xl:col-span-2">
                 <label class="form-label">Pagina</label>
-                <div class="join w-full">
-                  <button id="assignment-grid-prev" type="button" class="btn btn-outline btn-sm join-item w-1/4">&laquo;</button>
-                  <button id="assignment-grid-next" type="button" class="btn btn-outline btn-sm join-item w-1/4">&raquo;</button>
-                  <div id="assignment-grid-page" class="join-item flex-1 px-2 h-8 flex items-center justify-center text-xs text-slate bg-white border border-slate-300 rounded-r-lg">1 / 1</div>
+                <div class="flex w-full gap-1">
+                  <button id="assignment-grid-prev" type="button" class="flow-grid-btn w-10">&laquo;</button>
+                  <button id="assignment-grid-next" type="button" class="flow-grid-btn w-10">&raquo;</button>
+                  <div id="assignment-grid-page" class="toolbar-page flex-1 px-2 flex items-center justify-center">1 / 1</div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="table-responsive commission-grid-wrap">
+          <div class="table-responsive commission-grid-wrap ring-1 ring-slate-200">
             <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid assignment-grid">
               <colgroup>
                 <col style="width:7%">
                 <col style="width:11%">
-                <col style="width:22%">
+                <col style="width:23%">
+                <col style="width:4.5%">
                 <col style="width:6%">
-                <col style="width:6%">
                 <col style="width:8%">
                 <col style="width:8%">
                 <col style="width:8%">
                 <col style="width:8%">
-                <col style="width:12%">
-                <col style="width:4%">
+                <col style="width:11%">
+                <col style="width:5.5%">
               </colgroup>
               <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
                 <tr>
                   <th>Factura</th>
                   <th>Cliente</th>
                   <th>Descripcion</th>
-                  <th class="text-end">Cant. vendida</th>
+                  <th class="text-end">Cant.<br>vendida</th>
                   <th class="text-end">Cantidad</th>
                   <th class="text-end">Precio vendido</th>
                   <th class="text-end">Comision unit USD</th>
@@ -524,7 +619,7 @@
                 {% for row in assignment_rows %}
                 {% if row.vendedor_nombre != ns.current_vendor %}
                 {% set ns.current_vendor = row.vendedor_nombre %}
-                <tr class="table-light">
+                <tr class="assignment-group-row">
                   <td colspan="11" class="assignment-group-title">Asignado: {{ row.vendedor_nombre }}</td>
                 </tr>
                 {% endif %}
@@ -641,22 +736,22 @@
 
       <section id="tab-reportes" class="{% if active_tab != 'reportes' %}d-none{% endif %}">
         <div class="odoo-card mb-3">
-          <form class="row g-2 align-items-end" method="get" action="/sales/comisiones">
+          <form class="top-filters grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-12 gap-2 items-end" method="get" action="/sales/comisiones">
             <input type="hidden" name="tab" value="reportes">
             <input type="hidden" name="fecha" value="{{ fecha }}">
             <input type="hidden" name="branch_id" value="{{ selected_branch }}">
             <input type="hidden" name="vendedor_facturacion_id" value="{{ selected_vendedor_facturacion }}">
             <input type="hidden" name="vendedor_asignado_id" value="{{ selected_vendedor_asignado }}">
             <input type="hidden" name="producto_asig_q" value="{{ producto_asig_q }}">
-            <div class="col-12 col-md-2">
+            <div class="xl:col-span-2 min-w-0">
               <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
               <input name="rep_start_date" type="date" class="form-control form-control-sm" value="{{ rep_start_date }}">
             </div>
-            <div class="col-12 col-md-2">
+            <div class="xl:col-span-2 min-w-0">
               <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
               <input name="rep_end_date" type="date" class="form-control form-control-sm" value="{{ rep_end_date }}">
             </div>
-            <div class="col-12 col-md-3">
+            <div class="xl:col-span-3 min-w-0">
               <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
               <select name="rep_branch_id" class="form-select form-select-sm">
                 <option value="all" {% if rep_selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
@@ -665,7 +760,7 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-12 col-md-3">
+            <div class="xl:col-span-3 min-w-0">
               <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor</label>
               <select name="rep_vendedor_id" class="form-select form-select-sm">
                 <option value="">Todos</option>
@@ -674,13 +769,13 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-12 col-md-auto">
+            <div class="xl:col-span-1 min-w-0">
               <button class="btn btn-outline-secondary btn-sm" type="submit">
                 <i class="bi bi-search"></i>
                 Filtrar
               </button>
             </div>
-            <div class="col-12 col-md-auto">
+            <div class="xl:col-span-1 min-w-0">
               <a
                 class="btn btn-primary btn-sm"
                 target="_blank"
@@ -989,25 +1084,36 @@
       const byItem = {};
       rows.forEach((row) => {
         const itemId = row.getAttribute("data-venta-item-id");
+        if (!itemId) return;
         if (!byItem[itemId]) byItem[itemId] = [];
         byItem[itemId].push(row);
       });
       Object.values(byItem).forEach((groupRows) => {
         const primary = groupRows.find((row) => row.getAttribute("data-is-primary") === "1");
-        // Si no existe fila principal visible, no rebalanceamos para no dañar cantidades.
+        // Si no existe fila principal visible, no rebalanceamos para no danar cantidades.
         if (!primary) return;
-        const totalQty = parseQty(primary.getAttribute("data-total-item"));
+        const primaryInput = primary.querySelector(".assignment-qty");
+        const currentPrimaryQty = normalizeQtyInput(primaryInput);
+        let totalQty = parseQty(primary.getAttribute("data-total-item"));
+        // Evita colapsar a cero cuando el total viene inconsistente.
+        if (totalQty <= 0) {
+          totalQty = Math.max(
+            currentPrimaryQty,
+            ...groupRows.map((row) => parseQty(row.getAttribute("data-cantidad")))
+          );
+          primary.setAttribute("data-total-item", `${totalQty}`);
+        }
         let sumOthers = 0;
         groupRows.forEach((row) => {
           if (row === primary) return;
           const qtyInput = row.querySelector(".assignment-qty");
           sumOthers += normalizeQtyInput(qtyInput);
         });
-        const primaryInput = primary.querySelector(".assignment-qty");
         const remaining = totalQty - sumOthers;
         if (remaining < 0) {
           invalid = true;
-          if (primaryInput) primaryInput.value = "0";
+          // No forzamos a cero para evitar perdida de datos visibles.
+          if (primaryInput) primaryInput.value = `${currentPrimaryQty}`;
           primary.classList.add("table-danger");
         } else {
           if (primaryInput) primaryInput.value = `${remaining}`;
@@ -1089,6 +1195,11 @@
     const getRowText = (row, selector) =>
       (row.querySelector(selector)?.textContent || "").trim();
 
+    const getAssignedVendorName = (row) =>
+      (
+        row.querySelector(".assignment-vendedor option:checked")?.textContent || "-"
+      ).trim();
+
     const getSortValue = (row, sortBy) => {
       if (sortBy === "factura") return getRowText(row, "td:nth-child(1)").toLowerCase();
       if (sortBy === "cliente") return getRowText(row, "td:nth-child(2)").toLowerCase();
@@ -1098,9 +1209,7 @@
       if (sortBy === "precio") return parseMoney(getRowText(row, "td:nth-child(6)"));
       if (sortBy === "vendedor_facturacion") return getRowText(row, "td:nth-child(9)").toLowerCase();
       if (sortBy === "vendedor_asignado") {
-        return (
-          row.querySelector(".assignment-vendedor option:checked")?.textContent || ""
-        ).trim().toLowerCase();
+        return getAssignedVendorName(row).toLowerCase();
       }
       return getRowText(row, "td:nth-child(1)").toLowerCase();
     };
@@ -1138,13 +1247,26 @@
       );
 
       rows.sort((a, b) => {
+        // Agrupa siempre por vendedor asignado para que los repartos queden bajo su bloque.
+        const vendorA = getAssignedVendorName(a).toLowerCase();
+        const vendorB = getAssignedVendorName(b).toLowerCase();
+        const vendorCmp = vendorA.localeCompare(vendorB);
+        if (vendorCmp !== 0) return vendorCmp;
+
         const va = getSortValue(a, assignmentGridState.sortBy);
         const vb = getSortValue(b, assignmentGridState.sortBy);
         if (typeof va === "number" && typeof vb === "number") {
           return assignmentGridState.dir === "asc" ? va - vb : vb - va;
         }
         const cmp = String(va).localeCompare(String(vb));
-        return assignmentGridState.dir === "asc" ? cmp : -cmp;
+        if (cmp !== 0) return assignmentGridState.dir === "asc" ? cmp : -cmp;
+
+        // Empate: conservar orden consistente por factura y temp-id.
+        const fa = getRowText(a, "td:nth-child(1)").toLowerCase();
+        const fb = getRowText(b, "td:nth-child(1)").toLowerCase();
+        const facturaCmp = fa.localeCompare(fb);
+        if (facturaCmp !== 0) return facturaCmp;
+        return parseIntSafe(a.getAttribute("data-temp-id")) - parseIntSafe(b.getAttribute("data-temp-id"));
       });
 
       const pageSize = Math.max(1, parseIntSafe(assignmentGridState.pageSize));
@@ -1168,7 +1290,7 @@
         if (vendorName !== currentVendor) {
           currentVendor = vendorName;
           const groupRow = document.createElement("tr");
-          groupRow.className = "table-light";
+          groupRow.className = "assignment-group-row";
           groupRow.setAttribute("data-dynamic-group", "1");
           groupRow.innerHTML = `<td colspan="11" class="assignment-group-title">Asignado: ${escapeHtml(vendorName)}</td>`;
           assignmentBody.appendChild(groupRow);
@@ -1188,6 +1310,16 @@
       const qtyInput = row.querySelector(".assignment-qty");
       const splitBtn = row.querySelector(".assignment-split");
       const removeBtn = row.querySelector(".assignment-remove");
+
+      const setActiveRow = () => {
+        assignmentBody?.querySelectorAll("tr[data-assignment-row].assignment-row-active").forEach((r) => {
+          if (r !== row) r.classList.remove("assignment-row-active");
+        });
+        row.classList.add("assignment-row-active");
+      };
+
+      row.addEventListener("click", () => setActiveRow());
+      row.addEventListener("focusin", () => setActiveRow());
 
       if (vendedorSelect) {
         vendedorSelect.addEventListener("change", () => {
@@ -1252,7 +1384,7 @@
           console.warn("No se pudo restaurar borrador de asignacion", error);
         }
       }
-      assignmentBody.querySelectorAll("tr.table-light:not([data-dynamic-group='1'])").forEach((row) => row.remove());
+      assignmentBody.querySelectorAll("tr.assignment-group-row:not([data-dynamic-group='1'])").forEach((row) => row.remove());
       assignmentBody.querySelectorAll("tr[data-assignment-row]").forEach((row) => bindRowActions(row));
       updateTotals();
       renderAssignmentGrid();
@@ -1392,7 +1524,7 @@
           const ventaItemId = Number.parseInt(row.getAttribute("data-venta-item-id") || "0", 10);
           const vendedorId = Number.parseInt((row.querySelector(".assignment-vendedor")?.value || "0"), 10);
           const cantidad = parseQty(row.getAttribute("data-cantidad"));
-          if (!ventaItemId || !vendedorId || cantidad <= 0) return;
+          if (!ventaItemId || !vendedorId || cantidad < 0) return;
           rows.push({
             temp_id: Number.parseInt(row.getAttribute("data-temp-id") || "0", 10),
             venta_item_id: ventaItemId,
@@ -1418,3 +1550,4 @@
   })();
 </script>
 {% endblock %}
+

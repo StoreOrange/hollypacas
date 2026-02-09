@@ -4,6 +4,8 @@
   {% include "partials/sidebar.html" %}
 
   <main class="p-4 sm:p-6 lg:p-8 text-[18px]">
+    {% set has_perms = request.state.has_permissions if request and request.state else false %}
+    {% set perms = request.state.permission_names if has_perms else [] %}
     <div class="odoo-page">
       <div class="odoo-header">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
@@ -29,6 +31,12 @@
               <i class="bi bi-box-seam"></i>
               Catalogo de productos
             </a>
+            {% if not has_perms or 'menu.sales.preventas' in perms %}
+            <a class="btn btn-outline-primary btn-sm shadow-sm d-inline-flex align-items-center gap-2" href="/m/preventas">
+              <i class="bi bi-phone"></i>
+              Nueva preventa movil
+            </a>
+            {% endif %}
             <a class="btn btn-outline-secondary btn-sm shadow-sm d-inline-flex align-items-center gap-2" href="/inventory/ingresos">
               <i class="bi bi-box-arrow-in-down"></i>
               Ingresos de inventario
@@ -98,6 +106,12 @@
             <i class="bi bi-layout-sidebar-inset"></i>
             Ver mas modulos
           </button>
+          {% if not has_perms or 'menu.sales.preventas' in perms %}
+          <a class="btn btn-primary btn-sm" href="/m/preventas">
+            <i class="bi bi-phone"></i>
+            Nueva preventa movil
+          </a>
+          {% endif %}
           <span class="text-slate text-sm">Accesos completos en el menu</span>
         </div>
         <div class="row g-4">
@@ -129,6 +143,22 @@
               </div>
             </a>
           </div>
+          {% if not has_perms or 'menu.sales.preventas' in perms %}
+          <div class="col-md-6 col-xl-4">
+            <a class="text-decoration-none" href="/m/preventas">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Preventa movil</div>
+                  <span class="odoo-pill primary">
+                    <i class="bi bi-journal-richtext"></i>
+                    Ventas
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Crear y enviar preventas desde telefono, con cliente y validacion de inventario.</p>
+              </div>
+            </a>
+          </div>
+          {% endif %}
           <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <a class="text-decoration-none" href="/reports">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">

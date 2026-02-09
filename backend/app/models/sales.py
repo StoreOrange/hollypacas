@@ -258,6 +258,56 @@ class VentaComisionFinal(Base):
     vendedor_asignado = relationship("Vendedor", foreign_keys=[vendedor_asignado_id])
 
 
+class Preventa(Base):
+    __tablename__ = "ventas_preventas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    secuencia = Column(Integer, nullable=False, default=1)
+    numero = Column(String(24), nullable=False, unique=True)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
+    vendedor_id = Column(Integer, ForeignKey("vendedores.id"), nullable=False)
+    fecha = Column(DateTime, server_default=func.now())
+    estado = Column(String(20), nullable=False, default="PENDIENTE")
+    observacion = Column(String(400), nullable=True)
+    total_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    total_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    total_items = Column(Numeric(14, 2), nullable=False, default=0)
+    usuario_registro = Column(String(120), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    facturada_at = Column(DateTime, nullable=True)
+    anulada_at = Column(DateTime, nullable=True)
+    anulada_por = Column(String(160), nullable=True)
+    venta_factura_id = Column(Integer, ForeignKey("ventas_facturas.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+    cliente = relationship("Cliente")
+    vendedor = relationship("Vendedor")
+    factura = relationship("VentaFactura")
+    items = relationship("PreventaItem", back_populates="preventa", cascade="all, delete-orphan")
+
+
+class PreventaItem(Base):
+    __tablename__ = "ventas_preventas_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    preventa_id = Column(Integer, ForeignKey("ventas_preventas.id"), nullable=False)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    cantidad = Column(Numeric(14, 2), nullable=False, default=0)
+    precio_unitario_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    precio_unitario_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+
+    preventa = relationship("Preventa", back_populates="items")
+    producto = relationship("Producto")
+
+
 class VentaPago(Base):
     __tablename__ = "ventas_pagos"
 

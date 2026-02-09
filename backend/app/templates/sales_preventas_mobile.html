@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-3" style="max-width: 780px;">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h4 class="m-0">Preventa movil</h4>
+    <a class="btn btn-outline-secondary btn-sm" href="/sales/preventas">Panel web</a>
+  </div>
+  <div class="small text-muted mb-3">Sucursal: {{ branch.name }} · Bodega: {{ bodega.name }}</div>
+
+  {% if success %}
+  <div class="alert alert-success">{{ success }}</div>
+  {% endif %}
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/m/preventas" id="preventaForm">
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-12 col-md-6">
+            <label class="form-label">Cliente</label>
+            <div class="input-group">
+              <input id="clienteSearch" class="form-control" type="text" placeholder="Buscar cliente">
+              <button class="btn btn-outline-secondary" type="button" id="btnClienteSearch">
+                <i class="bi bi-search"></i>
+              </button>
+            </div>
+            <input type="hidden" name="cliente_id" id="clienteId" value="{{ consumidor_final_id }}">
+            <div id="clientePicked" class="small mt-1">Seleccionado: <strong>{{ consumidor_final_nombre }}</strong></div>
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label">Vendedor</label>
+            {% if is_vendedor_role and vendedor_user_id %}
+            <input type="hidden" name="vendedor_id" value="{{ vendedor_user_id }}">
+            <input class="form-control" type="text" value="{{ user.full_name }}" readonly>
+            <div class="small text-muted mt-1">Asignado automaticamente por usuario logeado.</div>
+            {% else %}
+            <select class="form-select" name="vendedor_id" required>
+              <option value="">Selecciona</option>
+              {% for v in vendedores %}
+              <option value="{{ v.id }}" {% if default_vendedor_id == v.id %}selected{% endif %}>{{ v.nombre }}</option>
+              {% endfor %}
+            </select>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-body">
+        <label class="form-label">Agregar producto</label>
+        <div class="input-group mb-2">
+          <input id="productSearch" class="form-control" type="text" placeholder="Codigo o descripcion">
+          <button class="btn btn-outline-primary" type="button" id="btnProductSearch">
+            <i class="bi bi-search"></i>
+          </button>
+        </div>
+        <div id="productSearchResults" class="list-group"></div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header">Items de preventa</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle m-0">
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th class="text-end">Cant.</th>
+                <th class="text-end">Precio</th>
+                <th class="text-end">Exist.</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="itemsBody">
+              <tr id="noItemsRow">
+                <td colspan="5" class="text-center text-muted py-3">Sin items</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-grid">
+      <button class="btn btn-primary btn-lg" type="submit">Enviar preventa</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  (() => {
+    const productSearch = document.getElementById("productSearch");
+    const btnProductSearch = document.getElementById("btnProductSearch");
+    const productResults = document.getElementById("productSearchResults");
+    const itemsBody = document.getElementById("itemsBody");
+    const noItemsRow = document.getElementById("noItemsRow");
+
+    const clienteSearch = document.getElementById("clienteSearch");
+    const btnClienteSearch = document.getElementById("btnClienteSearch");
+    const clienteId = document.getElementById("clienteId");
+    const clientePicked = document.getElementById("clientePicked");
+
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m]));
+    const fmt = (n, p = "") => `${p}${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    function hideNoItems() {
+      if (noItemsRow) noItemsRow.style.display = "none";
+    }
+
+    function ensureNoItems() {
+      const rows = itemsBody.querySelectorAll("tr[data-item-row]");
+      if (!rows.length && noItemsRow) noItemsRow.style.display = "";
+    }
+
+    function addItem(item) {
+      const existing = itemsBody.querySelector(`tr[data-product-id="${item.id}"]`);
+      if (existing) {
+        const qtyInput = existing.querySelector(".item-qty");
+        qtyInput.value = `${Number(qtyInput.value || 0) + 1}`;
+        return;
+      }
+      hideNoItems();
+      const tr = document.createElement("tr");
+      tr.setAttribute("data-item-row", "1");
+      tr.setAttribute("data-product-id", String(item.id));
+      tr.innerHTML = `
+        <td>
+          <div class="fw-semibold">${esc(item.cod_producto)}</div>
+          <div class="small">${esc(item.descripcion)}</div>
+          <input type="hidden" name="item_producto_id" value="${item.id}">
+        </td>
+        <td class="text-end">
+          <input class="form-control form-control-sm text-end item-qty" type="number" name="item_cantidad" min="1" step="1" value="1" style="max-width: 90px; margin-left:auto;">
+        </td>
+        <td class="text-end">
+          <div>${fmt(item.precio_venta1_usd, "$")}</div>
+          <div class="small text-muted">${fmt(item.precio_venta1, "C$")}</div>
+        </td>
+        <td class="text-end">${Number(item.existencia || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</td>
+        <td class="text-end">
+          <button class="btn btn-outline-danger btn-sm item-remove" type="button"><i class="bi bi-x"></i></button>
+        </td>
+      `;
+      tr.querySelector(".item-remove").addEventListener("click", () => {
+        tr.remove();
+        ensureNoItems();
+      });
+      itemsBody.appendChild(tr);
+    }
+
+    async function searchProducts() {
+      const q = (productSearch.value || "").trim();
+      if (q.length < 2) return;
+      const res = await fetch(`/m/preventas/productos/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.message || "No se pudo buscar productos");
+        return;
+      }
+      productResults.innerHTML = "";
+      (data.items || []).forEach((item) => {
+        const canUse = Number(item.existencia || 0) > 0;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "list-group-item list-group-item-action";
+        btn.disabled = !canUse;
+        btn.innerHTML = `
+          <div class="d-flex justify-content-between">
+            <div>
+              <div class="fw-semibold">${esc(item.cod_producto)} · ${esc(item.descripcion)}</div>
+              <div class="small text-muted">${fmt(item.precio_venta1_usd, "$")} / ${fmt(item.precio_venta1, "C$")}</div>
+            </div>
+            <div class="text-end small ${canUse ? "text-success" : "text-danger"}">
+              Exist: ${Number(item.existencia || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+            </div>
+          </div>
+        `;
+        btn.addEventListener("click", () => addItem(item));
+        productResults.appendChild(btn);
+      });
+      if (!data.items || !data.items.length) {
+        productResults.innerHTML = '<div class="list-group-item text-muted small">Sin resultados</div>';
+      }
+    }
+
+    async function searchClientes() {
+      const q = (clienteSearch.value || "").trim();
+      if (q.length < 2) return;
+      const res = await fetch(`/m/preventas/clientes/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
+      const data = await res.json();
+      if (!data.ok) return;
+      if (!data.items || !data.items.length) {
+        alert("Cliente no encontrado");
+        return;
+      }
+      const c = data.items[0];
+      clienteId.value = c.id;
+      clientePicked.innerHTML = `Seleccionado: <strong>${esc(c.nombre)}</strong>`;
+    }
+
+    btnProductSearch?.addEventListener("click", searchProducts);
+    productSearch?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        searchProducts();
+      }
+    });
+    btnClienteSearch?.addEventListener("click", searchClientes);
+    clienteSearch?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        searchClientes();
+      }
+    });
+  })();
+</script>
+{% endblock %}

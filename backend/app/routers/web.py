@@ -71,6 +71,8 @@ from ..models.sales import (
     ReciboRubro,
     ReversionToken,
     ProductoComision,
+    Preventa,
+    PreventaItem,
     VentaComisionAsignacion,
     VentaComisionFinal,
     Vendedor,
@@ -223,6 +225,7 @@ PERMISSION_GROUPS = [
             {"name": "menu.sales.depositos", "label": "Registro de depositos"},
             {"name": "menu.sales.cierre", "label": "Cierre de caja"},
             {"name": "menu.sales.comisiones", "label": "Registro de comisiones"},
+            {"name": "menu.sales.preventas", "label": "Panel de preventas"},
         ],
     },
     {
@@ -246,6 +249,7 @@ PERMISSION_GROUPS = [
             {"name": "access.sales.cierre", "label": "Cierre de caja"},
             {"name": "access.sales.reversion", "label": "Reversion de facturas"},
             {"name": "access.sales.comisiones", "label": "Registro de comisiones"},
+            {"name": "access.sales.preventas", "label": "Gestion de preventas"},
             {"name": "access.inventory", "label": "Acceso a inventarios"},
             {"name": "access.inventory.caliente", "label": "Inventario en caliente"},
             {"name": "access.inventory.ingresos", "label": "Ingresos de inventario"},
@@ -366,6 +370,85 @@ def _default_vendedor_id(db: Session, bodega: Optional[Bodega]) -> Optional[int]
         .first()
     )
     return row.vendedor_id if row else None
+
+
+def _vendedor_id_for_user(db: Session, user: User, bodega: Optional[Bodega]) -> Optional[int]:
+    user_name = (user.full_name or "").strip().lower()
+    if not user_name:
+        return None
+    query = db.query(Vendedor).filter(Vendedor.activo.is_(True))
+    if bodega:
+        query = (
+            query.join(VendedorBodega, VendedorBodega.vendedor_id == Vendedor.id)
+            .filter(VendedorBodega.bodega_id == bodega.id)
+            .distinct()
+        )
+    vendedor = query.filter(func.lower(Vendedor.nombre) == user_name).first()
+    return vendedor.id if vendedor else None
+
+
+def _is_vendedor_role(user: User) -> bool:
+    return any((role.name or "").lower() == "vendedor" for role in (user.roles or []))
+
+
+def _preventa_estado_badge(estado: str) -> dict[str, str]:
+    mapping = {
+        "PENDIENTE": {"label": "Pendiente", "class": "bg-pink-100 text-pink-800"},
+        "REVISION": {"label": "En revision", "class": "bg-amber-100 text-amber-800"},
+        "FACTURADA": {"label": "Facturada", "class": "bg-emerald-100 text-emerald-800"},
+        "ANULADA": {"label": "Anulada", "class": "bg-violet-100 text-violet-800"},
+    }
+    return mapping.get((estado or "").upper(), {"label": estado or "-", "class": "bg-slate-100 text-slate-700"})
+
+
+def _get_or_create_consumidor_final(db: Session) -> Cliente:
+    cliente = (
+        db.query(Cliente)
+        .filter(func.lower(Cliente.nombre) == "consumidor final")
+        .first()
+    )
+    if cliente:
+        return cliente
+    cliente = Cliente(nombre="Consumidor final", activo=True)
+    db.add(cliente)
+    db.flush()
+    return cliente
+
+
+def _next_preventa_number(db: Session, branch: Branch) -> tuple[int, str]:
+    last = (
+        db.query(Preventa)
+        .filter(Preventa.branch_id == branch.id)
+        .order_by(Preventa.secuencia.desc())
+        .first()
+    )
+    seq = (last.secuencia if last else 0) + 1
+    branch_code = (branch.code or "").lower()
+    prefix = "C" if branch_code == "central" else "E" if branch_code == "esteli" else branch_code[:1].upper()
+    return seq, f"PV{prefix}-{seq:06d}"
+
+
+def _preventa_active_conflict(
+    db: Session,
+    *,
+    bodega_id: int,
+    producto_id: int,
+    vendedor_id: int,
+) -> Optional[tuple[Preventa, Optional[Vendedor]]]:
+    row = (
+        db.query(Preventa, Vendedor)
+        .join(PreventaItem, PreventaItem.preventa_id == Preventa.id)
+        .join(Vendedor, Vendedor.id == Preventa.vendedor_id, isouter=True)
+        .filter(
+            Preventa.bodega_id == bodega_id,
+            Preventa.estado.in_(["PENDIENTE", "REVISION"]),
+            PreventaItem.producto_id == producto_id,
+            Preventa.vendedor_id != vendedor_id,
+        )
+        .order_by(Preventa.id.desc())
+        .first()
+    )
+    return row if row else None
 
 
 def _get_sumatra_path(config_path: Optional[str] = None) -> Optional[Path]:
@@ -1723,6 +1806,56 @@ def sales_page(
         if branch
         else None
     )
+    initial_preventa = None
+    preventa_id_raw = (request.query_params.get("preventa_id") or "").strip()
+    if preventa_id_raw and preventa_id_raw.isdigit():
+        preventa = (
+            db.query(Preventa)
+            .filter(Preventa.id == int(preventa_id_raw))
+            .first()
+        )
+        if preventa and preventa.estado in {"PENDIENTE", "REVISION"}:
+            item_rows = (
+                db.query(PreventaItem, Producto)
+                .join(Producto, Producto.id == PreventaItem.producto_id)
+                .filter(PreventaItem.preventa_id == preventa.id)
+                .all()
+            )
+            product_ids = [producto.id for _, producto in item_rows]
+            balances = _balances_by_bodega(db, [preventa.bodega_id], product_ids) if product_ids else {}
+            items = []
+            for row, producto in item_rows:
+                existencia = float(balances.get((producto.id, preventa.bodega_id), Decimal("0")) or 0)
+                qty = float(row.cantidad or 0)
+                if existencia < qty:
+                    return RedirectResponse(
+                        "/sales/preventas?error=La+preventa+tiene+items+sin+saldo+actualizado",
+                        status_code=303,
+                    )
+                items.append(
+                    {
+                        "product_id": producto.id,
+                        "cod_producto": producto.cod_producto,
+                        "descripcion": producto.descripcion,
+                        "cantidad": qty,
+                        "precio_usd": float(row.precio_unitario_usd or 0),
+                        "precio_cs": float(row.precio_unitario_cs or 0),
+                    }
+                )
+            initial_preventa = {
+                "id": preventa.id,
+                "numero": preventa.numero,
+                "cliente_id": preventa.cliente_id,
+                "cliente_nombre": preventa.cliente.nombre if preventa.cliente else "Consumidor final",
+                "vendedor_id": preventa.vendedor_id,
+                "fecha": preventa.fecha.date().isoformat() if preventa.fecha else local_today().isoformat(),
+                "items": items,
+            }
+            if preventa.estado == "PENDIENTE":
+                preventa.estado = "REVISION"
+                preventa.reviewed_at = local_now_naive()
+                db.commit()
+
     return request.app.state.templates.TemplateResponse(
         "sales.html",
         {
@@ -1741,9 +1874,506 @@ def sales_page(
             "next_invoice": next_invoice,
             "pos_print": pos_print,
             "default_vendedor_id": _default_vendedor_id(db, bodega),
+            "initial_preventa": initial_preventa,
             "version": settings.UI_VERSION,
         },
     )
+
+
+@router.get("/m/preventas")
+def mobile_preventas_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.preventas")
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        raise HTTPException(status_code=400, detail="Usuario sin sucursal/bodega asignada")
+    vendedores = _vendedores_for_bodega(db, bodega)
+    default_vendedor_id = _default_vendedor_id(db, bodega)
+    vendedor_user_id = _vendedor_id_for_user(db, user, bodega)
+    if vendedor_user_id:
+        default_vendedor_id = vendedor_user_id
+    if not default_vendedor_id and vendedores:
+        default_vendedor_id = vendedores[0].id
+    consumidor = _get_or_create_consumidor_final(db)
+    db.commit()
+    success = request.query_params.get("success")
+    error = request.query_params.get("error")
+    return request.app.state.templates.TemplateResponse(
+        "sales_preventas_mobile.html",
+        {
+            "request": request,
+            "user": user,
+            "branch": branch,
+            "bodega": bodega,
+            "vendedores": vendedores,
+            "default_vendedor_id": default_vendedor_id,
+            "vendedor_user_id": vendedor_user_id,
+            "is_vendedor_role": _is_vendedor_role(user),
+            "consumidor_final_id": consumidor.id,
+            "consumidor_final_nombre": consumidor.nombre,
+            "success": success,
+            "error": error,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/m/preventas/productos/search")
+def mobile_preventas_products_search(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.preventas")
+    query = q.strip()
+    if len(query) < 2:
+        return JSONResponse({"ok": True, "items": []})
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not bodega:
+        return JSONResponse({"ok": False, "message": "Usuario sin bodega asignada"}, status_code=400)
+    like = f"%{query.lower()}%"
+    productos = (
+        db.query(Producto)
+        .filter(Producto.activo.is_(True))
+        .filter(
+            or_(
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+            )
+        )
+        .order_by(Producto.descripcion)
+        .limit(100)
+        .all()
+    )
+    balances: dict[tuple[int, int], Decimal] = {}
+    if productos:
+        balances = _balances_by_bodega(db, [bodega.id], [p.id for p in productos])
+    items = []
+    for producto in productos:
+        existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0)
+        items.append(
+            {
+                "id": producto.id,
+                "cod_producto": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
+                "precio_venta1": float(producto.precio_venta1 or 0),
+                "existencia": existencia,
+            }
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "items": items,
+            "branch": branch.name if branch else "-",
+            "bodega": bodega.name,
+        }
+    )
+
+
+@router.get("/m/preventas/clientes/search")
+def mobile_preventas_clientes_search(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.preventas")
+    query = (q or "").strip().lower()
+    if len(query) < 2:
+        return JSONResponse({"ok": True, "items": []})
+    like = f"%{query}%"
+    items = (
+        db.query(Cliente)
+        .filter(
+            or_(
+                func.lower(Cliente.nombre).like(like),
+                func.lower(Cliente.identificacion).like(like),
+                func.lower(Cliente.telefono).like(like),
+            )
+        )
+        .order_by(Cliente.nombre)
+        .limit(60)
+        .all()
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "items": [{"id": c.id, "nombre": c.nombre, "telefono": c.telefono or ""} for c in items],
+        }
+    )
+
+
+@router.post("/m/preventas/cliente")
+async def mobile_preventas_create_cliente(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.preventas")
+    form = await request.form()
+    nombre = str(form.get("nombre") or "").strip()
+    telefono = str(form.get("telefono") or "").strip() or None
+    identificacion = str(form.get("identificacion") or "").strip() or None
+    direccion = str(form.get("direccion") or "").strip() or None
+    if not nombre:
+        return JSONResponse({"ok": False, "message": "Nombre requerido"}, status_code=400)
+    exists = db.query(Cliente).filter(func.lower(Cliente.nombre) == nombre.lower()).first()
+    if exists:
+        return JSONResponse({"ok": True, "id": exists.id, "nombre": exists.nombre, "existing": True})
+    cliente = Cliente(
+        nombre=nombre,
+        telefono=telefono,
+        identificacion=identificacion,
+        direccion=direccion,
+        activo=True,
+    )
+    db.add(cliente)
+    db.commit()
+    return JSONResponse({"ok": True, "id": cliente.id, "nombre": cliente.nombre, "existing": False})
+
+
+@router.post("/m/preventas")
+async def mobile_preventas_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.preventas")
+    form = await request.form()
+    cliente_id = form.get("cliente_id") or None
+    vendedor_id = form.get("vendedor_id") or None
+    fecha = form.get("fecha")
+    moneda = (form.get("moneda") or "CS").upper()
+    observacion = (form.get("observacion") or "").strip() or None
+    item_ids = form.getlist("item_producto_id")
+    item_qtys = form.getlist("item_cantidad")
+    item_prices = form.getlist("item_precio")
+
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        return RedirectResponse("/m/preventas?error=Usuario+sin+sucursal+bodega", status_code=303)
+    if _is_vendedor_role(user):
+        vendedor_user_id = _vendedor_id_for_user(db, user, bodega)
+        if vendedor_user_id:
+            vendedor_id = str(vendedor_user_id)
+
+    if not vendedor_id:
+        return RedirectResponse("/m/preventas?error=Selecciona+vendedor", status_code=303)
+    if not item_ids:
+        return RedirectResponse("/m/preventas?error=Agrega+items+a+la+preventa", status_code=303)
+    vendedor = db.query(Vendedor).filter(Vendedor.id == int(vendedor_id), Vendedor.activo.is_(True)).first()
+    if not vendedor:
+        return RedirectResponse("/m/preventas?error=Vendedor+invalido", status_code=303)
+
+    if not cliente_id:
+        cliente_id = _get_or_create_consumidor_final(db).id
+        db.flush()
+    try:
+        fecha_value = date.fromisoformat(str(fecha).split("T")[0]) if fecha else local_today()
+    except (TypeError, ValueError):
+        fecha_value = local_today()
+
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    tasa = Decimal(str(rate_today.rate if rate_today else 0))
+    if moneda == "USD" and (not rate_today or tasa <= 0):
+        return RedirectResponse("/m/preventas?error=Tasa+de+cambio+no+configurada", status_code=303)
+
+    product_ids = [int(pid) for pid in item_ids if str(pid).isdigit()]
+    balances = _balances_by_bodega(db, [bodega.id], list(set(product_ids))) if product_ids else {}
+
+    def _to_dec(value: object, default: str = "0") -> Decimal:
+        try:
+            return Decimal(str(value if value is not None else default))
+        except Exception:
+            return Decimal(default)
+
+    parsed_items: list[dict] = []
+    for idx, raw_product_id in enumerate(item_ids):
+        if not str(raw_product_id).isdigit():
+            continue
+        producto_id = int(raw_product_id)
+        qty = _to_dec(item_qtys[idx] if idx < len(item_qtys) else "0").quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        if qty <= 0:
+            continue
+        producto = db.query(Producto).filter(Producto.id == producto_id, Producto.activo.is_(True)).first()
+        if not producto:
+            return RedirectResponse("/m/preventas?error=Producto+no+encontrado", status_code=303)
+        existencia = Decimal(str(balances.get((producto.id, bodega.id), Decimal("0")) or 0))
+        if existencia < qty:
+            return RedirectResponse(
+                f"/m/preventas?error=Sin+saldo+para+{producto.cod_producto}",
+                status_code=303,
+            )
+        conflict = _preventa_active_conflict(
+            db,
+            bodega_id=bodega.id,
+            producto_id=producto.id,
+            vendedor_id=vendedor.id,
+        )
+        if conflict:
+            preventa_conflict, vendedor_conflict = conflict
+            vendedor_name = vendedor_conflict.nombre if vendedor_conflict else "otro vendedor"
+            return RedirectResponse(
+                f"/m/preventas?error=Producto+{producto.cod_producto}+ya+esta+en+preventa+activa+de+{vendedor_name}+({preventa_conflict.numero})",
+                status_code=303,
+            )
+        price_input = _to_dec(item_prices[idx] if idx < len(item_prices) else "0")
+        if price_input <= 0:
+            price_input = _to_dec(producto.precio_venta1 if moneda == "CS" else producto.precio_venta1_usd)
+        if moneda == "USD":
+            precio_usd = price_input
+            precio_cs = (price_input * tasa).quantize(Decimal("0.01"))
+        else:
+            precio_cs = price_input
+            precio_usd = (price_input / tasa).quantize(Decimal("0.01")) if tasa > 0 else Decimal("0")
+        parsed_items.append(
+            {
+                "producto": producto,
+                "cantidad": qty,
+                "precio_usd": precio_usd,
+                "precio_cs": precio_cs,
+                "subtotal_usd": (precio_usd * qty).quantize(Decimal("0.01")),
+                "subtotal_cs": (precio_cs * qty).quantize(Decimal("0.01")),
+            }
+        )
+
+    if not parsed_items:
+        return RedirectResponse("/m/preventas?error=No+hay+items+validos", status_code=303)
+
+    seq, numero = _next_preventa_number(db, branch)
+    now_local = local_now()
+    fecha_dt = datetime.combine(fecha_value, now_local.time()).replace(tzinfo=None)
+    preventa = Preventa(
+        secuencia=seq,
+        numero=numero,
+        branch_id=branch.id,
+        bodega_id=bodega.id,
+        cliente_id=int(cliente_id) if cliente_id else None,
+        vendedor_id=vendedor.id,
+        fecha=fecha_dt,
+        estado="PENDIENTE",
+        observacion=observacion,
+        total_usd=sum((x["subtotal_usd"] for x in parsed_items), Decimal("0")),
+        total_cs=sum((x["subtotal_cs"] for x in parsed_items), Decimal("0")),
+        total_items=sum((x["cantidad"] for x in parsed_items), Decimal("0")),
+        usuario_registro=user.full_name,
+        created_at=local_now_naive(),
+    )
+    db.add(preventa)
+    db.flush()
+    for item in parsed_items:
+        db.add(
+            PreventaItem(
+                preventa_id=preventa.id,
+                producto_id=item["producto"].id,
+                cantidad=item["cantidad"],
+                precio_unitario_usd=item["precio_usd"],
+                precio_unitario_cs=item["precio_cs"],
+                subtotal_usd=item["subtotal_usd"],
+                subtotal_cs=item["subtotal_cs"],
+            )
+        )
+    db.commit()
+    return RedirectResponse(
+        f"/m/preventas?success=Preventa+{preventa.numero}+registrada",
+        status_code=303,
+    )
+
+
+@router.get("/sales/preventas")
+def sales_preventas_panel(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.preventas")
+    today = local_today()
+    fecha = (request.query_params.get("fecha") or today.isoformat()).strip()
+    estado = (request.query_params.get("estado") or "").strip().upper()
+    vendedor_id = (request.query_params.get("vendedor_id") or "").strip()
+    branch_id = (request.query_params.get("branch_id") or "all").strip()
+    error = request.query_params.get("error")
+    success = request.query_params.get("success")
+    try:
+        fecha_value = date.fromisoformat(fecha)
+    except ValueError:
+        fecha_value = today
+
+    query = (
+        db.query(Preventa)
+        .join(Cliente, Cliente.id == Preventa.cliente_id, isouter=True)
+        .join(Vendedor, Vendedor.id == Preventa.vendedor_id, isouter=True)
+        .join(Branch, Branch.id == Preventa.branch_id, isouter=True)
+        .filter(func.date(Preventa.fecha) == fecha_value)
+    )
+    if branch_id and branch_id != "all":
+        if branch_id.isdigit():
+            query = query.filter(Preventa.branch_id == int(branch_id))
+    if vendedor_id and vendedor_id.isdigit():
+        query = query.filter(Preventa.vendedor_id == int(vendedor_id))
+    if estado:
+        query = query.filter(Preventa.estado == estado)
+    preventas = query.order_by(Preventa.id.desc()).all()
+    branches = db.query(Branch).order_by(Branch.name).all()
+    vendedores = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre).all()
+    rows = [
+        {
+            "id": p.id,
+            "numero": p.numero,
+            "fecha": p.fecha,
+            "cliente": p.cliente.nombre if p.cliente else "Consumidor final",
+            "vendedor": p.vendedor.nombre if p.vendedor else "-",
+            "sucursal": p.branch.name if p.branch else "-",
+            "total_usd": float(p.total_usd or 0),
+            "total_cs": float(p.total_cs or 0),
+            "estado": p.estado,
+            "badge": _preventa_estado_badge(p.estado),
+        }
+        for p in preventas
+    ]
+    return request.app.state.templates.TemplateResponse(
+        "sales_preventas_panel.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": rows,
+            "fecha": fecha_value.isoformat(),
+            "estado": estado,
+            "vendedor_id": vendedor_id,
+            "branch_id": branch_id,
+            "branches": branches,
+            "vendedores": vendedores,
+            "is_vendedor_role": _is_vendedor_role(user),
+            "error": error,
+            "success": success,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/sales/preventas/{preventa_id}/detail")
+def sales_preventas_detail(
+    request: Request,
+    preventa_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.preventas")
+    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    if not preventa:
+        return JSONResponse({"ok": False, "message": "Preventa no encontrada"}, status_code=404)
+    rows = (
+        db.query(PreventaItem, Producto)
+        .join(Producto, Producto.id == PreventaItem.producto_id)
+        .filter(PreventaItem.preventa_id == preventa.id)
+        .order_by(PreventaItem.id)
+        .all()
+    )
+    balances = _balances_by_bodega(db, [preventa.bodega_id], [p.id for _, p in rows]) if rows else {}
+    items = []
+    for item, producto in rows:
+        existencia = float(balances.get((producto.id, preventa.bodega_id), Decimal("0")) or 0)
+        qty = float(item.cantidad or 0)
+        items.append(
+            {
+                "codigo": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "cantidad": qty,
+                "precio_usd": float(item.precio_unitario_usd or 0),
+                "precio_cs": float(item.precio_unitario_cs or 0),
+                "subtotal_usd": float(item.subtotal_usd or 0),
+                "subtotal_cs": float(item.subtotal_cs or 0),
+                "existencia": existencia,
+                "ok_stock": existencia >= qty,
+            }
+        )
+    if preventa.estado == "PENDIENTE":
+        preventa.estado = "REVISION"
+        preventa.reviewed_at = local_now_naive()
+        db.commit()
+    return JSONResponse(
+        {
+            "ok": True,
+            "preventa": {
+                "id": preventa.id,
+                "numero": preventa.numero,
+                "estado": preventa.estado,
+                "cliente": preventa.cliente.nombre if preventa.cliente else "Consumidor final",
+                "vendedor": preventa.vendedor.nombre if preventa.vendedor else "-",
+                "fecha": preventa.fecha.isoformat() if preventa.fecha else "",
+                "total_usd": float(preventa.total_usd or 0),
+                "total_cs": float(preventa.total_cs or 0),
+            },
+            "items": items,
+        }
+    )
+
+
+@router.post("/sales/preventas/{preventa_id}/anular")
+async def sales_preventas_anular(
+    request: Request,
+    preventa_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.preventas")
+    if _is_vendedor_role(user):
+        return RedirectResponse("/sales/preventas?error=Rol+vendedor+no+puede+anular+preventas", status_code=303)
+    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    if not preventa:
+        return RedirectResponse("/sales/preventas?error=Preventa+no+encontrada", status_code=303)
+    if preventa.estado == "FACTURADA":
+        return RedirectResponse("/sales/preventas?error=No+se+puede+anular+una+preventa+facturada", status_code=303)
+    preventa.estado = "ANULADA"
+    preventa.anulada_at = local_now_naive()
+    preventa.anulada_por = user.full_name
+    db.commit()
+    return RedirectResponse("/sales/preventas?success=Preventa+anulada", status_code=303)
+
+
+@router.post("/sales/preventas/{preventa_id}/usar")
+async def sales_preventas_usar_en_factura(
+    request: Request,
+    preventa_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.preventas")
+    _enforce_permission(request, user, "access.sales.registrar")
+    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    if not preventa:
+        return RedirectResponse("/sales/preventas?error=Preventa+no+encontrada", status_code=303)
+    if preventa.estado not in {"PENDIENTE", "REVISION"}:
+        return RedirectResponse("/sales/preventas?error=Preventa+no+disponible+para+facturar", status_code=303)
+    item_rows = (
+        db.query(PreventaItem, Producto)
+        .join(Producto, Producto.id == PreventaItem.producto_id)
+        .filter(PreventaItem.preventa_id == preventa.id)
+        .all()
+    )
+    balances = _balances_by_bodega(db, [preventa.bodega_id], [p.id for _, p in item_rows]) if item_rows else {}
+    for item, producto in item_rows:
+        existencia = Decimal(str(balances.get((producto.id, preventa.bodega_id), Decimal("0")) or 0))
+        if existencia < Decimal(str(item.cantidad or 0)):
+            return RedirectResponse(
+                f"/sales/preventas?error=Sin+saldo+actual+para+{producto.cod_producto}",
+                status_code=303,
+            )
+    if preventa.estado == "PENDIENTE":
+        preventa.estado = "REVISION"
+        preventa.reviewed_at = local_now_naive()
+        db.commit()
+    return RedirectResponse(f"/sales?preventa_id={preventa.id}", status_code=303)
 
 
 @router.get("/sales/utilitario")
@@ -2805,26 +3435,43 @@ async def sales_comisiones_save_assignments(
     }
 
     saved = 0
-    rows_by_item: dict[int, list[dict]] = {}
-    for row in payload if isinstance(payload, list) else []:
+    temp_query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha == fecha_value
+    )
+    if scope_branch_id:
+        temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    current_rows = temp_query.all()
+    current_by_temp_id: dict[int, VentaComisionAsignacion] = {int(r.id): r for r in current_rows}
+
+    # Solo trabajamos sobre items tocados en payload para no afectar otros filtros/registros.
+    updates_by_item: dict[int, list[dict]] = {}
+    payload_rows = payload if isinstance(payload, list) else []
+    for row in payload_rows:
         try:
+            temp_id = int(row.get("temp_id"))
             venta_item_id = int(row.get("venta_item_id"))
-            vendedor_asignado_id = int(row.get("vendedor_id"))
+            row_vendedor_asignado_id = int(row.get("vendedor_id"))
             cantidad = int(Decimal(str(row.get("cantidad") or "0")))
         except Exception:
             continue
+        current_row = current_by_temp_id.get(temp_id)
+        if not current_row:
+            continue
+        if int(current_row.venta_item_id or 0) != venta_item_id:
+            continue
         if venta_item_id not in temp_item_ids and venta_item_id not in source_map:
             continue
-        if cantidad <= 0:
+        if cantidad < 0:
             continue
-        rows_by_item.setdefault(venta_item_id, []).append(
+        updates_by_item.setdefault(venta_item_id, []).append(
             {
-                "vendedor_id": vendedor_asignado_id,
+                "temp_id": temp_id,
+                "vendedor_id": row_vendedor_asignado_id,
                 "cantidad": cantidad,
             }
         )
 
-    if not rows_by_item:
+    if not updates_by_item:
         params = {
             "tab": "asignacion",
             "fecha": fecha_value.isoformat(),
@@ -2837,15 +3484,42 @@ async def sales_comisiones_save_assignments(
         return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
 
     invalid_items: list[int] = []
-    for venta_item_id, rows in rows_by_item.items():
+    touched_item_ids = list(updates_by_item.keys())
+
+    # Incluye filas existentes no enviadas (por ejemplo, ocultas por paginado/filtro) para
+    # validar contra el total vendido sin romper el item completo.
+    current_by_item: dict[int, list[VentaComisionAsignacion]] = {}
+    for row in current_rows:
+        if int(row.venta_item_id or 0) in touched_item_ids:
+            current_by_item.setdefault(int(row.venta_item_id), []).append(row)
+
+    for venta_item_id, rows in updates_by_item.items():
         sold_qty = source_qty_map.get(venta_item_id)
         if sold_qty is None:
             invalid_items.append(venta_item_id)
             continue
-        total_payload_qty = sum(int(r["cantidad"]) for r in rows)
-        if total_payload_qty != sold_qty:
+
+        merged_by_temp_id: dict[int, dict] = {}
+        for existing in current_by_item.get(venta_item_id, []):
+            merged_by_temp_id[int(existing.id)] = {
+                "temp_id": int(existing.id),
+                "vendedor_id": int(existing.vendedor_asignado_id or 0),
+                "cantidad": int(
+                    Decimal(str(existing.cantidad or 0)).quantize(
+                        Decimal("1"), rounding=ROUND_HALF_UP
+                    )
+                ),
+            }
+        for incoming in rows:
+            merged_by_temp_id[int(incoming["temp_id"])] = incoming
+
+        merged_rows = list(merged_by_temp_id.values())
+        total_payload_qty = sum(int(r["cantidad"]) for r in merged_rows)
+        positive_rows = [r for r in merged_rows if int(r["cantidad"]) > 0]
+        if total_payload_qty != sold_qty or not positive_rows:
             invalid_items.append(venta_item_id)
             continue
+
         for r in rows:
             exists = (
                 db.query(Vendedor.id)
@@ -2867,48 +3541,44 @@ async def sales_comisiones_save_assignments(
         }
         return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
 
-    touched_item_ids = list(rows_by_item.keys())
-    if touched_item_ids:
-        delete_q = db.query(VentaComisionAsignacion).filter(
-            VentaComisionAsignacion.fecha == fecha_value,
-            VentaComisionAsignacion.venta_item_id.in_(touched_item_ids),
-        )
-        if scope_branch_id:
-            delete_q = delete_q.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
-        delete_q.delete(synchronize_session=False)
-
-    for venta_item_id, rows in rows_by_item.items():
+    for venta_item_id, incoming_rows in updates_by_item.items():
         source = source_map.get(venta_item_id)
         if not source:
             continue
-        factura, item, producto, cliente, vendedor, branch, bodega = source
+        _, item, _, _, _, _, _ = source
         precio_usd = Decimal(str(item.precio_unitario_usd or 0))
         precio_cs = Decimal(str(item.precio_unitario_cs or 0))
-        for row_data in rows:
-            cantidad = Decimal(str(row_data["cantidad"])).quantize(
+
+        existing_rows = current_by_item.get(venta_item_id, [])
+        incoming_by_temp = {int(r["temp_id"]): r for r in incoming_rows}
+
+        for existing in existing_rows:
+            incoming = incoming_by_temp.get(int(existing.id))
+            if not incoming:
+                continue
+            cantidad_dec = Decimal(str(incoming["cantidad"])).quantize(
                 Decimal("1"), rounding=ROUND_HALF_UP
             )
-            vendedor_asignado_id = int(row_data["vendedor_id"])
-            db.add(
-                VentaComisionAsignacion(
-                    venta_item_id=item.id,
-                    factura_id=factura.id,
-                    branch_id=branch.id if branch else None,
-                    bodega_id=bodega.id if bodega else None,
-                    cliente_id=cliente.id if cliente else None,
-                    producto_id=producto.id,
-                    fecha=fecha_value,
-                    vendedor_origen_id=vendedor.id if vendedor else None,
-                    vendedor_asignado_id=vendedor_asignado_id,
-                    cantidad=cantidad,
-                    precio_unitario_usd=precio_usd,
-                    precio_unitario_cs=precio_cs,
-                    subtotal_usd=precio_usd * cantidad,
-                    subtotal_cs=precio_cs * cantidad,
-                    usuario_registro=user.full_name,
-                )
-            )
+            existing.vendedor_asignado_id = int(incoming["vendedor_id"])
+            existing.cantidad = cantidad_dec
+            existing.precio_unitario_usd = precio_usd
+            existing.precio_unitario_cs = precio_cs
+            existing.subtotal_usd = precio_usd * cantidad_dec
+            existing.subtotal_cs = precio_cs * cantidad_dec
+            existing.usuario_registro = user.full_name
             saved += 1
+
+        # Limpieza: elimina filas secundarias en cero para evitar ruido y bloqueos visuales.
+        for existing in existing_rows:
+            is_primary = int(existing.vendedor_origen_id or 0) == int(existing.vendedor_asignado_id or 0)
+            qty_int = int(
+                Decimal(str(existing.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            )
+            if not is_primary and qty_int <= 0:
+                db.delete(existing)
+
+        # Si por alguna razon no llego una fila existente (payload incompleto), no la tocamos.
+        # Evita perder datos por filtros parciales del frontend.
 
     db.commit()
     params = {

@@ -80,6 +80,16 @@
         <span class="nav-text fw-semibold">Registro de comisiones</span>
       </a>
       {% endif %}
+      {% if not has_perms or 'menu.sales.preventas' in perms %}
+      <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/preventas">
+        <i class="bi bi-journal-richtext text-primary fs-5"></i>
+        <span class="nav-text fw-semibold">Panel de preventas</span>
+      </a>
+      <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/m/preventas">
+        <i class="bi bi-phone text-primary fs-5"></i>
+        <span class="nav-text fw-semibold">Nueva preventa movil</span>
+      </a>
+      {% endif %}
       {% if not has_perms or 'menu.inventory' in perms %}
       <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/inventory">
         <i class="bi bi-boxes text-primary fs-5"></i>
@@ -205,6 +215,16 @@
         <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/comisiones">
           <i class="bi bi-percent text-primary fs-5"></i>
           <span class="nav-text fw-semibold">Registro de comisiones</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales.preventas' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/preventas">
+          <i class="bi bi-journal-richtext text-primary fs-5"></i>
+          <span class="nav-text fw-semibold">Panel de preventas</span>
+        </a>
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/m/preventas">
+          <i class="bi bi-phone text-primary fs-5"></i>
+          <span class="nav-text fw-semibold">Nueva preventa movil</span>
         </a>
         {% endif %}
         {% if not has_perms or 'menu.inventory' in perms %}
