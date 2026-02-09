@@ -2929,15 +2929,25 @@ def _build_commission_assignment_rows(
         for row in commission_rows
     }
 
+    def _row_qty_int(r: VentaComisionAsignacion) -> int:
+        return int(
+            Decimal(str(r.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+
     primary_ids: set[int] = set()
     grouped_rows: dict[int, list[VentaComisionAsignacion]] = {}
     for row in temp_rows:
         grouped_rows.setdefault(row.venta_item_id, []).append(row)
     for rows in grouped_rows.values():
         rows_sorted = sorted(rows, key=lambda r: r.id)
+        positive_rows = [r for r in rows_sorted if _row_qty_int(r) > 0]
         preferred = next(
-            (r for r in rows_sorted if r.vendedor_asignado_id == r.vendedor_origen_id),
-            rows_sorted[0],
+            (
+                r
+                for r in rows_sorted
+                if r.vendedor_asignado_id == r.vendedor_origen_id and _row_qty_int(r) > 0
+            ),
+            (positive_rows[0] if positive_rows else rows_sorted[0]),
         )
         primary_ids.add(preferred.id)
 
@@ -3649,14 +3659,34 @@ async def sales_comisiones_save_assignments(
             existing.usuario_registro = user.full_name
             saved += 1
 
-        # Limpieza: elimina filas secundarias en cero para evitar ruido y bloqueos visuales.
-        for existing in existing_rows:
-            is_primary = int(existing.vendedor_origen_id or 0) == int(existing.vendedor_asignado_id or 0)
-            qty_int = int(
-                Decimal(str(existing.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        # Limpieza: elimina filas en cero cuando existe al menos una fila positiva para el item.
+        # Evita dejar filas "primarias" bloqueadas en 0 despues de repartir a otros vendedores.
+        existing_rows_refreshed = (
+            db.query(VentaComisionAsignacion)
+            .filter(
+                VentaComisionAsignacion.fecha == fecha_value,
+                VentaComisionAsignacion.venta_item_id == venta_item_id,
             )
-            if not is_primary and qty_int <= 0:
-                db.delete(existing)
+            .all()
+        )
+        positive_count = 0
+        for row in existing_rows_refreshed:
+            qty_int = int(
+                Decimal(str(row.cantidad or 0)).quantize(
+                    Decimal("1"), rounding=ROUND_HALF_UP
+                )
+            )
+            if qty_int > 0:
+                positive_count += 1
+        if positive_count > 0:
+            for row in existing_rows_refreshed:
+                qty_int = int(
+                    Decimal(str(row.cantidad or 0)).quantize(
+                        Decimal("1"), rounding=ROUND_HALF_UP
+                    )
+                )
+                if qty_int <= 0:
+                    db.delete(row)
 
         # Si por alguna razon no llego una fila existente (payload incompleto), no la tocamos.
         # Evita perder datos por filtros parciales del frontend.

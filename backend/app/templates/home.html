@@ -1,5 +1,71 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  @media (max-width: 991.98px) {
+    .home-mobile-hero {
+      border: 1px solid #dbe6f4;
+      border-radius: 18px;
+      padding: 0.9rem;
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 58%, #2563eb 100%);
+      color: #fff;
+      box-shadow: 0 12px 24px rgba(30, 58, 138, 0.2);
+      margin-bottom: 0.9rem;
+    }
+    .home-mobile-hero .odoo-title {
+      font-size: 1.2rem;
+      color: #fff;
+      margin-top: 0 !important;
+    }
+    .home-mobile-hero .odoo-subtitle {
+      color: rgba(255, 255, 255, 0.86);
+      margin-top: 0.15rem !important;
+    }
+    .home-mobile-hero .btn {
+      border-radius: 12px;
+      font-weight: 700;
+    }
+    .home-mobile-kpis {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.55rem;
+      margin-bottom: 0.75rem;
+    }
+    .home-mobile-kpi {
+      background: #fff;
+      border: 1px solid #dbe6f4;
+      border-radius: 14px;
+      padding: 0.5rem 0.55rem;
+      box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+    }
+    .home-mobile-kpi .label {
+      font-size: 0.66rem;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: #5b6981;
+      margin-bottom: 0.15rem;
+    }
+    .home-mobile-kpi .value {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #102a43;
+    }
+    .home-mobile-quick {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .home-mobile-quick .btn {
+      min-height: 44px;
+      font-weight: 700;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+    }
+  }
+</style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
@@ -8,6 +74,18 @@
     {% set perms = request.state.permission_names if has_perms else [] %}
     <div class="odoo-page">
       <div class="odoo-header">
+        <div class="home-mobile-hero d-lg-none">
+          <div class="d-flex align-items-center justify-content-between gap-2">
+            <div>
+              <div class="odoo-title">Centro de operaciones</div>
+              <div class="odoo-subtitle">ERP Hollywood Pacas</div>
+            </div>
+            <button class="btn btn-light btn-sm" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar">
+              <i class="bi bi-list"></i>
+              Menu
+            </button>
+          </div>
+        </div>
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
           <div>
             <nav aria-label="breadcrumb">
@@ -92,6 +170,24 @@
           <strong>En linea</strong>
         </div>
       </div>
+      <div class="home-mobile-kpis d-lg-none">
+        <div class="home-mobile-kpi">
+          <div class="label">Estado</div>
+          <div class="value">Estable</div>
+        </div>
+        <div class="home-mobile-kpi">
+          <div class="label">Sucursal</div>
+          <div class="value">Central</div>
+        </div>
+        <div class="home-mobile-kpi">
+          <div class="label">Seguridad</div>
+          <div class="value">Control total</div>
+        </div>
+        <div class="home-mobile-kpi">
+          <div class="label">Operaciones</div>
+          <div class="value">En linea</div>
+        </div>
+      </div>
 
       <div class="odoo-card">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
@@ -101,18 +197,17 @@
             Accesos rapidos
           </span>
         </div>
-        <div class="d-flex d-lg-none flex-wrap align-items-center gap-2 mb-4">
+        <div class="home-mobile-quick d-lg-none">
           <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar">
             <i class="bi bi-layout-sidebar-inset"></i>
-            Ver mas modulos
+            Ver modulos
           </button>
           {% if not has_perms or 'menu.sales.preventas.mobile' in perms or 'menu.sales.preventas' in perms %}
           <a class="btn btn-primary btn-sm" href="/m/preventas">
             <i class="bi bi-phone"></i>
-            Nueva preventa movil
+            Nueva preventa
           </a>
           {% endif %}
-          <span class="text-slate text-sm">Accesos completos en el menu</span>
         </div>
         <div class="row g-4">
           <div class="col-md-6 col-xl-4">

@@ -80,6 +80,32 @@
     padding: 0.9rem 1rem;
     box-shadow: 0 8px 24px rgba(30, 58, 138, 0.25);
   }
+  .mobile-preventa .app-brand-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 999px;
+    padding: 0.28rem 0.65rem;
+    background: rgba(15, 23, 42, 0.22);
+    backdrop-filter: blur(2px);
+  }
+  .mobile-preventa .app-brand-chip img {
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    object-fit: contain;
+    background: #fff;
+    padding: 1px;
+  }
+  .mobile-preventa .app-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
+    margin-top: 0.6rem;
+  }
   .mobile-preventa .app-topbar .subtitle {
     opacity: 0.85;
     font-size: 0.82rem;
@@ -126,7 +152,13 @@
         </a>
       </div>
     </div>
-    <div class="small mt-2 opacity-75">Sucursal: {{ branch.name }} &middot; Bodega: {{ bodega.name }}</div>
+    <div class="app-meta-row">
+      <div class="app-brand-chip">
+        <img src="/static/logo_hollywood.png" alt="Hollywood Pacas">
+        <span class="small fw-semibold">Pacas Hollywood</span>
+      </div>
+      <div class="small opacity-75">Sucursal: {{ branch.name }} &middot; Bodega: {{ bodega.name }}</div>
+    </div>
   </div>
 
   {% if success %}
@@ -271,6 +303,7 @@
 
         <div class="mt-3">
           <div class="small text-uppercase text-muted">Regalias del combo</div>
+          <input id="comboGiftSearch" class="form-control form-control-sm mt-2" type="text" placeholder="Filtrar regalias por codigo o descripcion">
           <div id="comboGiftList" class="mt-2"></div>
         </div>
 
@@ -303,6 +336,7 @@
     const comboParentAvailable = document.getElementById("comboParentAvailable");
     const comboParentPrice = document.getElementById("comboParentPrice");
     const comboGiftList = document.getElementById("comboGiftList");
+    const comboGiftSearch = document.getElementById("comboGiftSearch");
     const comboApply = document.getElementById("comboApply");
     const comboStatus = document.getElementById("comboStatus");
 
@@ -596,6 +630,7 @@
       comboParentAvailable.textContent = "0";
       comboParentPrice.textContent = fmt(0, "C$");
       comboGiftList.innerHTML = "<div class=\"small text-muted\">Sin regalias cargadas.</div>";
+      if (comboGiftSearch) comboGiftSearch.value = "";
       comboStatus.textContent = "";
     }
 
@@ -604,7 +639,19 @@
         comboGiftList.innerHTML = '<div class="small text-muted">Sin regalias cargadas.</div>';
         return;
       }
-      comboGiftList.innerHTML = comboGifts.map((gift, idx) => `
+      const term = String(comboGiftSearch?.value || "").trim().toLowerCase();
+      const visibleGifts = comboGifts
+        .map((gift, idx) => ({ gift, idx }))
+        .filter(({ gift }) => {
+          if (!term) return true;
+          const text = `${gift.cod_producto || ""} ${gift.descripcion || ""}`.toLowerCase();
+          return text.includes(term);
+        });
+      if (!visibleGifts.length) {
+        comboGiftList.innerHTML = '<div class="small text-muted">Sin coincidencias para ese filtro.</div>';
+        return;
+      }
+      comboGiftList.innerHTML = visibleGifts.map(({ gift, idx }) => `
         <div class="d-flex justify-content-between align-items-center border rounded-3 px-2 py-1 mb-1">
           <div>
             <div class="small fw-semibold">${esc(gift.cod_producto)} - ${esc(gift.descripcion)}</div>
@@ -659,7 +706,10 @@
     async function pickComboParent(item) {
       comboParent = item;
       comboParentSelected.textContent = `${item.cod_producto} - ${item.descripcion}`;
+      comboParentSearch.value = "";
+      comboParentResults.innerHTML = "";
       comboParentQty.value = "1";
+      if (comboGiftSearch) comboGiftSearch.value = "";
       comboGifts = await fetchComboChildren(item.id);
       if (!comboGifts.length) {
         comboGiftList.innerHTML = '<div class="small text-warning">Este producto no tiene regalias configuradas.</div>';
@@ -837,6 +887,7 @@
     });
     btnComboParentSearch?.addEventListener("click", searchComboParents);
     comboParentSearch?.addEventListener("input", debounce(searchComboParents, 240));
+    comboGiftSearch?.addEventListener("input", debounce(renderComboGifts, 160));
     comboParentQty?.addEventListener("input", () => {
       comboParentQty.value = String(Math.max(1, Math.round(Number(comboParentQty.value || 1))));
       clampComboQty();

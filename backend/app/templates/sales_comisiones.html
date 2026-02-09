@@ -1482,6 +1482,7 @@
 
     if (assignmentForm && payloadInput && assignmentBody) {
       assignmentForm.addEventListener("submit", (event) => {
+        updateTotals();
         const submitAction =
           event.submitter?.getAttribute("formaction") ||
           assignmentForm.getAttribute("action") ||
@@ -1523,7 +1524,7 @@
         assignmentBody.querySelectorAll("tr[data-assignment-row]").forEach((row) => {
           const ventaItemId = Number.parseInt(row.getAttribute("data-venta-item-id") || "0", 10);
           const vendedorId = Number.parseInt((row.querySelector(".assignment-vendedor")?.value || "0"), 10);
-          const cantidad = parseQty(row.getAttribute("data-cantidad"));
+          const cantidad = parseQty(row.querySelector(".assignment-qty")?.value);
           if (!ventaItemId || !vendedorId || cantidad < 0) return;
           rows.push({
             temp_id: Number.parseInt(row.getAttribute("data-temp-id") || "0", 10),

@@ -23,7 +23,7 @@ class Settings:
     ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@hollywoodpacas.com")
     ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "020416")
     ADMIN_FULL_NAME: str = os.getenv("ADMIN_FULL_NAME", "Administrador")
-    UI_VERSION: str = os.getenv("UI_VERSION", "01.142.2025")
+    UI_VERSION: str = os.getenv("UI_VERSION", "02.009.2026")
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.zoho.com")
