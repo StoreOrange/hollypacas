@@ -6361,7 +6361,7 @@ def _build_inventory_rotation_data(
             "costo_sobre_venta_pct": float(costo_sobre_venta_pct),
             "recuperacion_costos_pct": float(recuperacion_costos_pct),
         },
-        "month_start": month_start,
+        "month_start": period_start,
         "month_end": end_date,
         "unsold_rows": unsold_rows[:top_n],
         "slow_rows": slow_rows[:top_n],
