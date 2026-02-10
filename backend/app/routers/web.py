@@ -5815,6 +5815,8 @@ def _build_inventory_rotation_data(
             "selected_branch": selected_branch,
             "selected_linea": selected_linea,
             "selected_bodega": selected_bodega,
+            "month_start": month_start,
+            "month_end": end_date,
             "kpis": {
                 "productos_stock": 0,
                 "productos_sin_venta": 0,
@@ -5851,6 +5853,8 @@ def _build_inventory_rotation_data(
             "selected_branch": selected_branch,
             "selected_linea": selected_linea,
             "selected_bodega": selected_bodega,
+            "month_start": month_start,
+            "month_end": end_date,
             "kpis": {
                 "productos_stock": 0,
                 "productos_sin_venta": 0,
