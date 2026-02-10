@@ -5773,7 +5773,8 @@ def _build_inventory_rotation_data(
     min_stock_days: int,
     lead_days: int,
 ):
-    month_start = end_date.replace(day=1)
+    # The financial block must obey the top date filters.
+    period_start = start_date
     branches = db.query(Branch).order_by(Branch.name).all()
     lineas = db.query(Linea).filter(Linea.activo.is_(True)).order_by(Linea.linea.asc()).all()
     selected_branch = None
@@ -5815,7 +5816,7 @@ def _build_inventory_rotation_data(
             "selected_branch": selected_branch,
             "selected_linea": selected_linea,
             "selected_bodega": selected_bodega,
-            "month_start": month_start,
+            "month_start": period_start,
             "month_end": end_date,
             "kpis": {
                 "productos_stock": 0,
@@ -5853,7 +5854,7 @@ def _build_inventory_rotation_data(
             "selected_branch": selected_branch,
             "selected_linea": selected_linea,
             "selected_bodega": selected_bodega,
-            "month_start": month_start,
+            "month_start": period_start,
             "month_end": end_date,
             "kpis": {
                 "productos_stock": 0,
@@ -5939,7 +5940,7 @@ def _build_inventory_rotation_data(
         .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
         .filter(IngresoInventario.bodega_id.in_(bodega_ids))
         .filter(IngresoItem.producto_id.in_(product_ids_list))
-        .filter(IngresoInventario.fecha >= month_start, IngresoInventario.fecha <= end_date)
+        .filter(IngresoInventario.fecha >= period_start, IngresoInventario.fecha <= end_date)
         .group_by(IngresoItem.producto_id)
         .all()
     )
@@ -5955,7 +5956,7 @@ def _build_inventory_rotation_data(
         .join(EgresoInventario, EgresoInventario.id == EgresoItem.egreso_id)
         .filter(EgresoInventario.bodega_id.in_(bodega_ids))
         .filter(EgresoItem.producto_id.in_(product_ids_list))
-        .filter(EgresoInventario.fecha >= month_start, EgresoInventario.fecha <= end_date)
+        .filter(EgresoInventario.fecha >= period_start, EgresoInventario.fecha <= end_date)
         .group_by(EgresoItem.producto_id)
         .all()
     )
@@ -5968,7 +5969,7 @@ def _build_inventory_rotation_data(
         .filter(VentaFactura.bodega_id.in_(bodega_ids))
         .filter(VentaItem.producto_id.in_(product_ids_list))
         .filter(VentaFactura.estado != "ANULADA")
-        .filter(VentaFactura.fecha >= datetime.combine(month_start, datetime.min.time()))
+        .filter(VentaFactura.fecha >= datetime.combine(period_start, datetime.min.time()))
         .filter(VentaFactura.fecha < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
         .group_by(VentaItem.producto_id)
         .all()
