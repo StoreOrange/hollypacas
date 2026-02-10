@@ -76,7 +76,25 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 0.5rem;
+      list-style: none;
+      width: 100%;
+      cursor: pointer;
+      margin: 0;
+    }
+    .home-mobile-preventas .head::-webkit-details-marker {
+      display: none;
+    }
+    .home-mobile-preventas .caret {
+      color: #1e3a8a;
+      font-size: 0.75rem;
+      margin-left: 0.35rem;
+      transition: transform .15s ease;
+    }
+    .home-mobile-preventas details[open] .caret {
+      transform: rotate(180deg);
+    }
+    .home-mobile-preventas .body {
+      margin-top: 0.55rem;
     }
     .home-mobile-preventas .title {
       font-size: 0.8rem;
@@ -264,28 +282,35 @@
           {% endif %}
         </div>
         <div class="home-mobile-preventas d-lg-none">
-          <div class="head">
-            <div class="title">Mis preventas (hoy y ayer)</div>
-            <span class="badge text-bg-primary">{{ home_preventas|length }}</span>
-          </div>
-          {% if home_preventas %}
-            {% for p in home_preventas %}
-            <div class="home-mobile-preventa-row">
-              <div class="top">
-                <span>{{ p.numero }}</span>
-                <span class="badge {{ p.estado_class }}">{{ p.estado_label }}</span>
-              </div>
-              <div class="meta">
-                <span class="cliente">{{ p.cliente }}</span>
-                <span>{{ p.monto_label }}</span>
-                <span>{{ p.fecha_label }}</span>
-                <span></span>
-              </div>
+          <details>
+            <summary class="head">
+              <span class="title">Mis preventas (hoy y ayer)</span>
+              <span class="d-inline-flex align-items-center">
+                <span class="badge text-bg-primary">{{ home_preventas|length }}</span>
+                <i class="bi bi-chevron-down caret"></i>
+              </span>
+            </summary>
+            <div class="body">
+              {% if home_preventas %}
+                {% for p in home_preventas %}
+                <div class="home-mobile-preventa-row">
+                  <div class="top">
+                    <span>{{ p.numero }}</span>
+                    <span class="badge {{ p.estado_class }}">{{ p.estado_label }}</span>
+                  </div>
+                  <div class="meta">
+                    <span class="cliente">{{ p.cliente }}</span>
+                    <span>{{ p.monto_label }}</span>
+                    <span>{{ p.fecha_label }}</span>
+                    <span></span>
+                  </div>
+                </div>
+                {% endfor %}
+              {% else %}
+                <div class="text-slate text-sm">No hay preventas recientes para tu usuario.</div>
+              {% endif %}
             </div>
-            {% endfor %}
-          {% else %}
-            <div class="text-slate text-sm">No hay preventas recientes para tu usuario.</div>
-          {% endif %}
+          </details>
         </div>
         <div class="row g-4">
           <div class="col-md-6 col-xl-4">
