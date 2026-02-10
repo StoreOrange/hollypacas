@@ -7105,6 +7105,8 @@ def report_inventory_rotation(
             "sort_sales": sort_sales,
             "min_stock_days": min_stock_days,
             "lead_days": lead_days,
+            "month_start": data["month_start"],
+            "month_end": data["month_end"],
             "kpis": data["kpis"],
             "sales_products_rows": data["sales_products_rows"],
             "balance_rows": data["balance_rows"],
