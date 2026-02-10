@@ -5853,17 +5853,13 @@ def _build_inventory_rotation_data(
             "trend_rows": [],
         }
 
-    saldos = (
-        db.query(SaldoProducto)
-        .filter(SaldoProducto.bodega_id.in_(bodega_ids))
-        .filter(SaldoProducto.producto_id.in_(product_ids_list))
-        .all()
-    )
+    balances = _balances_by_bodega(db, bodega_ids, product_ids_list)
     saldo_map: dict[int, Decimal] = {}
-    for s in saldos:
-        saldo_map[s.producto_id] = saldo_map.get(s.producto_id, Decimal("0")) + Decimal(
-            str(s.cantidad or 0)
-        )
+    for producto_id in product_ids_list:
+        total = Decimal("0")
+        for bodega_id in bodega_ids:
+            total += balances.get((producto_id, bodega_id), Decimal("0"))
+        saldo_map[producto_id] = total
 
     ingresos_rows = (
         db.query(
