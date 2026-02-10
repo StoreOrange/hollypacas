@@ -31,6 +31,10 @@
               <i class="bi bi-cash-stack"></i>
               Inversion: C$ {{ "{:,.2f}".format(kpis.inversion_actual_cs or 0) }}
             </div>
+            <div class="odoo-pill">
+              <i class="bi bi-graph-up-arrow"></i>
+              Ventas periodo: C$ {{ "{:,.2f}".format(kpis.ventas_periodo_cs or 0) }}
+            </div>
           </div>
         </div>
         <ul class="nav nav-tabs mt-3">
@@ -74,6 +78,15 @@
               {% endfor %}
             </select>
           </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Categoria</label>
+            <select name="categoria_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_linea in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for linea in lineas %}
+              <option value="{{ linea.id }}" {% if selected_linea == linea.id|string %}selected{% endif %}>{{ linea.linea }}</option>
+              {% endfor %}
+            </select>
+          </div>
           <div class="col-6 col-md-2">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Top items</label>
             <input name="top_n" type="number" min="5" max="200" class="form-control form-control-sm" value="{{ top_n }}">
@@ -82,6 +95,29 @@
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Dias lentitud</label>
             <input name="slow_days" type="number" min="7" max="365" class="form-control form-control-sm" value="{{ slow_days }}">
           </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Stock minimo (dias)</label>
+            <input name="min_stock_days" type="number" min="5" max="120" class="form-control form-control-sm" value="{{ min_stock_days }}">
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Lead time (dias)</label>
+            <input name="lead_days" type="number" min="1" max="90" class="form-control form-control-sm" value="{{ lead_days }}">
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Orden ventas</label>
+            <select name="sort_sales" class="form-select form-select-sm">
+              <option value="venta" {% if sort_sales == "venta" %}selected{% endif %}>Valor total</option>
+              <option value="cantidad" {% if sort_sales == "cantidad" %}selected{% endif %}>Cantidad vendida</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Tendencia</label>
+            <select name="trend" class="form-select form-select-sm">
+              <option value="daily" {% if trend_granularity == "daily" %}selected{% endif %}>Diario</option>
+              <option value="weekly" {% if trend_granularity == "weekly" %}selected{% endif %}>Semanal</option>
+              <option value="monthly" {% if trend_granularity == "monthly" %}selected{% endif %}>Mensual</option>
+            </select>
+          </div>
           <div class="col-12 col-md-auto">
             <button class="btn btn-outline-secondary btn-sm" type="submit">
               <i class="bi bi-search"></i>
@@ -89,6 +125,86 @@
             </button>
           </div>
         </form>
+      </div>
+
+      <div class="odoo-card mb-3">
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-outline-secondary btn-sm" href="#sec-ventas-producto">Ventas por producto</a>
+          <a class="btn btn-outline-secondary btn-sm" href="#sec-balance">Balance inventario</a>
+          <a class="btn btn-outline-secondary btn-sm" href="#sec-rotacion">Rotacion</a>
+          <a class="btn btn-outline-secondary btn-sm" href="#sec-reorden">Punto reposicion</a>
+          <a class="btn btn-outline-secondary btn-sm" href="#sec-abc">ABC inventario</a>
+          <a class="btn btn-outline-secondary btn-sm" href="#sec-cobertura">Cobertura stock</a>
+          <a class="btn btn-outline-secondary btn-sm" href="#sec-tendencia">Tendencia ventas</a>
+        </div>
+      </div>
+
+      <div id="sec-ventas-producto" class="odoo-card mb-3 text-sm">
+        <div class="odoo-section-title mb-3 text-base">Ventas por producto</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Producto</th>
+                <th>Fecha venta</th>
+                <th class="text-end">Unidades vendidas</th>
+                <th class="text-end">Ingreso total C$</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in sales_products_rows %}
+              <tr>
+                <td><span class="fw-semibold">{{ row.codigo }}</span> {{ row.descripcion }}</td>
+                <td>{{ row.fecha_venta }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.ingreso_cs or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if sales_products_rows|length == 0 %}
+              <tr><td colspan="4" class="text-center text-slate py-3">Sin resultados.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="sec-balance" class="odoo-card mb-3 text-sm">
+        <div class="odoo-section-title mb-3 text-base">Balance de inventario actual</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Producto</th>
+                <th>Categoria</th>
+                <th class="text-end">Stock actual</th>
+                <th class="text-end">Stock minimo recomendado</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in balance_rows %}
+              <tr>
+                <td><span class="fw-semibold">{{ row.codigo }}</span> {{ row.descripcion }}</td>
+                <td>{{ row.linea }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.stock_actual or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.stock_min or 0) }}</td>
+                <td>
+                  {% if row.estado == "CRITICO" %}
+                    <span class="badge text-bg-danger">Critico</span>
+                  {% elif row.estado == "BAJO" %}
+                    <span class="badge text-bg-warning">Bajo</span>
+                  {% else %}
+                    <span class="badge text-bg-success">Normal</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              {% if balance_rows|length == 0 %}
+              <tr><td colspan="5" class="text-center text-slate py-3">Sin resultados.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div class="row g-3 mb-3">
@@ -222,7 +338,7 @@
         </div>
       </div>
 
-      <div class="odoo-card mt-3 text-sm">
+      <div id="sec-rotacion" class="odoo-card mt-3 text-sm">
         <div class="odoo-section-title mb-3 text-base">Rotacion y recuperacion estimada</div>
         <div class="table-responsive">
           <table class="table table-sm table-hover odoo-table text-sm align-middle">
@@ -257,8 +373,137 @@
         </div>
       </div>
 
+      <div id="sec-reorden" class="odoo-card mt-3 text-sm">
+        <div class="odoo-section-title mb-3 text-base">Punto de reposicion</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Producto</th>
+                <th class="text-end">Stock actual</th>
+                <th class="text-end">Punto de reorden</th>
+                <th>Proveedor</th>
+                <th class="text-end">Lead time</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in reorder_rows %}
+              <tr>
+                <td><span class="fw-semibold">{{ row.codigo }}</span> {{ row.descripcion }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.stock_actual or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.punto_reorden or 0) }}</td>
+                <td>{{ row.proveedor }}</td>
+                <td class="text-end">{{ row.lead_days }} dias</td>
+                <td><span class="badge text-bg-danger">{{ row.accion }}</span></td>
+              </tr>
+              {% endfor %}
+              {% if reorder_rows|length == 0 %}
+              <tr><td colspan="6" class="text-center text-slate py-3">Sin productos por debajo del punto de reorden.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="sec-abc" class="odoo-card mt-3 text-sm">
+        <div class="odoo-section-title mb-3 text-base">Clasificacion ABC de inventario</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Producto</th>
+                <th class="text-end">Valor (C$)</th>
+                <th class="text-end">% acumulado</th>
+                <th>Categoria</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in abc_rows %}
+              <tr>
+                <td><span class="fw-semibold">{{ row.codigo }}</span> {{ row.descripcion }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.valor or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.pct_acumulado or 0) }}%</td>
+                <td>
+                  {% if row.categoria == "A" %}
+                    <span class="badge text-bg-primary">A</span>
+                  {% elif row.categoria == "B" %}
+                    <span class="badge text-bg-warning">B</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary">C</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              {% if abc_rows|length == 0 %}
+              <tr><td colspan="4" class="text-center text-slate py-3">Sin resultados.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="sec-cobertura" class="odoo-card mt-3 text-sm">
+        <div class="odoo-section-title mb-3 text-base">Cobertura de stock</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Producto</th>
+                <th class="text-end">Stock actual</th>
+                <th class="text-end">Ventas diarias promedio</th>
+                <th class="text-end">Cobertura (dias)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in coverage_rows %}
+              <tr>
+                <td><span class="fw-semibold">{{ row.codigo }}</span> {{ row.descripcion }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.stock_actual or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.ventas_diarias or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.cobertura_dias or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if coverage_rows|length == 0 %}
+              <tr><td colspan="4" class="text-center text-slate py-3">Sin resultados.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="sec-tendencia" class="odoo-card mt-3 text-sm">
+        <div class="odoo-section-title mb-3 text-base">Tendencia de ventas ({{ trend_granularity }})</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Periodo</th>
+                <th>Producto</th>
+                <th class="text-end">Unidades</th>
+                <th class="text-end">Ingreso C$</th>
+                <th class="text-end">Ingreso USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in trend_rows %}
+              <tr>
+                <td>{{ row.periodo }}</td>
+                <td><span class="fw-semibold">{{ row.codigo }}</span> {{ row.descripcion }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.ingreso_cs or 0) }}</td>
+                <td class="text-end">$ {{ "{:,.2f}".format(row.ingreso_usd or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if trend_rows|length == 0 %}
+              <tr><td colspan="5" class="text-center text-slate py-3">Sin resultados.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   </main>
 </div>
 {% endblock %}
-

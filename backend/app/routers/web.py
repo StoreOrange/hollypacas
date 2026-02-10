@@ -5691,6 +5691,11 @@ def _inventory_rotation_filters(request: Request):
     end_raw = request.query_params.get("end_date")
     top_n_raw = request.query_params.get("top_n")
     slow_days_raw = request.query_params.get("slow_days")
+    categoria_id = request.query_params.get("categoria_id") or "all"
+    trend_granularity = (request.query_params.get("trend") or "monthly").strip().lower()
+    sort_sales = (request.query_params.get("sort_sales") or "venta").strip().lower()
+    min_stock_days_raw = request.query_params.get("min_stock_days")
+    lead_days_raw = request.query_params.get("lead_days")
 
     today = local_today()
     start_date = today - timedelta(days=180)
@@ -5721,7 +5726,35 @@ def _inventory_rotation_filters(request: Request):
         slow_days = 45
     slow_days = min(max(slow_days, 7), 365)
 
-    return start_date, end_date, branch_id, top_n, slow_days
+    try:
+        min_stock_days = int(min_stock_days_raw or 15)
+    except ValueError:
+        min_stock_days = 15
+    min_stock_days = min(max(min_stock_days, 5), 120)
+
+    try:
+        lead_days = int(lead_days_raw or 7)
+    except ValueError:
+        lead_days = 7
+    lead_days = min(max(lead_days, 1), 90)
+
+    if trend_granularity not in {"daily", "weekly", "monthly"}:
+        trend_granularity = "monthly"
+    if sort_sales not in {"venta", "cantidad"}:
+        sort_sales = "venta"
+
+    return (
+        start_date,
+        end_date,
+        branch_id,
+        top_n,
+        slow_days,
+        categoria_id,
+        trend_granularity,
+        sort_sales,
+        min_stock_days,
+        lead_days,
+    )
 
 
 def _build_inventory_rotation_data(
@@ -5731,14 +5764,27 @@ def _build_inventory_rotation_data(
     branch_id: str,
     top_n: int,
     slow_days: int,
+    categoria_id: str,
+    trend_granularity: str,
+    sort_sales: str,
+    min_stock_days: int,
+    lead_days: int,
 ):
     branches = db.query(Branch).order_by(Branch.name).all()
+    lineas = db.query(Linea).filter(Linea.activo.is_(True)).order_by(Linea.linea.asc()).all()
     selected_branch = None
     if branch_id and branch_id != "all":
         try:
             selected_branch = next((b for b in branches if b.id == int(branch_id)), None)
         except ValueError:
             selected_branch = None
+
+    selected_linea = None
+    if categoria_id and categoria_id != "all":
+        try:
+            selected_linea = next((l for l in lineas if l.id == int(categoria_id)), None)
+        except ValueError:
+            selected_linea = None
 
     bodegas_q = db.query(Bodega).filter(Bodega.activo.is_(True))
     if selected_branch:
@@ -5749,7 +5795,9 @@ def _build_inventory_rotation_data(
     if not bodega_ids:
         return {
             "branches": branches,
+            "lineas": lineas,
             "selected_branch": selected_branch,
+            "selected_linea": selected_linea,
             "kpis": {
                 "productos_stock": 0,
                 "productos_sin_venta": 0,
@@ -5757,19 +5805,58 @@ def _build_inventory_rotation_data(
                 "inversion_ingresada_cs": 0.0,
                 "capital_recuperado_cs": 0.0,
                 "recuperacion_pct": 0.0,
+                "ventas_periodo_cs": 0.0,
             },
             "unsold_rows": [],
             "slow_rows": [],
             "expensive_rows": [],
             "rotation_rows": [],
+            "sales_products_rows": [],
+            "balance_rows": [],
+            "reorder_rows": [],
+            "abc_rows": [],
+            "coverage_rows": [],
+            "trend_rows": [],
         }
 
-    productos = db.query(Producto).filter(Producto.activo.is_(True)).all()
+    productos_q = db.query(Producto).filter(Producto.activo.is_(True))
+    if selected_linea:
+        productos_q = productos_q.filter(Producto.linea_id == selected_linea.id)
+    productos = productos_q.all()
     product_map = {p.id: p for p in productos}
+    product_ids_list = [p.id for p in productos]
+
+    if not product_ids_list:
+        return {
+            "branches": branches,
+            "lineas": lineas,
+            "selected_branch": selected_branch,
+            "selected_linea": selected_linea,
+            "kpis": {
+                "productos_stock": 0,
+                "productos_sin_venta": 0,
+                "inversion_actual_cs": 0.0,
+                "inversion_ingresada_cs": 0.0,
+                "capital_recuperado_cs": 0.0,
+                "recuperacion_pct": 0.0,
+                "ventas_periodo_cs": 0.0,
+            },
+            "unsold_rows": [],
+            "slow_rows": [],
+            "expensive_rows": [],
+            "rotation_rows": [],
+            "sales_products_rows": [],
+            "balance_rows": [],
+            "reorder_rows": [],
+            "abc_rows": [],
+            "coverage_rows": [],
+            "trend_rows": [],
+        }
 
     saldos = (
         db.query(SaldoProducto)
         .filter(SaldoProducto.bodega_id.in_(bodega_ids))
+        .filter(SaldoProducto.producto_id.in_(product_ids_list))
         .all()
     )
     saldo_map: dict[int, Decimal] = {}
@@ -5787,6 +5874,7 @@ def _build_inventory_rotation_data(
         )
         .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
         .filter(IngresoInventario.bodega_id.in_(bodega_ids))
+        .filter(IngresoItem.producto_id.in_(product_ids_list))
         .filter(IngresoInventario.fecha >= start_date, IngresoInventario.fecha <= end_date)
         .group_by(IngresoItem.producto_id)
         .all()
@@ -5808,6 +5896,7 @@ def _build_inventory_rotation_data(
         )
         .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
         .filter(VentaFactura.bodega_id.in_(bodega_ids))
+        .filter(VentaItem.producto_id.in_(product_ids_list))
         .filter(VentaFactura.estado != "ANULADA")
         .filter(VentaFactura.fecha >= datetime.combine(start_date, datetime.min.time()))
         .filter(VentaFactura.fecha < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
@@ -5827,6 +5916,7 @@ def _build_inventory_rotation_data(
         db.query(VentaItem.producto_id, func.sum(VentaItem.cantidad))
         .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
         .filter(VentaFactura.bodega_id.in_(bodega_ids))
+        .filter(VentaItem.producto_id.in_(product_ids_list))
         .filter(VentaFactura.estado != "ANULADA")
         .filter(VentaFactura.fecha >= datetime.combine(last_90_start, datetime.min.time()))
         .filter(VentaFactura.fecha < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
@@ -5835,11 +5925,73 @@ def _build_inventory_rotation_data(
     )
     sold_90_qty_map = {int(pid): Decimal(str(qty or 0)) for pid, qty in ventas_90_rows}
 
+    latest_provider_rows = (
+        db.query(IngresoItem.producto_id, IngresoInventario.fecha, Proveedor.nombre)
+        .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
+        .join(Proveedor, Proveedor.id == IngresoInventario.proveedor_id, isouter=True)
+        .filter(IngresoInventario.bodega_id.in_(bodega_ids))
+        .filter(IngresoItem.producto_id.in_(product_ids_list))
+        .order_by(IngresoInventario.fecha.desc(), IngresoInventario.id.desc())
+        .all()
+    )
+    latest_provider_map: dict[int, str] = {}
+    for pid, _fecha, prov_name in latest_provider_rows:
+        key = int(pid)
+        if key not in latest_provider_map:
+            latest_provider_map[key] = prov_name or "-"
+
+    rate_today_row = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= end_date)
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    rate_today = Decimal(str(rate_today_row.rate)) if rate_today_row else Decimal("0")
+
+    trend_raw_rows = (
+        db.query(
+            VentaItem.producto_id,
+            func.date(VentaFactura.fecha),
+            func.sum(VentaItem.cantidad),
+            func.sum(VentaItem.subtotal_cs),
+        )
+        .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+        .filter(VentaFactura.bodega_id.in_(bodega_ids))
+        .filter(VentaItem.producto_id.in_(product_ids_list))
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(VentaFactura.fecha >= datetime.combine(start_date, datetime.min.time()))
+        .filter(VentaFactura.fecha < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
+        .group_by(VentaItem.producto_id, func.date(VentaFactura.fecha))
+        .all()
+    )
+    trend_buckets: dict[tuple[date, int], dict] = {}
+    for pid, raw_day, qty, subtotal_cs in trend_raw_rows:
+        if isinstance(raw_day, datetime):
+            day = raw_day.date()
+        elif isinstance(raw_day, date):
+            day = raw_day
+        elif isinstance(raw_day, str):
+            day = date.fromisoformat(raw_day)
+        else:
+            continue
+        if trend_granularity == "weekly":
+            period_date = day - timedelta(days=day.weekday())
+        elif trend_granularity == "monthly":
+            period_date = day.replace(day=1)
+        else:
+            period_date = day
+        key = (period_date, int(pid))
+        if key not in trend_buckets:
+            trend_buckets[key] = {"cantidad": Decimal("0"), "venta_cs": Decimal("0")}
+        trend_buckets[key]["cantidad"] += Decimal(str(qty or 0))
+        trend_buckets[key]["venta_cs"] += Decimal(str(subtotal_cs or 0))
+
     product_ids = set(saldo_map.keys()) | set(ingreso_qty_map.keys()) | set(sold_qty_map.keys())
     rows = []
     total_inversion_actual = Decimal("0")
     total_inversion_ingresada = Decimal("0")
     total_recuperado = Decimal("0")
+    total_ventas_periodo_cs = Decimal("0")
     productos_sin_venta = 0
     productos_stock = 0
 
@@ -5860,6 +6012,9 @@ def _build_inventory_rotation_data(
             else Decimal("0")
         )
         avg_daily_90 = Decimal(str(sold_90_qty_map.get(pid, Decimal("0")))) / Decimal("90")
+        min_qty_recomendado = avg_daily_90 * Decimal(str(min_stock_days))
+        reorder_qty = avg_daily_90 * Decimal(str(lead_days))
+        cobertura_dias = (saldo_qty / avg_daily_90) if avg_daily_90 > 0 else None
         days_to_liquidate = (
             (saldo_qty / avg_daily_90)
             if avg_daily_90 > 0 and saldo_qty > 0
@@ -5881,6 +6036,7 @@ def _build_inventory_rotation_data(
             total_inversion_actual += inversion_actual_cs
         total_inversion_ingresada += inversion_ingresada_cs
         total_recuperado += capital_recuperado_cs
+        total_ventas_periodo_cs += Decimal(str(sold_cs_map.get(pid, Decimal("0"))))
         if vendido_qty <= 0 and saldo_qty > 0:
             productos_sin_venta += 1
 
@@ -5910,8 +6066,13 @@ def _build_inventory_rotation_data(
                 "first_ingreso": first_ingreso,
                 "days_without_sale": days_without_sale if days_without_sale is not None else None,
                 "avg_daily_90": float(avg_daily_90),
+                "min_qty_recomendado": float(min_qty_recomendado),
+                "reorder_qty": float(reorder_qty),
+                "cobertura_dias": float(cobertura_dias) if cobertura_dias is not None else None,
                 "days_to_liquidate": float(days_to_liquidate) if days_to_liquidate is not None else None,
                 "rotacion": rotacion,
+                "linea": producto.linea.linea if producto.linea else "-",
+                "proveedor": latest_provider_map.get(pid, "-"),
             }
         )
 
@@ -5959,9 +6120,139 @@ def _build_inventory_rotation_data(
         else Decimal("0")
     )
 
+    sales_products_rows = [
+        {
+            "codigo": r["codigo"],
+            "descripcion": r["descripcion"],
+            "fecha_venta": r["last_sale"].strftime("%d/%m/%Y") if r["last_sale"] else "-",
+            "cantidad": r["vendido_qty"],
+            "ingreso_cs": float(sold_cs_map.get(r["producto_id"], Decimal("0"))),
+        }
+        for r in rows
+        if r["vendido_qty"] > 0
+    ]
+    if sort_sales == "cantidad":
+        sales_products_rows.sort(key=lambda r: (-float(r["cantidad"]), -float(r["ingreso_cs"])))
+    else:
+        sales_products_rows.sort(key=lambda r: (-float(r["ingreso_cs"]), -float(r["cantidad"])))
+
+    balance_rows = []
+    reorder_rows = []
+    coverage_rows = []
+    for r in rows:
+        if r["saldo_qty"] <= 0:
+            continue
+        reorder_qty = Decimal(str(r["reorder_qty"] or 0))
+        saldo_qty = Decimal(str(r["saldo_qty"] or 0))
+        if reorder_qty > 0 and saldo_qty <= (reorder_qty * Decimal("0.5")):
+            estado = "CRITICO"
+        elif reorder_qty > 0 and saldo_qty <= reorder_qty:
+            estado = "BAJO"
+        else:
+            estado = "NORMAL"
+
+        balance_row = {
+            "codigo": r["codigo"],
+            "descripcion": r["descripcion"],
+            "linea": r["linea"],
+            "stock_actual": r["saldo_qty"],
+            "stock_min": r["min_qty_recomendado"],
+            "estado": estado,
+        }
+        balance_rows.append(balance_row)
+
+        if reorder_qty > 0 and saldo_qty <= reorder_qty:
+            reorder_rows.append(
+                {
+                    "codigo": r["codigo"],
+                    "descripcion": r["descripcion"],
+                    "stock_actual": r["saldo_qty"],
+                    "punto_reorden": r["reorder_qty"],
+                    "proveedor": r["proveedor"],
+                    "lead_days": lead_days,
+                    "accion": "Reordenar ahora",
+                }
+            )
+
+        if r["cobertura_dias"] is not None:
+            coverage_rows.append(
+                {
+                    "codigo": r["codigo"],
+                    "descripcion": r["descripcion"],
+                    "stock_actual": r["saldo_qty"],
+                    "ventas_diarias": r["avg_daily_90"],
+                    "cobertura_dias": r["cobertura_dias"],
+                }
+            )
+
+    balance_rows.sort(key=lambda r: (r["estado"] != "CRITICO", r["estado"] != "BAJO", r["descripcion"]))
+    reorder_rows.sort(key=lambda r: (float(r["stock_actual"] - r["punto_reorden"]), r["descripcion"]))
+    coverage_rows.sort(key=lambda r: float(r["cobertura_dias"]))
+
+    abc_base = [r for r in rows if r["saldo_qty"] > 0 or r["vendido_qty"] > 0]
+    abc_base.sort(
+        key=lambda r: -float(
+            sold_cs_map.get(r["producto_id"], Decimal("0"))
+            if sold_cs_map.get(r["producto_id"], Decimal("0")) > 0
+            else Decimal(str(r["inversion_actual_cs"] or 0))
+        )
+    )
+    abc_total = Decimal("0")
+    for r in abc_base:
+        metric = sold_cs_map.get(r["producto_id"], Decimal("0"))
+        if metric <= 0:
+            metric = Decimal(str(r["inversion_actual_cs"] or 0))
+        abc_total += metric
+
+    abc_rows = []
+    acumulado = Decimal("0")
+    for r in abc_base:
+        valor = sold_cs_map.get(r["producto_id"], Decimal("0"))
+        if valor <= 0:
+            valor = Decimal(str(r["inversion_actual_cs"] or 0))
+        pct = (valor / abc_total * Decimal("100")) if abc_total > 0 else Decimal("0")
+        acumulado += pct
+        if acumulado <= Decimal("80"):
+            categoria = "A"
+        elif acumulado <= Decimal("95"):
+            categoria = "B"
+        else:
+            categoria = "C"
+        abc_rows.append(
+            {
+                "codigo": r["codigo"],
+                "descripcion": r["descripcion"],
+                "valor": float(valor),
+                "pct_acumulado": float(acumulado),
+                "categoria": categoria,
+            }
+        )
+
+    trend_rows = []
+    for (period_date, pid), agg in sorted(
+        trend_buckets.items(),
+        key=lambda x: (x[0][0], -x[1]["venta_cs"]),
+        reverse=True,
+    ):
+        prod = product_map.get(pid)
+        if not prod:
+            continue
+        trend_rows.append(
+            {
+                "periodo": period_date.strftime("%d/%m/%Y"),
+                "codigo": prod.cod_producto or "-",
+                "descripcion": prod.descripcion or "-",
+                "cantidad": float(agg["cantidad"]),
+                "ingreso_cs": float(agg["venta_cs"]),
+                "ingreso_usd": float((agg["venta_cs"] / rate_today) if rate_today else Decimal("0")),
+            }
+        )
+
     return {
         "branches": branches,
+        "lineas": lineas,
         "selected_branch": selected_branch,
+        "selected_linea": selected_linea,
         "kpis": {
             "productos_stock": int(productos_stock),
             "productos_sin_venta": int(productos_sin_venta),
@@ -5969,11 +6260,18 @@ def _build_inventory_rotation_data(
             "inversion_ingresada_cs": float(total_inversion_ingresada),
             "capital_recuperado_cs": float(total_recuperado),
             "recuperacion_pct": float(recuperacion_pct),
+            "ventas_periodo_cs": float(total_ventas_periodo_cs),
         },
         "unsold_rows": unsold_rows[:top_n],
         "slow_rows": slow_rows[:top_n],
         "expensive_rows": expensive_rows[:top_n],
         "rotation_rows": rotation_rows[:top_n],
+        "sales_products_rows": sales_products_rows[: max(top_n * 2, 30)],
+        "balance_rows": balance_rows[: max(top_n * 2, 30)],
+        "reorder_rows": reorder_rows[: max(top_n * 2, 30)],
+        "abc_rows": abc_rows[: max(top_n * 2, 30)],
+        "coverage_rows": coverage_rows[: max(top_n * 2, 30)],
+        "trend_rows": trend_rows[: max(top_n * 4, 60)],
     }
 
 
@@ -6654,7 +6952,18 @@ def report_inventory_rotation(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
-    start_date, end_date, branch_id, top_n, slow_days = _inventory_rotation_filters(request)
+    (
+        start_date,
+        end_date,
+        branch_id,
+        top_n,
+        slow_days,
+        categoria_id,
+        trend_granularity,
+        sort_sales,
+        min_stock_days,
+        lead_days,
+    ) = _inventory_rotation_filters(request)
     data = _build_inventory_rotation_data(
         db,
         start_date,
@@ -6662,6 +6971,11 @@ def report_inventory_rotation(
         branch_id,
         top_n,
         slow_days,
+        categoria_id,
+        trend_granularity,
+        sort_sales,
+        min_stock_days,
+        lead_days,
     )
     selected_branch = data["selected_branch"]
     branch_label = selected_branch.name if selected_branch else "Todas las sucursales"
@@ -6672,17 +6986,29 @@ def report_inventory_rotation(
             "request": request,
             "user": user,
             "branches": data["branches"],
+            "lineas": data["lineas"],
             "selected_branch": branch_id or "all",
+            "selected_linea": categoria_id or "all",
             "branch_label": branch_label,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
             "top_n": top_n,
             "slow_days": slow_days,
+            "trend_granularity": trend_granularity,
+            "sort_sales": sort_sales,
+            "min_stock_days": min_stock_days,
+            "lead_days": lead_days,
             "kpis": data["kpis"],
+            "sales_products_rows": data["sales_products_rows"],
+            "balance_rows": data["balance_rows"],
             "unsold_rows": data["unsold_rows"],
             "slow_rows": data["slow_rows"],
             "expensive_rows": data["expensive_rows"],
             "rotation_rows": data["rotation_rows"],
+            "reorder_rows": data["reorder_rows"],
+            "abc_rows": data["abc_rows"],
+            "coverage_rows": data["coverage_rows"],
+            "trend_rows": data["trend_rows"],
             "version": settings.UI_VERSION,
         },
     )
