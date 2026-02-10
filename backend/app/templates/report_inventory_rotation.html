@@ -141,6 +141,7 @@
 
       <div class="odoo-card mb-3">
         <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-outline-secondary btn-sm" href="#sec-inversion-costos">Inversion y costos</a>
           <a class="btn btn-outline-secondary btn-sm" href="#sec-ventas-producto">Ventas por producto</a>
           <a class="btn btn-outline-secondary btn-sm" href="#sec-balance">Balance inventario</a>
           <a class="btn btn-outline-secondary btn-sm" href="#sec-rotacion">Rotacion</a>
@@ -148,6 +149,65 @@
           <a class="btn btn-outline-secondary btn-sm" href="#sec-abc">ABC inventario</a>
           <a class="btn btn-outline-secondary btn-sm" href="#sec-cobertura">Cobertura stock</a>
           <a class="btn btn-outline-secondary btn-sm" href="#sec-tendencia">Tendencia ventas</a>
+        </div>
+      </div>
+
+      <div id="sec-inversion-costos" class="odoo-card mb-3">
+        <div class="odoo-section-title mb-2 text-base">Reporte especial: inversion y recuperacion de costos</div>
+        <div class="text-sm text-slate mb-3">
+          Periodo base inversion: <strong>{{ month_start.strftime("%d/%m/%Y") }}</strong> a <strong>{{ month_end.strftime("%d/%m/%Y") }}</strong>
+          <span class="mx-2">|</span>
+          Formula: Inversion inicial del mes + Ingresos del mes - Egresos del mes = Inversion total a la fecha
+        </div>
+        <div class="row g-3">
+          <div class="col-12 col-md-6 col-xl-3">
+            <div class="odoo-card h-100">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Inversion inicial mes</div>
+              <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.inversion_inicial_mes_cs or 0) }}</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 col-xl-3">
+            <div class="odoo-card h-100">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Ingresos mes (costo)</div>
+              <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.ingresos_mes_cs or 0) }}</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 col-xl-3">
+            <div class="odoo-card h-100">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Egresos mes (costo)</div>
+              <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.egresos_mes_cs or 0) }}</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 col-xl-3">
+            <div class="odoo-card h-100">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Inversion total a la fecha</div>
+              <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.inversion_total_fecha_cs or 0) }}</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 col-xl-4">
+            <div class="odoo-card h-100">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Costo mercaderia vendida (periodo)</div>
+              <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.costo_vendido_periodo_cs or 0) }}</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 col-xl-4">
+            <div class="odoo-card h-100">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">% Venta al costo</div>
+              <div class="odoo-title text-lg mt-1">{{ "{:,.2f}".format(kpis.costo_sobre_venta_pct or 0) }}%</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 col-xl-4">
+            <div class="odoo-card h-100">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">% Recuperacion de inversion (costos)</div>
+              <div class="odoo-title text-lg mt-1">{{ "{:,.2f}".format(kpis.recuperacion_costos_pct or 0) }}%</div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="odoo-card h-100">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Inventario disponible al costo (fecha corte)</div>
+              <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.inversion_actual_cs or 0) }}</div>
+            </div>
+          </div>
         </div>
       </div>
 

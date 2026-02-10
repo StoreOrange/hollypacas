@@ -5773,6 +5773,7 @@ def _build_inventory_rotation_data(
     min_stock_days: int,
     lead_days: int,
 ):
+    month_start = end_date.replace(day=1)
     branches = db.query(Branch).order_by(Branch.name).all()
     lineas = db.query(Linea).filter(Linea.activo.is_(True)).order_by(Linea.linea.asc()).all()
     selected_branch = None
@@ -5925,6 +5926,51 @@ def _build_inventory_rotation_data(
         sold_cs_map[int(pid)] = Decimal(str(subtotal_cs or 0))
         last_sale_map[int(pid)] = last_dt
 
+    ingresos_mes_rows = (
+        db.query(
+            IngresoItem.producto_id,
+            func.sum(IngresoItem.cantidad),
+            func.sum(IngresoItem.subtotal_cs),
+        )
+        .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
+        .filter(IngresoInventario.bodega_id.in_(bodega_ids))
+        .filter(IngresoItem.producto_id.in_(product_ids_list))
+        .filter(IngresoInventario.fecha >= month_start, IngresoInventario.fecha <= end_date)
+        .group_by(IngresoItem.producto_id)
+        .all()
+    )
+    ingreso_mes_qty_map = {int(pid): Decimal(str(qty or 0)) for pid, qty, _ in ingresos_mes_rows}
+    ingreso_mes_cs_map = {int(pid): Decimal(str(cost_cs or 0)) for pid, _, cost_cs in ingresos_mes_rows}
+
+    egresos_mes_rows = (
+        db.query(
+            EgresoItem.producto_id,
+            func.sum(EgresoItem.cantidad),
+            func.sum(EgresoItem.subtotal_cs),
+        )
+        .join(EgresoInventario, EgresoInventario.id == EgresoItem.egreso_id)
+        .filter(EgresoInventario.bodega_id.in_(bodega_ids))
+        .filter(EgresoItem.producto_id.in_(product_ids_list))
+        .filter(EgresoInventario.fecha >= month_start, EgresoInventario.fecha <= end_date)
+        .group_by(EgresoItem.producto_id)
+        .all()
+    )
+    egreso_mes_qty_map = {int(pid): Decimal(str(qty or 0)) for pid, qty, _ in egresos_mes_rows}
+    egreso_mes_cs_map = {int(pid): Decimal(str(cost_cs or 0)) for pid, _, cost_cs in egresos_mes_rows}
+
+    ventas_mes_rows = (
+        db.query(VentaItem.producto_id, func.sum(VentaItem.cantidad))
+        .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+        .filter(VentaFactura.bodega_id.in_(bodega_ids))
+        .filter(VentaItem.producto_id.in_(product_ids_list))
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(VentaFactura.fecha >= datetime.combine(month_start, datetime.min.time()))
+        .filter(VentaFactura.fecha < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
+        .group_by(VentaItem.producto_id)
+        .all()
+    )
+    ventas_mes_qty_map = {int(pid): Decimal(str(qty or 0)) for pid, qty in ventas_mes_rows}
+
     last_90_start = end_date - timedelta(days=89)
     ventas_90_rows = (
         db.query(VentaItem.producto_id, func.sum(VentaItem.cantidad))
@@ -6006,8 +6052,12 @@ def _build_inventory_rotation_data(
     total_inversion_ingresada = Decimal("0")
     total_recuperado = Decimal("0")
     total_ventas_periodo_cs = Decimal("0")
+    total_costo_vendido_periodo_cs = Decimal("0")
     productos_sin_venta = 0
     productos_stock = 0
+    total_inversion_inicial_mes_cs = Decimal("0")
+    total_ingresos_mes_cs = Decimal("0")
+    total_egresos_mes_cs = Decimal("0")
 
     for pid in product_ids:
         producto = product_map.get(pid)
@@ -6020,6 +6070,12 @@ def _build_inventory_rotation_data(
         inversion_actual_cs = saldo_qty * costo_unit_cs
         inversion_ingresada_cs = Decimal(str(ingreso_cost_map.get(pid, Decimal("0"))))
         capital_recuperado_cs = vendido_qty * costo_unit_cs
+        costo_vendido_periodo_cs = vendido_qty * costo_unit_cs
+        ingreso_mes_qty = Decimal(str(ingreso_mes_qty_map.get(pid, Decimal("0"))))
+        egreso_mes_qty = Decimal(str(egreso_mes_qty_map.get(pid, Decimal("0"))))
+        venta_mes_qty = Decimal(str(ventas_mes_qty_map.get(pid, Decimal("0"))))
+        saldo_inicio_mes_qty = saldo_qty - ingreso_mes_qty + egreso_mes_qty + venta_mes_qty
+        inversion_inicial_mes_cs = saldo_inicio_mes_qty * costo_unit_cs
         sell_through_pct = (
             (vendido_qty / ingreso_qty) * Decimal("100")
             if ingreso_qty > 0
@@ -6051,6 +6107,10 @@ def _build_inventory_rotation_data(
         total_inversion_ingresada += inversion_ingresada_cs
         total_recuperado += capital_recuperado_cs
         total_ventas_periodo_cs += Decimal(str(sold_cs_map.get(pid, Decimal("0"))))
+        total_costo_vendido_periodo_cs += costo_vendido_periodo_cs
+        total_inversion_inicial_mes_cs += inversion_inicial_mes_cs
+        total_ingresos_mes_cs += Decimal(str(ingreso_mes_cs_map.get(pid, Decimal("0"))))
+        total_egresos_mes_cs += Decimal(str(egreso_mes_cs_map.get(pid, Decimal("0"))))
         if vendido_qty <= 0 and saldo_qty > 0:
             productos_sin_venta += 1
 
@@ -6131,6 +6191,17 @@ def _build_inventory_rotation_data(
     recuperacion_pct = (
         (total_recuperado / total_inversion_ingresada) * Decimal("100")
         if total_inversion_ingresada > 0
+        else Decimal("0")
+    )
+    inversion_total_fecha_cs = total_inversion_inicial_mes_cs + total_ingresos_mes_cs - total_egresos_mes_cs
+    costo_sobre_venta_pct = (
+        (total_costo_vendido_periodo_cs / total_ventas_periodo_cs) * Decimal("100")
+        if total_ventas_periodo_cs > 0
+        else Decimal("0")
+    )
+    recuperacion_costos_pct = (
+        (total_costo_vendido_periodo_cs / inversion_total_fecha_cs) * Decimal("100")
+        if inversion_total_fecha_cs > 0
         else Decimal("0")
     )
 
@@ -6277,7 +6348,16 @@ def _build_inventory_rotation_data(
             "capital_recuperado_cs": float(total_recuperado),
             "recuperacion_pct": float(recuperacion_pct),
             "ventas_periodo_cs": float(total_ventas_periodo_cs),
+            "inversion_inicial_mes_cs": float(total_inversion_inicial_mes_cs),
+            "ingresos_mes_cs": float(total_ingresos_mes_cs),
+            "egresos_mes_cs": float(total_egresos_mes_cs),
+            "inversion_total_fecha_cs": float(inversion_total_fecha_cs),
+            "costo_vendido_periodo_cs": float(total_costo_vendido_periodo_cs),
+            "costo_sobre_venta_pct": float(costo_sobre_venta_pct),
+            "recuperacion_costos_pct": float(recuperacion_costos_pct),
         },
+        "month_start": month_start,
+        "month_end": end_date,
         "unsold_rows": unsold_rows[:top_n],
         "slow_rows": slow_rows[:top_n],
         "expensive_rows": expensive_rows[:top_n],
