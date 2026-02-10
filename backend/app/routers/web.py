@@ -6054,6 +6054,7 @@ def _build_inventory_rotation_data(
     product_ids = set(saldo_map.keys()) | set(ingreso_qty_map.keys()) | set(sold_qty_map.keys())
     rows = []
     total_inversion_actual = Decimal("0")
+    total_inversion_disponible = Decimal("0")
     total_inversion_ingresada = Decimal("0")
     total_recuperado = Decimal("0")
     total_ventas_periodo_cs = Decimal("0")
@@ -6106,9 +6107,11 @@ def _build_inventory_rotation_data(
             else ((end_date - first_ingreso).days if first_ingreso else None)
         )
 
+        if saldo_qty != 0:
+            total_inversion_actual += inversion_actual_cs
         if saldo_qty > 0:
             productos_stock += 1
-            total_inversion_actual += inversion_actual_cs
+            total_inversion_disponible += inversion_actual_cs
         total_inversion_ingresada += inversion_ingresada_cs
         total_recuperado += capital_recuperado_cs
         total_ventas_periodo_cs += Decimal(str(sold_cs_map.get(pid, Decimal("0"))))
@@ -6198,6 +6201,7 @@ def _build_inventory_rotation_data(
         if total_inversion_ingresada > 0
         else Decimal("0")
     )
+    ajuste_negativos_cs = total_inversion_disponible - total_inversion_actual
     inversion_total_fecha_cs = total_inversion_inicial_mes_cs + total_ingresos_mes_cs - total_egresos_mes_cs
     costo_sobre_venta_pct = (
         (total_costo_vendido_periodo_cs / total_ventas_periodo_cs) * Decimal("100")
@@ -6349,6 +6353,8 @@ def _build_inventory_rotation_data(
             "productos_stock": int(productos_stock),
             "productos_sin_venta": int(productos_sin_venta),
             "inversion_actual_cs": float(total_inversion_actual),
+            "inversion_disponible_cs": float(total_inversion_disponible),
+            "ajuste_negativos_cs": float(ajuste_negativos_cs),
             "inversion_ingresada_cs": float(total_inversion_ingresada),
             "capital_recuperado_cs": float(total_recuperado),
             "recuperacion_pct": float(recuperacion_pct),

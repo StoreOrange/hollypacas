@@ -32,7 +32,7 @@
             </div>
             <div class="odoo-pill primary">
               <i class="bi bi-cash-stack"></i>
-              Inversion: C$ {{ "{:,.2f}".format(kpis.inversion_actual_cs or 0) }}
+              Inversion neta: C$ {{ "{:,.2f}".format(kpis.inversion_actual_cs or 0) }}
             </div>
             <div class="odoo-pill">
               <i class="bi bi-graph-up-arrow"></i>
@@ -202,10 +202,22 @@
               <div class="odoo-title text-lg mt-1">{{ "{:,.2f}".format(kpis.recuperacion_costos_pct or 0) }}%</div>
             </div>
           </div>
+          <div class="col-12 col-md-6 col-xl-6">
+            <div class="odoo-card h-100">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Inventario neto al costo (contable)</div>
+              <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.inversion_actual_cs or 0) }}</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 col-xl-6">
+            <div class="odoo-card h-100">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Ajuste por saldos negativos</div>
+              <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.ajuste_negativos_cs or 0) }}</div>
+            </div>
+          </div>
           <div class="col-12">
             <div class="odoo-card h-100">
               <div class="text-xs uppercase tracking-[0.2em] text-slate">Inventario disponible al costo (fecha corte)</div>
-              <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.inversion_actual_cs or 0) }}</div>
+              <div class="odoo-title text-lg mt-1">C$ {{ "{:,.2f}".format(kpis.inversion_disponible_cs or 0) }}</div>
             </div>
           </div>
         </div>
