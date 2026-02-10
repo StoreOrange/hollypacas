@@ -16,7 +16,10 @@
             </nav>
             <div class="odoo-title mt-2 text-xl">Inventario y rotacion</div>
             <div class="odoo-subtitle mt-1 text-sm">Analisis de productos pegados, recuperacion de capital y velocidad de salida.</div>
-            <div class="text-sm text-slate mt-1">Sucursal: <strong class="text-ink">{{ branch_label }}</strong></div>
+            <div class="text-sm text-slate mt-1">
+              Sucursal: <strong class="text-ink">{{ branch_label }}</strong> ·
+              Bodega: <strong class="text-ink">{{ bodega_label }}</strong>
+            </div>
           </div>
           <div class="d-flex flex-wrap align-items-center gap-2">
             <div class="odoo-pill primary">
@@ -75,6 +78,15 @@
               <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
               {% for branch in branches %}
               <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Bodega</label>
+            <select name="bodega_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_bodega in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for bodega in bodegas %}
+              <option value="{{ bodega.id }}" {% if selected_bodega == bodega.id|string %}selected{% endif %}>{{ bodega.name }}</option>
               {% endfor %}
             </select>
           </div>

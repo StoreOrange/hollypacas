@@ -5687,6 +5687,7 @@ def _inventory_consolidated_filters(request: Request) -> str:
 
 def _inventory_rotation_filters(request: Request):
     branch_id = request.query_params.get("branch_id") or "all"
+    bodega_id = request.query_params.get("bodega_id") or "all"
     start_raw = request.query_params.get("start_date")
     end_raw = request.query_params.get("end_date")
     top_n_raw = request.query_params.get("top_n")
@@ -5747,6 +5748,7 @@ def _inventory_rotation_filters(request: Request):
         start_date,
         end_date,
         branch_id,
+        bodega_id,
         top_n,
         slow_days,
         categoria_id,
@@ -5762,6 +5764,7 @@ def _build_inventory_rotation_data(
     start_date: date,
     end_date: date,
     branch_id: str,
+    bodega_id: str,
     top_n: int,
     slow_days: int,
     categoria_id: str,
@@ -5789,15 +5792,28 @@ def _build_inventory_rotation_data(
     bodegas_q = db.query(Bodega).filter(Bodega.activo.is_(True))
     if selected_branch:
         bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch.id)
+    if bodega_id and bodega_id != "all":
+        try:
+            bodegas_q = bodegas_q.filter(Bodega.id == int(bodega_id))
+        except ValueError:
+            pass
     bodegas = bodegas_q.order_by(Bodega.id.asc()).all()
     bodega_ids = [b.id for b in bodegas]
+    selected_bodega = None
+    if bodega_id and bodega_id != "all":
+        try:
+            selected_bodega = next((b for b in bodegas if b.id == int(bodega_id)), None)
+        except ValueError:
+            selected_bodega = None
 
     if not bodega_ids:
         return {
             "branches": branches,
             "lineas": lineas,
+            "bodegas": bodegas,
             "selected_branch": selected_branch,
             "selected_linea": selected_linea,
+            "selected_bodega": selected_bodega,
             "kpis": {
                 "productos_stock": 0,
                 "productos_sin_venta": 0,
@@ -5830,8 +5846,10 @@ def _build_inventory_rotation_data(
         return {
             "branches": branches,
             "lineas": lineas,
+            "bodegas": bodegas,
             "selected_branch": selected_branch,
             "selected_linea": selected_linea,
+            "selected_bodega": selected_bodega,
             "kpis": {
                 "productos_stock": 0,
                 "productos_sin_venta": 0,
@@ -6247,8 +6265,10 @@ def _build_inventory_rotation_data(
     return {
         "branches": branches,
         "lineas": lineas,
+        "bodegas": bodegas,
         "selected_branch": selected_branch,
         "selected_linea": selected_linea,
+        "selected_bodega": selected_bodega,
         "kpis": {
             "productos_stock": int(productos_stock),
             "productos_sin_venta": int(productos_sin_venta),
@@ -6952,6 +6972,7 @@ def report_inventory_rotation(
         start_date,
         end_date,
         branch_id,
+        bodega_id,
         top_n,
         slow_days,
         categoria_id,
@@ -6965,6 +6986,7 @@ def report_inventory_rotation(
         start_date,
         end_date,
         branch_id,
+        bodega_id,
         top_n,
         slow_days,
         categoria_id,
@@ -6975,6 +6997,8 @@ def report_inventory_rotation(
     )
     selected_branch = data["selected_branch"]
     branch_label = selected_branch.name if selected_branch else "Todas las sucursales"
+    selected_bodega = data.get("selected_bodega")
+    bodega_label = selected_bodega.name if selected_bodega else "Todas las bodegas"
 
     return request.app.state.templates.TemplateResponse(
         "report_inventory_rotation.html",
@@ -6983,9 +7007,12 @@ def report_inventory_rotation(
             "user": user,
             "branches": data["branches"],
             "lineas": data["lineas"],
+            "bodegas": data["bodegas"],
             "selected_branch": branch_id or "all",
             "selected_linea": categoria_id or "all",
+            "selected_bodega": bodega_id or "all",
             "branch_label": branch_label,
+            "bodega_label": bodega_label,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
             "top_n": top_n,
