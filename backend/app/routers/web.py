@@ -12273,8 +12273,6 @@ def sales_cobranza_abonos(
     factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
     if not factura:
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
-    if factura.estado == "ANULADA":
-        return JSONResponse({"ok": False, "message": "Factura anulada"}, status_code=400)
     _, bodega = _resolve_branch_bodega(db, user)
     if bodega and factura.bodega_id != bodega.id:
         return JSONResponse({"ok": False, "message": "Factura fuera de tu bodega"}, status_code=403)

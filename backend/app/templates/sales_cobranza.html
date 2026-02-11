@@ -530,7 +530,7 @@
 
       const abonoBtn = event.target.closest("[data-abono]");
       if (abonoBtn) {
-        const readOnly = abonoBtn.dataset.facturaEstado === "ANULADA" || abonoBtn.dataset.estado === "PAGADA";
+        const readOnly = abonoBtn.dataset.facturaEstado === "ANULADA";
         const abonoModal = getBootstrapModal(abonoModalEl);
         if (!abonoModal) {
           alert("Bootstrap no disponible");
@@ -583,13 +583,9 @@
             <td class="text-end">${formatMoney(item.monto, item.moneda)}</td>
             <td>${item.observacion || "-"}</td>
             <td class="text-end">
-              ${
-                readOnly
-                  ? `<span class="text-slate">-</span>`
-                  : `<button class="btn btn-sm btn-outline-danger" type="button" data-abono-delete="${item.id}">
-                      <i class="bi bi-trash"></i>
-                    </button>`
-              }
+              <button class="btn btn-sm btn-outline-danger" type="button" data-abono-delete="${item.id}">
+                <i class="bi bi-trash"></i>
+              </button>
             </td>
           </tr>
         `)
@@ -606,23 +602,23 @@
             document.getElementById("abono-observacion").value = item.observacion || "";
           });
         });
-        listBody.querySelectorAll("[data-abono-delete]").forEach((btn) => {
-          btn.addEventListener("click", async (ev) => {
-            ev.stopPropagation();
-            const abonoId = btn.dataset.abonoDelete;
-            if (!confirm("Eliminar este recibo de abono?")) {
-              return;
-            }
-            const facturaId = document.getElementById("abono-factura-id").value;
-            const payload = await handleFetchJson(`/sales/cobranza/${facturaId}/abono/${abonoId}/delete`, { method: "POST" });
-            if (!payload || !payload.ok) {
-              alert(payload?.message || "No se pudo eliminar");
-              return;
-            }
-            window.location.reload();
-          });
-        });
       }
+      listBody.querySelectorAll("[data-abono-delete]").forEach((btn) => {
+        btn.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          const abonoId = btn.dataset.abonoDelete;
+          if (!confirm("Eliminar este recibo de abono?")) {
+            return;
+          }
+          const facturaId = document.getElementById("abono-factura-id").value;
+          const payload = await handleFetchJson(`/sales/cobranza/${facturaId}/abono/${abonoId}/delete`, { method: "POST" });
+          if (!payload || !payload.ok) {
+            alert(payload?.message || "No se pudo eliminar");
+            return;
+          }
+          window.location.reload();
+        });
+      });
       return;
     }
 
