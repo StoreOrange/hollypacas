@@ -1852,7 +1852,13 @@ def inventory_ingresos_page(
         ingresos_query.order_by(IngresoInventario.fecha.desc(), IngresoInventario.id.desc())
         .all()
     )
-    tipos = db.query(IngresoTipo).order_by(IngresoTipo.nombre).all()
+    # "Traslado entre bodegas" se genera automaticamente desde egresos.
+    tipos = (
+        db.query(IngresoTipo)
+        .filter(func.lower(IngresoTipo.nombre) != "traslado entre bodegas")
+        .order_by(IngresoTipo.nombre)
+        .all()
+    )
     bodegas = db.query(Bodega).order_by(Bodega.name).all()
     proveedores = db.query(Proveedor).order_by(Proveedor.nombre).all()
     productos = (
@@ -10258,7 +10264,12 @@ def inventory_egreso_pdf(
     pdf.drawString(
         margin,
         height - 174,
-        f"Bodega: {egreso.bodega.name if egreso.bodega else '-'}",
+        f"Bodega origen: {egreso.bodega.name if egreso.bodega else '-'}",
+    )
+    pdf.drawString(
+        margin + 260,
+        height - 174,
+        f"Bodega destino: {egreso.bodega_destino.name if egreso.bodega_destino else '-'}",
     )
     pdf.drawString(
         margin,
@@ -11207,6 +11218,11 @@ async def inventory_create_ingreso(
     tipo = db.query(IngresoTipo).filter(IngresoTipo.id == int(tipo_id)).first()
     if not tipo:
         return RedirectResponse("/inventory/ingresos?error=Tipo+no+valido", status_code=303)
+    if "traslado" in (tipo.nombre or "").lower():
+        return RedirectResponse(
+            "/inventory/ingresos?error=El+tipo+Traslado+se+genera+desde+egresos",
+            status_code=303,
+        )
     if tipo.requiere_proveedor and not proveedor_id:
         return RedirectResponse("/inventory/ingresos?error=Proveedor+requerido", status_code=303)
 
@@ -11315,6 +11331,7 @@ async def inventory_create_egreso(
     form = await request.form()
     tipo_id = form.get("tipo_id")
     bodega_id = form.get("bodega_id")
+    bodega_destino_id = form.get("bodega_destino_id") or None
     fecha = form.get("fecha")
     moneda = form.get("moneda")
     observacion = form.get("observacion") or None
@@ -11331,6 +11348,20 @@ async def inventory_create_egreso(
     tipo = db.query(EgresoTipo).filter(EgresoTipo.id == int(tipo_id)).first()
     if not tipo:
         return RedirectResponse("/inventory/egresos?error=Tipo+no+valido", status_code=303)
+    es_traslado = "traslado" in (tipo.nombre or "").lower()
+    bodega_destino_obj = None
+    if es_traslado:
+        if not bodega_destino_id:
+            return RedirectResponse("/inventory/egresos?error=Selecciona+bodega+destino+para+traslado", status_code=303)
+        if int(bodega_destino_id) == int(bodega_id):
+            return RedirectResponse("/inventory/egresos?error=La+bodega+destino+debe+ser+distinta+al+origen", status_code=303)
+        bodega_destino_obj = (
+            db.query(Bodega)
+            .filter(Bodega.id == int(bodega_destino_id), Bodega.activo.is_(True))
+            .first()
+        )
+        if not bodega_destino_obj:
+            return RedirectResponse("/inventory/egresos?error=Bodega+destino+no+valida", status_code=303)
 
     rate_today = (
         db.query(ExchangeRate)
@@ -11354,6 +11385,7 @@ async def inventory_create_egreso(
     egreso = EgresoInventario(
         tipo_id=int(tipo_id),
         bodega_id=int(bodega_id),
+        bodega_destino_id=int(bodega_destino_id) if bodega_destino_id else None,
         fecha=fecha_value,
         moneda=moneda,
         tasa_cambio=tasa if moneda == "USD" else None,
@@ -11365,6 +11397,7 @@ async def inventory_create_egreso(
 
     total_usd = 0.0
     total_cs = 0.0
+    traslado_items: list[dict[str, float | int]] = []
     product_ids = [int(pid) for pid in item_ids if str(pid).isdigit()]
     balances = _balances_by_bodega(db, [int(bodega_id)], list(set(product_ids))) if product_ids else {}
     for index, product_id in enumerate(item_ids):
@@ -11410,6 +11443,65 @@ async def inventory_create_egreso(
         if producto.saldo:
             existencia_actual = to_decimal(producto.saldo.existencia)
             producto.saldo.existencia = existencia_actual - to_decimal(qty)
+        traslado_items.append(
+            {
+                "producto_id": int(product_id),
+                "cantidad": qty,
+                "costo_unitario_usd": costo_usd,
+                "costo_unitario_cs": costo_cs,
+                "subtotal_usd": subtotal_usd,
+                "subtotal_cs": subtotal_cs,
+            }
+        )
+
+    if es_traslado and bodega_destino_obj and traslado_items:
+        ingreso_tipo = (
+            db.query(IngresoTipo)
+            .filter(func.lower(IngresoTipo.nombre) == "traslado entre bodegas")
+            .first()
+        )
+        if not ingreso_tipo:
+            ingreso_tipo = IngresoTipo(nombre="Traslado entre bodegas", requiere_proveedor=False)
+            db.add(ingreso_tipo)
+            db.flush()
+        bodega_origen_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
+        traslado_obs = (
+            f"Traslado desde {bodega_origen_obj.name if bodega_origen_obj else 'origen'} "
+            f"hacia {bodega_destino_obj.name}. Egreso #{egreso.id}"
+        )
+        if observacion:
+            traslado_obs = f"{traslado_obs} | {observacion}"
+        ingreso = IngresoInventario(
+            tipo_id=ingreso_tipo.id,
+            bodega_id=bodega_destino_obj.id,
+            proveedor_id=None,
+            fecha=fecha_value,
+            moneda=moneda,
+            tasa_cambio=tasa if moneda == "USD" else None,
+            total_usd=total_usd,
+            total_cs=total_cs,
+            observacion=traslado_obs[:300],
+            usuario_registro=user.full_name,
+        )
+        db.add(ingreso)
+        db.flush()
+        for row in traslado_items:
+            db.add(
+                IngresoItem(
+                    ingreso_id=ingreso.id,
+                    producto_id=int(row["producto_id"]),
+                    cantidad=float(row["cantidad"]),
+                    costo_unitario_usd=float(row["costo_unitario_usd"]),
+                    costo_unitario_cs=float(row["costo_unitario_cs"]),
+                    subtotal_usd=float(row["subtotal_usd"]),
+                    subtotal_cs=float(row["subtotal_cs"]),
+                )
+            )
+            producto = db.query(Producto).filter(Producto.id == int(row["producto_id"])).first()
+            if producto and producto.saldo:
+                producto.saldo.existencia = to_decimal(producto.saldo.existencia) + to_decimal(float(row["cantidad"]))
+            elif producto:
+                db.add(SaldoProducto(producto_id=producto.id, existencia=to_decimal(float(row["cantidad"]))))
 
     egreso.total_usd = total_usd
     egreso.total_cs = total_cs

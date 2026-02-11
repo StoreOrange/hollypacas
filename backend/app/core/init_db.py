@@ -282,6 +282,7 @@ def _seed_ingreso_tipos(db: Session) -> None:
 def _seed_egreso_tipos(db: Session) -> None:
     tipos = [
         "Inventario Fisico",
+        "Traslado entre bodegas",
         "Merma",
         "Perdida",
         "Reposicion a Cliente",
@@ -553,6 +554,11 @@ def init_db() -> None:
         if "estado_cobranza" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN estado_cobranza VARCHAR(20) DEFAULT 'PENDIENTE'"))
+    if "egresos_inventario" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("egresos_inventario")}
+        if "bodega_destino_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE egresos_inventario ADD COLUMN bodega_destino_id INTEGER"))
     if "ventas_items" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("ventas_items")}
         if "combo_role" not in columns:

@@ -182,6 +182,7 @@ class EgresoInventario(Base):
     id = Column(Integer, primary_key=True, index=True)
     tipo_id = Column(Integer, ForeignKey("egreso_tipos.id"), nullable=False)
     bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=False)
+    bodega_destino_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
     fecha = Column(Date, nullable=False)
     moneda = Column(String(10), nullable=False)
     tasa_cambio = Column(Numeric(12, 4), nullable=True)
@@ -192,7 +193,8 @@ class EgresoInventario(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     tipo = relationship("EgresoTipo")
-    bodega = relationship("Bodega")
+    bodega = relationship("Bodega", foreign_keys=[bodega_id])
+    bodega_destino = relationship("Bodega", foreign_keys=[bodega_destino_id])
     items = relationship("EgresoItem", back_populates="egreso")
 
 

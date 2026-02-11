@@ -65,6 +65,38 @@
     padding: 0.35rem 0.75rem;
     font-size: 0.9rem;
   }
+  .movement-meta-grid .form-label {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.2rem;
+    line-height: 1rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .movement-meta-grid .form-control,
+  .movement-meta-grid .form-select {
+    min-height: 32px;
+    padding-top: 0.2rem;
+    padding-bottom: 0.2rem;
+    font-size: 0.86rem;
+  }
+  .movement-meta-grid .select2-container--default .select2-selection--single {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+  }
+  .movement-meta-grid .select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 30px;
+    font-size: 0.86rem;
+  }
+  .movement-meta-grid .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 30px;
+  }
+  .movement-meta-grid .movement-meta-item {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -224,7 +256,7 @@
     </div>
     <div class="px-6 pb-4 pt-2 space-y-4 overflow-y-auto max-h-[70vh] odoo-modal-body">
       <div id="tab-ingreso" class="ingreso-panel">
-        <form id="ingreso-form" method="post" action="/inventory/ingresos" class="space-y-4 text-base" novalidate>
+        <form id="ingreso-form" method="post" action="/inventory/ingresos" class="space-y-4 text-sm" novalidate>
           <div id="bodega-banner" class="alert alert-info py-2 px-3 mb-2 d-flex align-items-center gap-2" role="status">
             <i class="bi bi-house-door"></i>
             <span class="fw-semibold">Ingreso de mercaderia en Bodega Central</span>
@@ -235,8 +267,8 @@
               <div class="odoo-modal-title">Datos del ingreso</div>
               <span class="odoo-pill">Campos obligatorios *</span>
             </div>
-            <div class="row g-2 align-items-end">
-              <div class="col-xl-3 col-lg-4 col-md-6">
+            <div class="row g-2 align-items-start movement-meta-grid">
+              <div class="col-12 col-md-6 col-xl-3 movement-meta-item">
                 <label class="form-label text-sm font-semibold text-ink">
                   <i class="bi bi-journal-plus text-brand me-1"></i>
                   Tipo de ingreso *
@@ -248,14 +280,14 @@
                   {% endfor %}
                 </select>
               </div>
-              <div class="col-xl-2 col-lg-3 col-md-6">
+              <div class="col-12 col-md-6 col-xl-3 movement-meta-item">
                 <label class="form-label text-sm font-semibold text-ink">
                   <i class="bi bi-calendar-event text-brand me-1"></i>
                   Fecha *
                 </label>
                 <input id="field-fecha" name="fecha" type="text" class="odoo-input form-control form-control-sm datepicker w-100" placeholder="Selecciona fecha" />
               </div>
-              <div class="col-xl-2 col-lg-3 col-md-6">
+              <div class="col-12 col-md-6 col-xl-3 movement-meta-item">
                 <label class="form-label text-sm font-semibold text-ink">
                   <i class="bi bi-box-seam text-brand me-1"></i>
                   Bodega *
@@ -267,7 +299,7 @@
               {% endfor %}
                 </select>
               </div>
-              <div class="col-xl-3 col-lg-6 col-md-6">
+              <div class="col-12 col-md-6 col-xl-3 movement-meta-item">
                 <label class="form-label text-sm font-semibold text-ink">
                   <i class="bi bi-building text-brand me-1"></i>
                   Proveedor
@@ -279,7 +311,7 @@
                   {% endfor %}
                 </select>
               </div>
-              <div class="col-xl-2 col-lg-3 col-md-6">
+              <div class="col-12 col-md-6 col-xl-3 movement-meta-item">
                 <label class="form-label text-sm font-semibold text-ink">
                   <i class="bi bi-currency-exchange text-brand me-1"></i>
                   Moneda *
@@ -289,7 +321,7 @@
                   <option value="CS">C$</option>
                 </select>
               </div>
-              <div class="col-xl-4 col-lg-6 col-md-12">
+              <div class="col-12 col-xl-9 movement-meta-item">
                 <label class="form-label text-sm font-semibold text-ink">
                   <i class="bi bi-chat-square-text text-brand me-1"></i>
                   Observacion

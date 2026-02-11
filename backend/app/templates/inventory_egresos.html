@@ -34,6 +34,38 @@
     font-weight: 600;
     color: #0f172a;
   }
+  .movement-meta-grid .form-label {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.2rem;
+    line-height: 1rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .movement-meta-grid .form-control,
+  .movement-meta-grid .form-select {
+    min-height: 32px;
+    padding-top: 0.2rem;
+    padding-bottom: 0.2rem;
+    font-size: 0.86rem;
+  }
+  .movement-meta-grid .select2-container--default .select2-selection--single {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+  }
+  .movement-meta-grid .select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 30px;
+    font-size: 0.86rem;
+  }
+  .movement-meta-grid .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 30px;
+  }
+  .movement-meta-grid .movement-meta-item {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -165,7 +197,8 @@
               <tr>
                 <th class="text-left px-4 py-3">Fecha</th>
                 <th class="text-left px-4 py-3">Tipo</th>
-                <th class="text-left px-4 py-3">Bodega</th>
+                <th class="text-left px-4 py-3">Origen</th>
+                <th class="text-left px-4 py-3">Destino</th>
                 <th class="text-right px-4 py-3">Total USD</th>
                 <th class="text-right px-4 py-3">Total C$</th>
                 <th class="text-left px-4 py-3">Motivo</th>
@@ -178,6 +211,7 @@
                 <td class="px-4 py-3 text-slate">{{ egreso.fecha }}</td>
                 <td class="px-4 py-3 font-semibold text-ink">{{ egreso.tipo.nombre if egreso.tipo else "-" }}</td>
                 <td class="px-4 py-3 text-slate">{{ egreso.bodega.name if egreso.bodega else "-" }}</td>
+                <td class="px-4 py-3 text-slate">{{ egreso.bodega_destino.name if egreso.bodega_destino else "-" }}</td>
                 <td class="px-4 py-3 text-right text-slate">$ {{ "%.2f"|format(egreso.total_usd or 0) }}</td>
                 <td class="px-4 py-3 text-right text-slate">C$ {{ "%.2f"|format(egreso.total_cs or 0) }}</td>
                 <td class="px-4 py-3 text-slate">{{ egreso.observacion or "-" }}</td>
@@ -218,7 +252,7 @@
           </div>
           <div class="px-6 pb-4 pt-2 space-y-4 overflow-y-auto max-h-[70vh] odoo-modal-body">
             <div id="tab-ingreso" class="ingreso-panel">
-              <form id="ingreso-form" method="post" action="/inventory/egresos" class="space-y-4 text-base" novalidate>
+              <form id="ingreso-form" method="post" action="/inventory/egresos" class="space-y-4 text-sm" novalidate>
                 <div id="bodega-banner" class="alert alert-warning py-2 px-3 mb-2 d-flex align-items-center gap-2" role="status">
                   <i class="bi bi-box-arrow-up"></i>
                   <span class="fw-semibold">Egreso de mercaderia en Bodega Central</span>
@@ -229,8 +263,8 @@
                     <div class="odoo-modal-title">Datos del egreso</div>
                     <span class="odoo-pill">Campos obligatorios *</span>
                   </div>
-                  <div class="row g-2 align-items-end">
-                    <div class="col-xl-3 col-lg-4 col-md-6">
+                  <div class="row g-2 align-items-start movement-meta-grid">
+                    <div class="col-12 col-md-6 col-xl-3 movement-meta-item">
                       <label class="form-label text-sm font-semibold text-ink">
                         <i class="bi bi-journal-minus text-brand me-1"></i>
                         Tipo de egreso *
@@ -238,30 +272,42 @@
                       <select id="field-tipo" name="tipo_id" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100">
                         <option value="">Selecciona</option>
                         {% for tipo in tipos %}
-                        <option value="{{ tipo.id }}">{{ tipo.nombre }}</option>
+                        <option value="{{ tipo.id }}" data-is-traslado="{{ 1 if 'traslado' in (tipo.nombre or '')|lower else 0 }}">{{ tipo.nombre }}</option>
                         {% endfor %}
                       </select>
                     </div>
-                    <div class="col-xl-2 col-lg-3 col-md-6">
+                    <div class="col-12 col-md-6 col-xl-3 movement-meta-item">
                       <label class="form-label text-sm font-semibold text-ink">
                         <i class="bi bi-calendar-event text-brand me-1"></i>
                         Fecha *
                       </label>
                       <input id="field-fecha" name="fecha" type="text" class="odoo-input form-control form-control-sm datepicker w-100" placeholder="Selecciona fecha" required />
                     </div>
-                    <div class="col-xl-2 col-lg-3 col-md-6">
+                    <div class="col-12 col-md-6 col-xl-3 movement-meta-item">
                       <label class="form-label text-sm font-semibold text-ink">
                         <i class="bi bi-box-seam text-brand me-1"></i>
-                        Bodega *
+                        Bodega origen *
                       </label>
-                      <select name="bodega_id" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100">
+                      <select id="field-bodega-origen" name="bodega_id" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100">
                         <option value="">Selecciona</option>
                         {% for bodega in bodegas %}
                         <option value="{{ bodega.id }}" {% if user.default_bodega_id == bodega.id or (not user.default_bodega_id and bodega.code == "central") %}selected{% endif %}>{{ bodega.name }}</option>
                         {% endfor %}
                       </select>
                     </div>
-                    <div class="col-xl-2 col-lg-3 col-md-6">
+                    <div class="col-12 col-md-6 col-xl-3 d-none movement-meta-item" id="bodega-destino-wrap">
+                      <label class="form-label text-sm font-semibold text-ink">
+                        <i class="bi bi-arrow-left-right text-brand me-1"></i>
+                        Bodega destino *
+                      </label>
+                      <select id="field-bodega-destino" name="bodega_destino_id" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100">
+                        <option value="">Selecciona destino</option>
+                        {% for bodega in bodegas %}
+                        <option value="{{ bodega.id }}">{{ bodega.name }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-6 col-xl-3 movement-meta-item">
                       <label class="form-label text-sm font-semibold text-ink">
                         <i class="bi bi-currency-exchange text-brand me-1"></i>
                         Moneda *
@@ -271,7 +317,7 @@
                         <option value="CS">C$</option>
                       </select>
                     </div>
-                    <div class="col-xl-3 col-lg-6 col-md-12">
+                    <div class="col-12 col-xl-9 movement-meta-item">
                       <label class="form-label text-sm font-semibold text-ink">
                         <i class="bi bi-chat-square-text text-brand me-1"></i>
                         Motivo
@@ -459,6 +505,8 @@
   const totalCs = document.getElementById("total-cs");
   const monedaField = document.getElementById("field-moneda");
   const tipoField = document.getElementById("field-tipo");
+  const bodegaDestinoWrap = document.getElementById("bodega-destino-wrap");
+  const bodegaDestinoField = document.getElementById("field-bodega-destino");
   const egresoFormTab = document.getElementById("egreso-form-tab");
   const egresoListTab = document.getElementById("egreso-list-tab");
   const egresoFormSection = document.getElementById("egreso-form-section");
@@ -534,12 +582,36 @@
     });
   };
 
+  const isTrasladoSelected = () => {
+    const option = tipoField?.selectedOptions?.[0];
+    if (!option) return false;
+    return option.dataset.isTraslado === "1" || (option.text || "").toLowerCase().includes("traslado");
+  };
+
   const updateBodegaBanner = () => {
     const bodegaField = ingresoForm?.querySelector("select[name='bodega_id']");
     const banner = document.getElementById("bodega-banner");
     if (!bodegaField || !banner) return;
     const selectedName = bodegaField.options[bodegaField.selectedIndex]?.text || "Central";
-    banner.innerHTML = `<i class="bi bi-box-arrow-up"></i><span class="fw-semibold">Egreso de mercaderia en Bodega ${selectedName}</span>`;
+    const isTraslado = isTrasladoSelected();
+    const destinoName = bodegaDestinoField?.selectedOptions?.[0]?.text || "";
+    banner.innerHTML = isTraslado && destinoName
+      ? `<i class="bi bi-arrow-left-right"></i><span class="fw-semibold">Traslado de ${selectedName} hacia ${destinoName}</span>`
+      : `<i class="bi bi-box-arrow-up"></i><span class="fw-semibold">Egreso de mercaderia en Bodega ${selectedName}</span>`;
+  };
+
+  const syncTrasladoMode = () => {
+    const isTraslado = isTrasladoSelected();
+    if (bodegaDestinoWrap) {
+      bodegaDestinoWrap.classList.toggle("d-none", !isTraslado);
+    }
+    if (bodegaDestinoField) {
+      bodegaDestinoField.required = !!isTraslado;
+      if (!isTraslado) {
+        bodegaDestinoField.value = "";
+      }
+    }
+    updateBodegaBanner();
   };
 
   const syncBodegaGate = () => {
@@ -708,6 +780,7 @@
       tipo: tipoField?.value || "",
       fecha: fechaField?.value || "",
       bodega: bodegaField?.value || "",
+      bodegaDestino: bodegaDestinoField?.value || "",
       moneda: monedaField?.value || "USD",
       observacion: obs?.value || "",
       allowDecimals: !!allowDecimals?.checked,
@@ -735,6 +808,7 @@
     if (fechaField) fechaField.value = draft.fecha || "";
     const bodegaField = ingresoForm?.querySelector("select[name='bodega_id']");
     if (bodegaField) bodegaField.value = draft.bodega || "";
+    if (bodegaDestinoField) bodegaDestinoField.value = draft.bodegaDestino || "";
     if (monedaField) monedaField.value = draft.moneda || "USD";
     const obs = ingresoForm?.querySelector("input[name='observacion']");
     if (obs) obs.value = draft.observacion || "";
@@ -742,6 +816,7 @@
     if (window.$ && $.fn.select2) {
       $(".select2").trigger("change");
     }
+    syncTrasladoMode();
     if (itemsTable) {
       itemsTable.innerHTML = `<tr id="empty-items"><td colspan="6" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
     }
@@ -780,6 +855,20 @@
 
 
   window.addEventListener("load", () => {
+  if (tipoField) {
+    tipoField.addEventListener("change", syncTrasladoMode);
+    if (window.$ && $.fn.select2) {
+      $(tipoField).on("select2:select", syncTrasladoMode);
+      $(tipoField).on("change.select2", syncTrasladoMode);
+    }
+  }
+  if (bodegaDestinoField) {
+    bodegaDestinoField.addEventListener("change", updateBodegaBanner);
+    if (window.$ && $.fn.select2) {
+      $(bodegaDestinoField).on("select2:select", updateBodegaBanner);
+      $(bodegaDestinoField).on("change.select2", updateBodegaBanner);
+    }
+  }
   if (fechaField && window.$ && $.fn.datepicker) {
     $(fechaField).datepicker({
       format: "yyyy-mm-dd",
@@ -1165,6 +1254,11 @@
     if (!fechaField?.value) missing.push("Fecha");
     const bodegaField = ingresoForm?.querySelector("select[name='bodega_id']");
     if (!bodegaField?.value) missing.push("Bodega");
+    const isTraslado = isTrasladoSelected();
+    if (isTraslado && !bodegaDestinoField?.value) missing.push("Bodega destino");
+    if (isTraslado && bodegaField?.value && bodegaDestinoField?.value && bodegaField.value === bodegaDestinoField.value) {
+      missing.push("Destino distinto al origen");
+    }
     if (missing.length) {
       const errorBanner = document.getElementById("egreso-client-error");
       if (errorBanner) {
@@ -1241,7 +1335,11 @@
       if (itemsTable) {
         itemsTable.innerHTML = `<tr id="empty-items"><td colspan="6" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
       }
+      if (bodegaDestinoField) {
+        bodegaDestinoField.value = "";
+      }
       updateTotals();
+      syncTrasladoMode();
       if (productSearch) {
         productSearch.value = "";
         productSearch.focus();
