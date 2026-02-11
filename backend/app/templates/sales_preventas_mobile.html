@@ -386,7 +386,7 @@
 </div>
 
 <script>
-  (() => {
+  document.addEventListener("DOMContentLoaded", () => {
     const flashError = {{ (error or "") | tojson }};
     const flashSuccess = {{ (success or "") | tojson }};
     const productSearch = document.getElementById("productSearch");
@@ -1113,6 +1113,6 @@
       renderComboPrice();
     });
     comboApply?.addEventListener("click", applyComboToItems);
-  })();
+  });
 </script>
 {% endblock %}
