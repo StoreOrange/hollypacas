@@ -1,17 +1,85 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
+  :root {
+    --grid-border: #d8e0ea;
+    --grid-head-bg: #f1f5fb;
+    --grid-row-alt: #fcfdfd;
+    --grid-row-hover: #eefaf6;
+    --grid-text: #0f172a;
+    --grid-row-active: #dbeafe;
+  }
+  .cobranza-grid-wrap {
+    border: 1px solid var(--grid-border);
+    border-radius: 12px;
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 66vh;
+    background: #fff;
+  }
+  .cobranza-grid {
+    margin-bottom: 0;
+    color: var(--grid-text);
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    min-width: 1020px;
+  }
   .cobranza-table thead th {
-    border-bottom: 2px solid #d9cfe8 !important;
+    border-bottom: 1px solid var(--grid-border) !important;
+    border-right: 1px solid #e7edf5;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--grid-head-bg);
+    color: #1f3a63;
+    font-weight: 700;
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    padding: 10px 9px;
+    white-space: normal;
+  }
+  .cobranza-table thead th:last-child {
+    border-right: 0;
   }
   .cobranza-table tbody tr {
-    border-bottom: 2px solid #ece4f6;
+    border-bottom: 1px solid #e2e8f0;
+    cursor: pointer;
   }
-  .cobranza-table tbody tr:hover {
-    background: rgba(196, 181, 253, 0.18) !important;
+  .cobranza-table tbody td {
+    border-right: 1px solid #eef2f7;
+    padding: 8px 9px;
+    vertical-align: middle;
+  }
+  .cobranza-table tbody td:last-child {
+    border-right: 0;
+  }
+  .cobranza-table tbody tr:nth-child(even) td {
+    background: var(--grid-row-alt);
+  }
+  .cobranza-table tbody tr:hover td {
+    background: var(--grid-row-hover) !important;
   }
   .cobranza-table tbody tr.is-active {
-    background: rgba(196, 181, 253, 0.28) !important;
+    background: var(--grid-row-active) !important;
+    color: var(--grid-text) !important;
+  }
+  .cobranza-table tbody tr.is-active > td,
+  .cobranza-table tbody tr.is-active .text-end,
+  .cobranza-table tbody tr.is-active .text-ink {
+    color: var(--grid-text) !important;
+  }
+  .cobranza-table tbody tr.is-active .badge {
+    border-color: transparent;
+  }
+  .cobranza-table tbody tr.is-active .btn {
+    border-color: #94a3b8 !important;
+    color: #0f172a !important;
+    background: #ffffff !important;
+  }
+  .cobranza-table tbody tr:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: -2px;
   }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
@@ -93,8 +161,8 @@
           </div>
         </div>
 
-        <div class="table-responsive">
-          <table class="table table-sm table-hover odoo-table text-sm cobranza-table">
+        <div class="table-responsive cobranza-grid-wrap">
+          <table class="table table-sm table-hover odoo-table text-sm cobranza-table cobranza-grid">
             <thead>
               <tr>
                 <th>Factura</th>
@@ -127,7 +195,7 @@
                   {{ "C$" if factura.moneda != "USD" else "$" }} {{ "{:,.2f}".format(row.saldo_cs if factura.moneda != "USD" else row.saldo_usd) }}
                 </td>
                 <td>
-                  <span class="badge {% if factura.estado_cobranza == 'PAGADA' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+                  <span class="badge {% if factura.estado_cobranza == 'PAGADA' and ((row.abonos_cs if factura.moneda != 'USD' else row.abonos_usd) > 0) %}bg-primary{% elif factura.estado_cobranza == 'PAGADA' %}bg-success{% else %}bg-warning text-dark{% endif %}">
                     {{ factura.estado_cobranza }}
                   </span>
                 </td>
@@ -140,7 +208,7 @@
                   <button class="btn btn-sm btn-outline-primary" type="button" data-detail="{{ factura.id }}">
                     <i class="bi bi-eye"></i>
                   </button>
-                  <button class="btn btn-sm btn-outline-success" type="button" data-abono="{{ factura.id }}" data-moneda="{{ factura.moneda }}" data-saldo="{{ row.saldo_cs if factura.moneda != 'USD' else row.saldo_usd }}" data-estado="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" data-numero="{{ factura.numero }}" data-cliente="{{ factura.cliente.nombre if factura.cliente else 'Consumidor final' }}" data-vendedor="{{ factura.vendedor.nombre if factura.vendedor else '-' }}" {% if factura.estado_cobranza == 'PAGADA' or factura.estado == 'ANULADA' %}disabled title="Factura no disponible"{% endif %}>
+                  <button class="btn btn-sm btn-outline-success" type="button" data-abono="{{ factura.id }}" data-moneda="{{ factura.moneda }}" data-saldo="{{ row.saldo_cs if factura.moneda != 'USD' else row.saldo_usd }}" data-estado="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" data-numero="{{ factura.numero }}" data-cliente="{{ factura.cliente.nombre if factura.cliente else 'Consumidor final' }}" data-vendedor="{{ factura.vendedor.nombre if factura.vendedor else '-' }}" title="{% if factura.estado == 'ANULADA' %}Ver abonos aplicados{% elif factura.estado_cobranza == 'PAGADA' %}Ver pagos y abonos{% else %}Registrar abono{% endif %}">
                     <i class="bi bi-plus-circle"></i>
                   </button>
                   <button class="btn btn-sm btn-outline-secondary" type="button" data-estado="{{ factura.id }}" data-current="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" {% if factura.estado == 'ANULADA' %}disabled title="Factura anulada"{% endif %}>
@@ -272,13 +340,70 @@
   document.addEventListener("DOMContentLoaded", () => {
     const cobranzaTable = document.querySelector(".cobranza-table");
     if (cobranzaTable) {
-      const rows = cobranzaTable.querySelectorAll("tbody tr");
-      rows.forEach((row) => {
-        row.addEventListener("click", () => {
-          rows.forEach((r) => r.classList.remove("is-active"));
-          row.classList.add("is-active");
+      const rows = Array.from(cobranzaTable.querySelectorAll("tbody tr"));
+      const selectRow = (row, focus = false) => {
+        rows.forEach((r) => r.classList.remove("is-active"));
+        if (!row) return;
+        row.classList.add("is-active");
+        if (focus) row.focus({ preventScroll: true });
+      };
+      const openRowDetail = (row) => {
+        const detailBtn = row?.querySelector("[data-detail]");
+        if (detailBtn) detailBtn.click();
+      };
+      rows.forEach((row, index) => {
+        row.tabIndex = 0;
+        row.dataset.rowIndex = String(index);
+        row.addEventListener("click", (event) => {
+          if (event.target.closest("button, a, input, select, textarea")) return;
+          selectRow(row);
+        });
+        row.addEventListener("dblclick", (event) => {
+          if (event.target.closest("button, a, input, select, textarea")) return;
+          selectRow(row);
+          openRowDetail(row);
         });
       });
+      cobranzaTable.addEventListener("keydown", (event) => {
+        const current = event.target.closest("tbody tr");
+        if (!current) return;
+        const currentIndex = Number(current.dataset.rowIndex || 0);
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          const next = rows[Math.min(rows.length - 1, currentIndex + 1)];
+          selectRow(next, true);
+          next?.scrollIntoView({ block: "nearest" });
+          return;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          const prev = rows[Math.max(0, currentIndex - 1)];
+          selectRow(prev, true);
+          prev?.scrollIntoView({ block: "nearest" });
+          return;
+        }
+        if (event.key === "Home") {
+          event.preventDefault();
+          const first = rows[0];
+          selectRow(first, true);
+          first?.scrollIntoView({ block: "nearest" });
+          return;
+        }
+        if (event.key === "End") {
+          event.preventDefault();
+          const last = rows[rows.length - 1];
+          selectRow(last, true);
+          last?.scrollIntoView({ block: "nearest" });
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          openRowDetail(current);
+        }
+      });
+      if (rows.length > 0) {
+        selectRow(rows[0]);
+      }
     }
 
     const formatMoney = (value, currency) => {
@@ -405,14 +530,7 @@
 
       const abonoBtn = event.target.closest("[data-abono]");
       if (abonoBtn) {
-        if (abonoBtn.dataset.facturaEstado === "ANULADA") {
-          alert("Factura anulada");
-          return;
-        }
-        if (abonoBtn.dataset.estado === "PAGADA") {
-          alert("Factura ya pagada");
-          return;
-        }
+        const readOnly = abonoBtn.dataset.facturaEstado === "ANULADA" || abonoBtn.dataset.estado === "PAGADA";
         const abonoModal = getBootstrapModal(abonoModalEl);
         if (!abonoModal) {
           alert("Bootstrap no disponible");
@@ -425,13 +543,25 @@
         document.getElementById("abono-factura-vendedor").textContent = abonoBtn.dataset.vendedor || "--";
         const moneda = abonoBtn.dataset.moneda || "CS";
         const saldo = parseFloat(abonoBtn.dataset.saldo || 0);
-        document.getElementById("abono-moneda").value = moneda;
+        const abonoMonedaEl = document.getElementById("abono-moneda");
+        const abonoMontoEl = document.getElementById("abono-monto");
+        const abonoObsEl = document.getElementById("abono-observacion");
+        const abonoSubmitEl = document.getElementById("abono-submit");
+        abonoMonedaEl.value = moneda;
         document.getElementById("abono-saldo").textContent = formatMoney(saldo, moneda);
+        abonoMonedaEl.disabled = readOnly;
+        abonoMontoEl.disabled = readOnly;
+        abonoObsEl.disabled = readOnly;
+        if (abonoSubmitEl) {
+          abonoSubmitEl.classList.toggle("d-none", readOnly);
+        }
         const montoField = document.getElementById("abono-monto");
         montoField.value = formatMoney(saldo, moneda);
-        montoField.focus();
-        montoField.select();
-        document.getElementById("abono-observacion").value = "";
+        if (!readOnly) {
+          montoField.focus();
+          montoField.select();
+        }
+        abonoObsEl.value = "";
         abonoModal.show();
         const listBody = document.getElementById("abono-list");
       listBody.innerHTML = `<tr><td colspan="6" class="text-center text-slate py-2">Cargando...</td></tr>`;
@@ -453,40 +583,46 @@
             <td class="text-end">${formatMoney(item.monto, item.moneda)}</td>
             <td>${item.observacion || "-"}</td>
             <td class="text-end">
-              <button class="btn btn-sm btn-outline-danger" type="button" data-abono-delete="${item.id}">
-                <i class="bi bi-trash"></i>
-              </button>
+              ${
+                readOnly
+                  ? `<span class="text-slate">-</span>`
+                  : `<button class="btn btn-sm btn-outline-danger" type="button" data-abono-delete="${item.id}">
+                      <i class="bi bi-trash"></i>
+                    </button>`
+              }
             </td>
           </tr>
         `)
         .join("");
-      listBody.querySelectorAll("tr[data-abono-row]").forEach((row) => {
-        row.addEventListener("click", () => {
-          const id = row.dataset.abonoRow;
-          const item = payload.items.find((i) => String(i.id) === String(id));
-          if (!item) return;
-          document.getElementById("abono-id").value = item.id;
-          document.getElementById("abono-moneda").value = item.moneda;
-          document.getElementById("abono-monto").value = formatMoney(item.monto, item.moneda);
-          document.getElementById("abono-observacion").value = item.observacion || "";
+      if (!readOnly) {
+        listBody.querySelectorAll("tr[data-abono-row]").forEach((row) => {
+          row.addEventListener("click", () => {
+            const id = row.dataset.abonoRow;
+            const item = payload.items.find((i) => String(i.id) === String(id));
+            if (!item) return;
+            document.getElementById("abono-id").value = item.id;
+            document.getElementById("abono-moneda").value = item.moneda;
+            document.getElementById("abono-monto").value = formatMoney(item.monto, item.moneda);
+            document.getElementById("abono-observacion").value = item.observacion || "";
+          });
         });
-      });
-      listBody.querySelectorAll("[data-abono-delete]").forEach((btn) => {
-        btn.addEventListener("click", async (ev) => {
-          ev.stopPropagation();
-          const abonoId = btn.dataset.abonoDelete;
-          if (!confirm("Eliminar este recibo de abono?")) {
-            return;
-          }
-          const facturaId = document.getElementById("abono-factura-id").value;
-          const payload = await handleFetchJson(`/sales/cobranza/${facturaId}/abono/${abonoId}/delete`, { method: "POST" });
-          if (!payload || !payload.ok) {
-            alert(payload?.message || "No se pudo eliminar");
-            return;
-          }
-          window.location.reload();
+        listBody.querySelectorAll("[data-abono-delete]").forEach((btn) => {
+          btn.addEventListener("click", async (ev) => {
+            ev.stopPropagation();
+            const abonoId = btn.dataset.abonoDelete;
+            if (!confirm("Eliminar este recibo de abono?")) {
+              return;
+            }
+            const facturaId = document.getElementById("abono-factura-id").value;
+            const payload = await handleFetchJson(`/sales/cobranza/${facturaId}/abono/${abonoId}/delete`, { method: "POST" });
+            if (!payload || !payload.ok) {
+              alert(payload?.message || "No se pudo eliminar");
+              return;
+            }
+            window.location.reload();
+          });
         });
-      });
+      }
       return;
     }
 
