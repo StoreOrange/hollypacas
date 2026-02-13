@@ -430,8 +430,16 @@
           <form class="top-filters grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-12 gap-2 items-end" method="get" action="/sales/comisiones">
             <input type="hidden" name="tab" value="asignacion">
             <div class="xl:col-span-2 min-w-0">
-              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Dia</label>
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Dia operativo</label>
               <input name="fecha" type="date" class="form-control form-control-sm" value="{{ fecha }}">
+            </div>
+            <div class="xl:col-span-2 min-w-0">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+              <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+            </div>
+            <div class="xl:col-span-2 min-w-0">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+              <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
             </div>
             <div class="xl:col-span-3 min-w-0">
               <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
@@ -475,6 +483,8 @@
 
         <form id="assignment-form" class="odoo-card" method="post" action="/sales/comisiones/asignaciones">
           <input type="hidden" name="fecha" value="{{ fecha }}">
+          <input type="hidden" name="start_date" value="{{ start_date }}">
+          <input type="hidden" name="end_date" value="{{ end_date }}">
           <input type="hidden" name="branch_id" value="{{ selected_branch }}">
           <input type="hidden" name="vendedor_facturacion_id" value="{{ selected_vendedor_facturacion }}">
           <input type="hidden" name="vendedor_asignado_id" value="{{ selected_vendedor_asignado }}">
@@ -703,7 +713,7 @@
           </div>
 
           <div class="mt-3">
-            <div class="odoo-section-title mb-2">Resumen por vendedor (dia)</div>
+            <div class="odoo-section-title mb-2">Resumen por vendedor (periodo seleccionado)</div>
             <div class="table-responsive commission-grid-wrap">
               <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
                 <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
@@ -997,9 +1007,11 @@
     const totalComisionEl = document.getElementById("assign-total-comision");
     const vendorSummaryBody = document.getElementById("assign-vendor-summary-body");
     const draftKey = assignmentForm
-      ? [
+        ? [
           "sales-comisiones-asignacion-draft",
           assignmentForm.querySelector('input[name="fecha"]')?.value || "",
+          assignmentForm.querySelector('input[name="start_date"]')?.value || "",
+          assignmentForm.querySelector('input[name="end_date"]')?.value || "",
           assignmentForm.querySelector('input[name="branch_id"]')?.value || "",
           assignmentForm.querySelector('input[name="vendedor_facturacion_id"]')?.value || "",
           assignmentForm.querySelector('input[name="vendedor_asignado_id"]')?.value || "",

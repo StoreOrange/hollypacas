@@ -19,7 +19,10 @@
               </ol>
             </nav>
             <div class="odoo-title mt-2">Catalogo de productos</div>
-            <div class="odoo-subtitle mt-1">Administra productos, precios, costos y existencia.</div>
+            <div class="odoo-subtitle mt-1">
+              Administra productos, precios, costos y existencia.
+              {% if inventory_cs_only %}<span class="text-brand">Modo C$ activo.</span>{% endif %}
+            </div>
           </div>
           <div class="odoo-toolbar">
             <div class="input-group input-group-sm shadow-sm rounded-pill overflow-hidden bg-white">
@@ -211,12 +214,14 @@
                     Segmento
                   </span>
                 </th>
+                {% if not inventory_cs_only %}
                 <th class="text-right px-4 py-3">
                   <span class="inline-flex items-center gap-2">
                     <i class="bi bi-currency-dollar text-blue-600"></i>
                     Precio USD
                   </span>
                 </th>
+                {% endif %}
                 <th class="text-right px-4 py-3">
                   <span class="inline-flex items-center gap-2">
                     <i class="bi bi-cash-coin text-sky-600"></i>
@@ -255,10 +260,10 @@
                 data-desc="{{ p.descripcion }}"
                 data-linea-id="{{ p.linea_id or '' }}"
                 data-segmento-id="{{ p.segmento_id or '' }}"
-                data-precio1-usd="{{ "%.2f"|format(p.precio_venta1_usd or 0) }}"
-                data-precio2-usd="{{ "%.2f"|format(p.precio_venta2_usd or 0) }}"
-                data-precio3-usd="{{ "%.2f"|format(p.precio_venta3_usd or 0) }}"
-                data-costo-usd="{% if p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0{% endif %}"
+                data-precio1-usd="{% if inventory_cs_only %}{{ "%.2f"|format(p.precio_venta1 or 0) }}{% else %}{{ "%.2f"|format(p.precio_venta1_usd or 0) }}{% endif %}"
+                data-precio2-usd="{% if inventory_cs_only %}{{ "%.2f"|format(p.precio_venta2 or 0) }}{% else %}{{ "%.2f"|format(p.precio_venta2_usd or 0) }}{% endif %}"
+                data-precio3-usd="{% if inventory_cs_only %}{{ "%.2f"|format(p.precio_venta3 or 0) }}{% else %}{{ "%.2f"|format(p.precio_venta3_usd or 0) }}{% endif %}"
+                data-costo-usd="{% if inventory_cs_only %}{{ "%.2f"|format(p.costo_producto or 0) }}{% elif p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0{% endif %}"
                 data-existencia="{{ p.saldo.existencia if p.saldo else 0 }}"
                 data-activo="{{ 1 if p.activo else 0 }}"
               >
@@ -266,7 +271,9 @@
                 <td class="px-4 py-3 text-slate">{{ p.descripcion }}</td>
                 <td class="px-4 py-3 text-slate">{{ p.linea.linea if p.linea else "-" }}</td>
                 <td class="px-4 py-3 text-slate">{{ p.segmento.segmento if p.segmento else "-" }}</td>
+                {% if not inventory_cs_only %}
                 <td class="px-4 py-3 text-right text-slate">$ {{ "%.2f"|format(p.precio_venta1_usd or 0) }}</td>
+                {% endif %}
                 <td class="px-4 py-3 text-right text-slate">C$ {{ "%.2f"|format(p.precio_venta1 or 0) }}</td>
                 <td class="px-4 py-3 text-right text-slate">{{ p.saldo.existencia if p.saldo else 0 }}</td>
                 <td class="px-4 py-3 text-center">
@@ -306,7 +313,7 @@
               {% endfor %}
             {% if productos|length == 0 %}
             <tr>
-              <td colspan="9" class="text-center text-slate py-4">Sin productos registrados</td>
+              <td colspan="{% if inventory_cs_only %}8{% else %}9{% endif %}" class="text-center text-slate py-4">Sin productos registrados</td>
             </tr>
             {% endif %}
             </tbody>
@@ -398,19 +405,19 @@
               </select>
             </div>
             <div class="col-md-6">
-              <label class="form-label odoo-field-label">Precio 1 (USD)</label>
+              <label class="form-label odoo-field-label">Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
               <input id="field-precio1" name="precio_venta1_usd" type="number" step="0.01" class="form-control odoo-input" />
             </div>
             <div class="col-md-6">
-              <label class="form-label odoo-field-label">Precio 2 (USD)</label>
+              <label class="form-label odoo-field-label">Precio 2 ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
               <input id="field-precio2" name="precio_venta2_usd" type="number" step="0.01" class="form-control odoo-input" />
             </div>
             <div class="col-md-6">
-              <label class="form-label odoo-field-label">Precio 3 (USD)</label>
+              <label class="form-label odoo-field-label">Precio 3 ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
               <input id="field-precio3" name="precio_venta3_usd" type="number" step="0.01" class="form-control odoo-input" />
             </div>
             <div class="col-md-6">
-              <label class="form-label odoo-field-label">Costo (USD)</label>
+              <label class="form-label odoo-field-label">Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
               <input id="field-costo" name="costo_producto_usd" type="number" step="0.01" class="form-control odoo-input" />
             </div>
             <div class="col-md-6">

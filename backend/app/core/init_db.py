@@ -2,11 +2,12 @@ from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..database import Base, SessionLocal, engine
+from ..database import Base, get_engine, get_session_local
 from ..models.user import Branch, Permission, Role, User
 from ..models.inventory import Bodega, EgresoTipo, IngresoTipo, Linea, Segmento
 from ..models.sales import (
     Banco,
+    CompanyProfileSetting,
     CuentaContable,
     CuentaBancaria,
     EmailConfig,
@@ -15,6 +16,7 @@ from ..models.sales import (
     FormaPago,
     NotificationRecipient,
     PosPrintSetting,
+    SalesInterfaceSetting,
     Vendedor,
 )
 from .security import hash_password
@@ -504,7 +506,39 @@ def _seed_email_recipients(db: Session) -> None:
     db.commit()
 
 
+def _seed_sales_interface_settings(db: Session) -> None:
+    existing = db.query(SalesInterfaceSetting).first()
+    if not existing:
+        db.add(SalesInterfaceSetting(interface_code="ropa"))
+        db.commit()
+
+
+def _seed_company_profile_settings(db: Session) -> None:
+    existing = db.query(CompanyProfileSetting).first()
+    if existing:
+        return
+    db.add(
+        CompanyProfileSetting(
+            legal_name="Hollywood Pacas",
+            trade_name="Hollywood Pacas",
+            app_title="ERP Hollywood Pacas",
+            sidebar_subtitle="ERP Central",
+            website="http://hollywoodpacas.com.ni",
+            phone="8900-0300",
+            address="Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
+            email="admin@hollywoodpacas.com",
+            logo_url="/static/logo_hollywood.png",
+            pos_logo_url="/static/logo_hollywood.png",
+            favicon_url="/static/favicon.ico",
+            inventory_cs_only=False,
+            updated_by="system-bootstrap",
+        )
+    )
+    db.commit()
+
+
 def init_db() -> None:
+    engine = get_engine()
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
     if "users" in inspector.get_table_names():
@@ -616,6 +650,20 @@ def init_db() -> None:
         if "cierre_auto_print" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE pos_print_settings ADD COLUMN cierre_auto_print BOOLEAN DEFAULT FALSE"))
+    if "company_profile_settings" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("company_profile_settings")}
+        if "pos_logo_url" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN pos_logo_url VARCHAR(260)"))
+                conn.execute(
+                    text(
+                        "UPDATE company_profile_settings SET pos_logo_url = COALESCE(NULLIF(logo_url, ''), '/static/logo_hollywood.png')"
+                    )
+                )
+        if "inventory_cs_only" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN inventory_cs_only BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("UPDATE company_profile_settings SET inventory_cs_only = FALSE WHERE inventory_cs_only IS NULL"))
     if "vendedor_bodegas" not in inspector.get_table_names():
         with engine.begin() as conn:
             conn.execute(
@@ -632,7 +680,7 @@ def init_db() -> None:
                     """
                 )
             )
-    db = SessionLocal()
+    db = get_session_local()()
     try:
         _seed_roles(db)
         _seed_permissions(db)
@@ -655,5 +703,7 @@ def init_db() -> None:
         _seed_pos_print_settings(db)
         _seed_email_config(db)
         _seed_email_recipients(db)
+        _seed_sales_interface_settings(db)
+        _seed_company_profile_settings(db)
     finally:
         db.close()

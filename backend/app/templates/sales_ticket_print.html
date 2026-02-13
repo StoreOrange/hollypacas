@@ -33,12 +33,13 @@
     </style>
   </head>
   <body>
+    {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
     <div class="ticket">
       <div class="top-meta">
         <span class="left">{{ factura.numero }} - TICKET</span>
-        <span class="right">http://hollywoodpacas.com.ni</span>
+        <span class="right">{{ branding.get("website", "") }}</span>
       </div>
-      <img src="/static/logo_hollywood.png" alt="Hollywood Pacas" class="logo" />
+      <img src="{{ branding.get('pos_logo_url') or branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="{{ branding.get('trade_name', 'Empresa') }}" class="logo" />
       <div class="center bold">{{ company_name.upper() }}</div>
       <div class="center small">RUC: {{ ruc }}</div>
       <div class="center small">Tel: {{ telefono }}</div>

@@ -23,10 +23,17 @@ from reportlab.lib import colors
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from jose import JWTError, jwt
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, create_engine, func, or_
 from sqlalchemy.orm import Session
 
-from ..config import settings
+from ..config import (
+    get_active_company_key,
+    get_company_profiles,
+    set_active_company,
+    settings,
+    upsert_company_profile,
+)
+from ..core.init_db import init_db
 from ..core.deps import get_db, require_admin
 from ..core.security import (
     ALGORITHM,
@@ -36,6 +43,7 @@ from ..core.security import (
     verify_password,
 )
 from ..core.utils import local_now, local_now_naive, local_today
+from ..database import get_current_database_url, refresh_engine
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -60,6 +68,7 @@ from ..models.sales import (
     CajaDiaria,
     CierreCaja,
     Cliente,
+    CompanyProfileSetting,
     CobranzaAbono,
     CuentaBancaria,
     CuentaContable,
@@ -72,6 +81,7 @@ from ..models.sales import (
     ReciboMotivo,
     ReciboRubro,
     ReversionToken,
+    SalesInterfaceSetting,
     ProductoComision,
     Preventa,
     PreventaItem,
@@ -86,6 +96,13 @@ from ..models.sales import (
 from ..models.user import Branch, Permission, Role, User
 
 router = APIRouter()
+
+SALES_INTERFACE_OPTIONS = [
+    {"code": "ropa", "label": "Interfaz Ventas Ropa"},
+    {"code": "ferreteria", "label": "Interfaz Ferreteria"},
+    {"code": "farmacia", "label": "Interfaz Farmacia"},
+    {"code": "comestibles", "label": "Interfaz Tienda de Comestibles"},
+]
 
 
 def to_decimal(value: Optional[float]) -> Decimal:
@@ -679,7 +696,105 @@ def _balances_by_bodega(
     return balances
 
 
-def _build_pos_ticket_pdf_bytes(factura: VentaFactura) -> bytes:
+def _default_company_profile_payload() -> dict[str, str]:
+    return {
+        "legal_name": "Hollywood Pacas",
+        "trade_name": "Hollywood Pacas",
+        "app_title": "ERP Hollywood Pacas",
+        "sidebar_subtitle": "ERP Central",
+        "website": "http://hollywoodpacas.com.ni",
+        "phone": "8900-0300",
+        "address": "",
+        "email": "admin@hollywoodpacas.com",
+        "logo_url": "/static/logo_hollywood.png",
+        "pos_logo_url": "/static/logo_hollywood.png",
+        "favicon_url": "/static/favicon.ico",
+        "inventory_cs_only": False,
+    }
+
+
+def _company_profile_payload(db: Session) -> dict[str, str]:
+    payload = _default_company_profile_payload()
+    row = db.query(CompanyProfileSetting).order_by(CompanyProfileSetting.id.asc()).first()
+    if not row:
+        return payload
+    payload.update(
+        {
+            "legal_name": row.legal_name or payload["legal_name"],
+            "trade_name": row.trade_name or payload["trade_name"],
+            "app_title": row.app_title or payload["app_title"],
+            "sidebar_subtitle": row.sidebar_subtitle or payload["sidebar_subtitle"],
+            "website": row.website or payload["website"],
+            "phone": row.phone or payload["phone"],
+            "address": row.address or payload["address"],
+            "email": row.email or payload["email"],
+            "logo_url": row.logo_url or payload["logo_url"],
+            "pos_logo_url": row.pos_logo_url or payload["pos_logo_url"],
+            "favicon_url": row.favicon_url or payload["favicon_url"],
+            "inventory_cs_only": bool(row.inventory_cs_only),
+        }
+    )
+    return payload
+
+
+def _inventory_cs_only_mode(db: Session) -> bool:
+    profile = _company_profile_payload(db)
+    return bool(profile.get("inventory_cs_only"))
+
+
+def _resolve_logo_path(logo_url: str, *, prefer_pos: bool = False, pos_logo_url: Optional[str] = None) -> Path:
+    static_dir = Path(__file__).resolve().parents[1] / "static"
+    if prefer_pos:
+        normalized_pos = (pos_logo_url or "").strip()
+        if normalized_pos:
+            if normalized_pos.startswith("/static/"):
+                pos_candidate = static_dir / normalized_pos.replace("/static/", "", 1)
+                if pos_candidate.exists():
+                    return pos_candidate
+            absolute_pos_candidate = Path(normalized_pos)
+            if absolute_pos_candidate.exists():
+                return absolute_pos_candidate
+        # Compatibilidad con instalaciones antiguas.
+        pos_logo = static_dir / "logopos.png"
+        if pos_logo.exists():
+            return pos_logo
+
+    normalized = (logo_url or "").strip()
+    if normalized:
+        if normalized.startswith("/static/"):
+            candidate = static_dir / normalized.replace("/static/", "", 1)
+            if candidate.exists():
+                return candidate
+        absolute_candidate = Path(normalized)
+        if absolute_candidate.exists():
+            return absolute_candidate
+
+    fallback = static_dir / "logo_hollywood.png"
+    return fallback
+
+
+def _company_identity(branch: Optional[Branch], profile: dict[str, str]) -> dict[str, str]:
+    company_name = (
+        (branch.company_name if branch and branch.company_name else "") or profile.get("trade_name", "Empresa")
+    ).strip()
+    ruc = branch.ruc if branch and branch.ruc else "-"
+    telefono = (
+        (branch.telefono if branch and branch.telefono else "") or profile.get("phone", "-")
+    ).strip() or "-"
+    direccion = (
+        (branch.direccion if branch and branch.direccion else "") or profile.get("address", "-")
+    ).strip() or "-"
+    sucursal = branch.name if branch and branch.name else "-"
+    return {
+        "company_name": company_name or "Empresa",
+        "ruc": ruc,
+        "telefono": telefono,
+        "direccion": direccion,
+        "sucursal": sucursal,
+    }
+
+
+def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[str, str]] = None) -> bytes:
     from reportlab.lib.units import mm
     from reportlab.pdfgen import canvas
 
@@ -719,11 +834,13 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura) -> bytes:
             return 0.0
 
     branch = factura.bodega.branch if factura.bodega else None
-    company_name = (branch.company_name if branch and branch.company_name else "Pacas Hollywood").strip()
-    ruc = branch.ruc if branch and branch.ruc else "-"
-    telefono = branch.telefono if branch and branch.telefono else "-"
-    direccion = branch.direccion if branch and branch.direccion else "-"
-    sucursal = branch.name if branch and branch.name else "-"
+    company_profile = profile or _default_company_profile_payload()
+    identity = _company_identity(branch, company_profile)
+    company_name = identity["company_name"]
+    ruc = identity["ruc"]
+    telefono = identity["telefono"]
+    direccion = identity["direccion"]
+    sucursal = identity["sucursal"]
 
     cliente = factura.cliente.nombre if factura.cliente else "Consumidor final"
     cliente_id = factura.cliente.identificacion if factura.cliente and factura.cliente.identificacion else "-"
@@ -850,7 +967,11 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura) -> bytes:
     margin = (width - content_width) / 2
     top_margin = 6 * mm
     bottom_margin = 6 * mm
-    logo_path = Path(__file__).resolve().parents[1] / "static" / "logopos.png"
+    logo_path = _resolve_logo_path(
+        company_profile.get("logo_url", ""),
+        prefer_pos=True,
+        pos_logo_url=company_profile.get("pos_logo_url", ""),
+    )
     logo_height = 60 * mm if logo_path.exists() else 0
     logo_spacing = 3 * mm if logo_height else 0
 
@@ -897,12 +1018,13 @@ def _print_pos_ticket(
     factura: VentaFactura,
     printer_name: str,
     copies: int,
+    profile: Optional[dict[str, str]] = None,
     sumatra_override: Optional[str] = None,
 ) -> None:
     sumatra_path = _get_sumatra_path(sumatra_override)
     if not sumatra_path:
         return
-    pdf_bytes = _build_pos_ticket_pdf_bytes(factura)
+    pdf_bytes = _build_pos_ticket_pdf_bytes(factura, profile)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         tmp_file.write(pdf_bytes)
         tmp_path = tmp_file.name
@@ -927,7 +1049,7 @@ def _print_pos_ticket(
             pass
 
 
-def _build_roc_ticket_pdf_bytes(recibo: ReciboCaja) -> bytes:
+def _build_roc_ticket_pdf_bytes(recibo: ReciboCaja, profile: Optional[dict[str, str]] = None) -> bytes:
     from reportlab.lib.units import mm
     from reportlab.pdfgen import canvas
 
@@ -953,11 +1075,13 @@ def _build_roc_ticket_pdf_bytes(recibo: ReciboCaja) -> bytes:
         return f"{value:,.2f}"
 
     branch = recibo.branch
-    company_name = (branch.company_name if branch and branch.company_name else "Pacas Hollywood").strip()
-    ruc = branch.ruc if branch and branch.ruc else "-"
-    telefono = branch.telefono if branch and branch.telefono else "-"
-    direccion = branch.direccion if branch and branch.direccion else "-"
-    sucursal = branch.name if branch and branch.name else "-"
+    company_profile = profile or _default_company_profile_payload()
+    identity = _company_identity(branch, company_profile)
+    company_name = identity["company_name"]
+    ruc = identity["ruc"]
+    telefono = identity["telefono"]
+    direccion = identity["direccion"]
+    sucursal = identity["sucursal"]
     bodega_name = recibo.bodega.name if recibo.bodega else "-"
 
     fecha_base = recibo.created_at or recibo.fecha
@@ -1033,9 +1157,11 @@ def _build_roc_ticket_pdf_bytes(recibo: ReciboCaja) -> bytes:
     margin = (width - content_width) / 2
     top_margin = 6 * mm
     bottom_margin = 6 * mm
-    logo_path = Path(__file__).resolve().parents[1] / "static" / "logopos.png"
-    if not logo_path.exists():
-        logo_path = Path(__file__).resolve().parents[1] / "static" / "logo_hollywood.png"
+    logo_path = _resolve_logo_path(
+        company_profile.get("logo_url", ""),
+        prefer_pos=True,
+        pos_logo_url=company_profile.get("pos_logo_url", ""),
+    )
     logo_height = 42 * mm if logo_path.exists() else 0
     logo_spacing = 2 * mm if logo_height else 0
 
@@ -1083,12 +1209,13 @@ def _print_roc_ticket(
     recibo: ReciboCaja,
     printer_name: str,
     copies: int,
+    profile: Optional[dict[str, str]] = None,
     sumatra_override: Optional[str] = None,
 ) -> None:
     sumatra_path = _get_sumatra_path(sumatra_override)
     if not sumatra_path:
         return
-    pdf_bytes = _build_roc_ticket_pdf_bytes(recibo)
+    pdf_bytes = _build_roc_ticket_pdf_bytes(recibo, profile)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         tmp_file.write(pdf_bytes)
         tmp_path = tmp_file.name
@@ -1118,6 +1245,7 @@ def _build_cierre_ticket_pdf_bytes(
     tasa: Decimal,
     resumen: dict,
     total_bultos: Decimal,
+    profile: Optional[dict[str, str]] = None,
 ) -> bytes:
     from reportlab.lib.units import mm
     from reportlab.pdfgen import canvas
@@ -1144,11 +1272,13 @@ def _build_cierre_ticket_pdf_bytes(
         return lines or [text]
 
     branch = cierre.branch
-    company_name = (branch.company_name if branch and branch.company_name else "Pacas Hollywood").strip()
-    ruc = branch.ruc if branch and branch.ruc else "-"
-    telefono = branch.telefono if branch and branch.telefono else "-"
-    direccion = branch.direccion if branch and branch.direccion else "-"
-    sucursal = branch.name if branch and branch.name else "-"
+    company_profile = profile or _default_company_profile_payload()
+    identity = _company_identity(branch, company_profile)
+    company_name = identity["company_name"]
+    ruc = identity["ruc"]
+    telefono = identity["telefono"]
+    direccion = identity["direccion"]
+    sucursal = identity["sucursal"]
     bodega_name = cierre.bodega.name if cierre.bodega else "-"
 
     fecha_str = cierre.fecha.strftime("%d/%m/%Y") if cierre.fecha else ""
@@ -1249,9 +1379,11 @@ def _build_cierre_ticket_pdf_bytes(
     margin = (width - content_width) / 2
     top_margin = 6 * mm
     bottom_margin = 6 * mm
-    logo_path = Path(__file__).resolve().parents[1] / "static" / "logopos.png"
-    if not logo_path.exists():
-        logo_path = Path(__file__).resolve().parents[1] / "static" / "logo_hollywood.png"
+    logo_path = _resolve_logo_path(
+        company_profile.get("logo_url", ""),
+        prefer_pos=True,
+        pos_logo_url=company_profile.get("pos_logo_url", ""),
+    )
     logo_height = 45 * mm if logo_path.exists() else 0
     logo_spacing = 2 * mm if logo_height else 0
 
@@ -1307,12 +1439,13 @@ def _print_cierre_ticket(
     total_bultos: Decimal,
     printer_name: str,
     copies: int,
+    profile: Optional[dict[str, str]] = None,
     sumatra_override: Optional[str] = None,
 ) -> None:
     sumatra_path = _get_sumatra_path(sumatra_override)
     if not sumatra_path:
         return
-    pdf_bytes = _build_cierre_ticket_pdf_bytes(cierre, tasa, resumen, total_bultos)
+    pdf_bytes = _build_cierre_ticket_pdf_bytes(cierre, tasa, resumen, total_bultos, profile)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         tmp_file.write(pdf_bytes)
         tmp_path = tmp_file.name
@@ -1342,6 +1475,51 @@ def _generate_token(length: int = 6) -> str:
     import string
 
     return "".join(random.choice(string.digits) for _ in range(length))
+
+
+def _normalize_company_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9_]+", "_", (value or "").strip().lower()).strip("_")
+
+
+def _validate_database_url(database_url: str) -> Optional[str]:
+    try:
+        test_engine = create_engine(database_url, pool_pre_ping=True)
+        with test_engine.connect():
+            pass
+        test_engine.dispose()
+    except Exception as exc:
+        return f"No se pudo conectar: {exc.__class__.__name__}"
+    return None
+
+
+def _allowed_sales_interface_codes() -> set[str]:
+    return {item["code"] for item in SALES_INTERFACE_OPTIONS}
+
+
+def _get_sales_interface_setting(db: Session) -> SalesInterfaceSetting:
+    setting = db.query(SalesInterfaceSetting).order_by(SalesInterfaceSetting.id.asc()).first()
+    if setting:
+        if (setting.interface_code or "").strip().lower() not in _allowed_sales_interface_codes():
+            setting.interface_code = "ropa"
+            db.commit()
+        return setting
+
+    setting = SalesInterfaceSetting(interface_code="ropa")
+    db.add(setting)
+    db.commit()
+    db.refresh(setting)
+    return setting
+
+
+def _get_company_profile_setting(db: Session) -> CompanyProfileSetting:
+    row = db.query(CompanyProfileSetting).order_by(CompanyProfileSetting.id.asc()).first()
+    if row:
+        return row
+    row = CompanyProfileSetting()
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def _send_reversion_email(
@@ -1495,6 +1673,10 @@ def home(
 
     branch, bodega = _resolve_branch_bodega(db, user)
     vendedor_id = _vendedor_id_for_user(db, user, bodega)
+    sales_interface = _get_sales_interface_setting(db)
+    sales_interface_code = (sales_interface.interface_code or "ropa").strip().lower()
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    comestibles_theme_enabled = sales_interface_code == "comestibles" or active_company_key == "comestibles"
     home_preventas: list[dict] = []
 
     if vendedor_id:
@@ -1551,6 +1733,8 @@ def home(
             "user": user,
             "version": settings.UI_VERSION,
             "home_preventas": home_preventas,
+            "sales_interface_code": sales_interface_code,
+            "comestibles_theme_enabled": comestibles_theme_enabled,
         },
     )
 
@@ -1624,6 +1808,7 @@ def inventory_page(
     esteli_qty, esteli_items = _sum_for_bodega(bodega_esteli)
     global_qty = central_qty + esteli_qty
     global_items = len({p.id for p in productos if (balances.get((p.id, bodega_central.id), Decimal("0")) if bodega_central else Decimal("0")) > 0 or (balances.get((p.id, bodega_esteli.id), Decimal("0")) if bodega_esteli else Decimal("0")) > 0})
+    inventory_cs_only = _inventory_cs_only_mode(db)
     return request.app.state.templates.TemplateResponse(
         "inventory.html",
         {
@@ -1644,6 +1829,7 @@ def inventory_page(
             "error": error,
             "success": success,
             "show_inactive": show_inactive,
+            "inventory_cs_only": inventory_cs_only,
             "version": settings.UI_VERSION,
         },
     )
@@ -1888,6 +2074,7 @@ def inventory_ingresos_page(
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
+    inventory_cs_only = _inventory_cs_only_mode(db)
     return request.app.state.templates.TemplateResponse(
         "inventory_ingresos.html",
         {
@@ -1907,6 +2094,7 @@ def inventory_ingresos_page(
             "end_date": end_date.isoformat() if end_date else "",
             "success": success,
             "print_id": print_id,
+            "inventory_cs_only": inventory_cs_only,
             "version": settings.UI_VERSION,
         },
     )
@@ -1968,6 +2156,7 @@ def inventory_egresos_page(
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
+    inventory_cs_only = _inventory_cs_only_mode(db)
     return request.app.state.templates.TemplateResponse(
         "inventory_egresos.html",
         {
@@ -1984,6 +2173,7 @@ def inventory_egresos_page(
             "end_date": end_date.isoformat() if end_date else "",
             "success": success,
             "print_id": print_id,
+            "inventory_cs_only": inventory_cs_only,
             "version": settings.UI_VERSION,
         },
     )
@@ -2096,8 +2286,12 @@ def sales_page(
                 preventa.reviewed_at = local_now_naive()
                 db.commit()
 
+    sales_interface = _get_sales_interface_setting(db)
+    interface_code = (sales_interface.interface_code or "ropa").strip().lower()
+    template_name = "sales_comestibles.html" if interface_code == "comestibles" else "sales.html"
+
     return request.app.state.templates.TemplateResponse(
-        "sales.html",
+        template_name,
         {
             "request": request,
             "user": user,
@@ -2115,6 +2309,7 @@ def sales_page(
             "pos_print": pos_print,
             "default_vendedor_id": _default_vendedor_id(db, bodega),
             "initial_preventa": initial_preventa,
+            "sales_interface_code": interface_code,
             "version": settings.UI_VERSION,
         },
     )
@@ -3006,6 +3201,8 @@ def sales_utilitario(
 
 def _sales_commissions_filters(request: Request):
     fecha_raw = request.query_params.get("fecha")
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
     branch_id = request.query_params.get("branch_id") or "all"
     vendedor_facturacion_id = (
         request.query_params.get("vendedor_facturacion_id")
@@ -3023,8 +3220,27 @@ def _sales_commissions_filters(request: Request):
             fecha_value = date.fromisoformat(fecha_raw)
         except ValueError:
             fecha_value = local_today()
+    start_date = fecha_value
+    end_date = fecha_value
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+            if start_raw and not end_raw:
+                end_date = start_date
+            if end_raw and not start_raw:
+                start_date = end_date
+        except ValueError:
+            start_date = fecha_value
+            end_date = fecha_value
+    if end_date < start_date:
+        end_date = start_date
     return (
         fecha_value,
+        start_date,
+        end_date,
         branch_id,
         vendedor_facturacion_id,
         vendedor_asignado_id,
@@ -3063,8 +3279,26 @@ def _commission_sales_rows_query(
     vendedor_id: str | None,
     producto_asig_q: str,
 ):
-    start_dt = datetime.combine(fecha_value, datetime.min.time())
-    end_dt = datetime.combine(fecha_value + timedelta(days=1), datetime.min.time())
+    return _commission_sales_rows_query_range(
+        db,
+        fecha_value,
+        fecha_value,
+        branch_id,
+        vendedor_id,
+        producto_asig_q,
+    )
+
+
+def _commission_sales_rows_query_range(
+    db: Session,
+    start_date: date,
+    end_date: date,
+    branch_id: str | None,
+    vendedor_id: str | None,
+    producto_asig_q: str,
+):
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
     query = (
         db.query(VentaFactura, VentaItem, Producto, Cliente, Vendedor, Branch, Bodega)
@@ -3096,6 +3330,13 @@ def _commission_sales_rows_query(
             )
         )
     return query.order_by(VentaFactura.id.asc(), VentaItem.id.asc())
+
+
+def _commission_dates_in_range(start_date: date, end_date: date) -> list[date]:
+    if end_date < start_date:
+        return [start_date]
+    days = (end_date - start_date).days
+    return [start_date + timedelta(days=i) for i in range(days + 1)]
 
 
 def _commission_branch_scope(branch_id: str | None) -> Optional[int]:
@@ -3228,7 +3469,8 @@ def _ensure_commission_temp_snapshot(
 
 def _build_commission_assignment_rows(
     db: Session,
-    fecha_value: date,
+    start_date: date,
+    end_date: date,
     branch_id: str | None,
     vendedor_facturacion_id: str | None,
     vendedor_asignado_id: str | None,
@@ -3236,7 +3478,8 @@ def _build_commission_assignment_rows(
 ):
     scope_branch_id = _commission_branch_scope(branch_id)
     temp_query = db.query(VentaComisionAsignacion).filter(
-        VentaComisionAsignacion.fecha == fecha_value
+        VentaComisionAsignacion.fecha >= start_date,
+        VentaComisionAsignacion.fecha <= end_date,
     )
     if scope_branch_id:
         temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
@@ -3247,8 +3490,13 @@ def _build_commission_assignment_rows(
             )
         except ValueError:
             pass
-    source_rows = _commission_sales_rows_query(
-        db, fecha_value, branch_id if branch_id else "all", None, ""
+    source_rows = _commission_sales_rows_query_range(
+        db,
+        start_date,
+        end_date,
+        branch_id if branch_id else "all",
+        None,
+        "",
     ).all()
     source_qty_map: dict[int, int] = {}
     source_meta_map: dict[int, tuple] = {}
@@ -3297,7 +3545,7 @@ def _build_commission_assignment_rows(
                     bodega_id=bodega.id if bodega else None,
                     cliente_id=cliente.id if cliente else None,
                     producto_id=producto.id,
-                    fecha=fecha_value,
+                    fecha=factura.fecha.date() if factura and factura.fecha else start_date,
                     vendedor_origen_id=vendedor.id if vendedor else None,
                     vendedor_asignado_id=assigned_vendor_id,
                     cantidad=qty,
@@ -3491,12 +3739,14 @@ def _build_commission_assignment_rows(
 
 def _commission_missing_prices(
     db: Session,
-    fecha_value: date,
+    start_date: date,
+    end_date: date,
     branch_id: str | None,
 ) -> list[dict]:
     scope_branch_id = _commission_branch_scope(branch_id)
     temp_query = db.query(VentaComisionAsignacion).filter(
-        VentaComisionAsignacion.fecha == fecha_value
+        VentaComisionAsignacion.fecha >= start_date,
+        VentaComisionAsignacion.fecha <= end_date,
     )
     if scope_branch_id:
         temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
@@ -3756,6 +4006,8 @@ def sales_comisiones(
     _enforce_permission(request, user, "access.sales.comisiones")
     (
         fecha_value,
+        start_date,
+        end_date,
         branch_id,
         vendedor_facturacion_id,
         vendedor_asignado_id,
@@ -3773,7 +4025,12 @@ def sales_comisiones(
         except ValueError:
             selected_branch_id = None
 
-    vendedores = _vendedores_for_branch(db, selected_branch_id)
+    vendedores = (
+        db.query(Vendedor)
+        .filter(Vendedor.activo.is_(True))
+        .order_by(Vendedor.nombre)
+        .all()
+    )
     productos = (
         db.query(Producto)
         .filter(Producto.activo.is_(True))
@@ -3799,7 +4056,8 @@ def sales_comisiones(
         for producto in productos
     ]
 
-    _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
+    for day_value in _commission_dates_in_range(start_date, end_date):
+        _ensure_commission_temp_snapshot(db, day_value, branch_id)
     (
         assignment_rows,
         total_bultos,
@@ -3809,7 +4067,8 @@ def sales_comisiones(
         total_comision_usd,
     ) = _build_commission_assignment_rows(
         db,
-        fecha_value,
+        start_date,
+        end_date,
         branch_id,
         vendedor_facturacion_id,
         vendedor_asignado_id,
@@ -3842,6 +4101,8 @@ def sales_comisiones(
             "by_vendor": by_vendor,
             "day_status": day_status,
             "fecha": fecha_value.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
             "selected_branch": branch_id or "all",
             "selected_vendedor_facturacion": vendedor_facturacion_id or "",
             "selected_vendedor_asignado": vendedor_asignado_id or "",
@@ -3875,6 +4136,8 @@ async def sales_comisiones_save_prices(
     _enforce_permission(request, user, "access.sales.comisiones")
     form = await request.form()
     fecha_raw = str(form.get("fecha") or "")
+    start_raw = str(form.get("start_date") or "")
+    end_raw = str(form.get("end_date") or "")
     branch_id = str(form.get("branch_id") or "all")
     vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
     vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
@@ -3927,6 +4190,8 @@ async def sales_comisiones_save_prices(
         "tab": "precios",
         "success": msg,
         "fecha": fecha_raw,
+        "start_date": start_raw,
+        "end_date": end_raw,
         "branch_id": branch_id or "all",
         "vendedor_facturacion_id": vendedor_facturacion_id,
         "vendedor_asignado_id": vendedor_asignado_id,
@@ -3944,6 +4209,8 @@ async def sales_comisiones_save_assignments(
     _enforce_permission(request, user, "access.sales.comisiones")
     form = await request.form()
     fecha_raw = str(form.get("fecha") or "")
+    start_raw = str(form.get("start_date") or "")
+    end_raw = str(form.get("end_date") or "")
     branch_id = str(form.get("branch_id") or "all")
     vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
     vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
@@ -3954,15 +4221,38 @@ async def sales_comisiones_save_assignments(
         fecha_value = date.fromisoformat(fecha_raw)
     except ValueError:
         fecha_value = local_today()
+    start_date = fecha_value
+    end_date = fecha_value
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+            if start_raw and not end_raw:
+                end_date = start_date
+            if end_raw and not start_raw:
+                start_date = end_date
+        except ValueError:
+            start_date = fecha_value
+            end_date = fecha_value
+    if end_date < start_date:
+        end_date = start_date
     try:
         payload = json.loads(payload_raw)
     except json.JSONDecodeError:
         payload = []
 
-    _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
+    for day_value in _commission_dates_in_range(start_date, end_date):
+        _ensure_commission_temp_snapshot(db, day_value, branch_id)
     scope_branch_id = _commission_branch_scope(branch_id)
-    source_rows = _commission_sales_rows_query(
-        db, fecha_value, branch_id if branch_id else "all", None, ""
+    source_rows = _commission_sales_rows_query_range(
+        db,
+        start_date,
+        end_date,
+        branch_id if branch_id else "all",
+        None,
+        "",
     ).all()
     source_map = {
         item.id: (factura, item, producto, cliente, vendedor, branch, bodega)
@@ -3975,25 +4265,22 @@ async def sales_comisiones_save_assignments(
         for _, item, *_ in source_rows
     }
 
-    temp_query = db.query(VentaComisionAsignacion).filter(
-        VentaComisionAsignacion.fecha == fecha_value
-    )
-    if scope_branch_id:
-        temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
-    temp_item_ids = {
-        row[0]
-        for row in temp_query.with_entities(VentaComisionAsignacion.venta_item_id)
-        .distinct()
-        .all()
-    }
+    payload_temp_ids: set[int] = set()
+    for row in payload if isinstance(payload, list) else []:
+        try:
+            payload_temp_ids.add(int(row.get("temp_id")))
+        except Exception:
+            continue
 
     saved = 0
-    temp_query = db.query(VentaComisionAsignacion).filter(
-        VentaComisionAsignacion.fecha == fecha_value
-    )
+    current_query = db.query(VentaComisionAsignacion)
+    if payload_temp_ids:
+        current_query = current_query.filter(VentaComisionAsignacion.id.in_(list(payload_temp_ids)))
+    else:
+        current_query = current_query.filter(VentaComisionAsignacion.id == -1)
     if scope_branch_id:
-        temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
-    current_rows = temp_query.all()
+        current_query = current_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    current_rows = current_query.all()
     current_by_temp_id: dict[int, VentaComisionAsignacion] = {int(r.id): r for r in current_rows}
 
     # Solo trabajamos sobre items tocados en payload para no afectar otros filtros/registros.
@@ -4012,7 +4299,7 @@ async def sales_comisiones_save_assignments(
             continue
         if int(current_row.venta_item_id or 0) != venta_item_id:
             continue
-        if venta_item_id not in temp_item_ids and venta_item_id not in source_map:
+        if venta_item_id not in source_map:
             continue
         if cantidad < 0:
             continue
@@ -4028,6 +4315,8 @@ async def sales_comisiones_save_assignments(
         params = {
             "tab": "asignacion",
             "fecha": fecha_value.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
             "branch_id": branch_id or "all",
             "vendedor_facturacion_id": vendedor_facturacion_id,
             "vendedor_asignado_id": vendedor_asignado_id,
@@ -4086,6 +4375,8 @@ async def sales_comisiones_save_assignments(
         params = {
             "tab": "asignacion",
             "fecha": fecha_value.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
             "branch_id": branch_id or "all",
             "vendedor_facturacion_id": vendedor_facturacion_id,
             "vendedor_asignado_id": vendedor_asignado_id,
@@ -4126,7 +4417,6 @@ async def sales_comisiones_save_assignments(
         existing_rows_refreshed = (
             db.query(VentaComisionAsignacion)
             .filter(
-                VentaComisionAsignacion.fecha == fecha_value,
                 VentaComisionAsignacion.venta_item_id == venta_item_id,
             )
             .all()
@@ -4157,6 +4447,8 @@ async def sales_comisiones_save_assignments(
     params = {
         "tab": "asignacion",
         "fecha": fecha_value.isoformat(),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "branch_id": branch_id or "all",
         "vendedor_facturacion_id": vendedor_facturacion_id,
         "vendedor_asignado_id": vendedor_asignado_id,
@@ -4175,6 +4467,8 @@ async def sales_comisiones_validate_prices(
     _enforce_permission(request, user, "access.sales.comisiones")
     form = await request.form()
     fecha_raw = str(form.get("fecha") or "")
+    start_raw = str(form.get("start_date") or "")
+    end_raw = str(form.get("end_date") or "")
     branch_id = str(form.get("branch_id") or "all")
     vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
     vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
@@ -4184,9 +4478,27 @@ async def sales_comisiones_validate_prices(
         fecha_value = date.fromisoformat(fecha_raw)
     except ValueError:
         fecha_value = local_today()
+    start_date = fecha_value
+    end_date = fecha_value
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+            if start_raw and not end_raw:
+                end_date = start_date
+            if end_raw and not start_raw:
+                start_date = end_date
+        except ValueError:
+            start_date = fecha_value
+            end_date = fecha_value
+    if end_date < start_date:
+        end_date = start_date
 
-    _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
-    missing_products = _commission_missing_prices(db, fecha_value, branch_id)
+    for day_value in _commission_dates_in_range(start_date, end_date):
+        _ensure_commission_temp_snapshot(db, day_value, branch_id)
+    missing_products = _commission_missing_prices(db, start_date, end_date, branch_id)
 
     if missing_products:
         preview = ", ".join(
@@ -4197,6 +4509,8 @@ async def sales_comisiones_validate_prices(
         params = {
             "tab": "asignacion",
             "fecha": fecha_value.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
             "branch_id": branch_id or "all",
             "vendedor_facturacion_id": vendedor_facturacion_id,
             "vendedor_asignado_id": vendedor_asignado_id,
@@ -4208,6 +4522,8 @@ async def sales_comisiones_validate_prices(
     params = {
         "tab": "asignacion",
         "fecha": fecha_value.isoformat(),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "branch_id": branch_id or "all",
         "vendedor_facturacion_id": vendedor_facturacion_id,
         "vendedor_asignado_id": vendedor_asignado_id,
@@ -4226,6 +4542,8 @@ async def sales_comisiones_regenerate_assignments(
     _enforce_permission(request, user, "access.sales.comisiones")
     form = await request.form()
     fecha_raw = str(form.get("fecha") or "")
+    start_raw = str(form.get("start_date") or "")
+    end_raw = str(form.get("end_date") or "")
     branch_id = str(form.get("branch_id") or "all")
     vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
     vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
@@ -4235,6 +4553,23 @@ async def sales_comisiones_regenerate_assignments(
         fecha_value = date.fromisoformat(fecha_raw)
     except ValueError:
         fecha_value = local_today()
+    start_date = fecha_value
+    end_date = fecha_value
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+            if start_raw and not end_raw:
+                end_date = start_date
+            if end_raw and not start_raw:
+                start_date = end_date
+        except ValueError:
+            start_date = fecha_value
+            end_date = fecha_value
+    if end_date < start_date:
+        end_date = start_date
 
     scope_branch_id = _commission_branch_scope(branch_id)
     temp_query = db.query(VentaComisionAsignacion).filter(
@@ -4250,6 +4585,8 @@ async def sales_comisiones_regenerate_assignments(
     params = {
         "tab": "asignacion",
         "fecha": fecha_value.isoformat(),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "branch_id": branch_id or "all",
         "vendedor_facturacion_id": vendedor_facturacion_id,
         "vendedor_asignado_id": vendedor_asignado_id,
@@ -4268,6 +4605,8 @@ async def sales_comisiones_finalize_day(
     _enforce_permission(request, user, "access.sales.comisiones")
     form = await request.form()
     fecha_raw = str(form.get("fecha") or "")
+    start_raw = str(form.get("start_date") or "")
+    end_raw = str(form.get("end_date") or "")
     branch_id = str(form.get("branch_id") or "all")
     vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
     vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
@@ -4277,6 +4616,23 @@ async def sales_comisiones_finalize_day(
         fecha_value = date.fromisoformat(fecha_raw)
     except ValueError:
         fecha_value = local_today()
+    start_date = fecha_value
+    end_date = fecha_value
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+            if start_raw and not end_raw:
+                end_date = start_date
+            if end_raw and not start_raw:
+                start_date = end_date
+        except ValueError:
+            start_date = fecha_value
+            end_date = fecha_value
+    if end_date < start_date:
+        end_date = start_date
 
     _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
     scope_branch_id = _commission_branch_scope(branch_id)
@@ -4290,6 +4646,8 @@ async def sales_comisiones_finalize_day(
         params = {
             "tab": "asignacion",
             "fecha": fecha_value.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
             "branch_id": branch_id or "all",
             "vendedor_facturacion_id": vendedor_facturacion_id,
             "vendedor_asignado_id": vendedor_asignado_id,
@@ -4343,6 +4701,8 @@ async def sales_comisiones_finalize_day(
     params = {
         "tab": "asignacion",
         "fecha": fecha_value.isoformat(),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "branch_id": branch_id or "all",
         "vendedor_facturacion_id": vendedor_facturacion_id,
         "vendedor_asignado_id": vendedor_asignado_id,
@@ -4361,6 +4721,8 @@ async def sales_comisiones_reopen_day(
     _enforce_permission(request, user, "access.sales.comisiones")
     form = await request.form()
     fecha_raw = str(form.get("fecha") or "")
+    start_raw = str(form.get("start_date") or "")
+    end_raw = str(form.get("end_date") or "")
     branch_id = str(form.get("branch_id") or "all")
     vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
     vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
@@ -4370,6 +4732,23 @@ async def sales_comisiones_reopen_day(
         fecha_value = date.fromisoformat(fecha_raw)
     except ValueError:
         fecha_value = local_today()
+    start_date = fecha_value
+    end_date = fecha_value
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+            if start_raw and not end_raw:
+                end_date = start_date
+            if end_raw and not start_raw:
+                start_date = end_date
+        except ValueError:
+            start_date = fecha_value
+            end_date = fecha_value
+    if end_date < start_date:
+        end_date = start_date
 
     scope_branch_id = _commission_branch_scope(branch_id)
     final_query = db.query(VentaComisionFinal).filter(VentaComisionFinal.fecha == fecha_value)
@@ -4380,6 +4759,8 @@ async def sales_comisiones_reopen_day(
         params = {
             "tab": "asignacion",
             "fecha": fecha_value.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
             "branch_id": branch_id or "all",
             "vendedor_facturacion_id": vendedor_facturacion_id,
             "vendedor_asignado_id": vendedor_asignado_id,
@@ -4422,6 +4803,8 @@ async def sales_comisiones_reopen_day(
     params = {
         "tab": "asignacion",
         "fecha": fecha_value.isoformat(),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "branch_id": branch_id or "all",
         "vendedor_facturacion_id": vendedor_facturacion_id,
         "vendedor_asignado_id": vendedor_asignado_id,
@@ -4954,6 +5337,7 @@ async def sales_cierre_create(
     )
     if pos_print and pos_print.cierre_auto_print:
         try:
+            company_profile = _company_profile_payload(db)
             resumen = {
                 "ventas_usd": total_ventas_usd,
                 "ingresos_usd": total_ingresos_usd,
@@ -4979,6 +5363,7 @@ async def sales_cierre_create(
                 Decimal(str(total_bultos or 0)),
                 pos_print.cierre_printer_name or pos_print.printer_name,
                 pos_print.cierre_copies or 1,
+                company_profile,
                 pos_print.sumatra_path,
             )
         except Exception:
@@ -5031,6 +5416,7 @@ def sales_cierre_pdf(
         tasa,
         resumen,
         Decimal(str(total_bultos or 0)),
+        _company_profile_payload(db),
     )
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
@@ -5172,10 +5558,12 @@ async def sales_roc_create(
     )
     if pos_print and pos_print.roc_auto_print:
         try:
+            company_profile = _company_profile_payload(db)
             _print_roc_ticket(
                 recibo,
                 pos_print.roc_printer_name or pos_print.printer_name,
                 pos_print.roc_copies or pos_print.copies,
+                company_profile,
                 pos_print.sumatra_path,
             )
         except Exception:
@@ -5197,7 +5585,7 @@ def sales_roc_pdf(
     _, bodega = _resolve_branch_bodega(db, user)
     if bodega and recibo.bodega_id != bodega.id:
         return JSONResponse({"ok": False, "message": "Recibo fuera de tu bodega"}, status_code=403)
-    pdf_bytes = _build_roc_ticket_pdf_bytes(recibo)
+    pdf_bytes = _build_roc_ticket_pdf_bytes(recibo, _company_profile_payload(db))
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
@@ -6817,6 +7205,7 @@ def report_depositos_export(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
+    company_profile = _company_profile_payload(db)
     start_date, end_date, branch_id = _depositos_report_filters(request)
     depositos = (
         _depositos_report_query(db, start_date, end_date, branch_id)
@@ -6849,12 +7238,12 @@ def report_depositos_export(
 
     c = canvas.Canvas(buffer, pagesize=portrait((width, 600)))
     y = 560
-    logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
+    logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
     if logo_path.exists():
         c.drawImage(str(logo_path), 24, y - 40, width=90, height=40, mask="auto")
     c.setFont("Times-Bold", 11)
     c.drawString(120, y - 8, "Informe de Depositos, Transferencias y")
-    c.drawString(120, y - 24, "Tarjetas Pacas Hollywood")
+    c.drawString(120, y - 24, f"Tarjetas {company_profile.get('trade_name', 'Empresa')}")
     y -= 50
     c.setFont("Times-Roman", 9)
     c.setFillColor(colors.HexColor("#4b5563"))
@@ -7143,6 +7532,7 @@ def report_inventory_consolidated_pdf(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
+    company_profile = _company_profile_payload(db)
     branch_id = _inventory_consolidated_filters(request)
     rows, total_qty, total_cost, _, selected_branch, _ = _inventory_consolidated_data(db, branch_id)
     branch_label = selected_branch.name if selected_branch else "Ambas"
@@ -7165,14 +7555,17 @@ def report_inventory_consolidated_pdf(
     margin = 30
     y = height - 36
 
-    logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
+    logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
     if logo_path.exists():
         c.drawImage(str(logo_path), margin, y - 40, width=90, height=40, mask="auto")
 
-    header_text = (
-        "Reporte de inventario consolidado : Pacas Hollywood Central  - Managua   "
-        "Semaforos del colonial 20 vrs. al lago .  8900-0300"
-    )
+    profile_phone = company_profile.get("phone", "").strip()
+    profile_address = company_profile.get("address", "").strip()
+    header_text = f"Reporte de inventario consolidado : {company_profile.get('trade_name', 'Empresa')}"
+    if profile_address:
+        header_text += f" - {profile_address}"
+    if profile_phone:
+        header_text += f" - {profile_phone}"
     header_x = margin + 110
     header_width = width - margin - header_x
 
@@ -7323,6 +7716,7 @@ def report_kardex_export(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
+    company_profile = _company_profile_payload(db)
     start_date, end_date, branch_id, producto_q = _kardex_report_filters(request)
     rows, resumen = _build_kardex_movements(db, start_date, end_date, branch_id, producto_q)
     branches = db.query(Branch).order_by(Branch.name).all()
@@ -7340,7 +7734,7 @@ def report_kardex_export(
 
     c = canvas.Canvas(buffer, pagesize=portrait((width, 700)))
     y = 660
-    logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
+    logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
     if logo_path.exists():
         c.drawImage(str(logo_path), 24, y - 40, width=90, height=40, mask="auto")
     c.setFont("Times-Bold", 11)
@@ -7415,6 +7809,7 @@ def report_sales_export(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
+    company_profile = _company_profile_payload(db)
     start_date, end_date, branch_id, vendedor_id, producto_q = _sales_report_filters(request)
     report_rows, total_usd, total_cs, total_facturas, total_items, vendor_summary = _build_sales_report_rows(
         db,
@@ -7437,7 +7832,7 @@ def report_sales_export(
         margin = 24
         y = height - 36
 
-        logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
+        logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
         if logo_path.exists():
             c.drawImage(str(logo_path), margin, y - 42, width=90, height=40, mask="auto")
 
@@ -7983,6 +8378,7 @@ def sales_depositos_export(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.depositos")
+    company_profile = _company_profile_payload(db)
     start_date, end_date, vendedor_q, banco_q, moneda_q = _depositos_filters(request)
     branch, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
@@ -8017,12 +8413,12 @@ def sales_depositos_export(
 
         c = canvas.Canvas(buffer, pagesize=portrait((width, 600)))
         y = 560
-        logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
+        logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
         if logo_path.exists():
             c.drawImage(str(logo_path), 24, y - 40, width=90, height=40, mask="auto")
         c.setFont("Times-Bold", 11)
         c.drawString(120, y - 8, "Informe de Depositos, Transferencias y")
-        c.drawString(120, y - 24, "Tarjetas Pacas Hollywood")
+        c.drawString(120, y - 24, f"Tarjetas {company_profile.get('trade_name', 'Empresa')}")
         y -= 50
         c.setFont("Times-Roman", 9)
         c.setFillColor(colors.HexColor("#4b5563"))
@@ -8600,6 +8996,237 @@ def data_home(
             "version": settings.UI_VERSION,
         },
     )
+
+
+@router.get("/data/entornos")
+def data_entornos(
+    request: Request,
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    error = request.query_params.get("error")
+    success = request.query_params.get("success")
+    profiles = get_company_profiles()
+    active_key = get_active_company_key()
+    current_database_url = get_current_database_url()
+    return request.app.state.templates.TemplateResponse(
+        "data_entornos.html",
+        {
+            "request": request,
+            "user": user,
+            "profiles": profiles,
+            "active_key": active_key,
+            "current_database_url": current_database_url,
+            "error": error,
+            "success": success,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/data/entornos")
+def data_entornos_create(
+    request: Request,
+    company_key: str = Form(...),
+    company_name: str = Form(...),
+    database_url: str = Form(...),
+    activate: Optional[str] = Form(None),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    normalized_key = _normalize_company_key(company_key)
+    if not normalized_key:
+        return RedirectResponse("/data/entornos?error=Clave+de+empresa+invalida", status_code=303)
+    database_url = (database_url or "").strip()
+    if not database_url:
+        return RedirectResponse("/data/entornos?error=DATABASE_URL+requerida", status_code=303)
+
+    connect_error = _validate_database_url(database_url)
+    if connect_error:
+        return RedirectResponse(f"/data/entornos?{urlencode({'error': connect_error})}", status_code=303)
+
+    activate_now = activate == "on"
+    try:
+        upsert_company_profile(
+            key=normalized_key,
+            name=company_name,
+            database_url=database_url,
+            activate=activate_now,
+        )
+        if activate_now or normalized_key == get_active_company_key():
+            refresh_engine(force=True)
+            init_db()
+    except ValueError as exc:
+        return RedirectResponse(f"/data/entornos?{urlencode({'error': str(exc)})}", status_code=303)
+
+    success_message = "Perfil de empresa guardado"
+    if activate_now:
+        success_message += " y activado"
+    return RedirectResponse(f"/data/entornos?{urlencode({'success': success_message})}", status_code=303)
+
+
+@router.post("/data/entornos/{company_key}/update")
+def data_entornos_update(
+    request: Request,
+    company_key: str,
+    company_name: str = Form(...),
+    database_url: str = Form(...),
+    activate: Optional[str] = Form(None),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    normalized_key = _normalize_company_key(company_key)
+    if not normalized_key:
+        return RedirectResponse("/data/entornos?error=Clave+de+empresa+invalida", status_code=303)
+
+    connect_error = _validate_database_url(database_url)
+    if connect_error:
+        return RedirectResponse(f"/data/entornos?{urlencode({'error': connect_error})}", status_code=303)
+
+    activate_now = activate == "on"
+    try:
+        upsert_company_profile(
+            key=normalized_key,
+            name=company_name,
+            database_url=database_url,
+            activate=activate_now,
+        )
+        if activate_now or normalized_key == get_active_company_key():
+            refresh_engine(force=True)
+            init_db()
+    except ValueError as exc:
+        return RedirectResponse(f"/data/entornos?{urlencode({'error': str(exc)})}", status_code=303)
+
+    return RedirectResponse("/data/entornos?success=Perfil+actualizado", status_code=303)
+
+
+@router.post("/data/entornos/{company_key}/activar")
+def data_entornos_activate(
+    request: Request,
+    company_key: str,
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    normalized_key = _normalize_company_key(company_key)
+    if not normalized_key:
+        return RedirectResponse("/data/entornos?error=Empresa+invalida", status_code=303)
+
+    profiles = get_company_profiles()
+    profile = next((item for item in profiles if item["key"] == normalized_key), None)
+    if not profile:
+        return RedirectResponse("/data/entornos?error=Empresa+no+registrada", status_code=303)
+
+    connect_error = _validate_database_url(profile["database_url"])
+    if connect_error:
+        return RedirectResponse(f"/data/entornos?{urlencode({'error': connect_error})}", status_code=303)
+
+    set_active_company(normalized_key)
+    refresh_engine(force=True)
+    init_db()
+    return RedirectResponse("/data/entornos?success=Empresa+activa+actualizada", status_code=303)
+
+
+@router.get("/data/interfaz-ventas")
+def data_interfaz_ventas(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    error = request.query_params.get("error")
+    success = request.query_params.get("success")
+    setting = _get_sales_interface_setting(db)
+    return request.app.state.templates.TemplateResponse(
+        "data_interfaz_ventas.html",
+        {
+            "request": request,
+            "user": user,
+            "setting": setting,
+            "options": SALES_INTERFACE_OPTIONS,
+            "error": error,
+            "success": success,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/data/interfaz-ventas")
+def data_interfaz_ventas_update(
+    request: Request,
+    interface_code: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    selected = (interface_code or "").strip().lower()
+    if selected not in _allowed_sales_interface_codes():
+        return RedirectResponse("/data/interfaz-ventas?error=Interfaz+no+valida", status_code=303)
+
+    setting = _get_sales_interface_setting(db)
+    setting.interface_code = selected
+    setting.updated_by = user.full_name
+    db.commit()
+    return RedirectResponse("/data/interfaz-ventas?success=Interfaz+de+ventas+actualizada", status_code=303)
+
+
+@router.get("/data/empresa")
+def data_empresa(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    error = request.query_params.get("error")
+    success = request.query_params.get("success")
+    profile = _get_company_profile_setting(db)
+    return request.app.state.templates.TemplateResponse(
+        "data_empresa.html",
+        {
+            "request": request,
+            "user": user,
+            "profile": profile,
+            "error": error,
+            "success": success,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/data/empresa")
+def data_empresa_update(
+    request: Request,
+    legal_name: str = Form(...),
+    trade_name: str = Form(...),
+    app_title: str = Form(...),
+    sidebar_subtitle: str = Form(...),
+    website: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None),
+    address: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    logo_url: Optional[str] = Form(None),
+    pos_logo_url: Optional[str] = Form(None),
+    favicon_url: Optional[str] = Form(None),
+    inventory_cs_only: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    profile = _get_company_profile_setting(db)
+    profile.legal_name = (legal_name or "").strip() or "Empresa"
+    profile.trade_name = (trade_name or "").strip() or profile.legal_name
+    profile.app_title = (app_title or "").strip() or f"ERP {profile.trade_name}"
+    profile.sidebar_subtitle = (sidebar_subtitle or "").strip() or "ERP"
+    profile.website = (website or "").strip()
+    profile.phone = (phone or "").strip()
+    profile.address = (address or "").strip()
+    profile.email = (email or "").strip()
+    profile.logo_url = (logo_url or "").strip() or "/static/logo_hollywood.png"
+    profile.pos_logo_url = (pos_logo_url or "").strip() or profile.logo_url
+    profile.favicon_url = (favicon_url or "").strip() or "/static/favicon.ico"
+    profile.inventory_cs_only = inventory_cs_only == "on"
+    profile.updated_by = user.full_name
+    db.commit()
+    return RedirectResponse("/data/empresa?success=Perfil+empresarial+actualizado", status_code=303)
 
 
 @router.get("/data/pos-print")
@@ -10024,6 +10651,7 @@ def inventory_ingreso_pdf(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.inventory.ingresos")
+    company_profile = _company_profile_payload(db)
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
@@ -10046,7 +10674,7 @@ def inventory_ingreso_pdf(
     width, height = letter
     margin = 36
 
-    logo_path = Path(__file__).resolve().parents[1] / "static" / "logo_hollywood.png"
+    logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
     if logo_path.exists():
         pdf.drawImage(
             str(logo_path),
@@ -10060,15 +10688,13 @@ def inventory_ingreso_pdf(
 
     info_x = margin + 110
     info_y = height - 44
+    branch = ingreso.bodega.branch if ingreso.bodega else None
+    identity = _company_identity(branch, company_profile)
     pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(info_x, info_y, "Pacas Hollywood Managua")
+    pdf.drawString(info_x, info_y, identity["company_name"])
     pdf.setFont("Helvetica", 9)
-    pdf.drawString(info_x, info_y - 14, "Telf. 8900-0300")
-    pdf.drawString(
-        info_x,
-        info_y - 28,
-        "Direccion: Semaforos del colonial 20 vrs. abajo frente al pillin.",
-    )
+    pdf.drawString(info_x, info_y - 14, f"Telf. {identity['telefono']}")
+    pdf.drawString(info_x, info_y - 28, f"Direccion: {identity['direccion']}")
 
     pdf.setFont("Helvetica-Bold", 14)
     pdf.drawString(margin, height - 120, "Informe de ingreso de mercaderias")
@@ -10196,6 +10822,7 @@ def inventory_egreso_pdf(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.inventory.egresos")
+    company_profile = _company_profile_payload(db)
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
@@ -10218,7 +10845,7 @@ def inventory_egreso_pdf(
     width, height = letter
     margin = 36
 
-    logo_path = Path(__file__).resolve().parents[1] / "static" / "logo_hollywood.png"
+    logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
     if logo_path.exists():
         pdf.drawImage(
             str(logo_path),
@@ -10232,15 +10859,13 @@ def inventory_egreso_pdf(
 
     info_x = margin + 110
     info_y = height - 44
+    branch = egreso.bodega.branch if egreso.bodega else None
+    identity = _company_identity(branch, company_profile)
     pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(info_x, info_y, "Pacas Hollywood Managua")
+    pdf.drawString(info_x, info_y, identity["company_name"])
     pdf.setFont("Helvetica", 9)
-    pdf.drawString(info_x, info_y - 14, "Telf. 8900-0300")
-    pdf.drawString(
-        info_x,
-        info_y - 28,
-        "Direccion: Semaforos del colonial 20 vrs. abajo frente al pillin.",
-    )
+    pdf.drawString(info_x, info_y - 14, f"Telf. {identity['telefono']}")
+    pdf.drawString(info_x, info_y - 28, f"Direccion: {identity['direccion']}")
 
     pdf.setFont("Helvetica-Bold", 14)
     pdf.drawString(margin, height - 120, "Informe de egreso de mercaderias")
@@ -10379,13 +11004,14 @@ def sales_invoice_pdf(
     )
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
+    company_profile = _company_profile_payload(db)
 
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
     margin = 36
 
-    logo_path = Path(__file__).resolve().parents[1] / "static" / "logo_hollywood.png"
+    logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
     if logo_path.exists():
         pdf.drawImage(
             str(logo_path),
@@ -10399,15 +11025,13 @@ def sales_invoice_pdf(
 
     info_x = margin + 110
     info_y = height - 44
+    branch = factura.bodega.branch if factura.bodega else None
+    identity = _company_identity(branch, company_profile)
     pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(info_x, info_y, "Pacas Hollywood Managua")
+    pdf.drawString(info_x, info_y, identity["company_name"])
     pdf.setFont("Helvetica", 9)
-    pdf.drawString(info_x, info_y - 14, "Telf. 8900-0300")
-    pdf.drawString(
-        info_x,
-        info_y - 28,
-        "Direccion: Semaforos del colonial 20 vrs. abajo frente al pillin.",
-    )
+    pdf.drawString(info_x, info_y - 14, f"Telf. {identity['telefono']}")
+    pdf.drawString(info_x, info_y - 28, f"Direccion: {identity['direccion']}")
 
     pdf.setFont("Helvetica-Bold", 14)
     pdf.drawString(margin, height - 120, "Factura de venta")
@@ -10545,7 +11169,7 @@ def sales_ticket_pos(
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
 
-    pdf_bytes = _build_pos_ticket_pdf_bytes(factura)
+    pdf_bytes = _build_pos_ticket_pdf_bytes(factura, _company_profile_payload(db))
     buffer = io.BytesIO(pdf_bytes)
     headers = {"Content-Disposition": f"inline; filename={factura.numero}_ticket.pdf"}
     return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
@@ -10601,13 +11225,15 @@ def sales_ticket_print(
         except ValueError:
             return 0.0
 
+    profile = _company_profile_payload(db)
     branch = factura.bodega.branch if factura.bodega else None
-    company_name = (branch.company_name if branch and branch.company_name else "Pacas Hollywood").strip()
-    ruc = branch.ruc if branch and branch.ruc else "-"
-    telefono = branch.telefono if branch and branch.telefono else "-"
-    direccion = branch.direccion if branch and branch.direccion else "-"
+    identity = _company_identity(branch, profile)
+    company_name = identity["company_name"]
+    ruc = identity["ruc"]
+    telefono = identity["telefono"]
+    direccion = identity["direccion"]
     direccion_lines = wrap_text(direccion, 32)[:2]
-    sucursal = branch.name if branch and branch.name else "-"
+    sucursal = identity["sucursal"]
 
     cliente = factura.cliente.nombre if factura.cliente else "Consumidor final"
     cliente_id = factura.cliente.identificacion if factura.cliente and factura.cliente.identificacion else "-"
@@ -10794,6 +11420,21 @@ def inventory_create_product(
         return _error("Tasa de cambio no configurada")
 
     tasa = float(rate_today.rate)
+    inventory_cs_only = _inventory_cs_only_mode(db)
+    if inventory_cs_only:
+        precio_venta1_cs = float(precio_venta1_usd or 0)
+        precio_venta2_cs = float(precio_venta2_usd or 0)
+        precio_venta3_cs = float(precio_venta3_usd or 0)
+        costo_producto_cs = float(costo_producto_usd or 0)
+        precio_venta1_usd = (precio_venta1_cs / tasa) if tasa else 0
+        precio_venta2_usd = (precio_venta2_cs / tasa) if tasa else 0
+        precio_venta3_usd = (precio_venta3_cs / tasa) if tasa else 0
+        costo_producto_usd = (costo_producto_cs / tasa) if tasa else 0
+    else:
+        precio_venta1_cs = precio_venta1_usd * tasa
+        precio_venta2_cs = precio_venta2_usd * tasa
+        precio_venta3_cs = precio_venta3_usd * tasa
+        costo_producto_cs = costo_producto_usd * tasa
     active_flag = True if activo is None else activo == "on"
     producto = Producto(
         cod_producto=cod_producto,
@@ -10802,14 +11443,14 @@ def inventory_create_product(
         segmento_id=_to_int(segmento_id),
         marca=marca,
         referencia_producto=referencia_producto,
-        precio_venta1=precio_venta1_usd * tasa,
-        precio_venta2=precio_venta2_usd * tasa,
-        precio_venta3=precio_venta3_usd * tasa,
+        precio_venta1=precio_venta1_cs,
+        precio_venta2=precio_venta2_cs,
+        precio_venta3=precio_venta3_cs,
         precio_venta1_usd=precio_venta1_usd,
         precio_venta2_usd=precio_venta2_usd,
         precio_venta3_usd=precio_venta3_usd,
         tasa_cambio=tasa,
-        costo_producto=costo_producto_usd * tasa,
+        costo_producto=costo_producto_cs,
         activo=active_flag,
 )
     db.add(producto)
@@ -10885,16 +11526,31 @@ def inventory_update_product(
         return RedirectResponse(f"{target}?error=Tasa+de+cambio+no+configurada", status_code=303)
 
     tasa = float(rate_today.rate)
+    inventory_cs_only = _inventory_cs_only_mode(db)
+    if inventory_cs_only:
+        precio_venta1_cs = float(precio_venta1_usd or 0)
+        precio_venta2_cs = float(precio_venta2_usd or 0)
+        precio_venta3_cs = float(precio_venta3_usd or 0)
+        costo_producto_cs = float(costo_producto_usd or 0)
+        precio_venta1_usd = (precio_venta1_cs / tasa) if tasa else 0
+        precio_venta2_usd = (precio_venta2_cs / tasa) if tasa else 0
+        precio_venta3_usd = (precio_venta3_cs / tasa) if tasa else 0
+        costo_producto_usd = (costo_producto_cs / tasa) if tasa else 0
+    else:
+        precio_venta1_cs = precio_venta1_usd * tasa
+        precio_venta2_cs = precio_venta2_usd * tasa
+        precio_venta3_cs = precio_venta3_usd * tasa
+        costo_producto_cs = costo_producto_usd * tasa
     producto.descripcion = descripcion
     producto.linea_id = _to_int(linea_id)
     producto.segmento_id = _to_int(segmento_id)
     producto.precio_venta1_usd = precio_venta1_usd
     producto.precio_venta2_usd = precio_venta2_usd
     producto.precio_venta3_usd = precio_venta3_usd
-    producto.precio_venta1 = precio_venta1_usd * tasa
-    producto.precio_venta2 = precio_venta2_usd * tasa
-    producto.precio_venta3 = precio_venta3_usd * tasa
-    producto.costo_producto = costo_producto_usd * tasa
+    producto.precio_venta1 = precio_venta1_cs
+    producto.precio_venta2 = precio_venta2_cs
+    producto.precio_venta3 = precio_venta3_cs
+    producto.costo_producto = costo_producto_cs
     producto.tasa_cambio = tasa
     producto.activo = activo == "on"
 
@@ -11210,6 +11866,9 @@ async def inventory_create_ingreso(
     item_costs = form.getlist("item_costo")
     item_prices = form.getlist("item_precio")
 
+    inventory_cs_only = _inventory_cs_only_mode(db)
+    if inventory_cs_only:
+        moneda = "CS"
     if not tipo_id or not bodega_id or not fecha or not moneda:
         return RedirectResponse("/inventory/ingresos?error=Faltan+datos+obligatorios", status_code=303)
     if not item_ids:
@@ -11340,6 +11999,9 @@ async def inventory_create_egreso(
     item_costs = form.getlist("item_costo")
     item_prices = form.getlist("item_precio")
 
+    inventory_cs_only = _inventory_cs_only_mode(db)
+    if inventory_cs_only:
+        moneda = "CS"
     if not tipo_id or not bodega_id or not fecha or not moneda:
         return RedirectResponse("/inventory/egresos?error=Faltan+datos+obligatorios", status_code=303)
     if not item_ids:
@@ -11914,10 +12576,12 @@ async def sales_create_invoice(
     )
     if pos_print and pos_print.auto_print:
         try:
+            company_profile = _company_profile_payload(db)
             _print_pos_ticket(
                 factura,
                 pos_print.printer_name,
                 pos_print.copies,
+                company_profile,
                 pos_print.sumatra_path,
             )
         except Exception:
@@ -12049,6 +12713,7 @@ def sales_cobranza_export(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.sales.cobranza")
+    company_profile = _company_profile_payload(db)
     start_raw = request.query_params.get("start_date")
     end_raw = request.query_params.get("end_date")
     producto_q = (request.query_params.get("producto") or "").strip()
@@ -12144,7 +12809,7 @@ def sales_cobranza_export(
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
     y = height - 40
-    logo_path = Path(__file__).resolve().parent.parent / "static" / "logo_hollywood.png"
+    logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
     if logo_path.exists():
         c.drawImage(str(logo_path), 40, y - 30, width=90, height=30, mask="auto")
     c.setFont("Times-Bold", 14)

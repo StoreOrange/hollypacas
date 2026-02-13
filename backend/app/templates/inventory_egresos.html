@@ -199,7 +199,7 @@
                 <th class="text-left px-4 py-3">Tipo</th>
                 <th class="text-left px-4 py-3">Origen</th>
                 <th class="text-left px-4 py-3">Destino</th>
-                <th class="text-right px-4 py-3">Total USD</th>
+                {% if not inventory_cs_only %}<th class="text-right px-4 py-3">Total USD</th>{% endif %}
                 <th class="text-right px-4 py-3">Total C$</th>
                 <th class="text-left px-4 py-3">Motivo</th>
                 <th class="text-center px-4 py-3">Documento</th>
@@ -212,7 +212,7 @@
                 <td class="px-4 py-3 font-semibold text-ink">{{ egreso.tipo.nombre if egreso.tipo else "-" }}</td>
                 <td class="px-4 py-3 text-slate">{{ egreso.bodega.name if egreso.bodega else "-" }}</td>
                 <td class="px-4 py-3 text-slate">{{ egreso.bodega_destino.name if egreso.bodega_destino else "-" }}</td>
-                <td class="px-4 py-3 text-right text-slate">$ {{ "%.2f"|format(egreso.total_usd or 0) }}</td>
+                {% if not inventory_cs_only %}<td class="px-4 py-3 text-right text-slate">$ {{ "%.2f"|format(egreso.total_usd or 0) }}</td>{% endif %}
                 <td class="px-4 py-3 text-right text-slate">C$ {{ "%.2f"|format(egreso.total_cs or 0) }}</td>
                 <td class="px-4 py-3 text-slate">{{ egreso.observacion or "-" }}</td>
                 <td class="px-4 py-3 text-center">
@@ -312,9 +312,13 @@
                         <i class="bi bi-currency-exchange text-brand me-1"></i>
                         Moneda *
                       </label>
-                      <select id="field-moneda" name="moneda" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100">
+                      <select id="field-moneda" name="moneda" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100" {% if inventory_cs_only %}data-cs-only="1"{% endif %}>
+                        {% if inventory_cs_only %}
+                        <option value="CS">C$</option>
+                        {% else %}
                         <option value="USD">USD</option>
                         <option value="CS">C$</option>
+                        {% endif %}
                       </select>
                     </div>
                     <div class="col-12 col-xl-9 movement-meta-item">
@@ -355,8 +359,8 @@
                             <tr>
                               <th class="text-left px-3 py-2">Codigo</th>
                               <th class="text-left px-3 py-2">Descripcion</th>
-                              <th class="text-right px-3 py-2">Costo USD</th>
-                              <th class="text-right px-3 py-2">Precio USD</th>
+                              <th class="text-right px-3 py-2">Costo {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
+                              <th class="text-right px-3 py-2">Precio {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
                               <th class="text-right px-3 py-2">Saldo</th>
                               <th class="text-right px-3 py-2">Cantidad</th>
                               <th class="text-center px-3 py-2">Agregar</th>
@@ -368,9 +372,13 @@
                               <td class="px-3 py-2 font-semibold text-ink">{{ p.cod_producto }}</td>
                               <td class="px-3 py-2 text-slate">{{ p.descripcion }}</td>
                               <td class="px-3 py-2 text-right text-slate">
+                                {% if inventory_cs_only %}
+                                C$ {{ "%.2f"|format(p.costo_producto or 0) }}
+                                {% else %}
                                 $ {% if p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0.00{% endif %}
+                                {% endif %}
                               </td>
-                              <td class="px-3 py-2 text-right text-slate">$ {{ "%.2f"|format(p.precio_venta1_usd or 0) }}</td>
+                              <td class="px-3 py-2 text-right text-slate">{% if inventory_cs_only %}C$ {{ "%.2f"|format(p.precio_venta1 or 0) }}{% else %}$ {{ "%.2f"|format(p.precio_venta1_usd or 0) }}{% endif %}</td>
                               <td class="px-3 py-2 text-right text-slate saldo-cell">0</td>
                               <td class="px-3 py-2 text-right">
                                 <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" max="0" value="1" />
@@ -434,10 +442,12 @@
                     <div class="label">Total items</div>
                     <div id="total-items" class="value">0</div>
                   </div>
+                  {% if not inventory_cs_only %}
                   <div>
                     <div class="label">Total USD</div>
                     <div id="total-usd" class="value">$ 0.00</div>
                   </div>
+                  {% endif %}
                   <div>
                     <div class="label">Total C$</div>
                     <div id="total-cs" class="value">C$ 0.00</div>
@@ -514,6 +524,8 @@
   const allowDecimals = document.getElementById("allow-decimals");
   const fechaField = document.getElementById("field-fecha");
   const rateToday = {{ rate_today.rate if rate_today else 0 }};
+  const inventoryCsOnly = {{ "true" if inventory_cs_only else "false" }};
+  const defaultMoneda = inventoryCsOnly ? "CS" : "USD";
   let handleAddItem = null;
   const ingresoForm = document.getElementById("ingreso-form");
   const STORAGE_KEY = "hp_egreso_draft_v1";
@@ -721,8 +733,8 @@
     row.innerHTML = `
       <td class="px-3 py-2 font-semibold text-ink">${payload.cod_producto || ""}</td>
       <td class="px-3 py-2 text-slate">${payload.descripcion || ""}</td>
-      <td class="px-3 py-2 text-right text-slate">$ ${parseFloat(payload.costo_usd || 0).toFixed(2)}</td>
-      <td class="px-3 py-2 text-right text-slate">$ ${parseFloat(payload.precio_venta1_usd || 0).toFixed(2)}</td>
+      <td class="px-3 py-2 text-right text-slate">${inventoryCsOnly ? "C$" : "$"} ${parseFloat(inventoryCsOnly ? (payload.costo_cs || 0) : (payload.costo_usd || 0)).toFixed(2)}</td>
+      <td class="px-3 py-2 text-right text-slate">${inventoryCsOnly ? "C$" : "$"} ${parseFloat(inventoryCsOnly ? (payload.precio_venta1 || 0) : (payload.precio_venta1_usd || 0)).toFixed(2)}</td>
       <td class="px-3 py-2 text-right text-slate saldo-cell">0</td>
       <td class="px-3 py-2 text-right">
         <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" max="0" value="1" />
@@ -781,7 +793,7 @@
       fecha: fechaField?.value || "",
       bodega: bodegaField?.value || "",
       bodegaDestino: bodegaDestinoField?.value || "",
-      moneda: monedaField?.value || "USD",
+      moneda: monedaField?.value || defaultMoneda,
       observacion: obs?.value || "",
       allowDecimals: !!allowDecimals?.checked,
       items: serializeItems(),
@@ -809,7 +821,7 @@
     const bodegaField = ingresoForm?.querySelector("select[name='bodega_id']");
     if (bodegaField) bodegaField.value = draft.bodega || "";
     if (bodegaDestinoField) bodegaDestinoField.value = draft.bodegaDestino || "";
-    if (monedaField) monedaField.value = draft.moneda || "USD";
+    if (monedaField) monedaField.value = inventoryCsOnly ? "CS" : (draft.moneda || defaultMoneda);
     const obs = ingresoForm?.querySelector("input[name='observacion']");
     if (obs) obs.value = draft.observacion || "";
     if (allowDecimals) allowDecimals.checked = !!draft.allowDecimals;
@@ -1095,7 +1107,7 @@
         return;
       }
 
-      const moneda = monedaField.value || "USD";
+      const moneda = monedaField.value || defaultMoneda;
       const costUsd = parseFloat(button.dataset.costUsd || 0);
       const costCs = parseFloat(button.dataset.costCs || 0);
       const priceUsd = parseFloat(button.dataset.priceUsd || 0);
@@ -1195,7 +1207,7 @@
         qtyHidden.value = allowDecimals && allowDecimals.checked ? qty.toFixed(2) : Math.trunc(qty).toFixed(2);
       }
       const subtotal = cost * qty;
-      const moneda = monedaField.value || "USD";
+      const moneda = monedaField.value || defaultMoneda;
       row.dataset.subtotalUsd = moneda === "USD" ? subtotal.toFixed(2) : (rateToday ? (subtotal / rateToday).toFixed(2) : "0.00");
       row.dataset.subtotalCs = moneda === "USD" ? (subtotal * rateToday).toFixed(2) : subtotal.toFixed(2);
       const subtotalCell = row.querySelectorAll("td")[4];

@@ -22,7 +22,6 @@ if (!(Test-Path $venvPython)) {
 # ---------------------------
 Write-Host "Iniciando BACKEND (FastAPI)..."
 
-$env:DATABASE_URL = "postgresql://user:1234@localhost:5432/hollpacas"
 $env:SECRET_KEY = "CHANGE_ME"
 $pythonExe = if (Test-Path -LiteralPath $venvPython) { $venvPython } else { "python" }
 

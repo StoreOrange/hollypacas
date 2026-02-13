@@ -1,0 +1,3432 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  :root {
+    --com-blue-50: #eef5ff;
+    --com-blue-100: #dbeafe;
+    --com-blue-600: #2563eb;
+    --com-blue-700: #1d4ed8;
+  }
+  .text-brand {
+    color: var(--com-blue-700) !important;
+  }
+  .bg-\[\#efe7f0\] {
+    background: var(--com-blue-100) !important;
+  }
+  .text-\[\#5a2f6b\] {
+    color: #1e3a8a !important;
+  }
+  [style*="#efe4f3"] {
+    background: #dbeafe !important;
+    color: #1e3a8a !important;
+  }
+  #layout main section.sticky {
+    padding: 0.45rem 1rem !important;
+    border-radius: 20px !important;
+  }
+  #layout main section.sticky .text-xl {
+    font-size: 1rem !important;
+    line-height: 1.2 !important;
+  }
+  #layout main section.sticky p {
+    font-size: 0.72rem !important;
+    margin-bottom: 0 !important;
+  }
+  #product-search {
+    font-size: 1.15rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.02em;
+  }
+  #product-list-panel {
+    max-height: 520px !important;
+  }
+  .barcode-ready {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    border-radius: 14px;
+  }
+  .scanner-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+    padding: 0.22rem 0.62rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .scanner-badge.working {
+    border-color: #93c5fd;
+    background: #dbeafe;
+    color: #1e40af;
+  }
+  .scanner-badge.error {
+    border-color: #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+  .scanner-last {
+    color: #334155;
+    font-size: 0.74rem;
+    font-weight: 600;
+  }
+  .combo-parent-badge {
+    background: #e0f2fe;
+    color: #1d4ed8;
+  }
+  .combo-gift-badge {
+    background: #dcfce7;
+    color: #15803d;
+  }
+  .combo-parent .text-brand {
+    color: #1d4ed8;
+  }
+  .combo-gift .text-brand {
+    color: #16a34a;
+  }
+  .cash-qty-input {
+    max-width: 110px;
+  }
+  .preventa-live-inline {
+    display: none;
+    align-items: center;
+    gap: 0.45rem;
+    margin-left: 0.35rem;
+    max-width: 100%;
+  }
+  .preventa-live-inline.show {
+    display: inline-flex;
+  }
+  .preventa-live-btn {
+    border: 1px solid #16a34a;
+    color: #fff;
+    background: #16a34a;
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    animation: preventaPulse 1.2s ease-in-out infinite;
+    white-space: nowrap;
+  }
+  .preventa-live-btn:hover {
+    background: #15803d;
+    border-color: #15803d;
+    color: #fff;
+  }
+  .preventa-live-text {
+    color: #14532d;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+  }
+  @keyframes preventaPulse {
+    0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.50); }
+    70% { box-shadow: 0 0 0 10px rgba(22, 163, 74, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+  }
+</style>
+<div id="layout" x-data="{ clienteOpen: false, vendedorOpen: false }" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px] relative">
+    <div class="pointer-events-none absolute -top-24 right-10 h-80 w-80 rounded-full bg-[rgba(113,75,103,0.10)] blur-3xl"></div>
+    <div class="pointer-events-none absolute top-48 left-4 h-72 w-72 rounded-full bg-[rgba(93,129,168,0.14)] blur-3xl"></div>
+    <div class="odoo-page space-y-2">
+      <section class="sticky top-0 z-30 rounded-[30px] border border-slate-200 bg-white shadow-2xl px-8 py-2 relative overflow-hidden bg-white/95 backdrop-blur">
+        <div class="absolute inset-0 bg-gradient-to-br from-[#eef5ff] via-white to-[#dbeafe] opacity-95"></div>
+        <div class="relative z-10 grid gap-4 lg:grid-cols-[1.2fr_1fr] items-start">
+          <div class="space-y-1">
+            <div class="inline-flex items-center gap-2">
+              <button class="toggle-sidebar inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-white/90 text-ink hover:bg-slate-50" type="button" aria-label="Ocultar menu">
+                <i class="bi bi-list"></i>
+              </button>
+              <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                  <li class="breadcrumb-item">Ecommerce</li>
+                  <li class="breadcrumb-item active" aria-current="page">Ventas</li>
+                </ol>
+              </nav>
+            </div>
+            <div class="text-xl font-semibold text-ink leading-tight">Terminal POS Tienda de Comestibles</div>
+            <p class="text-xs text-slate max-w-xl">Escaneo rapido de codigos de barra, busqueda manual y facturacion agil.</p>
+          </div>
+          <div class="grid grid-cols-3 gap-2 lg:grid-cols-3">
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Tasa</div>
+              <div class="text-sm font-semibold text-ink">
+                {% if rate_today %}
+                  C$ {{ "%.4f"|format(rate_today.rate) }}
+                {% else %}
+                  Sin tasa
+                {% endif %}
+              </div>
+            </div>
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Factura</div>
+              <div class="text-sm font-semibold text-ink">{{ next_invoice or "Auto" }}</div>
+            </div>
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Sucursal</div>
+              <div class="text-sm font-semibold text-ink">{{ user.default_branch.name if user.default_branch else "-" }}</div>
+            </div>
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Bodega</div>
+              <div class="text-sm font-semibold text-ink">{{ user.default_bodega.name if user.default_bodega else "-" }}</div>
+            </div>
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Items</div>
+              <div id="sales-items-count" class="text-sm font-semibold text-ink">0</div>
+            </div>
+            <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total</div>
+              <div id="sales-total-display" class="text-sm font-semibold text-brand">C$ 0.00</div>
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link active" href="/sales">Ventas</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cobranza">Cobranza</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/utilitario">Utilitario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/depositos">Depositos</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sales/cierre">Cierre</a>
+          </li>
+        </ul>
+      </section>
+
+      {% if error %}
+      <div class="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-2" data-error-banner>
+        {{ error }}
+      </div>
+      {% endif %}
+      {% if success %}
+      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2 flex flex-wrap items-center justify-between gap-3" data-success-banner>
+        <span>{{ success }}</span>
+        {% if print_id %}
+        <a
+          href="/sales/{{ print_id }}/ticket/print?copies=2"
+          target="_blank"
+          rel="noopener"
+          id="sales-print-ticket"
+          class="rounded-full bg-emerald-600 text-white text-xs font-semibold px-4 py-2 shadow-sm hover:bg-emerald-700 transition"
+        >
+          Ver e imprimir ticket
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <form id="sales-form" class="rounded-[30px] border border-slate-200 bg-white/90 shadow-2xl p-7 space-y-6 backdrop-blur -mt-4" method="post" action="/sales">
+        <div class="grid xl:grid-cols-[1.1fr_0.9fr] gap-6">
+          <div class="space-y-5">
+            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
+              <div class="flex items-center justify-between mb-2">
+                <div>
+                  <div class="text-lg font-semibold text-ink">Facturacion Virtual</div>
+                  <div class="text-sm text-slate">Vista virtual del ticket actual.</div>
+                </div>
+                <span class="rounded-full bg-[#efe7f0] text-brand text-xs uppercase tracking-[0.2em] font-semibold px-3 py-1">
+                  Items seleccionados
+                </span>
+              </div>
+              <div class="odoo-table-wrap overflow-x-auto max-h-80 overflow-y-auto rounded-2xl border border-slate-100">
+                <table class="table table-sm table-hover align-middle mb-0 odoo-table text-base">
+                  <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]" style="background:#efe4f3;color:#5a2f6b;">
+                    <tr>
+                      <th class="text-left px-3 py-2" style="background:#efe4f3;color:#5a2f6b;">Detalle del producto</th>
+                      <th class="text-center px-3 py-2" style="background:#efe4f3;color:#5a2f6b;">Quitar</th>
+                    </tr>
+                  </thead>
+                  <tbody id="items-table" class="odoo-muted">
+                    <tr id="empty-items">
+                      <td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="mt-4 flex flex-wrap items-center gap-4 text-base">
+                <div class="flex items-center gap-2">
+                  <span class="text-slate">Total USD</span>
+                  <span id="total-usd" class="font-semibold text-brand">$ 0.00</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-slate">Total C$</span>
+                  <span id="total-cs" class="font-semibold text-brand">C$ 0.00</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-slate">Items</span>
+                  <span id="total-items" class="font-semibold text-ink">0</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-slate">Bultos</span>
+                  <span id="total-bultos" class="font-semibold text-ink">0</span>
+                </div>
+              </div>
+            </div>
+
+            <div id="party-inline" class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
+              <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Datos de venta</div>
+              <div class="text-lg font-semibold text-ink mt-1">Cliente, vendedor y fecha</div>
+              <div class="grid gap-4 mt-4">
+                <div>
+                  <label class="block text-sm font-semibold text-ink d-flex align-items-center gap-2">
+                    <i class="bi bi-person text-brand"></i>
+                    Cliente
+                  </label>
+                  <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
+                    <button id="cliente-search-open" type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#cliente-search-modal">
+                      Buscar cliente
+                    </button>
+                    <div class="text-sm text-slate">Seleccionado:</div>
+                    <div id="cliente-selected-label" class="text-sm fw-semibold">Cliente local</div>
+                    <button id="cliente-default" type="button" class="btn btn-outline-secondary btn-sm ms-auto" title="Cliente local">
+                      <i class="bi bi-person-check"></i>
+                    </button>
+                    <input id="cliente-id" type="hidden" name="cliente_id" form="sales-form" />
+                    <input id="preventa-id" type="hidden" name="preventa_id" form="sales-form" />
+                  </div>
+                  <div class="mt-3 border border-slate-200 rounded-2xl p-3 bg-slate-50">
+                    <div class="text-sm font-semibold text-ink mb-2">Nuevo cliente</div>
+                    <div id="cliente-form" class="grid gap-2">
+                      <input name="nombre" class="w-full odoo-input form-control form-control-sm" placeholder="Nombre del cliente *" required />
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <input name="telefono" type="tel" class="w-full odoo-input form-control form-control-sm" placeholder="Telefono" />
+                        <input name="identificacion" class="w-full odoo-input form-control form-control-sm" placeholder="RUC / Cedula" />
+                      </div>
+                      <input name="direccion" class="w-full odoo-input form-control form-control-sm" placeholder="Direccion" />
+                      <div class="d-flex flex-wrap gap-2">
+                        <button id="cliente-save" type="button" class="btn btn-primary btn-sm">Guardar cliente</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-sm font-semibold text-ink d-flex align-items-center gap-2">
+                    <i class="bi bi-person-badge text-brand"></i>
+                    Vendedor *
+                  </label>
+                  <div class="mt-2 flex items-center gap-2">
+                    <select id="vendedor-select" name="vendedor_id" class="form-select odoo-input select2 flex-grow-1" form="sales-form" required>
+                      <option value="">Selecciona</option>
+                      {% for vendedor in vendedores %}
+                      <option value="{{ vendedor.id }}" {% if default_vendedor_id and vendedor.id == default_vendedor_id %}selected{% endif %}>{{ vendedor.nombre }}</option>
+                      {% endfor %}
+                    </select>
+                    <button id="open-vendedor-modal" type="button" class="btn btn-outline-secondary btn-sm" @click="vendedorOpen = true">
+                      <i class="bi bi-person-plus"></i>
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-sm font-semibold text-ink d-flex align-items-center gap-2">
+                    <i class="bi bi-calendar-event text-brand"></i>
+                    Fecha *
+                  </label>
+                  <input id="venta-fecha" name="fecha" form="sales-form" type="date" class="mt-2 w-full odoo-input form-control" required />
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
+              <div class="text-lg font-semibold text-ink">Observacion</div>
+              <input name="observacion" class="mt-3 w-full odoo-input form-control" placeholder="Detalle o nota de venta" />
+            </div>
+
+            <div class="flex items-center justify-end gap-3">
+              <button id="clear-sale" class="btn btn-outline-secondary btn-md" type="button">
+                Limpiar venta
+              </button>
+              <button class="btn btn-primary btn-md d-inline-flex align-items-center gap-2 shadow-lg" type="button" data-bs-toggle="modal" data-bs-target="#payment-modal">
+                <i class="bi bi-check2-circle"></i>
+                Registrar venta
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-5">
+            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
+              <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div class="text-lg font-semibold text-ink d-flex align-items-center gap-2">
+                    Buscador de productos
+                    <button id="open-combo-modal" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
+                      <i class="bi bi-boxes"></i>
+                      Combos
+                    </button>
+                    <div id="preventa-live-inline" class="preventa-live-inline">
+                      <span id="preventa-live-text" class="preventa-live-text">Nueva preventa recibida</span>
+                      <a id="preventa-live-btn" class="preventa-live-btn text-decoration-none" href="/sales/preventas">
+                        Ver preventas
+                      </a>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <div class="text-sm text-slate">Escanea codigo de barra o busca manual por nombre, codigo o descripcion.</div>
+                    <span id="scanner-state" class="scanner-badge">
+                      <i class="bi bi-upc-scan"></i>
+                      Lector listo
+                    </span>
+                    <span id="scanner-last-code" class="scanner-last">Ultimo: -</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm w-full">
+                  <i class="bi bi-search text-brand"></i>
+                  <input id="product-search" class="flex-grow text-sm font-semibold uppercase border-0 bg-transparent focus:outline-none" type="text" placeholder="ESCANEA CODIGO O BUSCA POR NOMBRE / CODIGO / DESCRIPCION" />
+                </div>
+              </div>
+              <div id="product-list-panel" class="odoo-table-wrap mt-4 max-h-[320px] lg:max-h-[360px] overflow-y-auto rounded-2xl border border-slate-100" tabindex="0" role="listbox" aria-label="Resultados de productos">
+                <div class="flex items-center justify-between px-3 py-2 text-xs uppercase tracking-[0.2em] font-semibold" style="background:#efe4f3;color:#5a2f6b;">
+                  <span>Producto</span>
+                  <span>Cargar</span>
+                </div>
+                <div id="product-list" class="odoo-muted divide-y">
+                  <div id="product-empty" class="text-center py-3 text-slate">Escribe para buscar productos.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </main>
+</div>
+
+<div class="modal fade" id="payment-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg pay-modal">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Procesar pago</div>
+          <div class="text-2xl font-semibold text-ink d-flex align-items-center gap-2">
+            <i class="bi bi-credit-card-2-front text-brand"></i>
+            Resumen y formas de pago
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <div class="row g-4">
+          <div class="col-lg-5 order-2 order-lg-2">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-receipt text-brand"></i>
+                Resumen de venta
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-person text-brand"></i>
+                  Cliente
+                </span>
+                <strong id="pay-cliente">--</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-person-badge text-brand"></i>
+                  Vendedor
+                </span>
+                <strong id="pay-vendedor">--</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-hash text-brand"></i>
+                  Factura
+                </span>
+                <strong>{{ next_invoice or "Auto" }}</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-calendar-event text-brand"></i>
+                  Fecha
+                </span>
+                <strong id="pay-fecha">--</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-3">
+                <span class="text-slate fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-clock text-brand"></i>
+                  Hora
+                </span>
+                <strong id="pay-hora">--</strong>
+              </div>
+              <div class="rounded-3xl border border-slate-200 p-3">
+                <div class="d-flex justify-content-between mb-2">
+                  <span class="fw-semibold text-slate d-flex align-items-center gap-2">
+                    <i class="bi bi-currency-dollar text-brand"></i>
+                    Total USD
+                  </span>
+                  <strong id="pay-total-usd">$ 0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <span class="fw-semibold text-slate d-flex align-items-center gap-2">
+                    <i class="bi bi-cash-coin text-brand"></i>
+                    Total C$
+                  </span>
+                  <strong id="pay-total-cs">C$ 0.00</strong>
+                </div>
+              </div>
+              <div class="mt-3">
+                <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                  <i class="bi bi-currency-exchange text-brand"></i>
+                  Moneda de la factura *
+                </label>
+                <select id="venta-moneda" name="moneda" class="mt-2 w-full odoo-input form-select select2" form="sales-form" required>
+                  <option value="CS" selected>C$</option>
+                  <option value="USD">USD</option>
+                </select>
+              </div>
+              <div class="mt-4">
+                <div class="odoo-section-title mb-2 d-flex align-items-center gap-2">
+                  <i class="bi bi-calculator text-brand"></i>
+                  Balance de la venta
+                </div>
+                <div class="rounded-3xl border border-slate-200 p-3">
+                  <div class="d-flex justify-content-between mb-2">
+                    <span class="fw-semibold text-slate">Total venta</span>
+                    <strong id="pay-total-invoice" class="text-ink">C$ 0.00</strong>
+                  </div>
+                  <div class="d-flex justify-content-between mb-2">
+                    <span class="fw-semibold text-slate">Pagado</span>
+                    <strong id="pay-total-aplicado">0.00</strong>
+                  </div>
+                  <div class="d-flex justify-content-between">
+                    <span class="fw-semibold text-slate">Saldo / Vuelto</span>
+                    <strong id="pay-balance" class="balance-status">0.00</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-7 order-1 order-lg-1">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-wallet2 text-brand"></i>
+                Pago rapido
+              </div>
+              <div class="d-none">
+                <select id="forma-pago" class="form-select odoo-input">
+                  <option value="">Selecciona</option>
+                  {% for forma in formas_pago %}
+                  <option value="{{ forma.id }}" data-cash="{% if 'efectivo' in forma.nombre|lower %}1{% else %}0{% endif %}">{{ forma.nombre }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="row g-3">
+                <div class="col-12">
+                  <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-grid-3x3-gap text-brand"></i>
+                    Forma de pago *
+                  </label>
+                  <div class="pay-methods-row">
+                    {% for forma in formas_pago %}
+                    {% set nombre_forma = forma.nombre|lower %}
+                    {% if 'credito' not in nombre_forma %}
+                    <button type="button" class="pay-method-btn" data-forma-id="{{ forma.id }}" data-disabled="0">
+                      <span class="pay-method-icon">
+                        {% if "efectivo" in nombre_forma %}
+                        <i class="bi bi-cash-coin"></i>
+                        {% elif "tarjeta" in nombre_forma %}
+                        <i class="bi bi-credit-card"></i>
+                        {% elif "banco" in nombre_forma or "transferencia" in nombre_forma or "deposito" in nombre_forma %}
+                        <i class="bi bi-bank"></i>
+                        {% else %}
+                        <i class="bi bi-wallet2"></i>
+                        {% endif %}
+                      </span>
+                      <span class="pay-method-text">{{ forma.nombre }}</span>
+                    </button>
+                    {% endif %}
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-currency-exchange text-brand"></i>
+                    Moneda
+                  </label>
+                  <select id="pago-moneda" class="form-select odoo-input">
+                    <option value="CS">C$</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-cash-stack text-brand"></i>
+                    Monto
+                  </label>
+                  <input id="pago-monto" type="text" inputmode="decimal" class="form-control odoo-input" placeholder="C$ 0.00" />
+                </div>
+                <div class="col-md-5 d-flex align-items-end justify-content-end">
+                  <div class="d-flex gap-2 w-100 justify-content-end">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#cash-count-modal">
+                      <i class="bi bi-calculator"></i>
+                      Arqueo
+                    </button>
+                    <button id="add-payment" class="btn btn-primary" type="button">
+                      <i class="bi bi-plus-lg"></i>
+                      Agregar pago
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div id="payment-bank-fields" class="row g-3 mt-1">
+                <div class="col-md-6">
+                  <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-bank text-brand"></i>
+                    Banco
+                  </label>
+                  <select id="banco-select" class="form-select odoo-input select2">
+                    <option value="">Selecciona</option>
+                    {% for banco in bancos %}
+                    <option value="{{ banco.id }}">{{ banco.nombre }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="odoo-field-label fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-journal-text text-brand"></i>
+                    Cuenta
+                  </label>
+                  <select id="cuenta-select" class="form-select odoo-input select2">
+                    <option value="">Selecciona</option>
+                    {% for cuenta in cuentas %}
+                    <option value="{{ cuenta.id }}" data-banco="{{ cuenta.banco_id }}" data-moneda="{{ cuenta.moneda }}">{{ cuenta.banco.nombre }} - {{ cuenta.moneda }} {{ cuenta.cuenta or 'Pendiente' }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="odoo-card mt-3">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-check2-circle text-brand"></i>
+                Pagos aplicados
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover odoo-table">
+                  <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                    <tr>
+                      <th>Forma</th>
+                      <th>Moneda</th>
+                      <th class="text-end">Monto</th>
+                      <th class="text-end">Banco</th>
+                      <th class="text-end">Accion</th>
+                    </tr>
+                  </thead>
+                  <tbody id="payment-list">
+                    <tr id="payment-empty">
+                      <td colspan="5" class="text-center text-slate py-2">Sin pagos agregados</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div id="payment-hidden" class="d-none"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="confirm-sale" type="button" class="btn btn-primary">
+          Confirmar y registrar factura
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="cash-count-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <h5 class="modal-title d-flex align-items-center gap-2">
+          <i class="bi bi-cash-stack text-brand"></i>
+          Arqueo de efectivo
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="odoo-section-title mb-2">Cordobas</div>
+            <div class="table-responsive rounded-3xl border border-slate-200">
+              <table class="table table-sm odoo-table mb-0 align-middle">
+                <thead>
+                  <tr>
+                    <th>Denominacion</th>
+                    <th class="text-end">Cantidad</th>
+                    <th class="text-end">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody id="cash-count-cs"></tbody>
+                <tfoot>
+                  <tr>
+                    <th colspan="2" class="text-end">Total C$</th>
+                    <th class="text-end fw-semibold text-brand" id="cash-total-cs">0.00</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="odoo-section-title mb-2">Dolares</div>
+            <div class="table-responsive rounded-3xl border border-slate-200">
+              <table class="table table-sm odoo-table mb-0 align-middle">
+                <thead>
+                  <tr>
+                    <th>Denominacion</th>
+                    <th class="text-end">Cantidad</th>
+                    <th class="text-end">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody id="cash-count-usd"></tbody>
+                <tfoot>
+                  <tr>
+                    <th colspan="2" class="text-end">Total USD</th>
+                    <th class="text-end fw-semibold text-brand" id="cash-total-usd">0.00</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 text-sm text-slate">
+          Digita la cantidad de billetes/monedas para calcular el total efectivo contado.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="combo-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Combos y ofertas</div>
+          <div class="text-2xl font-semibold text-ink d-flex align-items-center gap-2">
+            <i class="bi bi-boxes text-brand"></i>
+            Armar combo
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <div class="row g-4">
+          <div class="col-lg-5">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-star text-brand"></i>
+                Producto oferta (padre)
+              </div>
+              <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
+                <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
+                <input id="combo-parent-search" class="form-control border-0" type="text" placeholder="Buscar oferta" />
+              </div>
+              <div id="combo-parent-results" class="mt-3 space-y-2 text-sm"></div>
+              <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div class="text-xs uppercase tracking-[0.2em] text-slate">Oferta seleccionada</div>
+                <div id="combo-parent-selected" class="mt-2 text-sm text-ink">Sin seleccionar</div>
+                <div class="mt-2 d-flex align-items-center gap-2">
+                  <label class="text-xs uppercase tracking-[0.2em] text-slate">Cantidad</label>
+                  <input id="combo-parent-qty" type="number" min="1" step="1" class="form-control form-control-sm w-24" value="1" />
+                </div>
+                <div class="mt-2 text-xs text-slate d-flex align-items-center gap-2">
+                  <i class="bi bi-exclamation-triangle text-amber-500"></i>
+                  Saldo disponible: <strong id="combo-parent-available">0</strong>
+                </div>
+                <div class="mt-2 text-sm text-slate">
+                  Precio combo: <strong id="combo-parent-price">C$ 0.00</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-7">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-gift text-brand"></i>
+                Regalias (hijas)
+              </div>
+              <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
+                <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
+                <input id="combo-gift-search" class="form-control border-0" type="text" placeholder="Buscar regalia" />
+              </div>
+              <div id="combo-gift-results" class="mt-3 space-y-2 text-sm"></div>
+              <div class="mt-3">
+                <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold">Regalias seleccionadas</div>
+                <div id="combo-gift-list" class="mt-2 space-y-2 text-sm"></div>
+              </div>
+            </div>
+            <div class="odoo-card mt-3">
+              <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-eye text-brand"></i>
+                Vista previa del combo
+              </div>
+              <div id="combo-preview" class="text-sm text-slate">Sin datos para mostrar.</div>
+            </div>
+            <div class="d-flex justify-content-end mt-3 gap-2">
+              <button id="combo-apply" class="btn btn-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
+                <i class="bi bi-check2-circle"></i>
+                Agregar combo
+              </button>
+            </div>
+            <div class="text-sm text-slate mt-2" id="combo-status"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="cliente-search-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold">Clientes</div>
+          <div class="text-lg font-semibold text-ink">Buscar y seleccionar</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label text-xs text-slate">Buscar cliente</label>
+          <input id="cliente-modal-search" type="text" class="form-control form-control-sm odoo-input" placeholder="Escribe para buscar..." autocomplete="off" />
+          <div id="cliente-modal-status" class="form-text">Escribe para buscar.</div>
+        </div>
+        <div class="table-responsive border rounded-2xl">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Cliente</th>
+                <th class="text-end">Accion</th>
+              </tr>
+            </thead>
+            <tbody id="cliente-modal-body">
+              <tr>
+                <td colspan="2" class="text-center text-slate">Sin resultados.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="text-xs text-slate mt-2">Doble clic en un cliente para seleccionar.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div id="vendedor-modal" class="fixed inset-0 bg-slate-900/40 hidden items-center justify-center p-4 z-50" x-show="vendedorOpen" x-cloak>
+  <div class="bg-white rounded-3xl shadow-xl w-full max-w-md p-6">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="odoo-modal-title">Nuevo vendedor</div>
+      <button id="close-vendedor-modal" class="btn btn-sm btn-outline-secondary" type="button" @click="vendedorOpen = false">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <form id="vendedor-form" class="space-y-3">
+      <input name="nombre" class="w-full odoo-input form-control" placeholder="Nombre del vendedor *" required />
+      <input name="telefono" class="w-full odoo-input form-control" placeholder="Telefono" />
+      <button class="btn btn-primary w-full">Guardar vendedor</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  const layout = document.getElementById("layout");
+  const toggles = document.querySelectorAll(".toggle-sidebar");
+  if (layout && toggles.length) {
+    toggles.forEach((toggle) => {
+      toggle.addEventListener("click", () => {
+        layout.classList.toggle("sidebar-collapsed");
+      });
+    });
+  }
+
+  const productList = document.getElementById("product-list");
+  const productSearch = document.getElementById("product-search");
+  const scannerState = document.getElementById("scanner-state");
+  const scannerLastCode = document.getElementById("scanner-last-code");
+  const itemsTable = document.getElementById("items-table");
+  const emptyItems = document.getElementById("empty-items");
+  const preventaIdInput = document.getElementById("preventa-id");
+  const totalUsd = document.getElementById("total-usd");
+  const totalCs = document.getElementById("total-cs");
+  const totalItems = document.getElementById("total-items");
+  const totalBultos = document.getElementById("total-bultos");
+  const itemsCount = document.getElementById("sales-items-count");
+  const totalDisplay = document.getElementById("sales-total-display");
+  const monedaField = document.getElementById("venta-moneda");
+  const formaPagoField = document.getElementById("forma-pago");
+  const bancoSelect = document.getElementById("banco-select");
+  const cuentaSelect = document.getElementById("cuenta-select");
+  const paymentBankFields = document.getElementById("payment-bank-fields");
+  const pagoMonto = document.getElementById("pago-monto");
+  const pagoMoneda = document.getElementById("pago-moneda");
+  const paymentList = document.getElementById("payment-list");
+  const paymentHidden = document.getElementById("payment-hidden");
+  const payTotalAplicado = document.getElementById("pay-total-aplicado");
+  const payBalance = document.getElementById("pay-balance");
+  const payTotalInvoice = document.getElementById("pay-total-invoice");
+  const payCliente = document.getElementById("pay-cliente");
+  const payVendedor = document.getElementById("pay-vendedor");
+  const payFecha = document.getElementById("pay-fecha");
+  const payHora = document.getElementById("pay-hora");
+  const payTotalUsd = document.getElementById("pay-total-usd");
+  const payTotalCs = document.getElementById("pay-total-cs");
+  const confirmSale = document.getElementById("confirm-sale");
+  const addPayment = document.getElementById("add-payment");
+  const productListPanel = document.getElementById("product-list-panel");
+  const openComboModal = document.getElementById("open-combo-modal");
+  const comboModal = document.getElementById("combo-modal");
+  const comboParentSearch = document.getElementById("combo-parent-search");
+  const comboParentResults = document.getElementById("combo-parent-results");
+  const comboParentSelected = document.getElementById("combo-parent-selected");
+  const comboParentQty = document.getElementById("combo-parent-qty");
+  const comboParentPrice = document.getElementById("combo-parent-price");
+  const comboParentAvailable = document.getElementById("combo-parent-available");
+  const comboGiftSearch = document.getElementById("combo-gift-search");
+  const comboGiftResults = document.getElementById("combo-gift-results");
+  const comboGiftList = document.getElementById("combo-gift-list");
+  const comboApply = document.getElementById("combo-apply");
+  const comboStatus = document.getElementById("combo-status");
+  const comboPreview = document.getElementById("combo-preview");
+  const preventaLiveInline = document.getElementById("preventa-live-inline");
+  const preventaLiveText = document.getElementById("preventa-live-text");
+  const preventaLiveBtn = document.getElementById("preventa-live-btn");
+  const rateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
+  const activeBodegaId = Number({{ user.default_bodega.id if user.default_bodega else 0 }}) || 0;
+  const initialPreventa = {{ (initial_preventa or None) | tojson }};
+  let preventaLastId = Number(initialPreventa?.id || 0) || 0;
+  let preventaLiveSource = null;
+  let preventaReconnectTimer = null;
+  let preventaPollTimer = null;
+  let currentTotals = { usd: 0, cs: 0 };
+  let paymentItems = [];
+  let paymentEnterStage = 0;
+  let activeProductIndex = -1;
+  let activeProductRows = [];
+  let productNavMode = "search";
+
+  const formatMoney = (value, currency) => {
+    const number = Number(value || 0);
+    const formatted = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(number);
+    return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
+  };
+
+  const parseMoneyValue = (value) => {
+    if (!value) return 0;
+    const raw = value.toString().replace(/[^0-9.,-]/g, "");
+    const hasComma = raw.includes(",");
+    const hasDot = raw.includes(".");
+    let normalized = raw;
+    if (hasComma && hasDot) {
+      const lastComma = raw.lastIndexOf(",");
+      const lastDot = raw.lastIndexOf(".");
+      if (lastComma > lastDot) {
+        normalized = raw.replace(/\./g, "").replace(",", ".");
+      } else {
+        normalized = raw.replace(/,/g, "");
+      }
+    } else if (hasComma && !hasDot) {
+      const parts = raw.split(",");
+      if (parts[1] && parts[1].length === 2) {
+        normalized = raw.replace(",", ".");
+      } else {
+        normalized = raw.replace(/,/g, "");
+      }
+    } else if (hasDot && !hasComma) {
+      const parts = raw.split(".");
+      if (parts[1] && parts[1].length === 2) {
+        normalized = raw;
+      } else {
+        normalized = raw.replace(/\./g, "");
+      }
+    }
+    return parseFloat(normalized) || 0;
+  };
+
+  const buildProductSearchUrl = (term) => {
+    const params = new URLSearchParams({ q: term || "" });
+    if (activeBodegaId > 0) {
+      params.set("bodega_id", String(activeBodegaId));
+    }
+    const vendedorSelectEl = document.getElementById("vendedor-select");
+    if (vendedorSelectEl?.value) {
+      params.set("vendedor_id", String(vendedorSelectEl.value));
+    }
+    return `/sales/products/search?${params.toString()}`;
+  };
+
+  const formatMoneyInput = (value, currency) => {
+    const number = parseMoneyValue(value);
+    const formatted = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(number);
+    return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
+  };
+
+  const showPreventaLiveNotice = (payload) => {
+    const numero = payload?.numero || "Nueva preventa";
+    const vendedor = payload?.vendedor || "Vendedor";
+    const cliente = payload?.cliente || "Cliente local";
+    const fecha = payload?.fecha || "";
+    const text = `${numero} - ${vendedor} - ${cliente}${fecha ? ` (${fecha})` : ""}`;
+    if (preventaLiveText) {
+      preventaLiveText.textContent = text;
+    }
+    if (preventaLiveInline) {
+      preventaLiveInline.classList.add("show");
+    }
+    if (preventaLiveBtn && payload?.url) {
+      preventaLiveBtn.setAttribute("href", payload.url);
+    }
+    if (typeof Swal !== "undefined") {
+      Swal.fire({
+        toast: true,
+        position: "bottom-end",
+        icon: "success",
+        title: "Nueva preventa recibida",
+        text,
+        showConfirmButton: true,
+        confirmButtonText: "Ver",
+        showCloseButton: true,
+        timer: 8500,
+        timerProgressBar: true,
+      }).then((result) => {
+        if (result.isConfirmed) {
+          window.location.href = "/sales/preventas";
+        }
+      });
+    }
+  };
+
+  const startPreventaLiveStream = () => {
+    if (typeof EventSource === "undefined") return;
+    if (preventaLiveSource) {
+      preventaLiveSource.close();
+      preventaLiveSource = null;
+    }
+    const streamUrl = `/sales/preventas/notifications/stream?last_id=${encodeURIComponent(String(preventaLastId || 0))}`;
+    const source = new EventSource(streamUrl);
+    preventaLiveSource = source;
+
+    source.addEventListener("preventa", (event) => {
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data || "{}");
+      } catch (_) {
+        payload = null;
+      }
+      if (!payload || !payload.id) return;
+      preventaLastId = Math.max(preventaLastId, Number(payload.id) || 0);
+      showPreventaLiveNotice(payload);
+    });
+
+    source.onerror = () => {
+      if (preventaLiveSource) {
+        preventaLiveSource.close();
+        preventaLiveSource = null;
+      }
+      if (preventaReconnectTimer) {
+        clearTimeout(preventaReconnectTimer);
+      }
+      preventaReconnectTimer = setTimeout(() => {
+        startPreventaLiveStream();
+      }, 5000);
+    };
+  };
+
+  const pollPreventaNotifications = async () => {
+    try {
+      const resp = await fetch(`/sales/preventas/notifications/poll?last_id=${encodeURIComponent(String(preventaLastId || 0))}`, {
+        headers: { "X-Requested-With": "fetch" },
+      });
+      if (!resp.ok) return;
+      const payload = await resp.json().catch(() => null);
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      items.forEach((item) => {
+        if (!item || !item.id) return;
+        preventaLastId = Math.max(preventaLastId, Number(item.id) || 0);
+        showPreventaLiveNotice(item);
+      });
+    } catch (_) {
+      // noop
+    }
+  };
+
+  const getRemainingByCurrency = (targetCurrency) => {
+    const invoiceCurrency = monedaField?.value || "CS";
+    const totalDue = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
+    const totalPaid = paymentItems.reduce((acc, item) => {
+      return acc + (invoiceCurrency === "USD" ? toUsd(item.monto, item.moneda) : toCs(item.monto, item.moneda));
+    }, 0);
+    const remaining = Math.max(totalDue - totalPaid, 0);
+    if (targetCurrency === invoiceCurrency) return remaining;
+    if (!rateToday) return 0;
+    return targetCurrency === "USD" ? remaining / rateToday : remaining * rateToday;
+  };
+
+  const setPaymentAmountDefault = () => {
+    if (!pagoMonto) return;
+    const currency = pagoMoneda?.value || "CS";
+    const remainingValue = getRemainingByCurrency(currency);
+    pagoMonto.value = formatMoneyInput(remainingValue, currency);
+    pagoMonto.focus();
+    pagoMonto.select();
+  };
+
+  const updatePayMethodButtons = (selectedId) => {
+    document.querySelectorAll(".pay-method-btn").forEach((btn) => {
+      if (btn.dataset.formaId === selectedId) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
+    });
+  };
+
+  const updateTotals = () => {
+    let sumUsd = 0;
+    let sumCs = 0;
+    let sumQty = 0;
+    const rows = itemsTable.querySelectorAll("tr[data-item-row]");
+    rows.forEach((row) => {
+      sumUsd += parseFloat(row.dataset.subtotalUsd || 0);
+      sumCs += parseFloat(row.dataset.subtotalCs || 0);
+      const qtyValue = row.querySelector("input[name='item_cantidad']")?.value;
+      sumQty += parseFloat(qtyValue || 0);
+    });
+    totalUsd.textContent = formatMoney(sumUsd, "USD");
+    totalCs.textContent = formatMoney(sumCs, "CS");
+    currentTotals = { usd: sumUsd, cs: sumCs };
+    if (itemsCount) {
+      itemsCount.textContent = rows.length.toString();
+    }
+    if (totalItems) {
+      totalItems.textContent = rows.length.toString();
+    }
+    if (totalBultos) {
+      totalBultos.textContent = sumQty.toFixed(0);
+    }
+    if (totalDisplay) {
+      totalDisplay.textContent = monedaField?.value === "USD"
+        ? formatMoney(sumUsd, "USD")
+        : formatMoney(sumCs, "CS");
+    }
+    if (payTotalUsd) {
+      payTotalUsd.textContent = formatMoney(sumUsd, "USD");
+    }
+    if (payTotalCs) {
+      payTotalCs.textContent = formatMoney(sumCs, "CS");
+    }
+  };
+
+  const toUsd = (monto, moneda) => {
+    if (moneda === "USD") return monto;
+    return rateToday ? monto / rateToday : 0;
+  };
+
+  const toCs = (monto, moneda) => {
+    if (moneda === "CS") return monto;
+    return rateToday ? monto * rateToday : 0;
+  };
+
+  const isCashPayment = (formaId, formaLabel) => {
+    const label = (formaLabel || "").toLowerCase();
+    if (label.includes("efectivo")) return true;
+    if (formaPagoField) {
+      const option = Array.from(formaPagoField.options).find((opt) => opt.value === formaId);
+      if (option && option.dataset.cash === "1") return true;
+    }
+    return false;
+  };
+
+  const updatePaymentSummary = () => {
+    const totalPaidUsd = paymentItems.reduce((acc, item) => acc + toUsd(item.monto, item.moneda), 0);
+    const totalPaidCs = paymentItems.reduce((acc, item) => acc + toCs(item.monto, item.moneda), 0);
+    const invoiceCurrency = monedaField?.value || "USD";
+    const due = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
+    const paid = invoiceCurrency === "USD" ? totalPaidUsd : totalPaidCs;
+    const balance = paid - due;
+    if (payTotalAplicado) {
+      payTotalAplicado.textContent = formatMoney(paid, invoiceCurrency === "USD" ? "USD" : "CS");
+    }
+    if (payBalance) {
+      payBalance.textContent = formatMoney(Math.abs(balance), invoiceCurrency === "USD" ? "USD" : "CS");
+      payBalance.classList.remove("balance-negative", "balance-positive");
+      if (balance < 0) {
+        payBalance.classList.add("balance-negative");
+      } else if (balance > 0) {
+        payBalance.classList.add("balance-positive");
+      }
+    }
+    if (payTotalInvoice) {
+      payTotalInvoice.textContent = formatMoney(due, invoiceCurrency === "USD" ? "USD" : "CS");
+    }
+  };
+
+  const syncPaymentHidden = () => {
+    if (!paymentHidden) return;
+    paymentHidden.innerHTML = paymentItems
+      .map((item) => {
+        return `
+          <input type="hidden" form="sales-form" name="pago_forma_id" value="${item.formaId}" />
+          <input type="hidden" form="sales-form" name="pago_moneda" value="${item.moneda}" />
+          <input type="hidden" form="sales-form" name="pago_monto" value="${item.monto.toFixed(2)}" />
+          <input type="hidden" form="sales-form" name="pago_banco_id" value="${item.bancoId || ""}" />
+          <input type="hidden" form="sales-form" name="pago_cuenta_id" value="${item.cuentaId || ""}" />
+        `;
+      })
+      .join("");
+  };
+
+  const renderPaymentList = () => {
+    if (!paymentList) return;
+    if (!paymentItems.length) {
+      paymentList.innerHTML = `<tr id="payment-empty"><td colspan="5" class="text-center text-slate py-2">Sin pagos agregados</td></tr>`;
+      paymentEnterStage = 0;
+      updatePaymentSummary();
+      syncPaymentHidden();
+      return;
+    }
+    paymentList.innerHTML = paymentItems
+      .map((item, index) => {
+        return `
+          <tr>
+            <td>${item.formaLabel}</td>
+            <td>${item.moneda}</td>
+            <td class="text-end">${formatMoney(item.monto, item.moneda)}</td>
+            <td class="text-end">${item.bancoLabel || "-"}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-danger" type="button" data-remove-payment="${index}">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+    paymentEnterStage = 1;
+    updatePaymentSummary();
+    syncPaymentHidden();
+  };
+
+  const addItemRow = (payload) => {
+    if (emptyItems) {
+      emptyItems.remove();
+    }
+    if (layout && !layout.classList.contains("sidebar-collapsed")) {
+      layout.classList.add("sidebar-collapsed");
+    }
+    const row = document.createElement("tr");
+    row.dataset.itemRow = "1";
+    row.dataset.productId = payload.productId;
+    row.dataset.subtotalUsd = payload.subtotalUsd.toFixed(2);
+    row.dataset.subtotalCs = payload.subtotalCs.toFixed(2);
+    row.dataset.maxQty = payload.maxQty.toFixed(2);
+    row.classList.add("sales-item-row");
+    if (payload.role === "parent") {
+      row.classList.add("combo-parent");
+    }
+    if (payload.role === "gift") {
+      row.classList.add("combo-gift");
+    }
+    if (payload.comboGroup) {
+      row.dataset.comboGroup = payload.comboGroup;
+    }
+    const badgeLabel = payload.role === "parent" ? "Oferta" : payload.role === "gift" ? "Regalia" : "";
+    const badgeClass = payload.role === "parent" ? "combo-parent-badge" : payload.role === "gift" ? "combo-gift-badge" : "";
+    const badgeIcon = payload.role === "parent" ? "bi-boxes" : payload.role === "gift" ? "bi-gift" : "";
+    const badgeHtml = badgeLabel
+      ? `<span class="ms-2 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] font-semibold ${badgeClass}">
+          <i class="bi ${badgeIcon}"></i> ${badgeLabel}
+        </span>`
+      : "";
+    row.innerHTML = `
+      <td class="px-3 py-0.5">
+        <div class="text-xs uppercase tracking-[0.2em] text-brand font-semibold d-flex align-items-center">
+          ${payload.code}
+          ${badgeHtml}
+        </div>
+        <div class="font-semibold text-ink text-base">${payload.name}</div>
+        <div class="mt-0.5 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate uppercase tracking-[0.18em]">Cantidad</span>
+            <input class="row-qty w-20 text-left border-0 bg-transparent focus:outline-none font-semibold text-ink" type="text" inputmode="numeric" value="${payload.qtyValueDisplay}" />
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-right">
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate uppercase tracking-[0.18em]">Precio</span>
+              <input class="row-price w-24 text-right border-0 bg-transparent focus:outline-none font-semibold text-ink" type="text" inputmode="decimal" value="${payload.priceValue}" name="item_precio" ${payload.lockPrice ? "readonly" : ""} />
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate uppercase tracking-[0.18em]">Desc.</span>
+              <span class="discount-cell font-semibold text-ink">0.00</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate uppercase tracking-[0.18em]">Subtotal</span>
+              <span class="subtotal-cell font-semibold text-brand">${payload.subtotalLabel}</span>
+            </div>
+          </div>
+        </div>
+      </td>
+      <td class="px-3 py-0.5 text-center align-middle">
+        <button class="remove-item text-brand" type="button" aria-label="Eliminar item">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </td>
+      <input type="hidden" name="item_producto_id" value="${payload.productId}" />
+      <input type="hidden" name="item_cantidad" value="${payload.qtyValue}" />
+      <input type="hidden" name="item_role" value="${payload.role || ""}" />
+      <input type="hidden" name="item_combo_group" value="${payload.comboGroup || ""}" />
+    `;
+    itemsTable.appendChild(row);
+    updateTotals();
+    const qtyInput = row.querySelector(".row-qty");
+    if (qtyInput) {
+      qtyInput.focus();
+      qtyInput.select();
+    }
+  };
+
+  const parseQty = (value) => {
+    const raw = parseFloat(value || 0);
+    return Math.max(1, Math.round(raw));
+  };
+
+  const pauseNavForAlert = (config) => {
+    if (typeof Swal === "undefined") return;
+    productNavMode = "paused";
+    Swal.fire(config).then(() => {
+      productNavMode = "panel";
+      if (productListPanel) {
+        productListPanel.focus();
+      }
+    });
+  };
+
+  const parseReservedDetails = (raw) => {
+    if (!raw) return [];
+    try {
+      return JSON.parse(decodeURIComponent(raw));
+    } catch (_) {
+      return [];
+    }
+  };
+
+  const releasePreventaReservations = async (details) => {
+    const uniqueIds = Array.from(new Set((details || []).map((d) => Number(d.preventa_id || 0)).filter((v) => v > 0)));
+    for (const preventaId of uniqueIds) {
+      const resp = await fetch(`/sales/preventas/${preventaId}/release`, {
+        method: "POST",
+        headers: { "X-Requested-With": "fetch" },
+      });
+      const payload = await resp.json().catch(() => null);
+      if (!resp.ok || !payload?.ok) {
+        throw new Error(payload?.message || "No se pudo liberar la reserva");
+      }
+    }
+  };
+
+  const askReservedAction = async ({ code, name, requested, available, details }) => {
+    const vendedorSelect = document.getElementById("vendedor-select");
+    const currentVendedorId = Number(vendedorSelect?.value || 0);
+    const detailList = (details || []).map((d) => ({
+      ...d,
+      vendedor_id: Number(d?.vendedor_id || 0),
+      same_vendedor: currentVendedorId > 0 && Number(d?.vendedor_id || 0) === currentVendedorId,
+    }));
+    const sameVendorCount = detailList.filter((d) => d.same_vendedor).length;
+    const otherVendorCount = detailList.length - sameVendorCount;
+    const isSameVendorOnly = detailList.length > 0 && sameVendorCount > 0 && otherVendorCount === 0;
+
+    const detailRows = (details || [])
+      .map((d) => {
+        const qty = Number(d.qty || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
+        return `<li><strong>${d.numero}</strong> - ${d.vendedor} - ${qty}</li>`;
+      })
+      .join("");
+    if (typeof Swal === "undefined") {
+      alert(`Reserva activa para ${code} - ${name}. Disponible ${available}, solicitado ${requested}.`);
+      return "cancel";
+    }
+    const result = await Swal.fire({
+      icon: "warning",
+      title: "Producto reservado en preventa",
+      html: `
+        <div style="text-align:left">
+          <div><strong>${code}</strong> - ${name}</div>
+          <div>Disponible libre: <strong>${available}</strong></div>
+          <div>Solicitado: <strong>${requested}</strong></div>
+          ${detailRows ? `<ul style="margin-top:8px; padding-left:16px;">${detailRows}</ul>` : ""}
+          <div style="margin-top:8px;">
+            ${isSameVendorOnly
+              ? "La reserva pertenece al mismo vendedor. Debes anular la preventa para facturar en venta directa."
+              : "Puedes liberar la(s) reserva(s) y continuar."}
+          </div>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: isSameVendorOnly ? "Anular preventa y continuar" : "Liberar reserva y continuar",
+      cancelButtonText: "Cancelar",
+      focusCancel: true,
+    });
+    if (!result.isConfirmed) return "cancel";
+    try {
+      await releasePreventaReservations(details || []);
+      await Swal.fire({ icon: "success", title: "Reserva liberada", timer: 1100, showConfirmButton: false });
+      return "released";
+    } catch (error) {
+      await Swal.fire({ icon: "error", title: "No se pudo liberar", text: error?.message || "Error de liberacion" });
+      return "cancel";
+    }
+  };
+
+  const refreshProductAvailability = async (productId, queryHint) => {
+    const searchTerm = (queryHint || "").trim();
+    if (!searchTerm) return null;
+    const response = await fetch(buildProductSearchUrl(searchTerm));
+    const payload = await response.json().catch(() => null);
+    if (!payload?.ok) return null;
+    return (payload.items || []).find((item) => Number(item.id) === Number(productId)) || null;
+  };
+
+  const handleAddItem = async (button) => {
+    const row = button.closest(".product-pick-row");
+    if (!row) return false;
+    const qtyInput = row.querySelector(".qty-input");
+    const qty = parseQty(qtyInput.value);
+    const maxQty = parseFloat(button.dataset.existencia || 0);
+    let freeQty = parseFloat(button.dataset.freeQty || maxQty || 0);
+    let reservedDetails = parseReservedDetails(button.dataset.reservedDetails || "");
+    if (qty <= 0) return false;
+    if (!maxQty || maxQty <= 0) {
+      pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "No hay saldo disponible." });
+      return false;
+    }
+    if ((reservedDetails || []).length > 0) {
+      const action = await askReservedAction({
+        code: button.dataset.code,
+        name: button.dataset.name,
+        requested: qty,
+        available: freeQty,
+        details: reservedDetails,
+      });
+      if (action !== "released") return false;
+      if (action === "released") {
+        const refreshed = await refreshProductAvailability(button.dataset.productId, button.dataset.code || button.dataset.name || "");
+        if (refreshed) {
+          button.dataset.existencia = String(refreshed.existencia || 0);
+          button.dataset.freeQty = String(refreshed.free_qty ?? refreshed.existencia ?? 0);
+          button.dataset.reservedDetails = encodeURIComponent(JSON.stringify(refreshed.reserved_details || []));
+          if (qtyInput) qtyInput.max = String(refreshed.existencia || 0);
+          freeQty = parseFloat(button.dataset.freeQty || button.dataset.existencia || 0);
+          reservedDetails = parseReservedDetails(button.dataset.reservedDetails || "");
+        }
+      }
+    }
+    if (qty > freeQty) {
+      const action = await askReservedAction({
+        code: button.dataset.code,
+        name: button.dataset.name,
+        requested: qty,
+        available: freeQty,
+        details: reservedDetails,
+      });
+      if (action !== "released") return false;
+      if (action === "released") {
+        const refreshed = await refreshProductAvailability(button.dataset.productId, button.dataset.code || button.dataset.name || "");
+        if (refreshed) {
+          button.dataset.existencia = String(refreshed.existencia || 0);
+          button.dataset.freeQty = String(refreshed.free_qty ?? refreshed.existencia ?? 0);
+          button.dataset.reservedDetails = encodeURIComponent(JSON.stringify(refreshed.reserved_details || []));
+          if (qtyInput) qtyInput.max = String(refreshed.existencia || 0);
+          freeQty = parseFloat(button.dataset.freeQty || button.dataset.existencia || 0);
+        }
+      }
+    }
+    if (qty > freeQty) {
+      pauseNavForAlert({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible libre: ${freeQty}` });
+      return false;
+    }
+    const productId = button.dataset.productId;
+    const existingRow = itemsTable.querySelector(`tr[data-item-row][data-product-id="${productId}"]`);
+    if (existingRow) {
+      const qtyHidden = existingRow.querySelector("input[name='item_cantidad']");
+      const currentQty = parseFloat(qtyHidden?.value || 0);
+      const newQty = currentQty + qty;
+      if (newQty > freeQty) {
+        pauseNavForAlert({
+          icon: "warning",
+          title: "Saldo insuficiente",
+          text: `Disponible libre: ${freeQty} | En factura: ${currentQty}`,
+        });
+        return false;
+      }
+      const qtyInputRow = existingRow.querySelector(".row-qty");
+      if (qtyInputRow && qtyHidden) {
+        qtyInputRow.value = Math.trunc(newQty).toString();
+        qtyHidden.value = Math.trunc(newQty).toFixed(2);
+      }
+      const priceInputRow = existingRow.querySelector(".row-price");
+      const priceValue = parseFloat(priceInputRow?.value || 0);
+      const moneda = monedaField.value || "USD";
+      const subtotal = priceValue * newQty;
+      existingRow.dataset.subtotalUsd = moneda === "USD" ? subtotal.toFixed(2) : (rateToday ? (subtotal / rateToday).toFixed(2) : "0.00");
+      existingRow.dataset.subtotalCs = moneda === "USD" ? (subtotal * rateToday).toFixed(2) : subtotal.toFixed(2);
+      const subtotalCell = existingRow.querySelector(".subtotal-cell");
+      if (subtotalCell) {
+        subtotalCell.textContent = formatMoney(subtotal, moneda === "USD" ? "USD" : "CS");
+      }
+      updateTotals();
+      return true;
+    }
+
+    const moneda = monedaField.value || "USD";
+    const priceUsd = parseFloat(button.dataset.priceUsd || 0);
+    const priceCs = parseFloat(button.dataset.priceCs || 0);
+    const price = moneda === "USD" ? priceUsd : priceCs;
+    const subtotal = price * qty;
+    const subtotalUsd = moneda === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
+    const subtotalCs = moneda === "USD" ? subtotal * rateToday : subtotal;
+    addItemRow({
+      productId: button.dataset.productId,
+      code: button.dataset.code,
+      name: button.dataset.name,
+      qtyValue: Math.trunc(qty).toFixed(2),
+      qtyValueDisplay: Math.trunc(qty).toString(),
+      qtyStep: "1",
+      maxQty: maxQty,
+      priceValue: price.toFixed(2),
+      subtotalLabel: formatMoney(subtotal, moneda === "USD" ? "USD" : "CS"),
+      subtotalUsd,
+      subtotalCs,
+    });
+    return true;
+  };
+
+  let comboParent = null;
+  let comboGifts = [];
+
+  const resetComboModal = () => {
+    comboParent = null;
+    comboGifts = [];
+    if (comboParentSearch) comboParentSearch.value = "";
+    if (comboParentResults) comboParentResults.innerHTML = "";
+    if (comboParentSelected) comboParentSelected.textContent = "Sin seleccionar";
+    if (comboParentQty) comboParentQty.value = "1";
+    if (comboParentPrice) comboParentPrice.textContent = formatMoney(0, monedaField?.value || "CS");
+    if (comboParentAvailable) comboParentAvailable.textContent = "0";
+    if (comboGiftSearch) comboGiftSearch.value = "";
+    if (comboGiftResults) comboGiftResults.innerHTML = "";
+    if (comboGiftList) comboGiftList.innerHTML = "";
+    if (comboPreview) comboPreview.innerHTML = "Sin datos para mostrar.";
+    if (comboStatus) comboStatus.textContent = "";
+  };
+
+  const renderComboGifts = () => {
+    if (!comboGiftList) return;
+    if (!comboGifts.length) {
+      comboGiftList.innerHTML = `<div class="text-slate text-sm">Sin regalias seleccionadas.</div>`;
+      return;
+    }
+    comboGiftList.innerHTML = comboGifts
+      .map((gift, index) => {
+        return `
+          <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
+            <div>
+              <div class="font-semibold text-ink">${gift.codigo} - ${gift.descripcion}</div>
+              <div class="text-xs text-slate">Existencia: ${gift.existencia}</div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <input class="form-control form-control-sm w-20 gift-qty" type="number" min="1" step="1" value="${gift.cantidad}" data-index="${index}" />
+              <button class="btn btn-outline-danger btn-sm gift-remove" type="button" data-index="${index}">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+  };
+
+  const renderComboPrice = () => {
+    if (!comboParentPrice) return;
+    const currency = monedaField?.value || "CS";
+    const parentPrice = comboParent ? (currency === "USD" ? comboParent.precioUsd : comboParent.precioCs) : 0;
+    const giftTotal = comboGifts.reduce((acc, gift) => {
+      const price = currency === "USD" ? gift.precioUsd : gift.precioCs;
+      return acc + price * gift.cantidad;
+    }, 0);
+    comboParentPrice.textContent = formatMoney(parentPrice + giftTotal, currency);
+    renderComboPreview();
+  };
+
+  const renderComboPreview = () => {
+    if (!comboPreview) return;
+    if (!comboParent) {
+      comboPreview.innerHTML = "Sin datos para mostrar.";
+      return;
+    }
+    const currency = monedaField?.value || "CS";
+    const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+    if (comboParentAvailable) {
+      comboParentAvailable.textContent = getAvailableQty(comboParent.id, comboParent.freeQty ?? comboParent.existencia).toFixed(0);
+    }
+    const parentUnit = currency === "USD" ? comboParent.precioUsd : comboParent.precioCs;
+    const giftsTotal = comboGifts.reduce((acc, gift) => {
+      const price = currency === "USD" ? gift.precioUsd : gift.precioCs;
+      return acc + price * gift.cantidad;
+    }, 0);
+    const comboUnit = parentUnit + giftsTotal;
+    const comboTotal = comboUnit * comboQty;
+    const giftsHtml = comboGifts.length
+      ? comboGifts
+          .map((gift) => {
+            const giftPrice = currency === "USD" ? gift.precioUsd : gift.precioCs;
+            return `
+              <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-gift text-emerald-600"></i>
+                  <span class="font-semibold text-ink">${gift.codigo} - ${gift.descripcion}</span>
+                </div>
+                <div class="text-end">
+                  <div class="text-slate">x${gift.cantidad * comboQty}</div>
+                  <div class="text-slate text-[11px]" style="opacity:0.3;">${formatMoney(giftPrice, currency)}</div>
+                </div>
+              </div>
+            `;
+          })
+          .join("")
+      : `<div class="text-slate">Sin regalias.</div>`;
+    comboPreview.innerHTML = `
+      <div class="rounded-2xl border border-slate-200 bg-white p-3 mb-3">
+        <div class="d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-boxes text-blue-600"></i>
+            <span class="font-semibold text-ink">${comboParent.codigo} - ${comboParent.descripcion}</span>
+          </div>
+          <span class="text-slate">x${comboQty}</span>
+        </div>
+        <div class="text-[11px] text-slate mt-2" style="opacity:0.35;">Precio oferta: ${formatMoney(parentUnit, currency)}</div>
+        <div class="text-sm text-slate mt-2">Precio combo: <strong class="text-ink">${formatMoney(comboUnit, currency)}</strong></div>
+        <div class="text-sm text-slate">Total combo: <strong class="text-ink">${formatMoney(comboTotal, currency)}</strong></div>
+      </div>
+      <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold mb-2">Regalias</div>
+      <div class="space-y-2">${giftsHtml}</div>
+    `;
+  };
+
+  const getAvailableQty = (productId, existencia) => {
+    const used = getInvoiceQty(productId);
+    return Math.max(0, (existencia || 0) - used);
+  };
+
+  const validateComboStock = () => {
+    if (!comboParent) return true;
+    const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+    const required = [];
+    required.push({
+      id: comboParent.id,
+      codigo: comboParent.codigo,
+      perUnit: 1,
+      existencia: comboParent.freeQty ?? comboParent.existencia ?? 0,
+    });
+    comboGifts.forEach((gift) => {
+      required.push({
+        id: gift.id,
+        codigo: gift.codigo,
+        perUnit: gift.cantidad,
+        existencia: gift.freeQty ?? gift.existencia ?? 0,
+      });
+    });
+    for (const item of required) {
+      const available = getAvailableQty(item.id, item.existencia);
+      if (available < item.perUnit * comboQty) {
+        pauseNavForAlert({
+          icon: "warning",
+          title: "Saldo insuficiente",
+          text: `Producto ${item.codigo} disponible: ${available}`,
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const clampComboQty = () => {
+    if (!comboParent) return;
+    const perUnitList = [
+      { id: comboParent.id, perUnit: 1, existencia: comboParent.freeQty ?? comboParent.existencia ?? 0 },
+      ...comboGifts.map((gift) => ({
+        id: gift.id,
+        perUnit: gift.cantidad,
+        existencia: gift.freeQty ?? gift.existencia ?? 0,
+      })),
+    ];
+    let maxQty = Infinity;
+    perUnitList.forEach((item) => {
+      const available = getAvailableQty(item.id, item.existencia);
+      const limit = item.perUnit > 0 ? Math.floor(available / item.perUnit) : 0;
+      maxQty = Math.min(maxQty, limit);
+    });
+    if (!isFinite(maxQty) || maxQty <= 0) {
+      maxQty = 1;
+    }
+    if (comboParentQty) {
+      const current = Math.max(1, Math.round(parseFloat(comboParentQty.value || 1)));
+      if (current > maxQty) {
+        comboParentQty.value = String(maxQty);
+      }
+    }
+  };
+
+  const renderComboParentResults = (items) => {
+    if (!comboParentResults) return;
+    if (!items.length) {
+      comboParentResults.innerHTML = `<div class="text-slate text-sm">Sin resultados.</div>`;
+      return;
+    }
+    comboParentResults.innerHTML = items
+      .map((item) => {
+        const freeQty = Number(item.free_qty ?? item.existencia ?? 0);
+        const disabled = freeQty <= 0;
+        return `
+          <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
+            <div>
+              <div class="font-semibold text-ink">${item.cod_producto} - ${item.descripcion}</div>
+              <div class="text-xs text-slate">Libre: ${freeQty}${Number(item.reserved_qty || 0) > 0 ? ` · Reservado: ${item.reserved_qty}` : ""}</div>
+            </div>
+            <button
+              class="btn btn-outline-primary btn-sm combo-parent-pick"
+              type="button"
+              data-id="${item.id}"
+              data-code="${item.cod_producto}"
+              data-desc="${item.descripcion}"
+              data-price-usd="${item.precio_venta1_usd}"
+              data-price-cs="${item.precio_venta1}"
+              data-existencia="${item.existencia}"
+              data-free-qty="${freeQty}"
+              data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
+              ${disabled ? "disabled" : ""}
+            >
+              <i class="bi bi-check2-circle"></i>
+              Seleccionar
+            </button>
+          </div>
+        `;
+      })
+      .join("");
+  };
+
+  const renderComboGiftResults = (items) => {
+    if (!comboGiftResults) return;
+    if (!items.length) {
+      comboGiftResults.innerHTML = `<div class="text-slate text-sm">Sin resultados.</div>`;
+      return;
+    }
+    comboGiftResults.innerHTML = items
+      .map((item) => {
+        const freeQty = Number(item.free_qty ?? item.existencia ?? 0);
+        const disabled = freeQty <= 0;
+        return `
+          <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
+            <div>
+              <div class="font-semibold text-ink">${item.cod_producto} - ${item.descripcion}</div>
+              <div class="text-xs text-slate">Libre: ${freeQty}${Number(item.reserved_qty || 0) > 0 ? ` · Reservado: ${item.reserved_qty}` : ""}</div>
+            </div>
+            <button
+              class="btn btn-outline-secondary btn-sm combo-gift-pick"
+              type="button"
+              data-id="${item.id}"
+              data-code="${item.cod_producto}"
+              data-desc="${item.descripcion}"
+              data-price-usd="${item.precio_venta1_usd}"
+              data-price-cs="${item.precio_venta1}"
+              data-existencia="${item.existencia}"
+              data-free-qty="${freeQty}"
+              data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
+              ${disabled ? "disabled" : ""}
+            >
+              <i class="bi bi-plus-circle"></i>
+              Agregar
+            </button>
+          </div>
+        `;
+      })
+      .join("");
+  };
+
+  const fetchComboItems = async (parentId) => {
+    const params = new URLSearchParams();
+    if (activeBodegaId > 0) params.set("bodega_id", String(activeBodegaId));
+    const vendedorSelectEl = document.getElementById("vendedor-select");
+    if (vendedorSelectEl?.value) params.set("vendedor_id", String(vendedorSelectEl.value));
+    const response = await fetch(`/sales/combo/${parentId}/items?${params.toString()}`);
+    const payload = await response.json().catch(() => null);
+    if (!payload || !payload.ok) return [];
+    return payload.items || [];
+  };
+
+  const loadComboFromCatalog = async () => {
+    if (!comboParent) return;
+    const items = await fetchComboItems(comboParent.id);
+    comboGifts = items.map((item) => ({
+      id: item.child_id,
+      codigo: item.cod_producto,
+      descripcion: item.descripcion,
+      cantidad: Math.max(1, Math.round(item.cantidad || 1)),
+      precioUsd: item.precio_venta1_usd || 0,
+      precioCs: item.precio_venta1 || 0,
+      existencia: item.existencia || 0,
+      freeQty: item.free_qty ?? item.existencia ?? 0,
+      reservedDetails: item.reserved_details || [],
+    }));
+    renderComboGifts();
+    renderComboPrice();
+  };
+
+  const getInvoiceQty = (productId) => {
+    let sum = 0;
+    itemsTable.querySelectorAll("tr[data-item-row]").forEach((row) => {
+      if (row.dataset.productId !== String(productId)) return;
+      const qtyValue = row.querySelector("input[name='item_cantidad']")?.value;
+      sum += parseFloat(qtyValue || 0);
+    });
+    return sum;
+  };
+
+  if (openComboModal) {
+    openComboModal.addEventListener("click", () => {
+      resetComboModal();
+      if (window.bootstrap) {
+        const modal = new bootstrap.Modal(comboModal);
+        modal.show();
+      }
+    });
+  }
+
+  if (comboParentSearch) {
+    comboParentSearch.addEventListener("input", async (event) => {
+      const value = event.target.value.trim();
+      if (value.length < 2) {
+        comboParentResults.innerHTML = "";
+        return;
+      }
+      try {
+        const response = await fetch(buildProductSearchUrl(value));
+        const payload = await response.json().catch(() => null);
+        renderComboParentResults(payload?.items || []);
+      } catch (error) {
+        if (comboParentResults) {
+          comboParentResults.innerHTML = `<div class="text-danger text-sm">Error al buscar productos.</div>`;
+        }
+      }
+    });
+  }
+
+  const ensureComboSearchActive = () => {
+    if (comboParentSearch) {
+      comboParentSearch.value = "";
+      comboParentSearch.focus();
+    }
+    if (comboParentResults) {
+      comboParentResults.innerHTML = "";
+    }
+    if (comboGiftResults) {
+      comboGiftResults.innerHTML = "";
+    }
+  };
+
+  if (comboGiftSearch) {
+    comboGiftSearch.addEventListener("input", async (event) => {
+      const value = event.target.value.trim();
+      if (value.length < 2) {
+        comboGiftResults.innerHTML = "";
+        return;
+      }
+      try {
+        const response = await fetch(buildProductSearchUrl(value));
+        const payload = await response.json().catch(() => null);
+        const items = payload?.items || [];
+        renderComboGiftResults(items);
+      } catch (error) {
+        if (comboGiftResults) {
+          comboGiftResults.innerHTML = `<div class="text-danger text-sm">Error al buscar productos.</div>`;
+        }
+      }
+    });
+  }
+
+  if (comboParentResults) {
+    comboParentResults.addEventListener("click", async (event) => {
+      const button = event.target.closest(".combo-parent-pick");
+      if (!button) return;
+      if (parseFloat(button.dataset.freeQty || button.dataset.existencia || 0) <= 0) {
+        pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Este producto no tiene saldo." });
+        return;
+      }
+      comboParent = {
+        id: button.dataset.id,
+        codigo: button.dataset.code || "",
+        descripcion: button.dataset.desc || "",
+        precioUsd: parseFloat(button.dataset.priceUsd || 0),
+        precioCs: parseFloat(button.dataset.priceCs || 0),
+        existencia: parseFloat(button.dataset.existencia || 0),
+        freeQty: parseFloat(button.dataset.freeQty || button.dataset.existencia || 0),
+        reservedDetails: parseReservedDetails(button.dataset.reservedDetails || ""),
+      };
+      if (comboParentSelected) {
+        comboParentSelected.textContent = `${comboParent.codigo} - ${comboParent.descripcion}`;
+      }
+      await loadComboFromCatalog();
+      clampComboQty();
+      renderComboPrice();
+    });
+  }
+
+  if (comboGiftResults) {
+    comboGiftResults.addEventListener("click", (event) => {
+      const button = event.target.closest(".combo-gift-pick");
+      if (!button) return;
+      const id = button.dataset.id;
+      const existencia = parseFloat(button.dataset.existencia || 0);
+      const freeQty = parseFloat(button.dataset.freeQty || existencia || 0);
+      if (freeQty <= 0) {
+        pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Esta regalia no tiene saldo." });
+        return;
+      }
+      const existing = comboGifts.find((gift) => String(gift.id) === String(id));
+      if (existing) {
+        const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+        const available = Math.max(0, freeQty - getInvoiceQty(existing.id));
+        if ((existing.cantidad + 1) * comboQty > available) {
+          pauseNavForAlert({
+            icon: "warning",
+            title: "Saldo insuficiente",
+            text: `Disponible: ${available}`,
+          });
+          return;
+        }
+        existing.cantidad += 1;
+      } else {
+        comboGifts.push({
+          id: id,
+          codigo: button.dataset.code || id,
+          descripcion: button.dataset.desc || "",
+          cantidad: 1,
+          precioUsd: parseFloat(button.dataset.priceUsd || 0),
+          precioCs: parseFloat(button.dataset.priceCs || 0),
+          existencia: existencia,
+          freeQty: freeQty,
+          reservedDetails: parseReservedDetails(button.dataset.reservedDetails || ""),
+        });
+      }
+      clampComboQty();
+      renderComboGifts();
+      renderComboPreview();
+      renderComboPrice();
+    });
+  }
+
+  if (comboGiftList) {
+    comboGiftList.addEventListener("input", (event) => {
+      const qtyInput = event.target.closest(".gift-qty");
+      if (!qtyInput) return;
+      if (event.inputType === "insertText") {
+        return;
+      }
+      const index = parseInt(qtyInput.dataset.index || "0", 10);
+      const qty = Math.max(1, Math.round(parseFloat(qtyInput.value || 1)));
+      const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+      const gift = comboGifts[index];
+      const available = getAvailableQty(gift.id, gift.freeQty ?? gift.existencia);
+      const maxQty = Math.max(1, Math.floor(available / comboQty));
+      if (qty > maxQty) {
+        gift.cantidad = maxQty;
+        qtyInput.value = String(maxQty);
+        pauseNavForAlert({
+          icon: "warning",
+          title: "Saldo insuficiente",
+          text: `Disponible: ${available}`,
+        });
+      } else {
+        gift.cantidad = qty;
+      }
+      clampComboQty();
+      renderComboPreview();
+      renderComboPrice();
+    });
+    comboGiftList.addEventListener("click", (event) => {
+      const button = event.target.closest(".gift-remove");
+      if (!button) return;
+      const index = parseInt(button.dataset.index || "0", 10);
+      comboGifts.splice(index, 1);
+      renderComboGifts();
+      renderComboPreview();
+      renderComboPrice();
+    });
+  }
+
+  if (comboParentQty) {
+    comboParentQty.addEventListener("input", () => {
+      clampComboQty();
+      renderComboPreview();
+      renderComboPrice();
+    });
+  }
+
+  if (comboApply) {
+    comboApply.addEventListener("click", async () => {
+      if (!comboParent) {
+        if (comboStatus) comboStatus.textContent = "Selecciona un producto oferta.";
+        return;
+      }
+      if (!validateComboStock()) {
+        return;
+      }
+      const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+      const requiredMap = new Map();
+      const addRequired = (id, qty) => {
+        const current = requiredMap.get(id) || 0;
+        requiredMap.set(id, current + qty);
+      };
+      addRequired(comboParent.id, comboQty);
+      comboGifts.forEach((gift) => {
+        addRequired(gift.id, gift.cantidad * comboQty);
+      });
+      for (const [id, qty] of requiredMap.entries()) {
+        const producto = id === comboParent.id ? comboParent : comboGifts.find((g) => String(g.id) === String(id));
+        const existencia = Number(producto?.existencia || 0);
+        const freeQty = Number(producto?.freeQty ?? existencia);
+        const existingQty = getInvoiceQty(id);
+        const hasReserved = (producto?.reservedDetails || []).length > 0;
+        if (hasReserved || !existencia || existingQty + qty > freeQty) {
+          const action = await askReservedAction({
+            code: producto?.codigo || "",
+            name: producto?.descripcion || "",
+            requested: existingQty + qty,
+            available: freeQty,
+            details: producto?.reservedDetails || [],
+          });
+          if (action === "released") {
+            const refreshed = await refreshProductAvailability(id, producto?.codigo || producto?.descripcion || "");
+            if (refreshed) {
+              producto.existencia = Number(refreshed.existencia || 0);
+              producto.freeQty = Number(refreshed.free_qty ?? refreshed.existencia ?? 0);
+              producto.reservedDetails = refreshed.reserved_details || [];
+              continue;
+            }
+          }
+          if (action !== "released") return;
+          pauseNavForAlert({
+            icon: "warning",
+            title: "Saldo insuficiente",
+            text: `Producto ${producto?.codigo || ""} disponible libre: ${freeQty}`,
+          });
+          return;
+        }
+      }
+      const currency = monedaField?.value || "CS";
+      const parentUnitPrice = currency === "USD" ? comboParent.precioUsd : comboParent.precioCs;
+      const giftTotal = comboGifts.reduce((acc, gift) => {
+        const price = currency === "USD" ? gift.precioUsd : gift.precioCs;
+        return acc + price * gift.cantidad;
+      }, 0);
+      const comboPrice = parentUnitPrice + giftTotal;
+      const subtotal = comboPrice * comboQty;
+      const subtotalUsd = currency === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
+      const subtotalCs = currency === "USD" ? subtotal * rateToday : subtotal;
+      const comboGroupId = `combo-${Date.now()}-${comboParent.id}`;
+      addItemRow({
+        productId: comboParent.id,
+        code: comboParent.codigo,
+        name: comboParent.descripcion,
+        qtyValue: comboQty.toFixed(2),
+        qtyValueDisplay: comboQty.toString(),
+        qtyStep: "1",
+        maxQty: comboParent.freeQty ?? comboParent.existencia ?? comboQty,
+        priceValue: comboPrice.toFixed(2),
+        subtotalLabel: formatMoney(subtotal, currency),
+        subtotalUsd,
+        subtotalCs,
+        role: "parent",
+        comboGroup: comboGroupId,
+      });
+      comboGifts.forEach((gift) => {
+        const giftQty = gift.cantidad * comboQty;
+        const giftSubtotal = 0;
+        const giftSubtotalUsd = currency === "USD" ? 0 : 0;
+        const giftSubtotalCs = currency === "USD" ? 0 : 0;
+        addItemRow({
+          productId: gift.id,
+          code: gift.codigo,
+          name: gift.descripcion,
+          qtyValue: giftQty.toFixed(2),
+          qtyValueDisplay: giftQty.toString(),
+          qtyStep: "1",
+          maxQty: gift.freeQty ?? gift.existencia ?? giftQty,
+          priceValue: "0.00",
+          subtotalLabel: formatMoney(0, currency),
+          subtotalUsd: giftSubtotalUsd,
+          subtotalCs: giftSubtotalCs,
+          role: "gift",
+          lockPrice: true,
+          comboGroup: comboGroupId,
+        });
+      });
+      resetComboModal();
+      if (window.bootstrap) {
+        const modal = bootstrap.Modal.getInstance(comboModal);
+        if (modal) modal.hide();
+      }
+      setTimeout(ensureComboSearchActive, 200);
+    });
+  }
+
+  if (comboModal) {
+    comboModal.addEventListener("shown.bs.modal", () => {
+      productNavMode = "paused";
+      ensureComboSearchActive();
+    });
+    comboModal.addEventListener("hidden.bs.modal", () => {
+      productNavMode = "search";
+    });
+  }
+
+  const productEmptyRow = document.getElementById("product-empty");
+  let searchTimer = null;
+
+  const refreshActiveRows = () => {
+    activeProductRows = Array.from(productList.querySelectorAll(".product-pick-row"));
+  };
+
+  const setActiveProduct = (index) => {
+    refreshActiveRows();
+    if (!activeProductRows.length) {
+      activeProductIndex = -1;
+      return;
+    }
+    if (index < 0) {
+      activeProductIndex = activeProductRows.length - 1;
+    } else if (index >= activeProductRows.length) {
+      activeProductIndex = 0;
+    } else {
+      activeProductIndex = index;
+    }
+    activeProductRows.forEach((row, idx) => {
+      row.classList.toggle("product-active", idx === activeProductIndex);
+    });
+    const activeRow = activeProductRows[activeProductIndex];
+    if (activeRow && productListPanel) {
+      activeRow.scrollIntoView({ block: "nearest" });
+    }
+  };
+
+  const renderProducts = (items) => {
+    if (!productList) return;
+    const visibleItems = items || [];
+    if (!visibleItems.length) {
+      productList.innerHTML = `<div id="product-empty" class="text-center py-3 text-slate">Sin resultados.</div>`;
+      activeProductRows = [];
+      activeProductIndex = -1;
+      return;
+    }
+    productList.innerHTML = visibleItems
+      .map((item) => {
+        return `
+          <div class="product-pick-row px-3 py-2 flex items-center justify-between gap-3" data-name="${item.descripcion}" data-code="${item.cod_producto}" role="option">
+            <div class="flex-1">
+              <div class="text-xs uppercase tracking-[0.2em] text-brand font-semibold">${item.cod_producto}</div>
+              <div class="font-semibold text-ink text-base">${item.descripcion}</div>
+              <div class="mt-1 flex flex-wrap items-center justify-between gap-3 text-sm">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs uppercase tracking-[0.18em] text-slate">Saldo</span>
+                  <span class="font-semibold text-red-600">${item.free_qty ?? item.existencia}</span>
+                </div>
+                ${(Number(item.reserved_qty || 0) > 0)
+                  ? `<div class="flex items-center gap-2 text-amber-700">
+                      <span class="text-xs uppercase tracking-[0.18em]">Reservado</span>
+                      <span class="font-semibold">${item.reserved_qty}</span>
+                    </div>`
+                  : ""}
+                <div class="flex flex-wrap items-center gap-3 text-right">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs uppercase tracking-[0.18em] text-slate">USD</span>
+                    <span class="font-semibold text-brand">${formatMoney(item.precio_venta1_usd, "USD")}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs uppercase tracking-[0.18em] text-slate">C$</span>
+                    <span class="font-semibold text-brand">${formatMoney(item.precio_venta1, "CS")}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs uppercase tracking-[0.18em] text-slate">Cantidad</span>
+                    <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" max="${item.free_qty ?? item.existencia}" value="1" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button
+              class="add-item inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 bg-white text-brand hover:bg-slate-50 shadow-sm"
+              type="button"
+              data-product-id="${item.id}"
+              data-code="${item.cod_producto}"
+              data-name="${item.descripcion}"
+              data-existencia="${item.existencia}"
+              data-free-qty="${item.free_qty ?? item.existencia}"
+              data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
+              data-price-usd="${item.precio_venta1_usd.toFixed(2)}"
+              data-price-cs="${item.precio_venta1.toFixed(2)}"
+              aria-label="Agregar producto"
+            >
+              <i class="bi bi-plus-lg"></i>
+            </button>
+          </div>`;
+      })
+      .join("");
+    refreshActiveRows();
+    setActiveProduct(0);
+  };
+
+  const fetchProducts = async (query) => {
+    if (!query || query.length < 2) {
+      if (productList && productEmptyRow) {
+        productList.innerHTML = productEmptyRow.outerHTML;
+      }
+      return;
+    }
+    const response = await fetch(buildProductSearchUrl(query));
+    const payload = await response.json().catch(() => null);
+    if (!payload || !payload.ok) {
+      renderProducts([]);
+      return;
+    }
+    renderProducts(payload.items || []);
+    productNavMode = "panel";
+  };
+
+  if (productList) {
+    productList.addEventListener("click", async (event) => {
+      const button = event.target.closest(".add-item");
+      if (!button) return;
+      await handleAddItem(button);
+    });
+  }
+
+  if (productSearch) {
+    productSearch.addEventListener("input", (event) => {
+      const value = event.target.value.toUpperCase();
+      event.target.value = value;
+      if (scannerBurstActive) return;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => fetchProducts(value), 250);
+    });
+    productSearch.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && scannerBurstActive && barcodeBuffer.length >= 3) {
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        setActiveProduct(0);
+        productNavMode = "panel";
+        if (productListPanel) {
+          setTimeout(() => productListPanel.focus(), 0);
+        }
+      }
+    });
+  }
+
+  let lastNavAt = 0;
+  const NAV_DELAY = 80;
+
+  const addActiveProduct = async () => {
+    refreshActiveRows();
+    if (activeProductIndex < 0 || !activeProductRows[activeProductIndex]) return;
+    const button = activeProductRows[activeProductIndex].querySelector(".add-item");
+    if (button) {
+      const added = await handleAddItem(button);
+      if (added && productSearch) {
+        productSearch.value = "";
+        if (productList && productEmptyRow) {
+          productList.innerHTML = productEmptyRow.outerHTML;
+        }
+        if (productListPanel) {
+          productListPanel.scrollTop = 0;
+        }
+        activeProductIndex = -1;
+        activeProductRows = [];
+        productNavMode = "search";
+        setTimeout(() => {
+          productSearch.focus();
+          productSearch.select();
+        }, 0);
+      }
+    }
+  };
+
+  const handleProductNav = (event) => {
+    if (productNavMode === "paused") return;
+    refreshActiveRows();
+    if (!activeProductRows.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      const now = Date.now();
+      if (now - lastNavAt < NAV_DELAY) return;
+      lastNavAt = now;
+      setActiveProduct(activeProductIndex + 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      const now = Date.now();
+      if (now - lastNavAt < NAV_DELAY) return;
+      lastNavAt = now;
+      setActiveProduct(activeProductIndex - 1);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      addActiveProduct();
+    }
+  };
+
+  if (productListPanel) {
+    productListPanel.addEventListener("keydown", handleProductNav, { passive: false });
+    productListPanel.addEventListener("click", (event) => {
+      const row = event.target.closest(".product-pick-row");
+      if (!row) return;
+      refreshActiveRows();
+      const index = activeProductRows.indexOf(row);
+      if (index >= 0) {
+        setActiveProduct(index);
+        productNavMode = "panel";
+        productListPanel.focus();
+      }
+    });
+    productListPanel.addEventListener("dblclick", async (event) => {
+      const row = event.target.closest(".product-pick-row");
+      if (!row) return;
+      const button = row.querySelector("[data-add-item]");
+      if (!button) return;
+      const added = await handleAddItem(button);
+      if (added) {
+        setTimeout(() => {
+          productSearchInput?.focus();
+          productSearchInput?.select();
+        }, 10);
+      }
+    });
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (paymentModal && paymentModal.classList.contains("show")) {
+      return;
+    }
+    if (comboModal && comboModal.classList.contains("show")) {
+      return;
+    }
+    if (productNavMode !== "panel") return;
+    if (!["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) return;
+    const activeEl = document.activeElement;
+    const isTypingField = activeEl instanceof HTMLElement && (
+      activeEl.tagName === "INPUT" ||
+      activeEl.tagName === "TEXTAREA" ||
+      activeEl.tagName === "SELECT" ||
+      activeEl.isContentEditable
+    );
+    if (document.activeElement === productSearch || isTypingField) return;
+    if (!productListPanel || !productListPanel.contains(document.activeElement)) {
+      productListPanel?.focus();
+    }
+    if (event.repeat) return;
+    if (document.activeElement === productListPanel) return;
+    handleProductNav(event);
+  });
+
+  if (addPayment) {
+    addPayment.addEventListener("click", () => {
+      const formaId = formaPagoField?.value;
+      const formaOption = formaPagoField?.selectedOptions[0];
+      const formaLabel = formaOption?.textContent || "";
+      const moneda = pagoMoneda?.value || "USD";
+      const monto = parseMoneyValue(pagoMonto?.value || 0);
+      const bancoId = bancoSelect?.value || "";
+      const cuentaId = cuentaSelect?.value || "";
+      const bancoLabel = bancoSelect?.selectedOptions[0]?.textContent || "";
+      if (!formaId || monto <= 0) {
+        pauseNavForAlert({ icon: "warning", title: "Pago incompleto", text: "Selecciona forma y monto valido." });
+        return;
+      }
+      const invoiceCurrency = monedaField?.value || "CS";
+      const paidSoFar = paymentItems.reduce((acc, item) => {
+        return acc + (invoiceCurrency === "USD" ? toUsd(item.monto, item.moneda) : toCs(item.monto, item.moneda));
+      }, 0);
+      const due = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
+      const remaining = Math.max(due - paidSoFar, 0);
+      const montoInvoice = invoiceCurrency === "USD" ? toUsd(monto, moneda) : toCs(monto, moneda);
+      const isCash = isCashPayment(formaId, formaLabel);
+      if (!isCash && montoInvoice > remaining + 0.01) {
+        pauseNavForAlert({ icon: "warning", title: "Pago excede el saldo", text: "Solo efectivo permite vuelto." });
+        return;
+      }
+      paymentItems.push({
+        formaId,
+        formaLabel,
+        moneda,
+        monto,
+        bancoId,
+        cuentaId,
+        bancoLabel,
+      });
+      if (pagoMonto) {
+        pagoMonto.value = "";
+      }
+      renderPaymentList();
+      setPaymentAmountDefault();
+    });
+  }
+
+  if (pagoMonto) {
+    pagoMonto.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const entered = parseMoneyValue(pagoMonto.value || 0);
+        if (entered > 0) {
+          addPayment?.click();
+        } else {
+          confirmSale?.click();
+        }
+      }
+    });
+    pagoMonto.addEventListener("blur", () => {
+      const currency = pagoMoneda?.value || "CS";
+      pagoMonto.value = formatMoneyInput(pagoMonto.value, currency);
+    });
+    pagoMonto.addEventListener("focus", () => {
+      pagoMonto.select();
+    });
+  }
+
+  if (pagoMoneda) {
+    pagoMoneda.addEventListener("change", () => {
+      if (pagoMonto) {
+        setPaymentAmountDefault();
+        pagoMonto.select();
+      }
+    });
+  }
+
+  document.querySelectorAll(".pay-method-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.disabled === "1") {
+        pauseNavForAlert({ icon: "info", title: "Forma de pago no habilitada", text: "Opcion en configuracion." });
+        return;
+      }
+      if (!formaPagoField) return;
+      const targetId = button.dataset.formaId;
+      formaPagoField.value = targetId || "";
+      if (window.$ && $.fn.select2) {
+        $(formaPagoField).trigger("change.select2");
+      } else {
+        formaPagoField.dispatchEvent(new Event("change"));
+      }
+      updatePayMethodButtons(targetId);
+      syncPaymentFields();
+    });
+  });
+
+  if (paymentList) {
+    paymentList.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-remove-payment]");
+      if (!button) return;
+      const index = Number(button.dataset.removePayment);
+      if (Number.isNaN(index)) return;
+      paymentItems.splice(index, 1);
+      renderPaymentList();
+      setPaymentAmountDefault();
+    });
+  }
+
+  if (itemsTable) {
+    itemsTable.addEventListener("click", (event) => {
+      const button = event.target.closest(".remove-item");
+      if (!button) return;
+      const row = button.closest("tr");
+      const comboGroup = row.dataset.comboGroup;
+      if (comboGroup) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({
+            icon: "warning",
+            title: "Eliminar combo",
+            text: "Este item pertenece a un combo. Debes eliminar todo el combo.",
+            showCancelButton: true,
+            confirmButtonText: "Eliminar combo",
+            cancelButtonText: "Cancelar",
+          }).then((result) => {
+            if (!result.isConfirmed) {
+              return;
+            }
+            itemsTable.querySelectorAll(`tr[data-combo-group="${comboGroup}"]`).forEach((itemRow) => {
+              itemRow.remove();
+            });
+            if (itemsTable.querySelectorAll("tr[data-item-row]").length === 0) {
+              itemsTable.innerHTML = `<tr id="empty-items"><td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
+            }
+            updateTotals();
+          });
+        }
+        return;
+      }
+      row.remove();
+      if (itemsTable.querySelectorAll("tr[data-item-row]").length === 0) {
+        itemsTable.innerHTML = `<tr id="empty-items"><td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
+      }
+      updateTotals();
+    });
+    itemsTable.addEventListener("input", (event) => {
+      const row = event.target.closest("tr");
+      if (!row) return;
+      const qtyInput = row.querySelector(".row-qty");
+      const priceInput = row.querySelector(".row-price");
+      const qtyHidden = row.querySelector("input[name='item_cantidad']");
+      let qty = parseFloat(qtyInput ? qtyInput.value : (qtyHidden ? qtyHidden.value : 0));
+      const maxQty = parseFloat(row.dataset.maxQty || 0);
+      if (maxQty && qty > maxQty && qtyInput) {
+        qty = Math.trunc(maxQty);
+        qtyInput.value = Math.trunc(maxQty).toString();
+        if (qtyHidden) {
+          qtyHidden.value = Math.trunc(maxQty).toFixed(2);
+        }
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible: ${maxQty}` });
+        }
+      }
+      if (qtyHidden && qtyInput) {
+        qtyHidden.value = Math.trunc(qty).toFixed(2);
+        qtyInput.value = Math.trunc(qty).toString();
+      }
+      const price = parseFloat(priceInput ? priceInput.value : 0);
+      const moneda = monedaField.value || "USD";
+      const subtotal = price * qty;
+      row.dataset.subtotalUsd = moneda === "USD" ? subtotal.toFixed(2) : (rateToday ? (subtotal / rateToday).toFixed(2) : "0.00");
+      row.dataset.subtotalCs = moneda === "USD" ? (subtotal * rateToday).toFixed(2) : subtotal.toFixed(2);
+      const subtotalCell = row.querySelector(".subtotal-cell");
+      if (subtotalCell) {
+        subtotalCell.textContent = formatMoney(subtotal, moneda === "USD" ? "USD" : "CS");
+      }
+      updateTotals();
+    });
+  }
+
+  const syncPaymentFields = () => {
+    const label = (formaPagoField?.selectedOptions[0]?.textContent || "").toLowerCase();
+    const isTarjeta = label.includes("tarjeta");
+    const isBanco = label.includes("banco") || label.includes("transferencia") || label.includes("deposito") || isTarjeta;
+    if (paymentBankFields) {
+      paymentBankFields.style.display = isBanco ? "" : "none";
+    }
+    if (bancoSelect) {
+      bancoSelect.disabled = !isBanco;
+      if (!isBanco) {
+        bancoSelect.value = "";
+      } else if (isTarjeta) {
+        const bacOption = Array.from(bancoSelect.options).find((opt) =>
+          (opt.textContent || "").toLowerCase().includes("bac")
+        );
+        if (bacOption) {
+          bancoSelect.value = bacOption.value;
+        }
+      }
+    }
+    if (cuentaSelect) {
+      cuentaSelect.disabled = !isBanco;
+      if (!isBanco) {
+        cuentaSelect.value = "";
+      }
+    }
+    if (bancoSelect) {
+      bancoSelect.dispatchEvent(new Event("change"));
+    }
+  };
+
+  if (formaPagoField) {
+    formaPagoField.addEventListener("change", syncPaymentFields);
+  }
+
+  if (bancoSelect && cuentaSelect) {
+    bancoSelect.addEventListener("change", () => {
+      const bancoId = bancoSelect.value;
+      const moneda = monedaField?.value || "USD";
+      cuentaSelect.querySelectorAll("option").forEach((option) => {
+        if (!option.value) return;
+        const matches = option.dataset.banco === bancoId && option.dataset.moneda === moneda;
+        option.hidden = !matches;
+      });
+    });
+  }
+
+  if (monedaField) {
+    monedaField.addEventListener("change", () => {
+      if (bancoSelect) {
+        bancoSelect.dispatchEvent(new Event("change"));
+      }
+      updateTotals();
+    });
+  }
+
+  if (confirmSale) {
+    confirmSale.addEventListener("click", () => {
+      if (!paymentItems.length) {
+        if (pagoMonto && parseMoneyValue(pagoMonto.value || 0) > 0 && formaPagoField?.value) {
+          addPayment?.click();
+        }
+      }
+      if (!paymentItems.length) {
+        pauseNavForAlert({ icon: "warning", title: "Sin pagos", text: "Agrega al menos un pago." });
+        return;
+      }
+      const invoiceCurrency = monedaField?.value || "USD";
+      if (!rateToday && paymentItems.some((item) => item.moneda !== invoiceCurrency)) {
+        pauseNavForAlert({ icon: "warning", title: "Tasa requerida", text: "Configura la tasa de cambio." });
+        return;
+      }
+      const totalPaid = paymentItems.reduce((acc, item) => {
+        return acc + (invoiceCurrency === "USD" ? toUsd(item.monto, item.moneda) : toCs(item.monto, item.moneda));
+      }, 0);
+      const due = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
+      const EPS = 0.01;
+      if (totalPaid + EPS < due) {
+        pauseNavForAlert({
+          icon: "warning",
+          title: "Pago incompleto",
+          text: `Faltan ${formatMoney(due - totalPaid, invoiceCurrency === "USD" ? "USD" : "CS")}`,
+        });
+        return;
+      }
+      syncPaymentHidden();
+      document.getElementById("sales-form").submit();
+    });
+  }
+
+  const cashCountCsBody = document.getElementById("cash-count-cs");
+  const cashCountUsdBody = document.getElementById("cash-count-usd");
+  const cashTotalCs = document.getElementById("cash-total-cs");
+  const cashTotalUsd = document.getElementById("cash-total-usd");
+  const cashCsDenoms = [0.5, 1, 5, 10, 20, 50, 100, 200, 500, 1000];
+  const cashUsdDenoms = [1, 2, 5, 10, 20, 50, 100];
+
+  const renderCashRows = (body, denoms, currency) => {
+    if (!body) return;
+    body.innerHTML = denoms
+      .map((denom) => {
+        return `
+          <tr>
+            <td>${currency === "CS" ? "C$" : "$"} ${denom}</td>
+            <td class="text-end">
+              <input type="number" min="0" step="1" class="form-control form-control-sm text-end cash-qty cash-qty-input" data-denom="${denom}" data-currency="${currency}" value="0" />
+            </td>
+            <td class="text-end cash-subtotal fw-semibold" data-denom="${denom}" data-currency="${currency}">0.00</td>
+          </tr>
+        `;
+      })
+      .join("");
+  };
+
+  const formatCashValue = (value) => {
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+
+  const updateCashTotals = (currency) => {
+    const body = currency === "CS" ? cashCountCsBody : cashCountUsdBody;
+    const totalLabel = currency === "CS" ? cashTotalCs : cashTotalUsd;
+    if (!body || !totalLabel) return;
+    let total = 0;
+    body.querySelectorAll(".cash-qty").forEach((input) => {
+      const denom = parseFloat(input.dataset.denom || 0);
+      const qty = parseFloat(input.value || 0);
+      const subtotal = denom * qty;
+      total += subtotal;
+      const subtotalCell = body.querySelector(`.cash-subtotal[data-denom="${denom}"][data-currency="${currency}"]`);
+      if (subtotalCell) {
+        subtotalCell.textContent = formatCashValue(subtotal);
+      }
+    });
+    totalLabel.textContent = formatCashValue(total);
+  };
+
+  if (cashCountCsBody && cashCountUsdBody) {
+    renderCashRows(cashCountCsBody, cashCsDenoms, "CS");
+    renderCashRows(cashCountUsdBody, cashUsdDenoms, "USD");
+    cashCountCsBody.addEventListener("input", (event) => {
+      if (event.target.classList.contains("cash-qty")) {
+        updateCashTotals("CS");
+      }
+    });
+    cashCountUsdBody.addEventListener("input", (event) => {
+      if (event.target.classList.contains("cash-qty")) {
+        updateCashTotals("USD");
+      }
+    });
+  }
+
+  const salesForm = document.getElementById("sales-form");
+  if (salesForm) {
+    salesForm.addEventListener("submit", (event) => {
+      if (itemsTable.querySelectorAll("tr[data-item-row]").length === 0) {
+        event.preventDefault();
+      }
+    });
+  }
+
+  const clearSale = document.getElementById("clear-sale");
+  if (clearSale) {
+    clearSale.addEventListener("click", () => {
+      if (itemsTable) {
+        itemsTable.innerHTML = `<tr id="empty-items"><td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
+      }
+      updateTotals();
+    });
+  }
+
+  const clienteForm = document.getElementById("cliente-form");
+  const clienteSave = document.getElementById("cliente-save");
+  const submitClienteForm = async () => {
+    if (!clienteForm) return;
+    const formData = new FormData();
+    clienteForm.querySelectorAll("[name]").forEach((field) => {
+      if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement) {
+        formData.append(field.name, field.value);
+      }
+    });
+    try {
+      const response = await fetch("/sales/cliente", {
+        method: "POST",
+        headers: { "X-Requested-With": "fetch" },
+        body: formData,
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || !payload.ok) {
+        const message =
+          payload?.message ||
+          (response.status === 403 ? "Sin permisos para crear clientes" : "No se pudo guardar");
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: message });
+        }
+        console.error("Error creando cliente", { status: response.status, payload });
+        return;
+      }
+      setClienteSelection(payload.id, payload.nombre);
+      clienteForm.querySelectorAll("[name]").forEach((field) => {
+        if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement) {
+          field.value = "";
+        }
+      });
+      if (clienteModalSearch) {
+        clienteModalSearch.focus();
+        clienteModalSearch.select();
+      }
+    } catch (err) {
+      console.error("Error creando cliente (catch)", err);
+      if (typeof Swal !== "undefined") {
+        Swal.fire({ icon: "error", title: "Error", text: "No se pudo guardar (error de red)." });
+      }
+    }
+  };
+  if (clienteSave) {
+    clienteSave.addEventListener("click", submitClienteForm);
+  }
+  if (clienteForm) {
+    clienteForm.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submitClienteForm();
+      }
+    });
+  }
+
+  const vendedorForm = document.getElementById("vendedor-form");
+  if (vendedorForm) {
+    vendedorForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const response = await fetch("/sales/vendedor", {
+        method: "POST",
+        headers: { "X-Requested-With": "fetch" },
+        body: new FormData(vendedorForm),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!payload || !payload.ok) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: payload?.message || "No se pudo guardar" });
+        }
+        return;
+      }
+      const option = new Option(payload.nombre, payload.id, true, true);
+      const select = document.getElementById("vendedor-select");
+      if (select) {
+        select.append(option);
+        select.dispatchEvent(new Event("change"));
+      }
+      vendedorForm.reset();
+      document.querySelector("[x-data]").__x.$data.vendedorOpen = false;
+    });
+  }
+
+      const partyRoot = document.getElementById("party-inline");
+      const clienteSummary = document.getElementById("cliente-summary");
+      const vendedorSummary = document.getElementById("vendedor-summary");
+      const fechaSummary = document.getElementById("fecha-summary");
+      const horaSummary = document.getElementById("hora-summary");
+      const clienteIdInput = partyRoot ? partyRoot.querySelector("#cliente-id") : document.getElementById("cliente-id");
+      const clienteSelectedLabel = document.getElementById("cliente-selected-label");
+      const vendedorSelect = document.getElementById("vendedor-select");
+      const fechaInput = document.getElementById("venta-fecha");
+      const clienteModal = document.getElementById("cliente-search-modal");
+      const clienteModalSearch = document.getElementById("cliente-modal-search");
+      const clienteModalBody = document.getElementById("cliente-modal-body");
+      const clienteModalStatus = document.getElementById("cliente-modal-status");
+      let clienteTimer = null;
+
+      const setClienteSelection = (id, label) => {
+        if (clienteIdInput) clienteIdInput.value = id || "";
+        if (clienteSelectedLabel) clienteSelectedLabel.textContent = label || "Cliente local";
+        if (clienteSummary) clienteSummary.textContent = clienteSelectedLabel?.textContent || "Cliente local";
+        if (payCliente) payCliente.textContent = clienteSelectedLabel?.textContent || "--";
+      };
+
+  const getClienteLabel = () => clienteSelectedLabel?.textContent || "Cliente local";
+  const getVendedorLabel = () => vendedorSelect?.selectedOptions[0]?.textContent || "Vendedor de Tienda";
+  const getFechaLabel = () => fechaInput?.value || "--";
+
+  const updatePartySummary = () => {
+    const clienteLabel = getClienteLabel();
+    const vendedorLabel = getVendedorLabel();
+    const fechaLabel = getFechaLabel();
+    if (clienteSummary) {
+      clienteSummary.textContent = clienteLabel;
+    }
+    if (vendedorSummary) {
+      vendedorSummary.textContent = vendedorLabel;
+    }
+    if (fechaSummary) {
+      fechaSummary.textContent = fechaLabel;
+    }
+    if (payCliente) payCliente.textContent = clienteLabel || "--";
+    if (payVendedor) payVendedor.textContent = vendedorLabel || "--";
+    if (payFecha) payFecha.textContent = fechaLabel || "--";
+  };
+
+  const formatLocalDate = () => {
+    const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Managua" });
+    return formatter.format(new Date());
+  };
+
+  const updateClock = () => {
+    const now = new Date();
+    const timeLabel = now.toLocaleTimeString("es-NI", { hour: "2-digit", minute: "2-digit" });
+    if (horaSummary) {
+      horaSummary.textContent = timeLabel;
+    }
+    const payHora = document.getElementById("pay-hora");
+    if (payHora) {
+      payHora.textContent = timeLabel;
+    }
+  };
+
+  const setPreferredStoreSeller = (force) => {
+    if (!vendedorSelect) return;
+    if (!force && vendedorSelect.value) return;
+    const withValue = Array.from(vendedorSelect.options).filter((opt) => opt.value);
+    if (!withValue.length) return;
+    const normalized = (text) =>
+      (text || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+    const preferred = withValue.find((opt) => {
+      const txt = normalized(opt.textContent);
+      return txt.includes("vendedor de tienda") || txt.includes("tienda");
+    });
+    const selected = preferred || withValue[0];
+    if (!selected) return;
+    vendedorSelect.value = selected.value;
+    if (window.$ && $.fn.select2) {
+      $(vendedorSelect).trigger("change.select2");
+    } else {
+      vendedorSelect.dispatchEvent(new Event("change"));
+    }
+  };
+
+  const loadInitialPreventa = () => {
+    if (!initialPreventa || !Array.isArray(initialPreventa.items) || initialPreventa.items.length === 0) {
+      return;
+    }
+    if (preventaIdInput) {
+      preventaIdInput.value = String(initialPreventa.id || "");
+    }
+    if (fechaInput && initialPreventa.fecha) {
+      fechaInput.value = initialPreventa.fecha;
+    }
+    if (monedaField && initialPreventa.moneda) {
+      monedaField.value = initialPreventa.moneda;
+      if (window.$ && $.fn.select2) {
+        $(monedaField).trigger("change.select2");
+      } else {
+        monedaField.dispatchEvent(new Event("change"));
+      }
+    }
+    setClienteSelection(initialPreventa.cliente_id || "", initialPreventa.cliente_nombre || "Cliente local");
+    if (vendedorSelect && initialPreventa.vendedor_id) {
+      vendedorSelect.value = String(initialPreventa.vendedor_id);
+      if (window.$ && $.fn.select2) {
+        $(vendedorSelect).trigger("change.select2");
+      } else {
+        vendedorSelect.dispatchEvent(new Event("change"));
+      }
+    }
+    if (itemsTable) {
+      itemsTable.innerHTML = "";
+    }
+    const invoiceCurrency = (monedaField?.value || "USD").toUpperCase();
+    initialPreventa.items.forEach((it) => {
+      const qty = Math.max(1, Math.round(Number(it.cantidad || 1)));
+      const priceUsd = Number(it.precio_usd || 0);
+      const priceCs = Number(it.precio_cs || 0);
+      const priceForInvoice = invoiceCurrency === "USD" ? priceUsd : priceCs;
+      const subtotalUsd = priceUsd * qty;
+      const subtotalCs = priceCs * qty;
+      addItemRow({
+        productId: Number(it.product_id),
+        code: String(it.cod_producto || ""),
+        name: String(it.descripcion || ""),
+        qtyValue: qty.toFixed(2),
+        qtyValueDisplay: String(qty),
+        maxQty: Number(it.existencia || qty || 0),
+        priceValue: priceForInvoice.toFixed(2),
+        subtotalUsd,
+        subtotalCs,
+        subtotalLabel: formatMoney(invoiceCurrency === "USD" ? subtotalUsd : subtotalCs, invoiceCurrency),
+        role: it.combo_role || "",
+        comboGroup: it.combo_group || "",
+        lockPrice: Boolean(it.combo_role),
+      });
+    });
+    updatePartySummary();
+    updateTotals();
+    if (typeof Swal !== "undefined") {
+      Swal.fire({
+        icon: "info",
+        title: "Preventa cargada",
+        text: `Se cargo la preventa ${initialPreventa.numero || ""} en la factura virtual.`,
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    }
+  };
+
+    const clienteDefault = partyRoot ? partyRoot.querySelector("#cliente-default") : document.getElementById("cliente-default");
+    if (clienteDefault) {
+      clienteDefault.addEventListener("click", () => {
+        setClienteSelection("", "Cliente local");
+      });
+    }
+  if (vendedorSelect) {
+    vendedorSelect.addEventListener("change", updatePartySummary);
+  }
+  if (fechaInput) {
+    fechaInput.addEventListener("change", updatePartySummary);
+  }
+
+  window.addEventListener("load", () => {
+    if (fechaInput && !fechaInput.value) {
+      const today = formatLocalDate();
+      fechaInput.value = today;
+    }
+    if (!initialPreventa || !initialPreventa.vendedor_id) {
+      setPreferredStoreSeller(true);
+    }
+      const initPartySelects = () => {
+        if (!(window.$ && $.fn.select2)) return;
+        const tokenMatcher = (params, data) => {
+          const term = (params.term || "").trim().toLowerCase();
+          if (!term) return data;
+          const text = (data.text || "").toLowerCase();
+          const tokens = term.split(/\s+/).filter(Boolean);
+          const ok = tokens.every((token) => text.includes(token));
+          return ok ? data : null;
+        };
+        const $party = $("#party-inline .select2");
+        if ($party.length) {
+          $party.each(function () {
+            const $el = $(this);
+            if ($el.data("select2")) return;
+            $el.select2({
+              width: "100%",
+              placeholder: "Selecciona",
+              allowClear: true,
+              minimumResultsForSearch: 0,
+              matcher: tokenMatcher,
+            });
+            const instance = $el.data("select2");
+            if (instance && instance.$container) {
+              instance.$container.addClass("odoo-select2");
+            }
+          });
+        }
+        const $payment = $("#payment-modal .select2");
+        if ($payment.length) {
+          $payment.each(function () {
+            const $el = $(this);
+            if ($el.data("select2")) return;
+            $el.select2({
+              width: "100%",
+              placeholder: "Selecciona",
+              allowClear: true,
+              dropdownParent: $("#payment-modal"),
+            });
+            const instance = $el.data("select2");
+            if (instance && instance.$container) {
+              instance.$container.addClass("odoo-select2");
+            }
+          });
+        }
+      };
+
+      initPartySelects();
+
+      const clienteSearchOpen = document.getElementById("cliente-search-open");
+      if (clienteSearchOpen && clienteModal && window.bootstrap) {
+        clienteSearchOpen.addEventListener("click", (event) => {
+          event.preventDefault();
+          const modal = bootstrap.Modal.getOrCreateInstance(clienteModal);
+          modal.show();
+        });
+      }
+
+      const renderClienteModalStatus = (message) => {
+        if (clienteModalStatus) clienteModalStatus.textContent = message || "";
+      };
+
+      const renderClienteModalItems = (items) => {
+        if (!clienteModalBody) return;
+        clienteModalBody.innerHTML = "";
+        if (!items.length) {
+          clienteModalBody.innerHTML = `<tr><td colspan="2" class="text-center text-slate">Sin resultados.</td></tr>`;
+          return;
+        }
+        items.slice(0, 50).forEach((item) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td class="text-sm">${item.nombre}</td>
+            <td class="text-end">
+              <button type="button" class="btn btn-outline-primary btn-sm">Seleccionar</button>
+            </td>
+          `;
+          row.addEventListener("dblclick", () => {
+            setClienteSelection(item.id, item.nombre);
+            if (clienteModal && window.bootstrap) {
+              const modal = bootstrap.Modal.getInstance(clienteModal);
+              if (modal) modal.hide();
+            }
+          });
+          const btn = row.querySelector("button");
+          if (btn) {
+            btn.addEventListener("click", () => {
+              setClienteSelection(item.id, item.nombre);
+              if (clienteModal && window.bootstrap) {
+                const modal = bootstrap.Modal.getInstance(clienteModal);
+                if (modal) modal.hide();
+              }
+            });
+          }
+          clienteModalBody.append(row);
+        });
+      };
+
+      const searchClientes = async (term) => {
+        const q = (term || "").trim();
+        if (!q) {
+          renderClienteModalStatus("Escribe para buscar.");
+          if (clienteModalBody) {
+            clienteModalBody.innerHTML = `<tr><td colspan="2" class="text-center text-slate">Escribe para buscar.</td></tr>`;
+          }
+          return;
+        }
+        renderClienteModalStatus("Buscando...");
+        try {
+          const resp = await fetch(`/sales/clientes/search?q=${encodeURIComponent(q)}`, {
+            headers: { "X-Requested-With": "fetch" },
+          });
+          if (!resp.ok) {
+            renderClienteModalStatus("No se pudo buscar.");
+            return;
+          }
+          const data = await resp.json().catch(() => null);
+          if (!data || data.ok === false) {
+            renderClienteModalStatus("No se pudo buscar.");
+            return;
+          }
+          renderClienteModalItems(data.items || []);
+        } catch (err) {
+          console.error("Error buscando clientes", err);
+          renderClienteModalStatus("Error de red al buscar.");
+        }
+      };
+
+      if (clienteModalSearch) {
+        clienteModalSearch.addEventListener("input", (event) => {
+          clearTimeout(clienteTimer);
+          clienteTimer = setTimeout(() => searchClientes(event.target.value), 200);
+        });
+        clienteModalSearch.addEventListener("focus", () => {
+          searchClientes(clienteModalSearch.value);
+        });
+      }
+      if (clienteModal) {
+        clienteModal.addEventListener("shown.bs.modal", () => {
+          if (clienteModalSearch) {
+            clienteModalSearch.focus();
+            clienteModalSearch.select();
+          }
+          renderClienteModalStatus("Escribe para buscar.");
+          if (clienteModalBody) {
+            clienteModalBody.innerHTML = `<tr><td colspan="2" class="text-center text-slate">Escribe para buscar.</td></tr>`;
+          }
+        });
+      }
+    syncPaymentFields();
+    loadInitialPreventa();
+    updatePartySummary();
+    updateTotals();
+    updateClock();
+    setInterval(updateClock, 60000);
+    startPreventaLiveStream();
+    pollPreventaNotifications();
+    preventaPollTimer = setInterval(pollPreventaNotifications, 7000);
+    setTimeout(() => focusScannerInput(true), 40);
+    setTimeout(() => focusScannerInput(true), 220);
+  });
+
+  window.addEventListener("focus", () => {
+    setTimeout(() => focusScannerInput(true), 40);
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      setTimeout(() => focusScannerInput(true), 40);
+    }
+  });
+
+  document.addEventListener("pointerup", (event) => {
+    if (!shouldKeepScannerFocus()) return;
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest("input, textarea, select, [contenteditable='true'], button, a, .select2-container")
+    ) {
+      return;
+    }
+    setTimeout(() => focusScannerInput(false), 0);
+  });
+
+  setInterval(() => {
+    focusScannerInput(false);
+  }, 1100);
+
+  window.addEventListener("beforeunload", () => {
+    if (preventaLiveSource) {
+      preventaLiveSource.close();
+      preventaLiveSource = null;
+    }
+    if (preventaPollTimer) {
+      clearInterval(preventaPollTimer);
+      preventaPollTimer = null;
+    }
+  });
+
+  const paymentModal = document.getElementById("payment-modal");
+  if (paymentModal) {
+    paymentModal.addEventListener("show.bs.modal", () => {
+      productNavMode = "paused";
+      paymentEnterStage = 0;
+      updatePartySummary();
+      if (payCliente) payCliente.textContent = getClienteLabel() || "--";
+      if (payVendedor) payVendedor.textContent = getVendedorLabel() || "--";
+      if (payFecha) payFecha.textContent = getFechaLabel() || "--";
+      if (payHora && horaSummary) payHora.textContent = horaSummary.textContent || "--";
+      if (payTotalUsd) payTotalUsd.textContent = formatMoney(currentTotals.usd, "USD");
+      if (payTotalCs) payTotalCs.textContent = formatMoney(currentTotals.cs, "CS");
+      renderPaymentList();
+      if (monedaField) monedaField.value = "CS";
+      if (pagoMoneda) pagoMoneda.value = "CS";
+      if (formaPagoField) {
+        const efectivoOption = Array.from(formaPagoField.options).find((opt) =>
+          opt.textContent?.toLowerCase().includes("efectivo")
+        );
+        if (efectivoOption) {
+          formaPagoField.value = efectivoOption.value;
+          if (window.$ && $.fn.select2) {
+            $(formaPagoField).trigger("change.select2");
+          }
+        }
+        updatePayMethodButtons(formaPagoField.value);
+        syncPaymentFields();
+      }
+      setPaymentAmountDefault();
+    });
+    paymentModal.addEventListener("shown.bs.modal", () => {
+      if (pagoMonto) {
+        pagoMonto.focus();
+        pagoMonto.select();
+      }
+    });
+    paymentModal.addEventListener("hidden.bs.modal", () => {
+      productNavMode = "search";
+      focusScannerInput(true);
+    });
+  }
+
+  // Flujo rapido para lector de codigo de barras (scanner tipo teclado).
+  const SCAN_MIN_LEN = 3;
+  const SCAN_KEY_MAX_GAP = 70;
+  const SCAN_IDLE_RESET = 220;
+  let barcodeBuffer = "";
+  let barcodeLastAt = 0;
+  let barcodeResetTimer = null;
+  let scannerBurstActive = false;
+  const barcodeQueue = [];
+  let barcodeQueueRunning = false;
+
+  const isEditableElement = (element) => {
+    if (!element) return false;
+    return (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement ||
+      element.isContentEditable
+    );
+  };
+
+  const shouldKeepScannerFocus = () => {
+    if (!productSearch) return false;
+    if (document.hidden) return false;
+    if (document.querySelector(".modal.show")) return false;
+    const vendedorModal = document.getElementById("vendedor-modal");
+    if (vendedorModal && window.getComputedStyle(vendedorModal).display !== "none") {
+      return false;
+    }
+    return true;
+  };
+
+  const focusScannerInput = (selectText = false) => {
+    if (!shouldKeepScannerFocus()) return;
+    const active = document.activeElement;
+    if (active && active !== productSearch && isEditableElement(active)) return;
+    if (active !== productSearch) {
+      productSearch.focus({ preventScroll: true });
+    }
+    if (selectText) {
+      productSearch.select();
+    }
+  };
+
+  const updateScannerBadge = (state, label) => {
+    if (!scannerState) return;
+    scannerState.classList.remove("working", "error");
+    if (state === "working") scannerState.classList.add("working");
+    if (state === "error") scannerState.classList.add("error");
+    scannerState.innerHTML = `<i class="bi bi-upc-scan"></i>${label}`;
+  };
+
+  const updateScannerLast = (code) => {
+    if (!scannerLastCode) return;
+    scannerLastCode.textContent = code ? `Ultimo: ${code}` : "Ultimo: -";
+  };
+
+  const clearBarcodeTimer = () => {
+    if (barcodeResetTimer) {
+      clearTimeout(barcodeResetTimer);
+      barcodeResetTimer = null;
+    }
+  };
+
+  const resetBarcodeBuffer = () => {
+    barcodeBuffer = "";
+    barcodeLastAt = 0;
+    scannerBurstActive = false;
+    clearBarcodeTimer();
+    if (productSearch) {
+      productSearch.classList.remove("barcode-ready");
+    }
+  };
+
+  const queueBarcode = (code) => {
+    const normalized = (code || "").toUpperCase().trim();
+    if (!normalized || normalized.length < SCAN_MIN_LEN) return;
+    barcodeQueue.push(normalized);
+    processBarcodeQueue();
+  };
+
+  const quickAddByBarcode = async (code) => {
+    if (!code || code.length < SCAN_MIN_LEN || !productSearch) {
+      return { ok: false, reason: "invalid" };
+    }
+    const normalized = code.toUpperCase().trim();
+    clearTimeout(searchTimer);
+    productSearch.value = normalized;
+    productSearch.classList.add("barcode-ready");
+    updateScannerBadge("working", `Leyendo ${normalized}`);
+    updateScannerLast(normalized);
+    await fetchProducts(normalized);
+    refreshActiveRows();
+    if (!activeProductRows.length) {
+      updateScannerBadge("error", "Codigo no encontrado");
+      setTimeout(() => {
+        updateScannerBadge("ready", "Lector listo");
+      }, 750);
+      setTimeout(() => productSearch.classList.remove("barcode-ready"), 400);
+      return { ok: false, reason: "not_found" };
+    }
+    const exactIndex = activeProductRows.findIndex((row) => {
+      const codeValue = (row.dataset.code || "").toUpperCase().trim();
+      return codeValue === normalized;
+    });
+    setActiveProduct(exactIndex >= 0 ? exactIndex : 0);
+    const added = await addActiveProduct();
+    productSearch.classList.remove("barcode-ready");
+    updateScannerBadge(added ? "ready" : "error", added ? "Lector listo" : "No se pudo agregar");
+    setTimeout(() => focusScannerInput(true), 0);
+    return { ok: Boolean(added), reason: added ? "ok" : "add_failed" };
+  };
+
+  const processBarcodeQueue = async () => {
+    if (barcodeQueueRunning) return;
+    barcodeQueueRunning = true;
+    while (barcodeQueue.length > 0) {
+      const code = barcodeQueue.shift();
+      try {
+        await quickAddByBarcode(code);
+      } catch (error) {
+        console.error("Error agregando codigo de barra", error);
+        updateScannerBadge("error", "Error de lector");
+        setTimeout(() => updateScannerBadge("ready", "Lector listo"), 900);
+      }
+    }
+    barcodeQueueRunning = false;
+  };
+
+  document.addEventListener("keydown", (event) => {
+    if (paymentModal && paymentModal.classList.contains("show")) return;
+    if (comboModal && comboModal.classList.contains("show")) return;
+    if (event.ctrlKey || event.altKey || event.metaKey) return;
+    if (!productSearch) return;
+
+    if (event.key === "Enter") {
+      if (scannerBurstActive && barcodeBuffer.length >= SCAN_MIN_LEN) {
+        event.preventDefault();
+        const scanned = barcodeBuffer;
+        resetBarcodeBuffer();
+        queueBarcode(scanned);
+      }
+      return;
+    }
+
+    if (event.key.length !== 1) return;
+    const now = Date.now();
+    const elapsed = barcodeLastAt ? now - barcodeLastAt : 0;
+
+    if (elapsed > SCAN_KEY_MAX_GAP && barcodeBuffer.length > 0) {
+      resetBarcodeBuffer();
+    }
+    if (elapsed > 0 && elapsed <= SCAN_KEY_MAX_GAP) {
+      scannerBurstActive = true;
+    }
+
+    barcodeLastAt = now;
+    barcodeBuffer += event.key.toUpperCase();
+
+    if (scannerBurstActive && barcodeBuffer.length >= SCAN_MIN_LEN) {
+      productSearch.classList.add("barcode-ready");
+      updateScannerBadge("working", "Capturando lectura");
+    }
+
+    clearBarcodeTimer();
+    barcodeResetTimer = setTimeout(() => {
+      resetBarcodeBuffer();
+      updateScannerBadge("ready", "Lector listo");
+    }, SCAN_IDLE_RESET);
+  });
+
+  {% if error %}
+  if (typeof Swal !== "undefined") {
+    Swal.fire({
+      icon: "error",
+      title: "Atencion",
+      text: "{{ error }}",
+      confirmButtonText: "Entendido",
+    });
+  }
+  {% endif %}
+  {% if success %}
+  if (typeof Swal !== "undefined") {
+    Swal.fire({
+      icon: "success",
+      title: "Venta registrada",
+      text: "{{ success }}",
+      timer: 1800,
+      showConfirmButton: false,
+    });
+  }
+  (function () {
+    const printLink = document.getElementById("sales-print-ticket");
+    if (!printLink) {
+      setTimeout(() => {
+        window.location.href = "/sales";
+      }, 1900);
+      return;
+    }
+    const reloadAfterPrint = () => {
+      window.removeEventListener("focus", reloadAfterPrint);
+      setTimeout(() => {
+        window.location.href = "/sales";
+      }, 300);
+    };
+    printLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      const url = printLink.getAttribute("href");
+      if (url) {
+        window.open(url, "_blank", "noopener");
+      }
+      window.addEventListener("focus", reloadAfterPrint, { once: true });
+      setTimeout(() => {
+        window.location.href = "/sales";
+      }, 12000);
+    });
+  })();
+  {% endif %}
+  // La impresion se hace manual con el boton de vista previa.
+</script>
+{% endblock %}
+
+

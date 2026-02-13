@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
 <style>
   body {
     background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
@@ -214,8 +215,8 @@
     </div>
     <div class="app-meta-row">
       <div class="app-brand-chip">
-        <img src="/static/logo_hollywood.png" alt="Hollywood Pacas">
-        <span class="small fw-semibold">Pacas Hollywood</span>
+        <img src="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="{{ branding.get('trade_name', 'Empresa') }}">
+        <span class="small fw-semibold">{{ branding.get("trade_name", "Empresa") }}</span>
       </div>
       <div class="small opacity-75">Sucursal: {{ branch.name }} &middot; Bodega: {{ bodega.name }}</div>
     </div>

@@ -1,14 +1,15 @@
 <!doctype html>
 <html lang="es">
   <head>
+    {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{ title or "ERP Hollywood Pacas" }}</title>
-    <link rel="icon" href="/static/favicon.ico?v={{ version }}" type="image/x-icon" />
-    <link rel="shortcut icon" href="/static/favicon.ico?v={{ version }}" type="image/x-icon" />
-    <link rel="icon" href="/static/logo_hollywood.png?v={{ version }}" type="image/png" sizes="32x32" />
-    <link rel="icon" href="/static/logo_hollywood.png?v={{ version }}" type="image/png" sizes="16x16" />
-    <link rel="apple-touch-icon" href="/static/logo_hollywood.png?v={{ version }}" />
+    <title>{{ title or branding.get("app_title", "ERP System") }}</title>
+    <link rel="icon" href="{{ branding.get('favicon_url', '/static/favicon.ico') }}?v={{ version }}" type="image/x-icon" />
+    <link rel="shortcut icon" href="{{ branding.get('favicon_url', '/static/favicon.ico') }}?v={{ version }}" type="image/x-icon" />
+    <link rel="icon" href="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}?v={{ version }}" type="image/png" sizes="32x32" />
+    <link rel="icon" href="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}?v={{ version }}" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}?v={{ version }}" />
     <script src="/static/vendor/tailwind.min.js?v={{ version }}"></script>
     <script>
       tailwind.config = {

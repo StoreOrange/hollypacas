@@ -1,12 +1,13 @@
 <aside data-bs-sidebar class="odoo-sidebar sidebar bg-white border-end d-none d-lg-flex flex-column">
   {% set has_perms = request.state.has_permissions if request and request.state else false %}
   {% set perms = request.state.permission_names if has_perms else [] %}
+  {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
   <div class="p-3 border-bottom">
     <div class="d-flex align-items-center gap-2">
-      <img src="/static/logo_hollywood.png" alt="Hollywood Pacas" width="48" height="48" class="rounded-3 border border-1 border-primary-subtle" />
+      <img src="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="{{ branding.get('trade_name', 'ERP') }}" width="48" height="48" class="rounded-3 border border-1 border-primary-subtle" />
       <div class="sidebar-brand">
-        <div class="fw-semibold text-dark">Hollywood Pacas</div>
-        <div class="text-uppercase text-muted small">ERP Central</div>
+        <div class="fw-semibold text-dark">{{ branding.get("trade_name", "Empresa") }}</div>
+        <div class="text-uppercase text-muted small">{{ branding.get("sidebar_subtitle", "ERP") }}</div>
       </div>
       <button data-bs-sidebar-toggle class="btn btn-sm btn-outline-secondary ms-auto" type="button" aria-label="Ocultar menu">
         <i class="bi bi-layout-sidebar-inset"></i>
@@ -145,10 +146,10 @@
 <div class="offcanvas offcanvas-start d-lg-none" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
   <div class="offcanvas-header border-bottom">
     <div class="d-flex align-items-center gap-2">
-      <img src="/static/logo_hollywood.png" alt="Hollywood Pacas" width="48" height="48" class="rounded-3 border border-1 border-primary-subtle" />
+      <img src="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="{{ branding.get('trade_name', 'ERP') }}" width="48" height="48" class="rounded-3 border border-1 border-primary-subtle" />
       <div>
-        <div class="fw-semibold text-dark" id="mobileSidebarLabel">Hollywood Pacas</div>
-        <div class="text-uppercase text-muted small">ERP Central</div>
+        <div class="fw-semibold text-dark" id="mobileSidebarLabel">{{ branding.get("trade_name", "Empresa") }}</div>
+        <div class="text-uppercase text-muted small">{{ branding.get("sidebar_subtitle", "ERP") }}</div>
       </div>
     </div>
     <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>

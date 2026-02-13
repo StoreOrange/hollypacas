@@ -11,6 +11,7 @@ venv/
 
 # Environment
 .env
+backend/.env.companies
 
 # Node
 node_modules/

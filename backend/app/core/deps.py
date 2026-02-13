@@ -4,7 +4,7 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..database import SessionLocal
+from ..database import get_session_local
 from ..models.user import User
 from .security import ALGORITHM, SECRET_KEY
 
@@ -12,7 +12,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def get_db():
-    db = SessionLocal()
+    db = get_session_local()()
     try:
         yield db
     finally:

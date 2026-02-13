@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+              <li class="breadcrumb-item"><a href="/data">Datos</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Interfaz de ventas</li>
+            </ol>
+          </nav>
+          <h1 class="h5 mb-1">Configuracion de interfaz en /sales</h1>
+          <p class="text-muted mb-0">Selecciona el estilo operativo del modulo de facturacion.</p>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-2">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2">{{ success }}</div>
+      {% endif %}
+
+      <div class="row g-4">
+        <div class="col-lg-7">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Interfaz activa</div>
+            <form class="row g-3" method="post" action="/data/interfaz-ventas">
+              <div class="col-12">
+                <label class="odoo-field-label">Tipo de interfaz *</label>
+                <select class="form-select odoo-input" name="interface_code" required>
+                  {% for item in options %}
+                  <option value="{{ item.code }}" {% if setting.interface_code == item.code %}selected{% endif %}>{{ item.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary" type="submit">Guardar configuracion</button>
+                <a class="btn btn-outline-secondary" href="/data">Volver</a>
+              </div>
+            </form>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="odoo-card">
+            <div class="odoo-section-title mb-3">Opciones disponibles</div>
+            <div class="d-flex flex-column gap-2">
+              {% for item in options %}
+              <div class="border rounded-3 px-3 py-2 d-flex justify-content-between align-items-center">
+                <div>{{ item.label }}</div>
+                {% if setting.interface_code == item.code %}
+                <span class="badge text-bg-success">Activa</span>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

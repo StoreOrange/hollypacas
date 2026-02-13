@@ -104,6 +104,37 @@ class EmailConfig(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class SalesInterfaceSetting(Base):
+    __tablename__ = "sales_interface_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    interface_code = Column(String(40), nullable=False, default="ropa")
+    updated_by = Column(String(160), nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class CompanyProfileSetting(Base):
+    __tablename__ = "company_profile_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    legal_name = Column(String(180), nullable=False, default="Hollywood Pacas")
+    trade_name = Column(String(120), nullable=False, default="Hollywood Pacas")
+    app_title = Column(String(180), nullable=False, default="ERP Hollywood Pacas")
+    sidebar_subtitle = Column(String(80), nullable=False, default="ERP Central")
+    website = Column(String(180), nullable=True, default="")
+    phone = Column(String(40), nullable=True, default="")
+    address = Column(String(260), nullable=True, default="")
+    email = Column(String(180), nullable=True, default="")
+    logo_url = Column(String(260), nullable=False, default="/static/logo_hollywood.png")
+    pos_logo_url = Column(String(260), nullable=False, default="/static/logo_hollywood.png")
+    favicon_url = Column(String(260), nullable=False, default="/static/favicon.ico")
+    inventory_cs_only = Column(Boolean, nullable=False, default=False)
+    updated_by = Column(String(160), nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class NotificationRecipient(Base):
     __tablename__ = "email_recipients"
 
