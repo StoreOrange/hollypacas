@@ -788,6 +788,39 @@
               </table>
             </div>
           </div>
+
+          <div class="mt-3 p-3 rounded-xl border border-emerald-200 bg-emerald-50">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="odoo-section-title mb-0">Ganancia en caliente por vendedor</div>
+              <span class="text-xs text-slate">Basado solo en asignacion actual (cantidad x comision)</span>
+            </div>
+            <div class="table-responsive commission-grid-wrap">
+              <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr>
+                    <th>Vendedor</th>
+                    <th class="text-end">Items asignados</th>
+                    <th class="text-end">Ganado USD</th>
+                  </tr>
+                </thead>
+                <tbody id="assign-vendor-earnings-body">
+                  {% if by_vendor %}
+                  {% for vendedor_nombre, values in by_vendor.items() %}
+                  <tr>
+                    <td>{{ vendedor_nombre }}</td>
+                    <td class="text-end">{{ "%.0f"|format(values.items_vendidos or values.bultos or 0) }}</td>
+                    <td class="text-end">${{ "{:,.2f}".format(values.comision_usd or 0) }}</td>
+                  </tr>
+                  {% endfor %}
+                  {% else %}
+                  <tr id="assign-vendor-earnings-empty">
+                    <td colspan="3" class="text-center text-slate py-2">Sin datos de ganancia en caliente.</td>
+                  </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </form>
       </section>
 
@@ -1054,6 +1087,7 @@
     const totalVentasUsdEl = document.getElementById("assign-total-ventas-usd");
     const totalComisionEl = document.getElementById("assign-total-comision");
     const vendorSummaryBody = document.getElementById("assign-vendor-summary-body");
+    const vendorEarningsBody = document.getElementById("assign-vendor-earnings-body");
     const parseQty = (value) => {
       const n = Number.parseInt(String(value || "").replace(/[^\d]/g, ""), 10);
       return Number.isFinite(n) ? n : 0;
@@ -1226,6 +1260,25 @@
                   <td>${escapeHtml(name)}</td>
                   <td class="text-end">${rowData.items}</td>
                   <td class="text-end">${formatCurrency(rowData.ventas, "$")}</td>
+                  <td class="text-end">${formatCurrency(rowData.comision, "$")}</td>
+                </tr>
+              `;
+            })
+            .join("");
+        }
+      }
+      if (vendorEarningsBody) {
+        const names = Object.keys(byVendor).sort((a, b) => a.localeCompare(b));
+        if (!names.length) {
+          vendorEarningsBody.innerHTML = '<tr id="assign-vendor-earnings-empty"><td colspan="3" class="text-center text-slate py-2">Sin datos de ganancia en caliente.</td></tr>';
+        } else {
+          vendorEarningsBody.innerHTML = names
+            .map((name) => {
+              const rowData = byVendor[name];
+              return `
+                <tr>
+                  <td>${escapeHtml(name)}</td>
+                  <td class="text-end">${rowData.items}</td>
                   <td class="text-end">${formatCurrency(rowData.comision, "$")}</td>
                 </tr>
               `;
