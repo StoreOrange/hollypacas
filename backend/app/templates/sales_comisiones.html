@@ -576,9 +576,10 @@
                 <label class="form-label">Filas</label>
                 <select id="assignment-grid-size" class="flow-grid-control w-full">
                   <option value="15">15</option>
-                  <option value="25" selected>25</option>
+                  <option value="25">25</option>
                   <option value="50">50</option>
                   <option value="100">100</option>
+                  <option value="99999" selected>Todos</option>
                 </select>
               </div>
               <div class="toolbar-field xl:col-span-2">
@@ -1053,19 +1054,6 @@
     const totalVentasUsdEl = document.getElementById("assign-total-ventas-usd");
     const totalComisionEl = document.getElementById("assign-total-comision");
     const vendorSummaryBody = document.getElementById("assign-vendor-summary-body");
-    const draftKey = assignmentForm
-        ? [
-          "sales-comisiones-asignacion-draft",
-          assignmentForm.querySelector('input[name="fecha"]')?.value || "",
-          assignmentForm.querySelector('input[name="start_date"]')?.value || "",
-          assignmentForm.querySelector('input[name="end_date"]')?.value || "",
-          assignmentForm.querySelector('input[name="branch_id"]')?.value || "",
-          assignmentForm.querySelector('input[name="vendedor_facturacion_id"]')?.value || "",
-          assignmentForm.querySelector('input[name="vendedor_asignado_id"]')?.value || "",
-          assignmentForm.querySelector('input[name="producto_asig_q"]')?.value || "",
-        ].join("|")
-      : null;
-
     const parseQty = (value) => {
       const n = Number.parseInt(String(value || "").replace(/[^\d]/g, ""), 10);
       return Number.isFinite(n) ? n : 0;
@@ -1106,20 +1094,8 @@
       search: "",
       sortBy: "factura",
       dir: "asc",
-      pageSize: 25,
+      pageSize: 99999,
       page: 1,
-    };
-
-    const saveDraft = () => {
-      if (!draftKey || !assignmentBody) return;
-      try {
-        window.sessionStorage.setItem(
-          draftKey,
-          JSON.stringify({ html: assignmentBody.innerHTML })
-        );
-      } catch (error) {
-        console.warn("No se pudo guardar borrador de asignacion", error);
-      }
     };
 
     const applyRowState = (row) => {
@@ -1392,20 +1368,17 @@
         vendedorSelect.addEventListener("change", () => {
           updateTotals();
           renderAssignmentGrid();
-          saveDraft();
         });
       }
       if (qtyInput) {
         qtyInput.addEventListener("input", () => {
           updateTotals();
           if (assignmentGridState.sortBy === "cantidad") renderAssignmentGrid();
-          saveDraft();
         });
         qtyInput.addEventListener("blur", () => {
           normalizeQtyInput(qtyInput);
           updateTotals();
           if (assignmentGridState.sortBy === "cantidad") renderAssignmentGrid();
-          saveDraft();
         });
       }
       if (splitBtn) {
@@ -1421,7 +1394,6 @@
           bindRowActions(clone);
           updateTotals();
           renderAssignmentGrid();
-          saveDraft();
         });
       }
       if (removeBtn) {
@@ -1434,23 +1406,11 @@
           row.remove();
           updateTotals();
           renderAssignmentGrid();
-          saveDraft();
         });
       }
     };
 
     if (assignmentBody) {
-      if (draftKey) {
-        try {
-          const raw = window.sessionStorage.getItem(draftKey);
-          if (raw) {
-            const draft = JSON.parse(raw);
-            if (draft?.html) assignmentBody.innerHTML = draft.html;
-          }
-        } catch (error) {
-          console.warn("No se pudo restaurar borrador de asignacion", error);
-        }
-      }
       assignmentBody.querySelectorAll("tr.assignment-group-row:not([data-dynamic-group='1'])").forEach((row) => row.remove());
       assignmentBody.querySelectorAll("tr[data-assignment-row]").forEach((row) => bindRowActions(row));
       updateTotals();
@@ -1501,12 +1461,6 @@
       });
     }
 
-    if (pricesForm) {
-      pricesForm.addEventListener("submit", () => {
-        saveDraft();
-      });
-    }
-
     if (regenerateBtn) {
       regenerateBtn.addEventListener("click", (event) => {
         const ok = window.confirm(
@@ -1515,13 +1469,6 @@
         if (!ok) {
           event.preventDefault();
           return;
-        }
-        if (draftKey) {
-          try {
-            window.sessionStorage.removeItem(draftKey);
-          } catch (error) {
-            console.warn("No se pudo limpiar borrador de asignacion", error);
-          }
         }
       });
     }
@@ -1606,13 +1553,6 @@
           return;
         }
         payloadInput.value = JSON.stringify(rows);
-        if (!isRegenerate && draftKey) {
-          try {
-            window.sessionStorage.removeItem(draftKey);
-          } catch (error) {
-            console.warn("No se pudo limpiar borrador de asignacion", error);
-          }
-        }
       });
     }
   })();
