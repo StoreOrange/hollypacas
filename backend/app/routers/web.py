@@ -3204,24 +3204,15 @@ def _sales_commissions_filters(request: Request):
     start_raw = request.query_params.get("start_date")
     end_raw = request.query_params.get("end_date")
     branch_id = request.query_params.get("branch_id") or "all"
-    vendedor_facturacion_id = (
-        request.query_params.get("vendedor_facturacion_id")
-        or request.query_params.get("vendedor_id")
-        or ""
-    ).strip()
+    vendedor_facturacion_id = (request.query_params.get("vendedor_facturacion_id") or "").strip()
     vendedor_asignado_id = (request.query_params.get("vendedor_asignado_id") or "").strip()
     producto_asig_q = (request.query_params.get("producto_asig_q") or "").strip()
     active_tab = (request.query_params.get("tab") or "precios").strip().lower()
     if active_tab not in {"precios", "asignacion", "reportes"}:
         active_tab = "precios"
-    fecha_value = local_today()
-    if fecha_raw:
-        try:
-            fecha_value = date.fromisoformat(fecha_raw)
-        except ValueError:
-            fecha_value = local_today()
-    start_date = fecha_value
-    end_date = fecha_value
+    today_value = local_today()
+    start_date = today_value
+    end_date = today_value
     if start_raw or end_raw:
         try:
             if start_raw:
@@ -3233,10 +3224,20 @@ def _sales_commissions_filters(request: Request):
             if end_raw and not start_raw:
                 start_date = end_date
         except ValueError:
-            start_date = fecha_value
-            end_date = fecha_value
+            start_date = today_value
+            end_date = today_value
+    elif fecha_raw:
+        # Compatibilidad con URLs antiguas que enviaban solo "fecha".
+        try:
+            only_date = date.fromisoformat(fecha_raw)
+            start_date = only_date
+            end_date = only_date
+        except ValueError:
+            start_date = today_value
+            end_date = today_value
     if end_date < start_date:
         end_date = start_date
+    fecha_value = start_date
     return (
         fecha_value,
         start_date,
@@ -3560,7 +3561,7 @@ def _build_commission_assignment_rows(
         temp_rows = temp_query.order_by(VentaComisionAsignacion.id.asc()).all()
 
     if not temp_rows:
-        return [], 0, 0, 0, {}, 0.0
+        return [], 0, 0, 0, {}, 0.0, 0.0, 0, []
 
     product_ids = list({row.producto_id for row in temp_rows})
     factura_ids = list({row.factura_id for row in temp_rows})
@@ -3625,7 +3626,7 @@ def _build_commission_assignment_rows(
             pass
 
     if not temp_rows:
-        return [], 0, 0, 0, {}, 0.0
+        return [], 0, 0, 0, {}, 0.0, 0.0, 0, []
 
     commission_rows = (
         db.query(ProductoComision)
@@ -3686,15 +3687,19 @@ def _build_commission_assignment_rows(
                 "temp_id": row.id,
                 "venta_item_id": row.venta_item_id,
                 "factura_id": row.factura_id,
+                "fecha": row.fecha,
+                "fecha_label": row.fecha.strftime("%d/%m/%Y") if row.fecha else "-",
                 "producto_id": row.producto_id,
                 "factura_numero": factura.numero,
                 "cliente": cliente.nombre if cliente else "Consumidor final",
                 "descripcion": f"{producto.cod_producto} - {producto.descripcion}",
                 "cantidad": qty_int,
                 "precio": float(precio),
+                "precio_usd_unit": float(row.precio_unitario_usd or 0),
                 "precio_label": precio_label,
                 "comision_unit_usd": float(comision_unit),
                 "comision_total_usd": float(comision_unit * Decimal(str(qty_int))),
+                "subtotal_usd": float(row.subtotal_usd or 0),
                 "vendedor_origen_id": row.vendedor_origen_id,
                 "vendedor_origen": vendedor_origen_nombre,
                 "vendedor_id": row.vendedor_asignado_id,
@@ -3717,16 +3722,47 @@ def _build_commission_assignment_rows(
     )
     total_bultos = int(sum(int(row.get("cantidad") or 0) for row in output_rows))
     total_comision = Decimal("0")
+    total_ventas_usd = Decimal("0")
+    total_facturas = len({int(row.get("factura_id") or 0) for row in output_rows if row.get("factura_id")})
+    period_summary_by_date: dict[date, dict] = {}
     by_vendor: dict[str, dict[str, float]] = {}
     for row in output_rows:
         vendor_name = row.get("vendedor_nombre") or "-"
         qty = int(row.get("cantidad") or 0)
         comision_total = Decimal(str(row.get("comision_total_usd") or 0))
+        subtotal_usd = Decimal(str(row.get("subtotal_usd") or 0))
+        fecha_val = row.get("fecha")
+        factura_id = int(row.get("factura_id") or 0)
         total_comision += comision_total
+        total_ventas_usd += subtotal_usd
+        if isinstance(fecha_val, date):
+            if fecha_val not in period_summary_by_date:
+                period_summary_by_date[fecha_val] = {
+                    "fecha_label": fecha_val.strftime("%d/%m/%Y"),
+                    "bultos": 0,
+                    "ventas_usd": Decimal("0"),
+                    "facturas": set(),
+                }
+            period_summary_by_date[fecha_val]["bultos"] += qty
+            period_summary_by_date[fecha_val]["ventas_usd"] += subtotal_usd
+            if factura_id:
+                period_summary_by_date[fecha_val]["facturas"].add(factura_id)
         if vendor_name not in by_vendor:
-            by_vendor[vendor_name] = {"bultos": 0.0, "comision_usd": 0.0}
+            by_vendor[vendor_name] = {"bultos": 0.0, "ventas_usd": 0.0, "comision_usd": 0.0}
         by_vendor[vendor_name]["bultos"] += qty
+        by_vendor[vendor_name]["ventas_usd"] += float(subtotal_usd)
         by_vendor[vendor_name]["comision_usd"] += float(comision_total)
+    period_summary_rows = []
+    for fecha_val in sorted(period_summary_by_date.keys()):
+        item = period_summary_by_date[fecha_val]
+        period_summary_rows.append(
+            {
+                "fecha_label": item["fecha_label"],
+                "facturas": len(item["facturas"]),
+                "bultos": int(item["bultos"]),
+                "ventas_usd": float(item["ventas_usd"]),
+            }
+        )
     return (
         output_rows,
         total_bultos,
@@ -3734,6 +3770,9 @@ def _build_commission_assignment_rows(
         total_bultos_vendidos,
         by_vendor,
         float(total_comision),
+        float(total_ventas_usd),
+        total_facturas,
+        period_summary_rows,
     )
 
 
@@ -4065,6 +4104,9 @@ def sales_comisiones(
         total_bultos_vendidos,
         by_vendor,
         total_comision_usd,
+        total_ventas_usd,
+        total_facturas,
+        period_summary_rows,
     ) = _build_commission_assignment_rows(
         db,
         start_date,
@@ -4074,7 +4116,15 @@ def sales_comisiones(
         vendedor_asignado_id,
         producto_asig_q,
     )
-    day_status = _commission_day_status(db, fecha_value, branch_id)
+    if start_date == end_date:
+        day_status = _commission_day_status(db, start_date, branch_id)
+    else:
+        day_status = {
+            "code": "abierto",
+            "label": f"Periodo {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}",
+            "final_count": 0,
+            "temp_count": total_rows,
+        }
     reports_data = _build_commission_reports_data(
         db,
         rep_start_date,
@@ -4097,8 +4147,11 @@ def sales_comisiones(
             "total_bultos": total_bultos,
             "total_rows": total_rows,
             "total_bultos_vendidos": total_bultos_vendidos,
+            "total_ventas_usd": total_ventas_usd,
+            "total_facturas": total_facturas,
             "total_comision_usd": total_comision_usd,
             "by_vendor": by_vendor,
+            "period_summary_rows": period_summary_rows,
             "day_status": day_status,
             "fecha": fecha_value.isoformat(),
             "start_date": start_date.isoformat(),
