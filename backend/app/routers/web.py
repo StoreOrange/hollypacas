@@ -3748,7 +3748,13 @@ def _build_commission_assignment_rows(
             if factura_id:
                 period_summary_by_date[fecha_val]["facturas"].add(factura_id)
         if vendor_name not in by_vendor:
-            by_vendor[vendor_name] = {"bultos": 0.0, "ventas_usd": 0.0, "comision_usd": 0.0}
+            by_vendor[vendor_name] = {
+                "items_vendidos": 0.0,
+                "bultos": 0.0,
+                "ventas_usd": 0.0,
+                "comision_usd": 0.0,
+            }
+        by_vendor[vendor_name]["items_vendidos"] += qty
         by_vendor[vendor_name]["bultos"] += qty
         by_vendor[vendor_name]["ventas_usd"] += float(subtotal_usd)
         by_vendor[vendor_name]["comision_usd"] += float(comision_total)

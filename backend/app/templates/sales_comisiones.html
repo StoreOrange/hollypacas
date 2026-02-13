@@ -727,8 +727,8 @@
                 <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
                   <tr>
                     <th>Vendedor</th>
-                    <th class="text-end">Bultos</th>
-                    <th class="text-end">Ventas USD</th>
+                    <th class="text-end">Items vendidos</th>
+                    <th class="text-end">Total venta USD</th>
                     <th class="text-end">Comision USD</th>
                   </tr>
                 </thead>
@@ -737,7 +737,7 @@
                   {% for vendedor_nombre, values in by_vendor.items() %}
                   <tr>
                     <td>{{ vendedor_nombre }}</td>
-                    <td class="text-end">{{ "%.0f"|format(values.bultos or 0) }}</td>
+                    <td class="text-end">{{ "%.0f"|format(values.items_vendidos or values.bultos or 0) }}</td>
                     <td class="text-end">${{ "{:,.2f}".format(values.ventas_usd or 0) }}</td>
                     <td class="text-end">${{ "{:,.2f}".format(values.comision_usd or 0) }}</td>
                   </tr>
@@ -1186,7 +1186,8 @@
 
         const vendedorLabel =
           row.querySelector(".assignment-vendedor option:checked")?.textContent?.trim() || "-";
-        if (!byVendor[vendedorLabel]) byVendor[vendedorLabel] = { bultos: 0, ventas: 0, comision: 0 };
+        if (!byVendor[vendedorLabel]) byVendor[vendedorLabel] = { items: 0, bultos: 0, ventas: 0, comision: 0 };
+        byVendor[vendedorLabel].items += rowQtyCurrent;
         byVendor[vendedorLabel].bultos += rowQtyCurrent;
         byVendor[vendedorLabel].ventas += rowVentaUsd;
         byVendor[vendedorLabel].comision += rowComisionTotal;
@@ -1223,7 +1224,7 @@
               return `
                 <tr>
                   <td>${escapeHtml(name)}</td>
-                  <td class="text-end">${rowData.bultos}</td>
+                  <td class="text-end">${rowData.items}</td>
                   <td class="text-end">${formatCurrency(rowData.ventas, "$")}</td>
                   <td class="text-end">${formatCurrency(rowData.comision, "$")}</td>
                 </tr>
