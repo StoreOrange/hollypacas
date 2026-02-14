@@ -3831,30 +3831,42 @@ def _build_commission_reports_data(
     vendedor_id: str | None,
 ) -> dict:
     query = (
-        db.query(VentaComisionFinal, VentaFactura, Producto, Cliente, Vendedor, Branch)
-        .join(VentaFactura, VentaFactura.id == VentaComisionFinal.factura_id)
-        .join(Producto, Producto.id == VentaComisionFinal.producto_id)
-        .join(Cliente, Cliente.id == VentaComisionFinal.cliente_id, isouter=True)
-        .join(Vendedor, Vendedor.id == VentaComisionFinal.vendedor_asignado_id, isouter=True)
-        .join(Branch, Branch.id == VentaComisionFinal.branch_id, isouter=True)
-        .filter(VentaComisionFinal.fecha >= start_date, VentaComisionFinal.fecha <= end_date)
+        db.query(
+            VentaComisionAsignacion,
+            VentaFactura,
+            Producto,
+            Cliente,
+            Vendedor,
+            Branch,
+            ProductoComision,
+        )
+        .join(VentaFactura, VentaFactura.id == VentaComisionAsignacion.factura_id, isouter=True)
+        .join(Producto, Producto.id == VentaComisionAsignacion.producto_id, isouter=True)
+        .join(Cliente, Cliente.id == VentaComisionAsignacion.cliente_id, isouter=True)
+        .join(Vendedor, Vendedor.id == VentaComisionAsignacion.vendedor_asignado_id, isouter=True)
+        .join(Branch, Branch.id == VentaComisionAsignacion.branch_id, isouter=True)
+        .join(ProductoComision, ProductoComision.producto_id == VentaComisionAsignacion.producto_id, isouter=True)
+        .filter(
+            VentaComisionAsignacion.fecha >= start_date,
+            VentaComisionAsignacion.fecha <= end_date,
+        )
     )
     if branch_id and branch_id != "all":
         try:
-            query = query.filter(VentaComisionFinal.branch_id == int(branch_id))
+            query = query.filter(VentaComisionAsignacion.branch_id == int(branch_id))
         except ValueError:
             pass
     if vendedor_id:
         try:
-            query = query.filter(VentaComisionFinal.vendedor_asignado_id == int(vendedor_id))
+            query = query.filter(VentaComisionAsignacion.vendedor_asignado_id == int(vendedor_id))
         except ValueError:
             pass
 
     rows = query.order_by(
-        VentaComisionFinal.fecha.asc(),
+        VentaComisionAsignacion.fecha.asc(),
         Vendedor.nombre.asc(),
         VentaFactura.numero.asc(),
-        VentaComisionFinal.id.asc(),
+        VentaComisionAsignacion.id.asc(),
     ).all()
 
     detail_rows: list[dict] = []
@@ -3865,13 +3877,13 @@ def _build_commission_reports_data(
     total_comision = Decimal("0")
     total_ventas_usd = Decimal("0")
 
-    for final_row, factura, producto, cliente, vendedor, branch in rows:
-        qty = Decimal(str(final_row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-        comision_unit = Decimal(str(final_row.comision_unit_usd or 0))
-        comision_total = Decimal(str(final_row.comision_total_usd or 0))
-        subtotal_usd = Decimal(str(final_row.subtotal_usd or 0))
+    for temp_row, factura, producto, cliente, vendedor, branch, producto_comision in rows:
+        qty = Decimal(str(temp_row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        comision_unit = Decimal(str(producto_comision.comision_usd or 0)) if producto_comision else Decimal("0")
+        comision_total = comision_unit * qty
+        subtotal_usd = Decimal(str(temp_row.subtotal_usd or 0))
         vendor_name = vendedor.nombre if vendedor else "Sin asignar"
-        fecha_value = final_row.fecha
+        fecha_value = temp_row.fecha
 
         detail_rows.append(
             {
@@ -3880,7 +3892,7 @@ def _build_commission_reports_data(
                 "sucursal": branch.name if branch else "-",
                 "factura": factura.numero if factura else "-",
                 "cliente": cliente.nombre if cliente else "Consumidor final",
-                "producto": f"{producto.cod_producto or '-'} - {producto.descripcion or '-'}",
+                "producto": f"{(producto.cod_producto if producto else '-') or '-'} - {(producto.descripcion if producto else '-') or '-'}",
                 "vendedor": vendor_name,
                 "cantidad": int(qty),
                 "subtotal_usd": float(subtotal_usd),
@@ -4131,6 +4143,8 @@ def sales_comisiones(
             "final_count": 0,
             "temp_count": total_rows,
         }
+    for day_value in _commission_dates_in_range(rep_start_date, rep_end_date):
+        _ensure_commission_temp_snapshot(db, day_value, rep_branch_id)
     reports_data = _build_commission_reports_data(
         db,
         rep_start_date,
@@ -4932,6 +4946,8 @@ def sales_comisiones_reports_pdf(
     rep_start_date, rep_end_date, rep_branch_id, rep_vendedor_id = (
         _sales_commissions_report_filters(request)
     )
+    for day_value in _commission_dates_in_range(rep_start_date, rep_end_date):
+        _ensure_commission_temp_snapshot(db, day_value, rep_branch_id)
     reports_data = _build_commission_reports_data(
         db, rep_start_date, rep_end_date, rep_branch_id, rep_vendedor_id
     )
@@ -4986,7 +5002,7 @@ def sales_comisiones_reports_pdf(
 
     if not pivot_rows or not pivot_vendors:
         c.setFont("Helvetica", 11)
-        c.drawString(margin, y, "Sin datos de comisiones finales para el rango seleccionado.")
+        c.drawString(margin, y, "Sin datos de comisiones para el rango seleccionado.")
         c.showPage()
         c.save()
         buffer.seek(0)
