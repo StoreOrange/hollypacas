@@ -591,6 +591,9 @@
                 </div>
               </div>
             </div>
+            <div class="text-xs text-slate mt-2">
+              Teclado: <strong>Enter</strong> baja fila, <strong>Shift+Enter</strong> sube fila, <strong>Ctrl + ↑/↓</strong> mueve entre filas en la misma columna.
+            </div>
           </div>
 
           <div class="table-responsive commission-grid-wrap ring-1 ring-slate-200">
@@ -1402,6 +1405,23 @@
       if (assignmentGridNext) assignmentGridNext.disabled = assignmentGridState.page >= totalPages;
     };
 
+    const getVisibleAssignmentRows = () =>
+      Array.from(assignmentBody?.querySelectorAll("tr[data-assignment-row]") || []).filter(
+        (row) => row.style.display !== "none"
+      );
+
+    const focusRelativeRowControl = (currentRow, selector, direction) => {
+      const visibleRows = getVisibleAssignmentRows();
+      const idx = visibleRows.indexOf(currentRow);
+      if (idx < 0) return;
+      const target = visibleRows[idx + direction];
+      if (!target) return;
+      const control = target.querySelector(selector);
+      if (!control || control.disabled) return;
+      control.focus();
+      if (typeof control.select === "function") control.select();
+    };
+
     const bindRowActions = (row) => {
       const vendedorSelect = row.querySelector(".assignment-vendedor");
       const qtyInput = row.querySelector(".assignment-qty");
@@ -1423,6 +1443,20 @@
           updateTotals();
           renderAssignmentGrid();
         });
+        vendedorSelect.addEventListener("keydown", (event) => {
+          if (event.ctrlKey && event.key === "ArrowDown") {
+            event.preventDefault();
+            focusRelativeRowControl(row, ".assignment-vendedor", 1);
+          }
+          if (event.ctrlKey && event.key === "ArrowUp") {
+            event.preventDefault();
+            focusRelativeRowControl(row, ".assignment-vendedor", -1);
+          }
+          if (event.key === "Enter") {
+            event.preventDefault();
+            focusRelativeRowControl(row, ".assignment-vendedor", event.shiftKey ? -1 : 1);
+          }
+        });
       }
       if (qtyInput) {
         qtyInput.addEventListener("input", () => {
@@ -1433,6 +1467,20 @@
           normalizeQtyInput(qtyInput);
           updateTotals();
           if (assignmentGridState.sortBy === "cantidad") renderAssignmentGrid();
+        });
+        qtyInput.addEventListener("keydown", (event) => {
+          if (event.ctrlKey && event.key === "ArrowDown") {
+            event.preventDefault();
+            focusRelativeRowControl(row, ".assignment-qty", 1);
+          }
+          if (event.ctrlKey && event.key === "ArrowUp") {
+            event.preventDefault();
+            focusRelativeRowControl(row, ".assignment-qty", -1);
+          }
+          if (event.key === "Enter") {
+            event.preventDefault();
+            focusRelativeRowControl(row, ".assignment-qty", event.shiftKey ? -1 : 1);
+          }
         });
       }
       if (splitBtn) {
