@@ -1487,6 +1487,8 @@
         splitBtn.addEventListener("click", () => {
           const clone = row.cloneNode(true);
           clone.setAttribute("data-is-primary", "0");
+          // New split rows must be treated as new records on save.
+          clone.setAttribute("data-temp-id", "0");
           const cloneQtyInput = clone.querySelector(".assignment-qty");
           if (cloneQtyInput) {
             cloneQtyInput.readOnly = false;

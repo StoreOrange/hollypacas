@@ -4325,16 +4325,26 @@ async def sales_comisiones_save_assignments(
     }
 
     payload_temp_ids: set[int] = set()
+    payload_item_ids: set[int] = set()
     for row in payload if isinstance(payload, list) else []:
         try:
-            payload_temp_ids.add(int(row.get("temp_id")))
+            temp_id = int(row.get("temp_id"))
+            venta_item_id = int(row.get("venta_item_id"))
+            if temp_id > 0:
+                payload_temp_ids.add(temp_id)
+            payload_item_ids.add(venta_item_id)
         except Exception:
             continue
 
     saved = 0
-    current_query = db.query(VentaComisionAsignacion)
-    if payload_temp_ids:
-        current_query = current_query.filter(VentaComisionAsignacion.id.in_(list(payload_temp_ids)))
+    current_query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha >= start_date,
+        VentaComisionAsignacion.fecha <= end_date,
+    )
+    if payload_item_ids:
+        current_query = current_query.filter(
+            VentaComisionAsignacion.venta_item_id.in_(list(payload_item_ids))
+        )
     else:
         current_query = current_query.filter(VentaComisionAsignacion.id == -1)
     if scope_branch_id:
@@ -4353,11 +4363,12 @@ async def sales_comisiones_save_assignments(
             cantidad = int(Decimal(str(row.get("cantidad") or "0")))
         except Exception:
             continue
-        current_row = current_by_temp_id.get(temp_id)
-        if not current_row:
-            continue
-        if int(current_row.venta_item_id or 0) != venta_item_id:
-            continue
+        if temp_id > 0:
+            current_row = current_by_temp_id.get(temp_id)
+            if not current_row:
+                continue
+            if int(current_row.venta_item_id or 0) != venta_item_id:
+                continue
         if venta_item_id not in source_map:
             continue
         if cantidad < 0:
@@ -4401,6 +4412,7 @@ async def sales_comisiones_save_assignments(
             continue
 
         merged_by_temp_id: dict[int, dict] = {}
+        merged_new_rows: list[dict] = []
         for existing in current_by_item.get(venta_item_id, []):
             merged_by_temp_id[int(existing.id)] = {
                 "temp_id": int(existing.id),
@@ -4412,9 +4424,13 @@ async def sales_comisiones_save_assignments(
                 ),
             }
         for incoming in rows:
-            merged_by_temp_id[int(incoming["temp_id"])] = incoming
+            incoming_temp_id = int(incoming["temp_id"])
+            if incoming_temp_id > 0:
+                merged_by_temp_id[incoming_temp_id] = incoming
+            else:
+                merged_new_rows.append(incoming)
 
-        merged_rows = list(merged_by_temp_id.values())
+        merged_rows = list(merged_by_temp_id.values()) + merged_new_rows
         total_payload_qty = sum(int(r["cantidad"]) for r in merged_rows)
         positive_rows = [r for r in merged_rows if int(r["cantidad"]) > 0]
         if total_payload_qty != sold_qty or not positive_rows:
@@ -4453,7 +4469,12 @@ async def sales_comisiones_save_assignments(
         precio_cs = Decimal(str(item.precio_unitario_cs or 0))
 
         existing_rows = current_by_item.get(venta_item_id, [])
-        incoming_by_temp = {int(r["temp_id"]): r for r in incoming_rows}
+        incoming_by_temp = {
+            int(r["temp_id"]): r for r in incoming_rows if int(r.get("temp_id") or 0) > 0
+        }
+        incoming_new_rows = [
+            r for r in incoming_rows if int(r.get("temp_id") or 0) <= 0 and int(r.get("cantidad") or 0) > 0
+        ]
 
         for existing in existing_rows:
             incoming = incoming_by_temp.get(int(existing.id))
@@ -4469,6 +4490,34 @@ async def sales_comisiones_save_assignments(
             existing.subtotal_usd = precio_usd * cantidad_dec
             existing.subtotal_cs = precio_cs * cantidad_dec
             existing.usuario_registro = user.full_name
+            saved += 1
+
+        source_factura, _source_item, source_producto, source_cliente, source_vendedor, source_branch, source_bodega = source
+        for incoming in incoming_new_rows:
+            cantidad_dec = Decimal(str(incoming["cantidad"])).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+            if cantidad_dec <= 0:
+                continue
+            db.add(
+                VentaComisionAsignacion(
+                    venta_item_id=venta_item_id,
+                    factura_id=source_factura.id if source_factura else None,
+                    branch_id=source_branch.id if source_branch else None,
+                    bodega_id=source_bodega.id if source_bodega else None,
+                    cliente_id=source_cliente.id if source_cliente else None,
+                    producto_id=source_producto.id if source_producto else None,
+                    fecha=source_factura.fecha.date() if source_factura and source_factura.fecha else start_date,
+                    vendedor_origen_id=source_vendedor.id if source_vendedor else None,
+                    vendedor_asignado_id=int(incoming["vendedor_id"]),
+                    cantidad=cantidad_dec,
+                    precio_unitario_usd=precio_usd,
+                    precio_unitario_cs=precio_cs,
+                    subtotal_usd=precio_usd * cantidad_dec,
+                    subtotal_cs=precio_cs * cantidad_dec,
+                    usuario_registro=user.full_name,
+                )
+            )
             saved += 1
 
         # Limpieza: elimina filas en cero cuando existe al menos una fila positiva para el item.

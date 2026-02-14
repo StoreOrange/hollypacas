@@ -352,9 +352,15 @@
                   <div class="odoo-modal-title odoo-accent">Productos a ingresar</div>
                   <div class="odoo-help ingreso-muted">Buscador de productos - filtro principal.</div>
                   </div>
-                  <div class="input-group input-group-sm shadow-sm rounded-pill overflow-hidden bg-white w-100 max-w-[520px]">
-                    <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
-                  <input id="product-search" class="form-control border-0 text-uppercase" type="text" placeholder="BUSCAR PRODUCTO" />
+                  <div class="d-flex flex-wrap align-items-center gap-2 w-100 justify-content-end">
+                    <button id="open-new-product-quick" type="button" class="ingreso-tab btn btn-sm btn-outline-secondary" data-target="tab-producto">
+                      <i class="bi bi-plus-circle me-1"></i>
+                      Nuevo producto rapido
+                    </button>
+                    <div class="input-group input-group-sm shadow-sm rounded-pill overflow-hidden bg-white w-100 max-w-[520px]">
+                      <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
+                      <input id="product-search" class="form-control border-0 text-uppercase" type="text" placeholder="BUSCAR PRODUCTO" />
+                    </div>
                   </div>
                 </div>
               <div class="odoo-table-wrap max-h-52 overflow-y-auto">
@@ -914,6 +920,14 @@
       const option = editSelect.selectedOptions[0] || editSelect.options[editSelect.selectedIndex];
       loadEditProductFn(option);
     }
+    if (targetId === "tab-producto") {
+      window.setTimeout(() => {
+        if (newProductCode) {
+          newProductCode.focus();
+          newProductCode.select();
+        }
+      }, 50);
+    }
   };
   ingresoTabs.forEach((tab) => {
     tab.addEventListener("click", () => setIngresoTab(tab.dataset.target));
@@ -1008,6 +1022,7 @@
     if (typeof updateSaldoCells === "function") {
       updateSaldoCells();
     }
+    return row;
   };
 
   const serializeItems = () => {
@@ -1525,7 +1540,7 @@
         if (typeof Swal !== "undefined") {
           Swal.fire({ icon: "success", title: "Producto creado", text: payload.message || "Producto registrado", timer: 1800, showConfirmButton: false });
         }
-        appendProductToList(payload, newProductLinea?.value || "", newProductSegmento?.value || "");
+        const createdRow = appendProductToList(payload, newProductLinea?.value || "", newProductSegmento?.value || "");
         if (editSelect) {
           const option = new Option(`${payload.cod_producto} - ${payload.descripcion}`, payload.id, false, false);
           option.dataset.cod = payload.cod_producto || "";
@@ -1547,6 +1562,16 @@
         if (newProductCode) {
           newProductCode.focus();
           newProductCode.select();
+        }
+        setIngresoTab("tab-ingreso");
+        if (productSearch) {
+          productSearch.value = (payload.cod_producto || "").toUpperCase();
+          filterProductRows(productSearch.value);
+          productSearch.focus();
+        }
+        const addBtn = createdRow?.querySelector(".add-item");
+        if (addBtn && handleAddItem) {
+          handleAddItem(addBtn, "search");
         }
       } catch (error) {
         console.error("Error creando producto", error);
