@@ -5120,6 +5120,130 @@ def sales_comisiones_reports_pdf(
     )
 
 
+@router.get("/sales/comisiones/reportes/xlsx")
+def sales_comisiones_reports_xlsx(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    rep_start_date, rep_end_date, rep_branch_id, rep_vendedor_id = (
+        _sales_commissions_report_filters(request)
+    )
+    for day_value in _commission_dates_in_range(rep_start_date, rep_end_date):
+        _ensure_commission_temp_snapshot(db, day_value, rep_branch_id)
+    reports_data = _build_commission_reports_data(
+        db, rep_start_date, rep_end_date, rep_branch_id, rep_vendedor_id
+    )
+
+    branches = db.query(Branch).order_by(Branch.name).all()
+    selected_branch = None
+    if rep_branch_id and rep_branch_id != "all":
+        try:
+            selected_branch = next((b for b in branches if b.id == int(rep_branch_id)), None)
+        except ValueError:
+            selected_branch = None
+    branch_label = selected_branch.name if selected_branch else "Todas las sucursales"
+
+    wb = Workbook()
+
+    ws = wb.active
+    ws.title = "Sabana"
+    ws["A1"] = "Sabana de comisiones por vendedor"
+    ws["A2"] = (
+        f"Rango: {rep_start_date.strftime('%d/%m/%Y')} - {rep_end_date.strftime('%d/%m/%Y')} | "
+        f"Sucursal: {branch_label} | Vendedor: {rep_vendedor_id or 'Todos'}"
+    )
+    ws["A3"] = (
+        f"Total bultos: {int(reports_data['total_bultos'])} | "
+        f"Total comision USD: {float(reports_data['total_comision_usd']):,.2f}"
+    )
+    ws["A1"].font = Font(bold=True, size=13)
+    ws["A2"].font = Font(size=10)
+    ws["A3"].font = Font(size=10)
+
+    pivot_vendors = reports_data.get("pivot_vendors", [])
+    headers = ["Fecha"]
+    for vendor_name in pivot_vendors:
+        headers.append(f"{vendor_name} - Bultos")
+        headers.append(f"{vendor_name} - Comision USD")
+    headers.extend(["Total bultos dia", "Total comision dia USD"])
+    ws.append([])
+    ws.append(headers)
+    header_row = ws.max_row
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=header_row, column=col)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+
+    for row in reports_data.get("pivot_rows", []):
+        row_values = [row.get("fecha_label", "-")]
+        by_vendor = {cell.get("vendor"): cell for cell in row.get("cells", [])}
+        for vendor_name in pivot_vendors:
+            cell = by_vendor.get(vendor_name, {"bultos": 0, "comision_usd": 0})
+            row_values.append(int(cell.get("bultos", 0) or 0))
+            row_values.append(float(cell.get("comision_usd", 0) or 0))
+        row_values.append(int(row.get("day_bultos", 0) or 0))
+        row_values.append(float(row.get("day_comision_usd", 0) or 0))
+        ws.append(row_values)
+
+    total_values = ["TOTAL"]
+    vendor_totals = reports_data.get("pivot_vendor_totals", {})
+    for vendor_name in pivot_vendors:
+        totals = vendor_totals.get(vendor_name, {"bultos": 0, "comision_usd": 0})
+        total_values.append(int(totals.get("bultos", 0) or 0))
+        total_values.append(float(totals.get("comision_usd", 0) or 0))
+    total_values.append(int(reports_data.get("total_bultos", 0) or 0))
+    total_values.append(float(reports_data.get("total_comision_usd", 0) or 0))
+    ws.append(total_values)
+    total_row = ws.max_row
+    for col in range(1, len(headers) + 1):
+        ws.cell(row=total_row, column=col).font = Font(bold=True)
+
+    ws_detail = wb.create_sheet("Detalle")
+    detail_headers = [
+        "Fecha",
+        "Sucursal",
+        "Vendedor",
+        "Factura",
+        "Cliente",
+        "Producto",
+        "Bultos",
+        "Venta USD",
+        "Comision unit USD",
+        "Comision total USD",
+    ]
+    ws_detail.append(detail_headers)
+    for col in range(1, len(detail_headers) + 1):
+        cell = ws_detail.cell(row=1, column=col)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    for row in reports_data.get("detail_rows", []):
+        ws_detail.append(
+            [
+                row.get("fecha_label", "-"),
+                row.get("sucursal", "-"),
+                row.get("vendedor", "-"),
+                row.get("factura", "-"),
+                row.get("cliente", "-"),
+                row.get("producto", "-"),
+                int(row.get("cantidad", 0) or 0),
+                float(row.get("subtotal_usd", 0) or 0),
+                float(row.get("comision_unit_usd", 0) or 0),
+                float(row.get("comision_total_usd", 0) or 0),
+            ]
+        )
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=comisiones_sabana.xlsx"},
+    )
+
+
 @router.get("/sales/roc")
 def sales_roc(
     request: Request,
