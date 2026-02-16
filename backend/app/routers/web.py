@@ -57,6 +57,7 @@ from ..models.inventory import (
     IngresoItem,
     IngresoTipo,
     Linea,
+    Marca,
     Producto,
     ProductoCombo,
     Proveedor,
@@ -335,13 +336,16 @@ def _require_user_web(
 
 
 def _resolve_branch_bodega(db: Session, user: User) -> tuple[Optional[Branch], Optional[Bodega]]:
-    user_branches = list(user.branches or [])
+    allowed_codes = _allowed_branch_codes(db)
+    user_branches = [b for b in (user.branches or []) if (b.code or "").lower() in allowed_codes]
     allowed_branch_ids = {b.id for b in user_branches}
     bodega = None
     if user.default_bodega_id:
         bodega = (
             db.query(Bodega)
+            .join(Branch, Branch.id == Bodega.branch_id)
             .filter(Bodega.id == user.default_bodega_id, Bodega.activo.is_(True))
+            .filter(func.lower(Branch.code).in_(allowed_codes))
             .first()
         )
         if bodega and allowed_branch_ids and bodega.branch_id not in allowed_branch_ids:
@@ -352,9 +356,21 @@ def _resolve_branch_bodega(db: Session, user: User) -> tuple[Optional[Branch], O
         branch = db.query(Branch).filter(Branch.id == bodega.branch_id).first()
     if not branch and user.default_branch_id:
         if not allowed_branch_ids or user.default_branch_id in allowed_branch_ids:
-            branch = db.query(Branch).filter(Branch.id == user.default_branch_id).first()
+            branch = (
+                db.query(Branch)
+                .filter(Branch.id == user.default_branch_id)
+                .filter(func.lower(Branch.code).in_(allowed_codes))
+                .first()
+            )
     if not branch and user_branches:
         branch = user_branches[0]
+    if not branch:
+        branch = (
+            db.query(Branch)
+            .filter(func.lower(Branch.code).in_(allowed_codes))
+            .order_by(Branch.id)
+            .first()
+        )
 
     if branch and (not bodega or bodega.branch_id != branch.id):
         bodega = (
@@ -697,6 +713,7 @@ def _balances_by_bodega(
 
 
 def _default_company_profile_payload() -> dict[str, str]:
+    multi_branch_enabled = get_active_company_key() != "comestibles"
     return {
         "legal_name": "Hollywood Pacas",
         "trade_name": "Hollywood Pacas",
@@ -710,6 +727,7 @@ def _default_company_profile_payload() -> dict[str, str]:
         "pos_logo_url": "/static/logo_hollywood.png",
         "favicon_url": "/static/favicon.ico",
         "inventory_cs_only": False,
+        "multi_branch_enabled": multi_branch_enabled,
     }
 
 
@@ -732,6 +750,7 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
             "pos_logo_url": row.pos_logo_url or payload["pos_logo_url"],
             "favicon_url": row.favicon_url or payload["favicon_url"],
             "inventory_cs_only": bool(row.inventory_cs_only),
+            "multi_branch_enabled": bool(row.multi_branch_enabled),
         }
     )
     return payload
@@ -740,6 +759,36 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
 def _inventory_cs_only_mode(db: Session) -> bool:
     profile = _company_profile_payload(db)
     return bool(profile.get("inventory_cs_only"))
+
+
+def _multi_branch_enabled_mode(db: Session) -> bool:
+    if get_active_company_key() == "comestibles":
+        return False
+    profile = _company_profile_payload(db)
+    return bool(profile.get("multi_branch_enabled", True))
+
+
+def _allowed_branch_codes(db: Session) -> set[str]:
+    return {"central", "esteli"} if _multi_branch_enabled_mode(db) else {"central"}
+
+
+def _allowed_branch_ids(db: Session) -> list[int]:
+    return [row.id for row in _scoped_branches_query(db).all()]
+
+
+def _scoped_branches_query(db: Session):
+    codes = _allowed_branch_codes(db)
+    return db.query(Branch).filter(func.lower(Branch.code).in_(codes))
+
+
+def _scoped_bodegas_query(db: Session):
+    codes = _allowed_branch_codes(db)
+    return (
+        db.query(Bodega)
+        .join(Branch, Branch.id == Bodega.branch_id)
+        .filter(Bodega.activo.is_(True))
+        .filter(func.lower(Branch.code).in_(codes))
+    )
 
 
 def _resolve_logo_path(logo_url: str, *, prefer_pos: bool = False, pos_logo_url: Optional[str] = None) -> Path:
@@ -1771,9 +1820,10 @@ def inventory_page(
     if not show_inactive:
         productos_query = productos_query.filter(Producto.activo.is_(True))
     productos = productos_query.all()
-    bodegas = db.query(Bodega).filter(Bodega.activo.is_(True)).order_by(Bodega.id).all()
+    bodegas = _scoped_bodegas_query(db).order_by(Bodega.id).all()
     lineas = db.query(Linea).order_by(Linea.linea).all()
     segmentos = db.query(Segmento).order_by(Segmento.segmento).all()
+    marcas = db.query(Marca).filter(Marca.activo.is_(True)).order_by(Marca.nombre).all()
     error = request.query_params.get("error")
     success = request.query_params.get("success")
     rate_today = (
@@ -1868,7 +1918,7 @@ def inventory_caliente(
         )
     productos = productos_query.order_by(Producto.descripcion).all()
 
-    branches = db.query(Branch).filter(Branch.code.in_(["central", "esteli"])).all()
+    branches = _scoped_branches_query(db).all()
     branch_map = {b.code.lower(): b for b in branches if b.code}
     central_branch = branch_map.get("central")
     esteli_branch = branch_map.get("esteli")
@@ -1882,9 +1932,9 @@ def inventory_caliente(
     user_branches = list(user.branches or [])
     allowed_scopes: list[str] = []
     if user_branches:
-        allowed_scopes = [b.code.lower() for b in user_branches if b.code and b.code.lower() in {"central", "esteli"}]
+        allowed_scopes = [b.code.lower() for b in user_branches if b.code and b.code.lower() in _allowed_branch_codes(db)]
     if not allowed_scopes and branch and branch.code:
-        if branch.code.lower() in {"central", "esteli"}:
+        if branch.code.lower() in _allowed_branch_codes(db):
             allowed_scopes = [branch.code.lower()]
     if not allowed_scopes:
         allowed_scopes = ["central"]
@@ -1892,11 +1942,12 @@ def inventory_caliente(
     if len(allowed_scopes) == 1:
         scope = allowed_scopes[0]
     else:
-        if scope not in {"central", "esteli", "ambas"}:
+        allowed_scope_values = set(allowed_scopes + ["ambas"])
+        if scope not in allowed_scope_values:
             scope = "central"
         if scope != "ambas" and scope not in allowed_scopes:
             scope = allowed_scopes[0]
-        if scope == "ambas" and not all(code in allowed_scopes for code in ["central", "esteli"]):
+        if scope == "ambas" and not all(code in allowed_scopes for code in _allowed_branch_codes(db)):
             scope = allowed_scopes[0]
 
     def _balances_by_bodega(bodega_ids: list[int], product_ids: list[int]) -> dict[tuple[int, int], Decimal]:
@@ -2045,7 +2096,7 @@ def inventory_ingresos_page(
         .order_by(IngresoTipo.nombre)
         .all()
     )
-    bodegas = db.query(Bodega).order_by(Bodega.name).all()
+    bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     proveedores = db.query(Proveedor).order_by(Proveedor.nombre).all()
     productos = (
         db.query(Producto)
@@ -2065,6 +2116,7 @@ def inventory_ingresos_page(
         saldos_por_bodega[producto.id] = per_bodega
     lineas = db.query(Linea).order_by(Linea.linea).all()
     segmentos = db.query(Segmento).order_by(Segmento.segmento).all()
+    marcas = db.query(Marca).filter(Marca.activo.is_(True)).order_by(Marca.nombre).all()
     error = request.query_params.get("error")
     success = request.query_params.get("success")
     print_id = request.query_params.get("print_id")
@@ -2088,6 +2140,7 @@ def inventory_ingresos_page(
             "saldos_por_bodega": saldos_por_bodega,
             "lineas": lineas,
             "segmentos": segmentos,
+            "marcas": marcas,
             "rate_today": rate_today,
             "error": error,
             "start_date": start_date.isoformat() if start_date else "",
@@ -2130,7 +2183,7 @@ def inventory_egresos_page(
         .all()
     )
     tipos = db.query(EgresoTipo).order_by(EgresoTipo.nombre).all()
-    bodegas = db.query(Bodega).order_by(Bodega.name).all()
+    bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     productos = (
         db.query(Producto)
         .filter(Producto.activo.is_(True))
@@ -2923,7 +2976,7 @@ def sales_preventas_panel(
             repaired_any = True
     if repaired_any:
         db.commit()
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     vendedores = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre).all()
     rows = [
         {
@@ -3178,7 +3231,7 @@ def sales_utilitario(
     )
     _, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
 
     return request.app.state.templates.TemplateResponse(
         "sales_utilitario.html",
@@ -4074,7 +4127,7 @@ def sales_comisiones(
     rep_start_date, rep_end_date, rep_branch_id, rep_vendedor_id = (
         _sales_commissions_report_filters(request)
     )
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     selected_branch_id: Optional[int] = None
     if branch_id and branch_id != "all":
         try:
@@ -4951,7 +5004,7 @@ def sales_comisiones_reports_pdf(
     reports_data = _build_commission_reports_data(
         db, rep_start_date, rep_end_date, rep_branch_id, rep_vendedor_id
     )
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     selected_branch = None
     if rep_branch_id and rep_branch_id != "all":
         try:
@@ -5136,7 +5189,7 @@ def sales_comisiones_reports_xlsx(
         db, rep_start_date, rep_end_date, rep_branch_id, rep_vendedor_id
     )
 
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     selected_branch = None
     if rep_branch_id and rep_branch_id != "all":
         try:
@@ -5970,10 +6023,7 @@ def sales_ventas_caliente(
             return Decimal("0")
         return Decimal(str(factura.total_cs or 0)) / tasa
 
-    branches = db.query(Branch).all()
-    branch_map = {b.code.lower(): b for b in branches if b.code}
-    central = branch_map.get("central")
-    esteli = branch_map.get("esteli")
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
 
     base_query = (
         db.query(VentaFactura)
@@ -6004,12 +6054,31 @@ def sales_ventas_caliente(
         total = sum(to_usd(row) for row in rows)
         return Decimal(str(total))
 
-    total_central = total_branch(central)
-    total_esteli = total_branch(esteli)
-    total_all = total_central + total_esteli
-    total_central_day = total_branch_day(central)
-    total_esteli_day = total_branch_day(esteli)
-    total_day_all = total_central_day + total_esteli_day
+    branch_totals: list[dict[str, float | str | int]] = []
+    total_all = Decimal("0")
+    total_day_all = Decimal("0")
+    badge_styles = [
+        ("bg-primary-subtle text-primary", "primary"),
+        ("bg-success-subtle text-success", "success"),
+        ("bg-info-subtle text-info", "info"),
+        ("bg-warning-subtle text-warning", "warning"),
+    ]
+    for idx, branch in enumerate(branches):
+        month_total = total_branch(branch)
+        day_total = total_branch_day(branch)
+        total_all += month_total
+        total_day_all += day_total
+        badge_class, badge_tone = badge_styles[idx % len(badge_styles)]
+        branch_totals.append(
+            {
+                "id": branch.id,
+                "name": branch.name,
+                "total_month": float(month_total),
+                "total_day": float(day_total),
+                "badge_class": badge_class,
+                "badge_tone": badge_tone,
+            }
+        )
 
     monthly_rows = (
         base_query.filter(VentaFactura.fecha >= first_day, VentaFactura.fecha < next_month).all()
@@ -6038,13 +6107,8 @@ def sales_ventas_caliente(
         {
             "request": request,
             "user": user,
-            "branch_central": central,
-            "branch_esteli": esteli,
-            "total_central": float(total_central),
-            "total_esteli": float(total_esteli),
+            "branch_totals": branch_totals,
             "total_all": float(total_all),
-            "total_central_day": float(total_central_day),
-            "total_esteli_day": float(total_esteli_day),
             "total_day_all": float(total_day_all),
             "month_total": float(month_total),
             "chart_points": chart_points,
@@ -6132,6 +6196,7 @@ def _build_sales_products_report(
     vendedor_id: str | None,
     producto_id: str | None,
 ):
+    allowed_codes = _allowed_branch_codes(db)
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
@@ -6143,6 +6208,7 @@ def _build_sales_products_report(
         .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
         .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
         .filter(VentaFactura.estado != "ANULADA")
+        .filter(func.lower(Branch.code).in_(allowed_codes))
     )
     if branch_id and branch_id != "all":
         try:
@@ -6283,11 +6349,13 @@ def _depositos_report_query(
     end_date: date,
     branch_id: str | None,
 ):
+    allowed_codes = _allowed_branch_codes(db)
     query = (
         db.query(DepositoCliente)
         .join(Bodega, DepositoCliente.bodega_id == Bodega.id, isouter=True)
         .join(Branch, Bodega.branch_id == Branch.id, isouter=True)
         .filter(DepositoCliente.fecha.between(start_date, end_date))
+        .filter(func.lower(Branch.code).in_(allowed_codes))
     )
     if branch_id and branch_id != "all":
         try:
@@ -6417,7 +6485,7 @@ def _build_inventory_rotation_data(
 ):
     # The financial block must obey the top date filters.
     period_start = start_date
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     lineas = db.query(Linea).filter(Linea.activo.is_(True)).order_by(Linea.linea.asc()).all()
     selected_branch = None
     if branch_id and branch_id != "all":
@@ -6433,7 +6501,7 @@ def _build_inventory_rotation_data(
         except ValueError:
             selected_linea = None
 
-    bodegas_q = db.query(Bodega).filter(Bodega.activo.is_(True))
+    bodegas_q = _scoped_bodegas_query(db)
     if selected_branch:
         bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch.id)
     if bodega_id and bodega_id != "all":
@@ -7034,7 +7102,7 @@ def _inventory_consolidated_data(
         .order_by(Producto.descripcion)
         .all()
     )
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     selected_branch = None
     if branch_id and branch_id != "all":
         try:
@@ -7042,7 +7110,7 @@ def _inventory_consolidated_data(
         except ValueError:
             selected_branch = None
 
-    bodegas_query = db.query(Bodega).filter(Bodega.activo.is_(True))
+    bodegas_query = _scoped_bodegas_query(db)
     if selected_branch:
         bodegas_query = bodegas_query.filter(Bodega.branch_id == selected_branch.id)
     bodegas = bodegas_query.order_by(Bodega.id).all()
@@ -7262,6 +7330,7 @@ def _build_sales_report_rows(
     vendedor_id: str | None,
     producto_q: str,
 ):
+    allowed_codes = _allowed_branch_codes(db)
     _, bodega_user = _resolve_branch_bodega(db, user)
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
@@ -7275,6 +7344,7 @@ def _build_sales_report_rows(
         .join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True)
         .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
         .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+        .filter(func.lower(Branch.code).in_(allowed_codes))
     )
     if branch_id and branch_id != "all":
         try:
@@ -7379,7 +7449,7 @@ def report_sales_detailed(
         producto_q,
     )
 
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     _, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
 
@@ -7419,7 +7489,7 @@ def report_depositos(
         .order_by(DepositoCliente.fecha.desc(), DepositoCliente.id.desc())
         .all()
     )
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
 
     total_cs = Decimal("0")
     total_usd = Decimal("0")
@@ -7460,7 +7530,7 @@ def report_depositos_export(
         .order_by(DepositoCliente.banco_id, DepositoCliente.fecha)
         .all()
     )
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     selected_branch = None
     if branch_id and branch_id != "all":
         try:
@@ -7623,7 +7693,7 @@ def report_sales_products(
         total_facturas,
     ) = _build_sales_products_report(db, start_date, end_date, branch_id, vendedor_id, producto_id)
 
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     _, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
     productos = (
@@ -7938,7 +8008,7 @@ def report_kardex(
     _enforce_permission(request, user, "access.reports")
     start_date, end_date, branch_id, producto_q = _kardex_report_filters(request)
     rows, resumen = _build_kardex_movements(db, start_date, end_date, branch_id, producto_q)
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
 
     return request.app.state.templates.TemplateResponse(
         "report_kardex.html",
@@ -7967,7 +8037,7 @@ def report_kardex_export(
     company_profile = _company_profile_payload(db)
     start_date, end_date, branch_id, producto_q = _kardex_report_filters(request)
     rows, resumen = _build_kardex_movements(db, start_date, end_date, branch_id, producto_q)
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     selected_branch = None
     if branch_id and branch_id != "all":
         try:
@@ -9455,6 +9525,7 @@ def data_empresa_update(
     pos_logo_url: Optional[str] = Form(None),
     favicon_url: Optional[str] = Form(None),
     inventory_cs_only: Optional[str] = Form(None),
+    multi_branch_enabled: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -9472,6 +9543,7 @@ def data_empresa_update(
     profile.pos_logo_url = (pos_logo_url or "").strip() or profile.logo_url
     profile.favicon_url = (favicon_url or "").strip() or "/static/favicon.ico"
     profile.inventory_cs_only = inventory_cs_only == "on"
+    profile.multi_branch_enabled = multi_branch_enabled == "on"
     profile.updated_by = user.full_name
     db.commit()
     return RedirectResponse("/data/empresa?success=Perfil+empresarial+actualizado", status_code=303)
@@ -9491,7 +9563,7 @@ def data_pos_print(
     if edit_id:
         edit_item = db.query(PosPrintSetting).filter(PosPrintSetting.id == int(edit_id)).first()
     items = db.query(PosPrintSetting).order_by(PosPrintSetting.branch_id).all()
-    branches = db.query(Branch).order_by(Branch.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     return request.app.state.templates.TemplateResponse(
         "data_pos_print.html",
         {
@@ -9700,7 +9772,7 @@ def data_vendedores(
     if edit_id:
         edit_item = db.query(Vendedor).filter(Vendedor.id == int(edit_id)).first()
     items = db.query(Vendedor).order_by(Vendedor.nombre).all()
-    bodegas = db.query(Bodega).order_by(Bodega.name).all()
+    bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     edit_bodega_ids = []
     edit_default_bodega_id = None
     if edit_item:
@@ -9985,8 +10057,8 @@ def data_bodegas(
     edit_item = None
     if edit_id:
         edit_item = db.query(Bodega).filter(Bodega.id == int(edit_id)).first()
-    items = db.query(Bodega).order_by(Bodega.name).all()
-    branches = db.query(Branch).order_by(Branch.name).all()
+    items = _scoped_bodegas_query(db).order_by(Bodega.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
     return request.app.state.templates.TemplateResponse(
         "data_bodegas.html",
         {
@@ -10556,8 +10628,8 @@ def data_usuarios(
         edit_item = db.query(User).filter(User.id == int(edit_id)).first()
     items = db.query(User).order_by(User.full_name).all()
     roles = db.query(Role).order_by(Role.name).all()
-    branches = db.query(Branch).order_by(Branch.name).all()
-    bodegas = db.query(Bodega).order_by(Bodega.name).all()
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
+    bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     return request.app.state.templates.TemplateResponse(
         "data_usuarios.html",
         {
@@ -11630,7 +11702,11 @@ def inventory_create_product(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
-    _enforce_permission(request, user, "access.inventory.productos")
+    if not (
+        _has_permission(user, "access.inventory.productos")
+        or _has_permission(user, "access.inventory.ingresos")
+    ):
+        _enforce_permission(request, user, "access.inventory.productos")
     accept_header = request.headers.get("accept", "")
     is_fetch = (
         request.headers.get("x-requested-with") == "fetch"
@@ -11646,8 +11722,13 @@ def inventory_create_product(
 
     cod_producto = cod_producto.strip()
     descripcion = descripcion.strip()
+    marca = (marca or "").strip() or "Sin Marca"
     if not cod_producto or not descripcion:
         return _error("Faltan datos obligatorios")
+    if float(precio_venta1_usd or 0) <= 0:
+        return _error("Precio de venta obligatorio")
+    if float(costo_producto_usd or 0) <= 0:
+        return _error("Costo obligatorio")
 
     def _to_int(value: Optional[str]) -> Optional[int]:
         if not value:
@@ -11961,18 +12042,74 @@ def inventory_product_combo_delete(
 @router.post("/inventory/linea")
 def inventory_create_linea(
     request: Request,
-    cod_linea: str = Form(...),
+    cod_linea: Optional[str] = Form(None),
     linea: str = Form(...),
     activo: Optional[str] = Form(None),
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
-    _enforce_permission(request, user, "access.inventory.productos")
-    exists = db.query(Linea).filter(Linea.cod_linea == cod_linea).first()
-    if not exists:
-        db.add(Linea(cod_linea=cod_linea, linea=linea, activo=activo == "on"))
-        db.commit()
+    if not (
+        _has_permission(user, "access.inventory.productos")
+        or _has_permission(user, "access.inventory.ingresos")
+    ):
+        _enforce_permission(request, user, "access.inventory.productos")
+    is_fetch = request.headers.get("x-requested-with") == "fetch" or "application/json" in (
+        request.headers.get("accept", "")
+    )
+    linea = (linea or "").strip()
+    if not linea:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Nombre de linea requerido"}, status_code=400)
+        target = redirect_to or "/inventory"
+        return RedirectResponse(f"{target}?error=Nombre+de+linea+requerido", status_code=303)
+    exists = db.query(Linea).filter(func.lower(Linea.linea) == linea.lower()).first()
+    if exists:
+        if is_fetch:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "message": "Linea ya existe",
+                    "id": exists.id,
+                    "cod_linea": exists.cod_linea,
+                    "linea": exists.linea,
+                    "activo": bool(exists.activo),
+                },
+                status_code=409,
+            )
+        target = redirect_to or "/inventory"
+        return RedirectResponse(f"{target}?error=Linea+ya+existe", status_code=303)
+    # Codigo de linea 100% automatico, independiente del input del usuario.
+    base_code = re.sub(r"[^A-Za-z0-9]+", "_", linea.upper()).strip("_")
+    if not base_code:
+        base_code = "LINEA"
+    base_code = base_code[:40]
+    generated_code = base_code
+    seq = 2
+    while (
+        db.query(Linea)
+        .filter(func.lower(Linea.cod_linea) == generated_code.lower())
+        .first()
+        is not None
+    ):
+        suffix = f"_{seq}"
+        generated_code = f"{base_code[: max(1, 50 - len(suffix))]}{suffix}"
+        seq += 1
+
+    nueva = Linea(cod_linea=generated_code, linea=linea, activo=activo == "on")
+    db.add(nueva)
+    db.commit()
+    if is_fetch:
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": "Linea creada",
+                "id": nueva.id,
+                "cod_linea": nueva.cod_linea,
+                "linea": nueva.linea,
+                "activo": bool(nueva.activo),
+            }
+        )
     return RedirectResponse(redirect_to or "/inventory", status_code=303)
 
 
@@ -12003,11 +12140,46 @@ def inventory_create_segmento(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
-    _enforce_permission(request, user, "access.inventory.productos")
-    exists = db.query(Segmento).filter(Segmento.segmento == segmento).first()
-    if not exists:
-        db.add(Segmento(segmento=segmento))
-        db.commit()
+    if not (
+        _has_permission(user, "access.inventory.productos")
+        or _has_permission(user, "access.inventory.ingresos")
+    ):
+        _enforce_permission(request, user, "access.inventory.productos")
+    is_fetch = request.headers.get("x-requested-with") == "fetch" or "application/json" in (
+        request.headers.get("accept", "")
+    )
+    segmento = (segmento or "").strip()
+    if not segmento:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Nombre de segmento requerido"}, status_code=400)
+        target = redirect_to or "/inventory"
+        return RedirectResponse(f"{target}?error=Nombre+de+segmento+requerido", status_code=303)
+    exists = db.query(Segmento).filter(func.lower(Segmento.segmento) == segmento.lower()).first()
+    if exists:
+        if is_fetch:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "message": "Segmento ya existe",
+                    "id": exists.id,
+                    "segmento": exists.segmento,
+                },
+                status_code=409,
+            )
+        target = redirect_to or "/inventory"
+        return RedirectResponse(f"{target}?error=Segmento+ya+existe", status_code=303)
+    nuevo = Segmento(segmento=segmento)
+    db.add(nuevo)
+    db.commit()
+    if is_fetch:
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": "Segmento creado",
+                "id": nuevo.id,
+                "segmento": nuevo.segmento,
+            }
+        )
     return RedirectResponse(redirect_to or "/inventory", status_code=303)
 
 
@@ -12026,6 +12198,47 @@ def inventory_update_segmento(
         segmento_obj.segmento = segmento.strip()
         db.commit()
     return RedirectResponse(redirect_to or "/inventory", status_code=303)
+
+
+@router.post("/inventory/marca")
+def inventory_create_marca(
+    request: Request,
+    nombre: str = Form(...),
+    redirect_to: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    if not (
+        _has_permission(user, "access.inventory.productos")
+        or _has_permission(user, "access.inventory.ingresos")
+    ):
+        _enforce_permission(request, user, "access.inventory.productos")
+    is_fetch = request.headers.get("x-requested-with") == "fetch" or "application/json" in (
+        request.headers.get("accept", "")
+    )
+    nombre = (nombre or "").strip()
+    if not nombre:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Nombre de marca requerido"}, status_code=400)
+        target = redirect_to or "/inventory/ingresos"
+        return RedirectResponse(f"{target}?error=Nombre+de+marca+requerido", status_code=303)
+    exists = db.query(Marca).filter(func.lower(Marca.nombre) == nombre.lower()).first()
+    if exists:
+        if is_fetch:
+            return JSONResponse(
+                {"ok": True, "message": "Marca existente", "id": exists.id, "nombre": exists.nombre},
+                status_code=200,
+            )
+        return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
+    marca = Marca(nombre=nombre, activo=True)
+    db.add(marca)
+    db.commit()
+    if is_fetch:
+        return JSONResponse(
+            {"ok": True, "message": "Marca creada", "id": marca.id, "nombre": marca.nombre},
+            status_code=200,
+        )
+    return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
 
 
 @router.post("/inventory/proveedor")
@@ -13550,7 +13763,7 @@ def inventory_import_products(
         target = redirect_to or "/inventory"
         return RedirectResponse(f"{target}?error=Columnas+requeridas:+codigo+y+descripcion", status_code=303)
 
-    bodegas = db.query(Bodega).filter(Bodega.activo.is_(True)).all()
+    bodegas = _scoped_bodegas_query(db).all()
     bodega_central = next(
         (b for b in bodegas if (b.code or "").lower() == "central"),
         None,

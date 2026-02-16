@@ -48,35 +48,23 @@
       <div class="mt-4">
         <div class="text-xs uppercase tracking-[0.3em] text-slate font-semibold mb-2">Ventas del dia ({{ today_label }})</div>
         <div class="row g-3">
-          <div class="col-md-4">
+          {% for item in branch_totals %}
+          <div class="col-md-6 col-xl-4">
             <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
               <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del dia</div>
               <div class="d-flex align-items-center justify-content-between">
-                <div class="text-base font-semibold text-ink">Central</div>
-                <span class="badge bg-primary-subtle text-primary">
+                <div class="text-base font-semibold text-ink">{{ item.name }}</div>
+                <span class="badge {{ item.badge_class }}">
                   <i class="bi bi-geo-alt"></i>
-                  Central
+                  {{ item.name }}
                 </span>
               </div>
-              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(total_central_day) }}"></div>
+              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(item.total_day) }}"></div>
               <div class="text-xs text-slate mt-1">Total de hoy</div>
             </div>
           </div>
-          <div class="col-md-4">
-            <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
-              <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del dia</div>
-              <div class="d-flex align-items-center justify-content-between">
-                <div class="text-base font-semibold text-ink">Esteli</div>
-                <span class="badge bg-success-subtle text-success">
-                  <i class="bi bi-geo-alt"></i>
-                  Esteli
-                </span>
-              </div>
-              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(total_esteli_day) }}"></div>
-              <div class="text-xs text-slate mt-1">Total de hoy</div>
-            </div>
-          </div>
-          <div class="col-md-4">
+          {% endfor %}
+          <div class="col-md-6 col-xl-4">
             <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
               <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del dia</div>
               <div class="d-flex align-items-center justify-content-between">
@@ -96,35 +84,23 @@
       <div class="mt-4">
         <div class="text-xs uppercase tracking-[0.3em] text-slate font-semibold mb-2">Ventas acumuladas del mes ({{ month_label }})</div>
         <div class="row g-3">
-          <div class="col-md-4">
+          {% for item in branch_totals %}
+          <div class="col-md-6 col-xl-4">
             <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
               <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del mes</div>
               <div class="d-flex align-items-center justify-content-between">
-                <div class="text-base font-semibold text-ink">Central</div>
-                <span class="badge bg-primary-subtle text-primary">
+                <div class="text-base font-semibold text-ink">{{ item.name }}</div>
+                <span class="badge {{ item.badge_class }}">
                   <i class="bi bi-geo-alt"></i>
-                  Central
+                  {{ item.name }}
                 </span>
               </div>
-              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(total_central) }}"></div>
+              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(item.total_month) }}"></div>
               <div class="text-xs text-slate mt-1">Acumulado del mes</div>
             </div>
           </div>
-          <div class="col-md-4">
-            <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
-              <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del mes</div>
-              <div class="d-flex align-items-center justify-content-between">
-                <div class="text-base font-semibold text-ink">Esteli</div>
-                <span class="badge bg-success-subtle text-success">
-                  <i class="bi bi-geo-alt"></i>
-                  Esteli
-                </span>
-              </div>
-              <div class="text-xl font-semibold text-ink mt-3 hot-amount" data-usd="{{ "%.6f"|format(total_esteli) }}"></div>
-              <div class="text-xs text-slate mt-1">Acumulado del mes</div>
-            </div>
-          </div>
-          <div class="col-md-4">
+          {% endfor %}
+          <div class="col-md-6 col-xl-4">
             <div class="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
               <div class="text-[11px] uppercase tracking-[0.2em] text-slate font-semibold mb-2">Ventas del mes</div>
               <div class="d-flex align-items-center justify-content-between">

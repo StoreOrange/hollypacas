@@ -310,6 +310,30 @@
                   <option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>
                   {% endfor %}
                 </select>
+                <div class="d-flex gap-2 mt-2">
+                  <button id="quick-toggle-proveedor" type="button" class="btn btn-sm btn-outline-secondary" aria-expanded="false">
+                    + Nuevo proveedor
+                  </button>
+                </div>
+                <div id="quick-new-proveedor-wrap" class="mt-2 d-none border rounded-3 p-2 bg-light">
+                  <div class="row g-2">
+                    <div class="col-12">
+                      <input id="quick-proveedor-name" class="form-control form-control-sm" placeholder="Nombre del proveedor" />
+                    </div>
+                    <div class="col-12">
+                      <input id="quick-proveedor-tipo" class="form-control form-control-sm" placeholder="Tipo (Local/Importacion)" />
+                    </div>
+                    <div class="col-12">
+                      <label class="d-inline-flex align-items-center gap-2 text-sm text-slate">
+                        <input id="quick-proveedor-activo" type="checkbox" class="accent-brand" checked />
+                        Activo
+                      </label>
+                    </div>
+                  </div>
+                  <div class="mt-2 text-end">
+                    <button id="quick-proveedor-create-btn" class="btn btn-sm btn-primary" type="button">Guardar proveedor</button>
+                  </div>
+                </div>
               </div>
               <div class="col-12 col-md-6 col-xl-3 movement-meta-item">
                 <label class="form-label text-sm font-semibold text-ink">
@@ -353,7 +377,7 @@
                   <div class="odoo-help ingreso-muted">Buscador de productos - filtro principal.</div>
                   </div>
                   <div class="d-flex flex-wrap align-items-center gap-2 w-100 justify-content-end">
-                    <button id="open-new-product-quick" type="button" class="ingreso-tab btn btn-sm btn-outline-secondary" data-target="tab-producto">
+                    <button id="open-new-product-quick" type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#quick-product-modal">
                       <i class="bi bi-plus-circle me-1"></i>
                       Nuevo producto rapido
                     </button>
@@ -543,6 +567,7 @@
       <div id="tab-producto" class="ingreso-panel hidden">
         <div class="odoo-modal-section odoo-compact-card">
           <div class="odoo-modal-title mb-3">Nuevo producto</div>
+          <div class="text-muted small mb-2">Creacion rapida: Codigo, Descripcion, Precio y Costo son obligatorios.</div>
           <form id="ingreso-product-form" class="text-base" method="post" action="/inventory/product" target="ingresos-background-frame">
             <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
             <div class="row g-3">
@@ -582,14 +607,27 @@
               </div>
               <div class="col-md-6">
                 <label class="block text-sm font-semibold text-ink">
+                  Marca
+                  <select id="new-product-marca" name="marca" class="mt-2 w-full odoo-input form-select">
+                    <option value="Sin Marca" selected>Sin Marca</option>
+                    {% for m in marcas %}
+                    {% if (m.nombre or '') != 'Sin Marca' %}
+                    <option value="{{ m.nombre }}">{{ m.nombre }}</option>
+                    {% endif %}
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+              <div class="col-md-6">
+                <label class="block text-sm font-semibold text-ink">
                   Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="new-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
+                  <input id="new-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
                 </label>
               </div>
               <div class="col-md-6">
                 <label class="block text-sm font-semibold text-ink">
                   Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="new-product-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
+                  <input id="new-product-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
                 </label>
               </div>
             </div>
@@ -705,7 +743,7 @@
           <div class="odoo-modal-title mb-3">Nueva linea</div>
           <form class="space-y-3" method="post" action="/inventory/linea" target="ingresos-background-frame">
             <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
-            <input name="cod_linea" class="w-full odoo-input form-control" placeholder="Codigo" />
+            <div class="text-muted small">Codigo automatico</div>
             <input name="linea" class="w-full odoo-input form-control" placeholder="Linea" />
             <label class="flex items-center gap-2 text-sm text-slate">
               <input class="accent-brand" type="checkbox" name="activo" checked />
@@ -824,6 +862,138 @@
 </div>
   </main>
 </div>
+<div class="modal fade" id="quick-product-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nuevo producto rapido</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="text-muted small mb-3">Completa datos basicos y el producto se agrega al ingreso automaticamente.</div>
+        <form id="quick-product-form" class="text-base" method="post" action="/inventory/product">
+          <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
+                Codigo *
+                <input id="quick-product-code" name="cod_producto" class="mt-2 w-full odoo-input form-control" required />
+              </label>
+            </div>
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
+                Descripcion *
+                <input id="quick-product-desc" name="descripcion" class="mt-2 w-full odoo-input form-control" required />
+              </label>
+            </div>
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
+                Linea
+                <select id="quick-product-linea" name="linea_id" class="mt-2 w-full odoo-input form-select">
+                  <option value="">Selecciona</option>
+                  {% for linea in lineas %}
+                  <option value="{{ linea.id }}">{{ linea.linea }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <div class="d-flex gap-2 mt-2">
+                <button id="quick-toggle-linea" type="button" class="btn btn-sm btn-outline-secondary" aria-expanded="false">
+                  + Nueva linea
+                </button>
+              </div>
+              <div class="mt-2 d-none" id="quick-new-linea-wrap">
+                <div id="quick-linea-form" class="border rounded-3 p-2 bg-light">
+                  <div class="row g-2">
+                    <div class="col-12">
+                      <input id="quick-linea-name" class="form-control form-control-sm" placeholder="Nombre de linea" />
+                    </div>
+                  </div>
+                  <div class="mt-2 text-end">
+                    <button id="quick-linea-create-btn" class="btn btn-sm btn-primary" type="button">Guardar linea</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
+                Segmento
+                <select id="quick-product-segmento" name="segmento_id" class="mt-2 w-full odoo-input form-select">
+                  <option value="">Selecciona</option>
+                  {% for seg in segmentos %}
+                  <option value="{{ seg.id }}">{{ seg.segmento }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <div class="d-flex gap-2 mt-2">
+                <button id="quick-toggle-segmento" type="button" class="btn btn-sm btn-outline-secondary" aria-expanded="false">
+                  + Nuevo segmento
+                </button>
+              </div>
+              <div class="mt-2 d-none" id="quick-new-segmento-wrap">
+                <div id="quick-segmento-form" class="border rounded-3 p-2 bg-light">
+                  <div class="row g-2">
+                    <div class="col-12">
+                      <input id="quick-segmento-name" class="form-control form-control-sm" placeholder="Nombre de segmento" />
+                    </div>
+                  </div>
+                  <div class="mt-2 text-end">
+                    <button id="quick-segmento-create-btn" class="btn btn-sm btn-primary" type="button">Guardar segmento</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
+                Marca
+                <select id="quick-product-marca" name="marca" class="mt-2 w-full odoo-input form-select">
+                  <option value="Sin Marca" selected>Sin Marca</option>
+                  {% for m in marcas %}
+                  {% if (m.nombre or '') != 'Sin Marca' %}
+                  <option value="{{ m.nombre }}">{{ m.nombre }}</option>
+                  {% endif %}
+                  {% endfor %}
+                </select>
+              </label>
+              <div class="d-flex gap-2 mt-2">
+                <button id="quick-toggle-marca" type="button" class="btn btn-sm btn-outline-secondary" aria-expanded="false">
+                  + Nueva marca
+                </button>
+              </div>
+              <div class="mt-2 d-none" id="quick-new-marca-wrap">
+                <div id="quick-marca-form" class="border rounded-3 p-2 bg-light">
+                  <div class="row g-2">
+                    <div class="col-12">
+                      <input id="quick-marca-name" class="form-control form-control-sm" placeholder="Nombre de marca" />
+                    </div>
+                  </div>
+                  <div class="mt-2 text-end">
+                    <button id="quick-marca-create-btn" class="btn btn-sm btn-primary" type="button">Guardar marca</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
+                Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %}) *
+                <input id="quick-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
+              </label>
+            </div>
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
+                Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %}) *
+                <input id="quick-product-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
+              </label>
+            </div>
+          </div>
+          <div class="d-flex justify-content-end gap-2 mt-4">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button id="quick-create-product-btn" class="btn btn-primary" type="submit">Crear y agregar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 <iframe name="ingresos-background-frame" class="hidden"></iframe>
 
 <script>
@@ -854,6 +1024,12 @@
   const monedaField = document.getElementById("field-moneda");
   const tipoField = document.getElementById("field-tipo");
   const proveedorField = document.getElementById("field-proveedor");
+  const quickToggleProveedor = document.getElementById("quick-toggle-proveedor");
+  const quickNewProveedorWrap = document.getElementById("quick-new-proveedor-wrap");
+  const quickProveedorName = document.getElementById("quick-proveedor-name");
+  const quickProveedorTipo = document.getElementById("quick-proveedor-tipo");
+  const quickProveedorActivo = document.getElementById("quick-proveedor-activo");
+  const quickProveedorCreateBtn = document.getElementById("quick-proveedor-create-btn");
   const allowDecimals = document.getElementById("allow-decimals");
   const fechaField = document.getElementById("field-fecha");
   const rateToday = {{ rate_today.rate if rate_today else 0 }};
@@ -882,12 +1058,59 @@
   const proveedorCreateForm = document.getElementById("proveedor-create-form");
   const ingresoProductForm = document.getElementById("ingreso-product-form");
   const createProductButton = document.getElementById("create-product-btn");
+  const quickProductForm = document.getElementById("quick-product-form");
+  const quickCreateProductButton = document.getElementById("quick-create-product-btn");
+  const quickProductModalEl = document.getElementById("quick-product-modal");
+  const quickProductCode = document.getElementById("quick-product-code");
+  const quickProductDesc = document.getElementById("quick-product-desc");
+  const quickProductLinea = document.getElementById("quick-product-linea");
+  const quickProductSegmento = document.getElementById("quick-product-segmento");
+  const quickProductMarca = document.getElementById("quick-product-marca");
+  const quickToggleLinea = document.getElementById("quick-toggle-linea");
+  const quickToggleSegmento = document.getElementById("quick-toggle-segmento");
+  const quickToggleMarca = document.getElementById("quick-toggle-marca");
+  const quickNewLineaWrap = document.getElementById("quick-new-linea-wrap");
+  const quickNewSegmentoWrap = document.getElementById("quick-new-segmento-wrap");
+  const quickNewMarcaWrap = document.getElementById("quick-new-marca-wrap");
+  const quickLineaForm = document.getElementById("quick-linea-form");
+  const quickLineaName = document.getElementById("quick-linea-name");
+  const quickLineaCreateBtn = document.getElementById("quick-linea-create-btn");
+  const quickSegmentoForm = document.getElementById("quick-segmento-form");
+  const quickSegmentoName = document.getElementById("quick-segmento-name");
+  const quickSegmentoCreateBtn = document.getElementById("quick-segmento-create-btn");
+  const quickMarcaForm = document.getElementById("quick-marca-form");
+  const quickMarcaName = document.getElementById("quick-marca-name");
+  const quickMarcaCreateBtn = document.getElementById("quick-marca-create-btn");
+  const quickProductPrecio = document.getElementById("quick-product-precio");
+  const quickProductCosto = document.getElementById("quick-product-costo");
   const newProductCode = document.getElementById("new-product-code");
   const newProductDesc = document.getElementById("new-product-desc");
   const newProductLinea = document.getElementById("new-product-linea");
   const newProductSegmento = document.getElementById("new-product-segmento");
+  const newProductMarca = document.getElementById("new-product-marca");
   const newProductPrecio = document.getElementById("new-product-precio");
   const newProductCosto = document.getElementById("new-product-costo");
+  if (quickProductModalEl) {
+    quickProductModalEl.addEventListener("shown.bs.modal", () => {
+      if (quickProductCode) {
+        quickProductCode.focus();
+        quickProductCode.select();
+      }
+    });
+  }
+
+  const toggleInlinePanel = (buttonEl, panelEl) => {
+    if (!buttonEl || !panelEl) return;
+    buttonEl.addEventListener("click", () => {
+      const isHidden = panelEl.classList.contains("d-none");
+      panelEl.classList.toggle("d-none", !isHidden);
+      buttonEl.setAttribute("aria-expanded", isHidden ? "true" : "false");
+    });
+  };
+  toggleInlinePanel(quickToggleProveedor, quickNewProveedorWrap);
+  toggleInlinePanel(quickToggleLinea, quickNewLineaWrap);
+  toggleInlinePanel(quickToggleSegmento, quickNewSegmentoWrap);
+  toggleInlinePanel(quickToggleMarca, quickNewMarcaWrap);
   let handleAddItem = null;
   let loadEditProductFn = null;
   const ingresoForm = document.getElementById("ingreso-form");
@@ -953,8 +1176,8 @@
     if (itemsCountLive) itemsCountLive.textContent = `${countItems}`;
     if (summaryBultos) summaryBultos.textContent = sumBultos.toFixed(2);
     if (summaryItems) summaryItems.textContent = `${countItems}`;
-    totalUsd.textContent = `$ ${sumUsd.toFixed(2)}`;
-    totalCs.textContent = `C$ ${sumCs.toFixed(2)}`;
+    if (totalUsd) totalUsd.textContent = `$ ${sumUsd.toFixed(2)}`;
+    if (totalCs) totalCs.textContent = `C$ ${sumCs.toFixed(2)}`;
   };
 
   const focusSelect = (selectEl) => {
@@ -1428,6 +1651,37 @@
     return payload;
   };
 
+  const upsertProveedorOption = (selectEl, payload, selectCurrent = false) => {
+    if (!selectEl || !payload || !payload.id) return;
+    const value = String(payload.id);
+    let option = selectEl.querySelector(`option[value='${value}']`);
+    if (!option) {
+      option = new Option(payload.nombre || "", value, false, false);
+      selectEl.append(option);
+    }
+    option.textContent = payload.nombre || option.textContent;
+    option.dataset.nombre = payload.nombre || "";
+    option.dataset.tipo = payload.tipo || "";
+    option.dataset.activo = payload.activo ? "1" : "0";
+    if (selectCurrent) {
+      selectEl.value = value;
+      if (window.$ && $.fn.select2 && selectEl.classList.contains("select2")) {
+        $(selectEl).val(value).trigger("change");
+      }
+    }
+  };
+
+  const handleCatalogResponse = async (response) => {
+    const payload = await response.json().catch(() => null);
+    if (!payload) {
+      throw new Error("Respuesta invalida");
+    }
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message || payload.detail || "No se pudo guardar");
+    }
+    return payload;
+  };
+
   if (proveedorCreateForm) {
     proveedorCreateForm.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -1438,14 +1692,8 @@
           body: new FormData(proveedorCreateForm),
         });
         const payload = await handleProveedorResponse(response);
-        const option = new Option(payload.nombre, payload.id, false, false);
-        const optionEdit = new Option(payload.nombre, payload.id, false, false);
-        if (editProveedorSelect) {
-          editProveedorSelect.append(optionEdit);
-        }
-        if (proveedorField) {
-          proveedorField.append(option);
-        }
+        upsertProveedorOption(editProveedorSelect, payload, false);
+        upsertProveedorOption(proveedorField, payload, true);
         proveedorCreateForm.reset();
         if (typeof Swal !== "undefined") {
           Swal.fire({ icon: "success", title: "Proveedor guardado", timer: 1500, showConfirmButton: false });
@@ -1501,26 +1749,31 @@
       if (!payload) {
         throw new Error(`Respuesta invalida (${response.status})`);
       }
-      if (!payload.ok) {
-        throw new Error(payload.message || `No se pudo guardar (${response.status})`);
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message || payload.detail || `No se pudo guardar (${response.status})`);
       }
       return payload;
+    }
+    if (response.status === 403) {
+      throw new Error("No tienes permisos para crear productos desde ingresos.");
     }
     const text = await response.text().catch(() => "");
     throw new Error(text || `Respuesta invalida (${response.status})`);
   };
 
   if (ingresoProductForm) {
-    ingresoProductForm.addEventListener("submit", async (event) => {
+    const submitProductCreateForm = async (event, config) => {
       event.preventDefault();
+      const submitButton = config.submitButton;
+      const previousLabel = submitButton ? submitButton.innerHTML : "";
       try {
         const missing = [];
-        if (!newProductCode?.value?.trim()) missing.push("Codigo");
-        if (!newProductDesc?.value?.trim()) missing.push("Descripcion");
-        if (!newProductLinea?.value) missing.push("Linea");
-        if (!newProductSegmento?.value) missing.push("Segmento");
-        if (!newProductPrecio?.value) missing.push("Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})");
-        if (!newProductCosto?.value) missing.push("Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})");
+        const normalizedCode = (config.codeInput?.value || "").trim().toUpperCase();
+        const normalizedDesc = (config.descInput?.value || "").trim();
+        if (!normalizedCode) missing.push("Codigo");
+        if (!normalizedDesc) missing.push("Descripcion");
+        if (!config.precioInput?.value?.trim()) missing.push("Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})");
+        if (!config.costoInput?.value?.trim()) missing.push("Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})");
         if (missing.length) {
           if (typeof Swal !== "undefined") {
             Swal.fire({
@@ -1531,22 +1784,32 @@
           }
           return;
         }
-        const response = await fetch(ingresoProductForm.action, {
+        if (config.codeInput) config.codeInput.value = normalizedCode;
+        if (config.descInput) config.descInput.value = normalizedDesc;
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Creando...';
+        }
+        const formData = new FormData(config.form);
+        formData.set("cod_producto", normalizedCode);
+        formData.set("descripcion", normalizedDesc);
+        formData.set("marca", (config.marcaInput?.value || "").trim() || "Sin Marca");
+        const response = await fetch(config.form.action, {
           method: "POST",
           headers: { "X-Requested-With": "fetch", "Accept": "application/json" },
-          body: new FormData(ingresoProductForm),
+          body: formData,
         });
         const payload = await handleProductResponse(response);
         if (typeof Swal !== "undefined") {
           Swal.fire({ icon: "success", title: "Producto creado", text: payload.message || "Producto registrado", timer: 1800, showConfirmButton: false });
         }
-        const createdRow = appendProductToList(payload, newProductLinea?.value || "", newProductSegmento?.value || "");
+        const createdRow = appendProductToList(payload, config.lineaInput?.value || "", config.segmentoInput?.value || "");
         if (editSelect) {
           const option = new Option(`${payload.cod_producto} - ${payload.descripcion}`, payload.id, false, false);
           option.dataset.cod = payload.cod_producto || "";
           option.dataset.desc = payload.descripcion || "";
-          option.dataset.linea = newProductLinea?.value || "";
-          option.dataset.segmento = newProductSegmento?.value || "";
+          option.dataset.linea = config.lineaInput?.value || "";
+          option.dataset.segmento = config.segmentoInput?.value || "";
           option.dataset.precio1 = parseFloat(inventoryCsOnly ? (payload.precio_venta1 || 0) : (payload.precio_venta1_usd || 0)).toFixed(2);
           option.dataset.precio2 = "0.00";
           option.dataset.precio3 = "0.00";
@@ -1554,14 +1817,18 @@
           option.dataset.activo = "1";
           editSelect.append(option);
         }
-        ingresoProductForm.reset();
-        if (window.$ && $.fn.select2) {
+        config.form.reset();
+        if (window.$ && $.fn.select2 && config.form.id === "ingreso-product-form") {
           $(newProductLinea).val(null).trigger("change");
           $(newProductSegmento).val(null).trigger("change");
         }
-        if (newProductCode) {
-          newProductCode.focus();
-          newProductCode.select();
+        if (config.codeInput) {
+          config.codeInput.focus();
+          config.codeInput.select();
+        }
+        if (config.closeModal && quickProductModalEl && window.bootstrap?.Modal) {
+          const instance = bootstrap.Modal.getOrCreateInstance(quickProductModalEl);
+          instance.hide();
         }
         setIngresoTab("tab-ingreso");
         if (productSearch) {
@@ -1577,6 +1844,230 @@
         console.error("Error creando producto", error);
         if (typeof Swal !== "undefined") {
           Swal.fire({ icon: "error", title: "Error", text: error.message || "No se pudo guardar" });
+        }
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.innerHTML = previousLabel || "Crear producto";
+        }
+      }
+    };
+
+    ingresoProductForm.addEventListener("submit", (event) =>
+      submitProductCreateForm(event, {
+        form: ingresoProductForm,
+        submitButton: createProductButton,
+        codeInput: newProductCode,
+        descInput: newProductDesc,
+        lineaInput: newProductLinea,
+        segmentoInput: newProductSegmento,
+        marcaInput: newProductMarca,
+        precioInput: newProductPrecio,
+        costoInput: newProductCosto,
+        closeModal: false,
+      })
+    );
+
+    if (quickProductForm) {
+      quickProductForm.addEventListener("submit", (event) =>
+        submitProductCreateForm(event, {
+          form: quickProductForm,
+          submitButton: quickCreateProductButton,
+          codeInput: quickProductCode,
+          descInput: quickProductDesc,
+          lineaInput: quickProductLinea,
+          segmentoInput: quickProductSegmento,
+          marcaInput: quickProductMarca,
+          precioInput: quickProductPrecio,
+          costoInput: quickProductCosto,
+          closeModal: true,
+        })
+      );
+    }
+  }
+
+  if (quickLineaForm) {
+    quickLineaCreateBtn?.addEventListener("click", async () => {
+      const previous = quickLineaCreateBtn ? quickLineaCreateBtn.innerHTML : "";
+      try {
+        const lineaName = (quickLineaName?.value || "").trim();
+        if (!lineaName) {
+          throw new Error("Nombre de linea requerido");
+        }
+        if (quickLineaCreateBtn) {
+          quickLineaCreateBtn.disabled = true;
+          quickLineaCreateBtn.innerHTML = "Guardando...";
+        }
+        const formData = new FormData();
+        formData.set("linea", lineaName);
+        formData.set("activo", "on");
+        formData.set("redirect_to", "/inventory/ingresos");
+        const response = await fetch("/inventory/linea", {
+          method: "POST",
+          headers: { "X-Requested-With": "fetch", "Accept": "application/json" },
+          body: formData,
+        });
+        const payload = await handleCatalogResponse(response);
+        const option = new Option(payload.linea, payload.id, true, true);
+        if (quickProductLinea) {
+          quickProductLinea.append(option);
+          quickProductLinea.value = String(payload.id);
+        }
+        if (newProductLinea) {
+          const optionMain = new Option(payload.linea, payload.id, false, false);
+          newProductLinea.append(optionMain);
+        }
+        if (quickLineaName) quickLineaName.value = "";
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "success", title: "Linea creada", timer: 1200, showConfirmButton: false });
+        }
+      } catch (error) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: error.message || "No se pudo crear la linea" });
+        }
+      } finally {
+        if (quickLineaCreateBtn) {
+          quickLineaCreateBtn.disabled = false;
+          quickLineaCreateBtn.innerHTML = previous || "Guardar linea";
+        }
+      }
+    });
+  }
+
+  if (quickProveedorCreateBtn) {
+    quickProveedorCreateBtn.addEventListener("click", async () => {
+      const previous = quickProveedorCreateBtn.innerHTML;
+      try {
+        const nombre = (quickProveedorName?.value || "").trim();
+        const tipo = (quickProveedorTipo?.value || "").trim();
+        if (!nombre) {
+          throw new Error("Nombre del proveedor requerido");
+        }
+        quickProveedorCreateBtn.disabled = true;
+        quickProveedorCreateBtn.innerHTML = "Guardando...";
+        const formData = new FormData();
+        formData.set("nombre", nombre);
+        formData.set("tipo", tipo);
+        if (quickProveedorActivo?.checked) {
+          formData.set("activo", "on");
+        }
+        formData.set("redirect_to", "/inventory/ingresos");
+        const response = await fetch("/inventory/proveedor", {
+          method: "POST",
+          headers: { "X-Requested-With": "fetch", "Accept": "application/json" },
+          body: formData,
+        });
+        const payload = await handleProveedorResponse(response);
+        upsertProveedorOption(editProveedorSelect, payload, false);
+        upsertProveedorOption(proveedorField, payload, true);
+        if (quickProveedorName) quickProveedorName.value = "";
+        if (quickProveedorTipo) quickProveedorTipo.value = "";
+        if (quickProveedorActivo) quickProveedorActivo.checked = true;
+        if (quickNewProveedorWrap) quickNewProveedorWrap.classList.add("d-none");
+        if (quickToggleProveedor) quickToggleProveedor.setAttribute("aria-expanded", "false");
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "success", title: "Proveedor guardado", timer: 1400, showConfirmButton: false });
+        }
+      } catch (error) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: error.message || "No se pudo guardar" });
+        }
+      } finally {
+        quickProveedorCreateBtn.disabled = false;
+        quickProveedorCreateBtn.innerHTML = previous || "Guardar proveedor";
+      }
+    });
+  }
+
+  if (quickSegmentoForm) {
+    quickSegmentoCreateBtn?.addEventListener("click", async () => {
+      const previous = quickSegmentoCreateBtn ? quickSegmentoCreateBtn.innerHTML : "";
+      try {
+        const segmentoName = (quickSegmentoName?.value || "").trim();
+        if (!segmentoName) {
+          throw new Error("Nombre de segmento requerido");
+        }
+        if (quickSegmentoCreateBtn) {
+          quickSegmentoCreateBtn.disabled = true;
+          quickSegmentoCreateBtn.innerHTML = "Guardando...";
+        }
+        const formData = new FormData();
+        formData.set("segmento", segmentoName);
+        formData.set("redirect_to", "/inventory/ingresos");
+        const response = await fetch("/inventory/segmento", {
+          method: "POST",
+          headers: { "X-Requested-With": "fetch", "Accept": "application/json" },
+          body: formData,
+        });
+        const payload = await handleCatalogResponse(response);
+        const option = new Option(payload.segmento, payload.id, true, true);
+        if (quickProductSegmento) {
+          quickProductSegmento.append(option);
+          quickProductSegmento.value = String(payload.id);
+        }
+        if (newProductSegmento) {
+          const optionMain = new Option(payload.segmento, payload.id, false, false);
+          newProductSegmento.append(optionMain);
+        }
+        if (quickSegmentoName) quickSegmentoName.value = "";
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "success", title: "Segmento creado", timer: 1200, showConfirmButton: false });
+        }
+      } catch (error) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: error.message || "No se pudo crear el segmento" });
+        }
+      } finally {
+        if (quickSegmentoCreateBtn) {
+          quickSegmentoCreateBtn.disabled = false;
+          quickSegmentoCreateBtn.innerHTML = previous || "Guardar segmento";
+        }
+      }
+    });
+  }
+
+  if (quickMarcaForm) {
+    quickMarcaCreateBtn?.addEventListener("click", async () => {
+      const previous = quickMarcaCreateBtn ? quickMarcaCreateBtn.innerHTML : "";
+      try {
+        const marcaName = (quickMarcaName?.value || "").trim();
+        if (!marcaName) {
+          throw new Error("Nombre de marca requerido");
+        }
+        if (quickMarcaCreateBtn) {
+          quickMarcaCreateBtn.disabled = true;
+          quickMarcaCreateBtn.innerHTML = "Guardando...";
+        }
+        const formData = new FormData();
+        formData.set("nombre", marcaName);
+        formData.set("redirect_to", "/inventory/ingresos");
+        const response = await fetch("/inventory/marca", {
+          method: "POST",
+          headers: { "X-Requested-With": "fetch", "Accept": "application/json" },
+          body: formData,
+        });
+        const payload = await handleCatalogResponse(response);
+        const option = new Option(payload.nombre, payload.nombre, true, true);
+        if (quickProductMarca) {
+          quickProductMarca.append(option);
+          quickProductMarca.value = payload.nombre;
+        }
+        if (newProductMarca) {
+          const optionMain = new Option(payload.nombre, payload.nombre, false, false);
+          newProductMarca.append(optionMain);
+        }
+        if (quickMarcaName) quickMarcaName.value = "";
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "success", title: "Marca creada", timer: 1200, showConfirmButton: false });
+        }
+      } catch (error) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: error.message || "No se pudo crear la marca" });
+        }
+      } finally {
+        if (quickMarcaCreateBtn) {
+          quickMarcaCreateBtn.disabled = false;
+          quickMarcaCreateBtn.innerHTML = previous || "Guardar marca";
         }
       }
     });

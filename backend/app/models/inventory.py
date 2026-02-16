@@ -28,6 +28,15 @@ class Segmento(Base):
     productos = relationship("Producto", back_populates="segmento")
 
 
+class Marca(Base):
+    __tablename__ = "marcas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(120), unique=True, nullable=False)
+    activo = Column(Boolean, default=True)
+    registro = Column(DateTime, server_default=func.now())
+
+
 class Producto(Base):
     __tablename__ = "productos"
 

@@ -84,6 +84,13 @@
                 </label>
                 <div class="text-muted small mt-1">Si esta activo, creacion de productos, ingresos y egresos trabajan en C$ como moneda principal.</div>
               </div>
+              <div class="col-12">
+                <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
+                  <input class="accent-brand" type="checkbox" name="multi_branch_enabled" {% if profile.multi_branch_enabled %}checked{% endif %} />
+                  Activar multi sucursales para este entorno
+                </label>
+                <div class="text-muted small mt-1">Si esta desactivado, solo se usa sucursal/bodega Central en inventarios, ventas en caliente y reportes.</div>
+              </div>
               <div class="col-12 d-flex gap-2">
                 <button class="btn btn-primary" type="submit">Guardar perfil</button>
                 <a class="btn btn-outline-secondary" href="/data">Volver</a>

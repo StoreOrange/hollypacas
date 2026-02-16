@@ -1,10 +1,10 @@
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
-from ..config import settings
+from ..config import get_active_company_key, settings
 from ..database import Base, get_engine, get_session_local
 from ..models.user import Branch, Permission, Role, User
-from ..models.inventory import Bodega, EgresoTipo, IngresoTipo, Linea, Segmento
+from ..models.inventory import Bodega, EgresoTipo, IngresoTipo, Linea, Marca, Segmento
 from ..models.sales import (
     Banco,
     CompanyProfileSetting,
@@ -112,6 +112,7 @@ def _seed_permissions(db: Session) -> None:
 
 
 def _seed_branches(db: Session) -> None:
+    multi_branch_enabled = get_active_company_key() != "comestibles"
     branches = [
         (
             "central",
@@ -121,15 +122,18 @@ def _seed_branches(db: Session) -> None:
             "8900-0300",
             "Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
         ),
-        (
-            "esteli",
-            "Sucursal Esteli",
-            "Hollywood Pacas",
-            "0012202910068H",
-            "8900-0300",
-            "Esteli, De auto lote del Norte 7 cuadras al este.",
-        ),
     ]
+    if multi_branch_enabled:
+        branches.append(
+            (
+                "esteli",
+                "Sucursal Esteli",
+                "Hollywood Pacas",
+                "0012202910068H",
+                "8900-0300",
+                "Esteli, De auto lote del Norte 7 cuadras al este.",
+            )
+        )
     existing = {branch.code for branch in db.query(Branch).all()}
     for code, name, company_name, ruc, telefono, direccion in branches:
         if code not in existing:
@@ -187,52 +191,69 @@ def _seed_admin_branch_access(db: Session) -> None:
 
 
 def _seed_lineas(db: Session) -> None:
-    lineas = [
-        "BLUSA",
-        "BOLSOS",
-        "BUSOS",
-        "CALCETAS",
-        "CAMISA",
-        "CHAMARRA",
-        "CHAQUETAS",
-        "COLCHAS",
-        "CONJIN",
-        "CORTINAS",
-        "EDREDON",
-        "FALDA",
-        "INTIMA",
-        "JEAN",
-        "JUGUETES",
-        "MIX CLOTHING",
-        "NINO",
-        "PANTALON",
-        "PELUCHES",
-        "ROPA DE CAMA",
-        "ROPA DE CASA",
-        "SABANAS",
-        "SHORT",
-        "TOALLAS",
-        "UNIFORME",
-        "UTENCILIOS",
-        "VESTIDO",
-        "ZAPATOS/CALZADO",
-    ]
+    if get_active_company_key() == "comestibles":
+        lineas = ["Consumibles"]
+    else:
+        lineas = [
+            "BLUSA",
+            "BOLSOS",
+            "BUSOS",
+            "CALCETAS",
+            "CAMISA",
+            "CHAMARRA",
+            "CHAQUETAS",
+            "COLCHAS",
+            "CONJIN",
+            "CORTINAS",
+            "EDREDON",
+            "FALDA",
+            "INTIMA",
+            "JEAN",
+            "JUGUETES",
+            "MIX CLOTHING",
+            "NINO",
+            "PANTALON",
+            "PELUCHES",
+            "ROPA DE CAMA",
+            "ROPA DE CASA",
+            "SABANAS",
+            "SHORT",
+            "TOALLAS",
+            "UNIFORME",
+            "UTENCILIOS",
+            "VESTIDO",
+            "ZAPATOS/CALZADO",
+        ]
     existing = {linea.linea for linea in db.query(Linea).all()}
     for name in lineas:
         if name not in existing:
-            db.add(Linea(cod_linea=name, linea=name, activo=True))
+            cod_linea = "CONSUMIBLES" if name == "Consumibles" else name
+            db.add(Linea(cod_linea=cod_linea, linea=name, activo=True))
     db.commit()
 
 
 def _seed_segmentos(db: Session) -> None:
-    segmentos = [
-        "BOLSAS 25 LBS",
-        "BOLSAS 50 LBS",
-        "BOLSAS X LBS",
-        "CAJA",
-        "PACAS",
-        "SACOS",
-    ]
+    if get_active_company_key() == "comestibles":
+        segmentos = [
+            "Bebidas",
+            "Varios",
+            "Snacks",
+            "Licores",
+            "Comidas",
+            "Perecederos",
+            "Cosmeticos",
+            "Dulces",
+            "Hogar",
+        ]
+    else:
+        segmentos = [
+            "BOLSAS 25 LBS",
+            "BOLSAS 50 LBS",
+            "BOLSAS X LBS",
+            "CAJA",
+            "PACAS",
+            "SACOS",
+        ]
     existing = {segmento.segmento for segmento in db.query(Segmento).all()}
     for name in segmentos:
         if name not in existing:
@@ -240,12 +261,21 @@ def _seed_segmentos(db: Session) -> None:
     db.commit()
 
 
+def _seed_marcas(db: Session) -> None:
+    existing = {m.nombre.lower() for m in db.query(Marca).all()}
+    if "sin marca" not in existing:
+        db.add(Marca(nombre="Sin Marca", activo=True))
+        db.commit()
+
+
 def _seed_bodegas(db: Session) -> None:
+    multi_branch_enabled = get_active_company_key() != "comestibles"
     branches = {branch.code: branch for branch in db.query(Branch).all()}
     bodegas = [
         ("central", "Central", "central"),
-        ("esteli", "Esteli", "esteli"),
     ]
+    if multi_branch_enabled:
+        bodegas.append(("esteli", "Esteli", "esteli"))
     existing = {bodega.code for bodega in db.query(Bodega).all()}
     for code, name, branch_code in bodegas:
         if code not in existing and branch_code in branches:
@@ -258,6 +288,9 @@ def _seed_bodegas(db: Session) -> None:
                 )
             )
     db.commit()
+    if not multi_branch_enabled:
+        db.query(Bodega).filter(Bodega.code == "esteli").update({"activo": False})
+        db.commit()
 
 
 def _seed_ingreso_tipos(db: Session) -> None:
@@ -514,8 +547,12 @@ def _seed_sales_interface_settings(db: Session) -> None:
 
 
 def _seed_company_profile_settings(db: Session) -> None:
+    multi_branch_enabled = get_active_company_key() != "comestibles"
     existing = db.query(CompanyProfileSetting).first()
     if existing:
+        if existing.multi_branch_enabled is None:
+            existing.multi_branch_enabled = multi_branch_enabled
+            db.commit()
         return
     db.add(
         CompanyProfileSetting(
@@ -531,6 +568,7 @@ def _seed_company_profile_settings(db: Session) -> None:
             pos_logo_url="/static/logo_hollywood.png",
             favicon_url="/static/favicon.ico",
             inventory_cs_only=False,
+            multi_branch_enabled=multi_branch_enabled,
             updated_by="system-bootstrap",
         )
     )
@@ -664,6 +702,11 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN inventory_cs_only BOOLEAN DEFAULT FALSE"))
                 conn.execute(text("UPDATE company_profile_settings SET inventory_cs_only = FALSE WHERE inventory_cs_only IS NULL"))
+        if "multi_branch_enabled" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN multi_branch_enabled BOOLEAN DEFAULT TRUE"))
+                default_multi = "FALSE" if get_active_company_key() == "comestibles" else "TRUE"
+                conn.execute(text(f"UPDATE company_profile_settings SET multi_branch_enabled = {default_multi} WHERE multi_branch_enabled IS NULL"))
     if "vendedor_bodegas" not in inspector.get_table_names():
         with engine.begin() as conn:
             conn.execute(
@@ -690,6 +733,7 @@ def init_db() -> None:
         _seed_admin_branch_access(db)
         _seed_lineas(db)
         _seed_segmentos(db)
+        _seed_marcas(db)
         _seed_bodegas(db)
         _seed_ingreso_tipos(db)
         _seed_egreso_tipos(db)

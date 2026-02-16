@@ -130,6 +130,7 @@ class CompanyProfileSetting(Base):
     pos_logo_url = Column(String(260), nullable=False, default="/static/logo_hollywood.png")
     favicon_url = Column(String(260), nullable=False, default="/static/favicon.ico")
     inventory_cs_only = Column(Boolean, nullable=False, default=False)
+    multi_branch_enabled = Column(Boolean, nullable=False, default=True)
     updated_by = Column(String(160), nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created_at = Column(DateTime, server_default=func.now())
