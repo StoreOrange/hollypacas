@@ -1339,27 +1339,6 @@
       pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "No hay saldo disponible." });
       return false;
     }
-    if ((reservedDetails || []).length > 0) {
-      const action = await askReservedAction({
-        code: button.dataset.code,
-        name: button.dataset.name,
-        requested: qty,
-        available: freeQty,
-        details: reservedDetails,
-      });
-      if (action !== "released") return false;
-      if (action === "released") {
-        const refreshed = await refreshProductAvailability(button.dataset.productId, button.dataset.code || button.dataset.name || "");
-        if (refreshed) {
-          button.dataset.existencia = String(refreshed.existencia || 0);
-          button.dataset.freeQty = String(refreshed.free_qty ?? refreshed.existencia ?? 0);
-          button.dataset.reservedDetails = encodeURIComponent(JSON.stringify(refreshed.reserved_details || []));
-          if (qtyInput) qtyInput.max = String(refreshed.existencia || 0);
-          freeQty = parseFloat(button.dataset.freeQty || button.dataset.existencia || 0);
-          reservedDetails = parseReservedDetails(button.dataset.reservedDetails || "");
-        }
-      }
-    }
     if (qty > freeQty) {
       const action = await askReservedAction({
         code: button.dataset.code,
@@ -1935,8 +1914,7 @@
         const existencia = Number(producto?.existencia || 0);
         const freeQty = Number(producto?.freeQty ?? existencia);
         const existingQty = getInvoiceQty(id);
-        const hasReserved = (producto?.reservedDetails || []).length > 0;
-        if (hasReserved || !existencia || existingQty + qty > freeQty) {
+        if (!existencia || existingQty + qty > freeQty) {
           const action = await askReservedAction({
             code: producto?.codigo || "",
             name: producto?.descripcion || "",

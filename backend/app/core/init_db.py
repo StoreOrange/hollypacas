@@ -550,8 +550,17 @@ def _seed_company_profile_settings(db: Session) -> None:
     multi_branch_enabled = get_active_company_key() != "comestibles"
     existing = db.query(CompanyProfileSetting).first()
     if existing:
+        changed = False
         if existing.multi_branch_enabled is None:
             existing.multi_branch_enabled = multi_branch_enabled
+            changed = True
+        if existing.price_auto_from_cost_enabled is None:
+            existing.price_auto_from_cost_enabled = False
+            changed = True
+        if existing.price_margin_percent is None:
+            existing.price_margin_percent = 0
+            changed = True
+        if changed:
             db.commit()
         return
     db.add(
@@ -569,6 +578,8 @@ def _seed_company_profile_settings(db: Session) -> None:
             favicon_url="/static/favicon.ico",
             inventory_cs_only=False,
             multi_branch_enabled=multi_branch_enabled,
+            price_auto_from_cost_enabled=False,
+            price_margin_percent=0,
             updated_by="system-bootstrap",
         )
     )
@@ -707,6 +718,18 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN multi_branch_enabled BOOLEAN DEFAULT TRUE"))
                 default_multi = "FALSE" if get_active_company_key() == "comestibles" else "TRUE"
                 conn.execute(text(f"UPDATE company_profile_settings SET multi_branch_enabled = {default_multi} WHERE multi_branch_enabled IS NULL"))
+        if "price_auto_from_cost_enabled" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN price_auto_from_cost_enabled BOOLEAN DEFAULT FALSE"))
+                conn.execute(
+                    text(
+                        "UPDATE company_profile_settings SET price_auto_from_cost_enabled = FALSE WHERE price_auto_from_cost_enabled IS NULL"
+                    )
+                )
+        if "price_margin_percent" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN price_margin_percent INTEGER DEFAULT 0"))
+                conn.execute(text("UPDATE company_profile_settings SET price_margin_percent = 0 WHERE price_margin_percent IS NULL"))
     if "vendedor_bodegas" not in inspector.get_table_names():
         with engine.begin() as conn:
             conn.execute(

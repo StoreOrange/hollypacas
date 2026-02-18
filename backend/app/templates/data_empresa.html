@@ -91,6 +91,26 @@
                 </label>
                 <div class="text-muted small mt-1">Si esta desactivado, solo se usa sucursal/bodega Central en inventarios, ventas en caliente y reportes.</div>
               </div>
+              <div class="col-12">
+                <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
+                  <input id="price-auto-from-cost-enabled" class="accent-brand" type="checkbox" name="price_auto_from_cost_enabled" {% if profile.price_auto_from_cost_enabled %}checked{% endif %} />
+                  Auto calcular precio de venta desde costo
+                </label>
+                <div class="text-muted small mt-1">Si esta activo, en productos se calcula Precio 1 automaticamente usando el porcentaje de ganancia configurado.</div>
+              </div>
+              <div class="col-md-4">
+                <label class="odoo-field-label">Porcentaje de ganancia (%)</label>
+                <input
+                  id="price-margin-percent"
+                  class="form-control odoo-input"
+                  name="price_margin_percent"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value="{{ profile.price_margin_percent or 0 }}"
+                />
+                <div class="text-muted small mt-1">Solo enteros. Formula: Precio = Costo + (Costo x %).</div>
+              </div>
               <div class="col-12 d-flex gap-2">
                 <button class="btn btn-primary" type="submit">Guardar perfil</button>
                 <a class="btn btn-outline-secondary" href="/data">Volver</a>
@@ -102,4 +122,16 @@
     </div>
   </main>
 </div>
+<script>
+  const autoPriceToggle = document.getElementById("price-auto-from-cost-enabled");
+  const marginInput = document.getElementById("price-margin-percent");
+  const syncMarginState = () => {
+    if (!autoPriceToggle || !marginInput) return;
+    marginInput.disabled = !autoPriceToggle.checked;
+  };
+  if (autoPriceToggle && marginInput) {
+    autoPriceToggle.addEventListener("change", syncMarginState);
+    syncMarginState();
+  }
+</script>
 {% endblock %}

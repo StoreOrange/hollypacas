@@ -728,6 +728,8 @@ def _default_company_profile_payload() -> dict[str, str]:
         "favicon_url": "/static/favicon.ico",
         "inventory_cs_only": False,
         "multi_branch_enabled": multi_branch_enabled,
+        "price_auto_from_cost_enabled": False,
+        "price_margin_percent": 0,
     }
 
 
@@ -751,6 +753,8 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
             "favicon_url": row.favicon_url or payload["favicon_url"],
             "inventory_cs_only": bool(row.inventory_cs_only),
             "multi_branch_enabled": bool(row.multi_branch_enabled),
+            "price_auto_from_cost_enabled": bool(row.price_auto_from_cost_enabled),
+            "price_margin_percent": int(row.price_margin_percent or 0),
         }
     )
     return payload
@@ -766,6 +770,16 @@ def _multi_branch_enabled_mode(db: Session) -> bool:
         return False
     profile = _company_profile_payload(db)
     return bool(profile.get("multi_branch_enabled", True))
+
+
+def _price_margin_mode(db: Session) -> tuple[bool, int]:
+    profile = _company_profile_payload(db)
+    enabled = bool(profile.get("price_auto_from_cost_enabled", False))
+    try:
+        percent = int(profile.get("price_margin_percent") or 0)
+    except (TypeError, ValueError):
+        percent = 0
+    return enabled, max(0, percent)
 
 
 def _allowed_branch_codes(db: Session) -> set[str]:
@@ -1859,6 +1873,7 @@ def inventory_page(
     global_qty = central_qty + esteli_qty
     global_items = len({p.id for p in productos if (balances.get((p.id, bodega_central.id), Decimal("0")) if bodega_central else Decimal("0")) > 0 or (balances.get((p.id, bodega_esteli.id), Decimal("0")) if bodega_esteli else Decimal("0")) > 0})
     inventory_cs_only = _inventory_cs_only_mode(db)
+    auto_price_margin_enabled, auto_price_margin_pct = _price_margin_mode(db)
     return request.app.state.templates.TemplateResponse(
         "inventory.html",
         {
@@ -1880,6 +1895,8 @@ def inventory_page(
             "success": success,
             "show_inactive": show_inactive,
             "inventory_cs_only": inventory_cs_only,
+            "auto_price_margin_enabled": auto_price_margin_enabled,
+            "auto_price_margin_pct": auto_price_margin_pct,
             "version": settings.UI_VERSION,
         },
     )
@@ -2127,6 +2144,7 @@ def inventory_ingresos_page(
         .first()
     )
     inventory_cs_only = _inventory_cs_only_mode(db)
+    auto_price_margin_enabled, auto_price_margin_pct = _price_margin_mode(db)
     return request.app.state.templates.TemplateResponse(
         "inventory_ingresos.html",
         {
@@ -2148,6 +2166,8 @@ def inventory_ingresos_page(
             "success": success,
             "print_id": print_id,
             "inventory_cs_only": inventory_cs_only,
+            "auto_price_margin_enabled": auto_price_margin_enabled,
+            "auto_price_margin_pct": auto_price_margin_pct,
             "version": settings.UI_VERSION,
         },
     )
@@ -9526,6 +9546,8 @@ def data_empresa_update(
     favicon_url: Optional[str] = Form(None),
     inventory_cs_only: Optional[str] = Form(None),
     multi_branch_enabled: Optional[str] = Form(None),
+    price_auto_from_cost_enabled: Optional[str] = Form(None),
+    price_margin_percent: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -9544,6 +9566,15 @@ def data_empresa_update(
     profile.favicon_url = (favicon_url or "").strip() or "/static/favicon.ico"
     profile.inventory_cs_only = inventory_cs_only == "on"
     profile.multi_branch_enabled = multi_branch_enabled == "on"
+    raw_margin = (price_margin_percent or "").strip()
+    margin_value = 0
+    if raw_margin:
+        if not raw_margin.isdigit():
+            return RedirectResponse("/data/empresa?error=Porcentaje+de+ganancia+invalido+(solo+enteros)", status_code=303)
+        margin_value = int(raw_margin)
+    auto_margin_enabled = price_auto_from_cost_enabled == "on"
+    profile.price_auto_from_cost_enabled = auto_margin_enabled
+    profile.price_margin_percent = margin_value
     profile.updated_by = user.full_name
     db.commit()
     return RedirectResponse("/data/empresa?success=Perfil+empresarial+actualizado", status_code=303)

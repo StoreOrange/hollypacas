@@ -131,6 +131,8 @@ class CompanyProfileSetting(Base):
     favicon_url = Column(String(260), nullable=False, default="/static/favicon.ico")
     inventory_cs_only = Column(Boolean, nullable=False, default=False)
     multi_branch_enabled = Column(Boolean, nullable=False, default=True)
+    price_auto_from_cost_enabled = Column(Boolean, nullable=False, default=False)
+    price_margin_percent = Column(Integer, nullable=False, default=0)
     updated_by = Column(String(160), nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created_at = Column(DateTime, server_default=func.now())

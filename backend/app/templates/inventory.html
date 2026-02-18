@@ -405,6 +405,14 @@
               </select>
             </div>
             <div class="col-md-6">
+              <label class="form-label odoo-field-label">Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
+              <input id="field-costo" name="costo_producto_usd" type="number" step="0.01" class="form-control odoo-input" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label odoo-field-label">% ganancia (entero)</label>
+              <input id="field-margin" type="number" min="0" step="1" class="form-control odoo-input" placeholder="Ej: 25" />
+            </div>
+            <div class="col-md-6">
               <label class="form-label odoo-field-label">Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
               <input id="field-precio1" name="precio_venta1_usd" type="number" step="0.01" class="form-control odoo-input" />
             </div>
@@ -415,10 +423,6 @@
             <div class="col-md-6">
               <label class="form-label odoo-field-label">Precio 3 ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
               <input id="field-precio3" name="precio_venta3_usd" type="number" step="0.01" class="form-control odoo-input" />
-            </div>
-            <div class="col-md-6">
-              <label class="form-label odoo-field-label">Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
-              <input id="field-costo" name="costo_producto_usd" type="number" step="0.01" class="form-control odoo-input" />
             </div>
             <div class="col-md-6">
               <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate h-100 d-flex align-items-center">
@@ -677,6 +681,7 @@
   const fieldPrecio2 = document.getElementById("field-precio2");
   const fieldPrecio3 = document.getElementById("field-precio3");
   const fieldCosto = document.getElementById("field-costo");
+  const fieldMargin = document.getElementById("field-margin");
   const fieldExistencia = document.getElementById("field-existencia");
   const fieldActivo = document.getElementById("field-activo");
   const modalTabs = document.querySelectorAll(".modal-tab");
@@ -695,6 +700,32 @@
   const comboAddBtn = document.getElementById("combo-add-btn");
   const comboList = document.getElementById("combo-list");
   let currentProductId = null;
+
+  const calculateAutoPrice = (costValue, marginValue) => {
+    const cost = parseFloat(costValue || 0);
+    const margin = parseInt(marginValue || 0, 10);
+    if (!Number.isFinite(margin) || margin <= 0 || !Number.isFinite(cost) || cost <= 0) {
+      return null;
+    }
+    const price = cost * (1 + (margin / 100));
+    return price.toFixed(2);
+  };
+
+  const bindAutoPriceFromCost = () => {
+    if (!fieldCosto || !fieldPrecio1 || !fieldMargin) return;
+    const apply = () => {
+      fieldMargin.value = (fieldMargin.value || "").replace(/\D+/g, "");
+      const computed = calculateAutoPrice(fieldCosto.value, fieldMargin.value);
+      if (computed !== null) {
+        fieldPrecio1.value = computed;
+      }
+    };
+    fieldCosto.addEventListener("input", apply);
+    fieldCosto.addEventListener("change", apply);
+    fieldMargin.addEventListener("input", apply);
+    fieldMargin.addEventListener("change", apply);
+  };
+  bindAutoPriceFromCost();
 
   const openModal = () => {
     if (modal) {
@@ -737,6 +768,7 @@
     fieldPrecio2.value = "";
     fieldPrecio3.value = "";
     fieldCosto.value = "";
+    if (fieldMargin) fieldMargin.value = "";
     fieldExistencia.textContent = "0";
     fieldActivo.checked = true;
     cancelEdit.classList.add("hidden");

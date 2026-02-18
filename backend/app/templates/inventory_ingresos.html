@@ -620,14 +620,20 @@
               </div>
               <div class="col-md-6">
                 <label class="block text-sm font-semibold text-ink">
-                  Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="new-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
+                  Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})
+                  <input id="new-product-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
                 </label>
               </div>
               <div class="col-md-6">
                 <label class="block text-sm font-semibold text-ink">
-                  Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="new-product-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
+                  % ganancia (entero)
+                  <input id="new-product-margin" type="number" min="0" step="1" class="mt-2 w-full odoo-input form-control" placeholder="Ej: 25" />
+                </label>
+              </div>
+              <div class="col-md-6">
+                <label class="block text-sm font-semibold text-ink">
+                  Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
+                  <input id="new-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
                 </label>
               </div>
             </div>
@@ -702,6 +708,18 @@
               </div>
               <div class="col-md-4">
                 <label class="block text-sm font-semibold text-ink">
+                  Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})
+                  <input id="edit-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
+                </label>
+              </div>
+              <div class="col-md-4">
+                <label class="block text-sm font-semibold text-ink">
+                  % ganancia (entero)
+                  <input id="edit-product-margin" type="number" min="0" step="1" class="mt-2 w-full odoo-input form-control" placeholder="Ej: 25" />
+                </label>
+              </div>
+              <div class="col-md-4">
+                <label class="block text-sm font-semibold text-ink">
                   Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
                   <input id="edit-precio1" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
                 </label>
@@ -716,12 +734,6 @@
                 <label class="block text-sm font-semibold text-ink">
                   Precio 3 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
                   <input id="edit-precio3" name="precio_venta3_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="edit-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
                 </label>
               </div>
               <div class="col-md-6 d-flex align-items-end">
@@ -974,14 +986,21 @@
             </div>
             <div class="col-md-6">
               <label class="block text-sm font-semibold text-ink">
-                Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %}) *
-                <input id="quick-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
+                Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %}) *
+                <input id="quick-product-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
               </label>
             </div>
             <div class="col-md-6">
               <label class="block text-sm font-semibold text-ink">
-                Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %}) *
-                <input id="quick-product-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
+                % ganancia (entero)
+                <input id="quick-product-margin" type="number" min="0" step="1" class="mt-2 w-full odoo-input form-control" placeholder="Ej: 25" />
+              </label>
+              <div class="text-muted small mt-1">Define el porcentaje para este producto.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
+                Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %}) *
+                <input id="quick-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
               </label>
             </div>
           </div>
@@ -1044,6 +1063,7 @@
   const editPrecio1 = document.getElementById("edit-precio1");
   const editPrecio2 = document.getElementById("edit-precio2");
   const editPrecio3 = document.getElementById("edit-precio3");
+  const editProductMargin = document.getElementById("edit-product-margin");
   const editCosto = document.getElementById("edit-costo");
   const editActivo = document.getElementById("edit-activo");
   const editProveedorSelect = document.getElementById("edit-proveedor-select");
@@ -1082,6 +1102,7 @@
   const quickMarcaName = document.getElementById("quick-marca-name");
   const quickMarcaCreateBtn = document.getElementById("quick-marca-create-btn");
   const quickProductPrecio = document.getElementById("quick-product-precio");
+  const quickProductMargin = document.getElementById("quick-product-margin");
   const quickProductCosto = document.getElementById("quick-product-costo");
   const newProductCode = document.getElementById("new-product-code");
   const newProductDesc = document.getElementById("new-product-desc");
@@ -1089,6 +1110,7 @@
   const newProductSegmento = document.getElementById("new-product-segmento");
   const newProductMarca = document.getElementById("new-product-marca");
   const newProductPrecio = document.getElementById("new-product-precio");
+  const newProductMargin = document.getElementById("new-product-margin");
   const newProductCosto = document.getElementById("new-product-costo");
   if (quickProductModalEl) {
     quickProductModalEl.addEventListener("shown.bs.modal", () => {
@@ -1111,6 +1133,48 @@
   toggleInlinePanel(quickToggleLinea, quickNewLineaWrap);
   toggleInlinePanel(quickToggleSegmento, quickNewSegmentoWrap);
   toggleInlinePanel(quickToggleMarca, quickNewMarcaWrap);
+
+  const resolveMarginPercent = (marginInput) => {
+    const manualRaw = (marginInput?.value || "").trim();
+    if (!manualRaw) {
+      return 0;
+    }
+    const manualInt = parseInt(manualRaw, 10);
+    return Number.isFinite(manualInt) && manualInt > 0 ? manualInt : 0;
+  };
+
+  const calculateAutoPrice = (costValue, marginInput) => {
+    const cost = parseFloat(costValue || 0);
+    const marginPct = resolveMarginPercent(marginInput);
+    if (marginPct <= 0 || !Number.isFinite(cost) || cost <= 0) {
+      return null;
+    }
+    const price = cost * (1 + (marginPct / 100));
+    return price.toFixed(2);
+  };
+
+  const bindAutoPriceFromCost = (costInput, priceInput, marginInput = null) => {
+    if (!costInput || !priceInput) return;
+    const apply = () => {
+      const computed = calculateAutoPrice(costInput.value, marginInput);
+      if (computed !== null) {
+        priceInput.value = computed;
+      }
+    };
+    costInput.addEventListener("input", apply);
+    costInput.addEventListener("change", apply);
+    if (marginInput) {
+      marginInput.addEventListener("input", () => {
+        marginInput.value = (marginInput.value || "").replace(/\D+/g, "");
+        apply();
+      });
+      marginInput.addEventListener("change", apply);
+    }
+  };
+
+  bindAutoPriceFromCost(newProductCosto, newProductPrecio, newProductMargin);
+  bindAutoPriceFromCost(quickProductCosto, quickProductPrecio, quickProductMargin);
+  bindAutoPriceFromCost(editCosto, editPrecio1, editProductMargin);
   let handleAddItem = null;
   let loadEditProductFn = null;
   const ingresoForm = document.getElementById("ingreso-form");
