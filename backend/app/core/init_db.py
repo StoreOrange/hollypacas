@@ -570,6 +570,7 @@ def _seed_company_profile_settings(db: Session) -> None:
             app_title="ERP Hollywood Pacas",
             sidebar_subtitle="ERP Central",
             website="http://hollywoodpacas.com.ni",
+            ruc="",
             phone="8900-0300",
             address="Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
             email="admin@hollywoodpacas.com",
@@ -701,6 +702,10 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE pos_print_settings ADD COLUMN cierre_auto_print BOOLEAN DEFAULT FALSE"))
     if "company_profile_settings" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("company_profile_settings")}
+        if "ruc" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN ruc VARCHAR(40)"))
+                conn.execute(text("UPDATE company_profile_settings SET ruc = '' WHERE ruc IS NULL"))
         if "pos_logo_url" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN pos_logo_url VARCHAR(260)"))

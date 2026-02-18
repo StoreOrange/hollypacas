@@ -47,6 +47,10 @@
                 <input class="form-control odoo-input" name="sidebar_subtitle" value="{{ profile.sidebar_subtitle }}" required />
               </div>
               <div class="col-md-6">
+                <label class="odoo-field-label">RUC</label>
+                <input class="form-control odoo-input" name="ruc" value="{{ profile.ruc or '' }}" />
+              </div>
+              <div class="col-md-6">
                 <label class="odoo-field-label">Telefono</label>
                 <input class="form-control odoo-input" name="phone" value="{{ profile.phone or '' }}" />
               </div>

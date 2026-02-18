@@ -123,6 +123,7 @@ class CompanyProfileSetting(Base):
     app_title = Column(String(180), nullable=False, default="ERP Hollywood Pacas")
     sidebar_subtitle = Column(String(80), nullable=False, default="ERP Central")
     website = Column(String(180), nullable=True, default="")
+    ruc = Column(String(40), nullable=True, default="")
     phone = Column(String(40), nullable=True, default="")
     address = Column(String(260), nullable=True, default="")
     email = Column(String(180), nullable=True, default="")

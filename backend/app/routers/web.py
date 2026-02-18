@@ -720,6 +720,7 @@ def _default_company_profile_payload() -> dict[str, str]:
         "app_title": "ERP Hollywood Pacas",
         "sidebar_subtitle": "ERP Central",
         "website": "http://hollywoodpacas.com.ni",
+        "ruc": "",
         "phone": "8900-0300",
         "address": "",
         "email": "admin@hollywoodpacas.com",
@@ -745,6 +746,7 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
             "app_title": row.app_title or payload["app_title"],
             "sidebar_subtitle": row.sidebar_subtitle or payload["sidebar_subtitle"],
             "website": row.website or payload["website"],
+            "ruc": row.ruc or payload["ruc"],
             "phone": row.phone or payload["phone"],
             "address": row.address or payload["address"],
             "email": row.email or payload["email"],
@@ -838,14 +840,24 @@ def _resolve_logo_path(logo_url: str, *, prefer_pos: bool = False, pos_logo_url:
 
 def _company_identity(branch: Optional[Branch], profile: dict[str, str]) -> dict[str, str]:
     company_name = (
-        (branch.company_name if branch and branch.company_name else "") or profile.get("trade_name", "Empresa")
+        profile.get("trade_name", "")
+        or (branch.company_name if branch and branch.company_name else "")
+        or "Empresa"
     ).strip()
-    ruc = branch.ruc if branch and branch.ruc else "-"
+    ruc = (
+        (profile.get("ruc", "") or "").strip()
+        or (branch.ruc if branch and branch.ruc else "")
+        or "-"
+    )
     telefono = (
-        (branch.telefono if branch and branch.telefono else "") or profile.get("phone", "-")
+        (profile.get("phone", "") or "").strip()
+        or (branch.telefono if branch and branch.telefono else "")
+        or "-"
     ).strip() or "-"
     direccion = (
-        (branch.direccion if branch and branch.direccion else "") or profile.get("address", "-")
+        (profile.get("address", "") or "").strip()
+        or (branch.direccion if branch and branch.direccion else "")
+        or "-"
     ).strip() or "-"
     sucursal = branch.name if branch and branch.name else "-"
     return {
@@ -9538,6 +9550,7 @@ def data_empresa_update(
     app_title: str = Form(...),
     sidebar_subtitle: str = Form(...),
     website: Optional[str] = Form(None),
+    ruc: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
     address: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
@@ -9558,6 +9571,7 @@ def data_empresa_update(
     profile.app_title = (app_title or "").strip() or f"ERP {profile.trade_name}"
     profile.sidebar_subtitle = (sidebar_subtitle or "").strip() or "ERP"
     profile.website = (website or "").strip()
+    profile.ruc = (ruc or "").strip()
     profile.phone = (phone or "").strip()
     profile.address = (address or "").strip()
     profile.email = (email or "").strip()
