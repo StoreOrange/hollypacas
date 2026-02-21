@@ -6145,6 +6145,7 @@ def sales_ventas_caliente(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.sales.caliente")
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
     today = local_today()
     first_day = date(today.year, today.month, 1)
     next_month = (first_day.replace(day=28) + timedelta(days=4)).replace(day=1)
@@ -7963,6 +7964,177 @@ def report_sales_products(
             "total_facturas": total_facturas,
             "version": settings.UI_VERSION,
         },
+    )
+
+
+@router.get("/reports/ventas-productos/export")
+def report_sales_products_export(
+    request: Request,
+    format: str = "xlsx",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    company_profile = _company_profile_payload(db)
+    start_date, end_date, branch_id, vendedor_id, producto_id, producto_q = _sales_products_report_filters(request)
+    (
+        _report_rows,
+        detail_rows,
+        total_qty,
+        total_usd,
+        total_cs,
+        _total_cost_usd,
+        _total_cost_cs,
+        total_facturas,
+    ) = _build_sales_products_report(db, user, start_date, end_date, branch_id, vendedor_id, producto_id, producto_q)
+
+    if format.lower() == "pdf":
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4, landscape
+
+        buffer = io.BytesIO()
+        width, height = landscape(A4)
+        c = canvas.Canvas(buffer, pagesize=landscape(A4))
+        margin = 20
+        y = height - 28
+
+        logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
+        if logo_path.exists():
+            c.drawImage(str(logo_path), margin, y - 30, width=70, height=28, mask="auto")
+
+        c.setFont("Times-Bold", 10)
+        c.drawString(margin + 80, y - 8, "Reporte Ventas por Producto - Detalle por Factura")
+        c.setFont("Times-Roman", 8)
+        c.drawString(margin + 80, y - 20, f"Rango: {start_date} a {end_date}")
+        c.drawString(margin + 80, y - 32, f"Facturas: {total_facturas}  |  Items: {float(total_qty):,.2f}")
+        c.drawString(margin + 80, y - 44, f"Total USD: {float(total_usd):,.2f}  |  Total C$: {float(total_cs):,.2f}")
+        y -= 58
+
+        headers = [
+            ("Fecha", 40),
+            ("Factura", 62),
+            ("Cliente", 120),
+            ("Vendedor", 80),
+            ("Suc", 52),
+            ("Codigo", 52),
+            ("Producto", 130),
+            ("Cant", 42),
+            ("P.USD", 52),
+            ("P.C$", 52),
+            ("V.USD", 56),
+            ("V.C$", 56),
+        ]
+        total_width = sum(w for _, w in headers)
+        if total_width > (width - (margin * 2)):
+            scale = (width - (margin * 2)) / total_width
+            headers = [(label, int(w * scale)) for label, w in headers]
+
+        def draw_header(curr_y: float):
+            c.setFillColor(colors.HexColor("#0f172a"))
+            c.rect(margin, curr_y - 12, width - (margin * 2), 14, fill=1, stroke=0)
+            c.setFillColor(colors.white)
+            c.setFont("Times-Bold", 7)
+            x = margin + 2
+            for label, col_w in headers:
+                c.drawString(x, curr_y - 8, label)
+                x += col_w
+            c.setFillColor(colors.black)
+            c.setFont("Times-Roman", 7)
+            return curr_y - 16
+
+        y = draw_header(y)
+        for row in detail_rows:
+            if y < 35:
+                c.showPage()
+                y = height - 28
+                y = draw_header(y)
+            vals = [
+                row.get("fecha", ""),
+                row.get("factura", ""),
+                row.get("cliente", ""),
+                row.get("vendedor", ""),
+                row.get("sucursal", ""),
+                row.get("codigo", ""),
+                row.get("producto", ""),
+                f"{float(row.get('cantidad') or 0):,.2f}",
+                f"{float(row.get('precio_usd') or 0):,.2f}",
+                f"{float(row.get('precio_cs') or 0):,.2f}",
+                f"{float(row.get('subtotal_usd') or 0):,.2f}",
+                f"{float(row.get('subtotal_cs') or 0):,.2f}",
+            ]
+            x = margin + 2
+            for idx, value in enumerate(vals):
+                col_w = headers[idx][1]
+                c.drawString(x, y, str(value)[: max(1, col_w // 4)])
+                x += col_w
+            y -= 11
+
+        c.showPage()
+        c.save()
+        buffer.seek(0)
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=ventas_productos_detalle.pdf"},
+        )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Detalle"
+    ws.append(["Reporte", "Ventas por Producto - Detalle por Factura"])
+    ws.append(["Rango", f"{start_date} a {end_date}"])
+    ws.append(["Facturas", int(total_facturas or 0)])
+    ws.append(["Items", float(total_qty or 0)])
+    ws.append(["Total USD", float(total_usd or 0)])
+    ws.append(["Total C$", float(total_cs or 0)])
+    ws.append([])
+    headers = [
+        "Fecha",
+        "Factura",
+        "Cliente",
+        "Vendedor",
+        "Sucursal",
+        "Codigo",
+        "Producto",
+        "Cantidad",
+        "Precio USD",
+        "Precio C$",
+        "Venta USD",
+        "Venta C$",
+    ]
+    ws.append(headers)
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=8, column=col)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    for row in detail_rows:
+        ws.append(
+            [
+                row.get("fecha", ""),
+                row.get("factura", ""),
+                row.get("cliente", ""),
+                row.get("vendedor", ""),
+                row.get("sucursal", ""),
+                row.get("codigo", ""),
+                row.get("producto", ""),
+                float(row.get("cantidad") or 0),
+                float(row.get("precio_usd") or 0),
+                float(row.get("precio_cs") or 0),
+                float(row.get("subtotal_usd") or 0),
+                float(row.get("subtotal_cs") or 0),
+            ]
+        )
+    widths = [12, 16, 26, 20, 16, 14, 32, 12, 12, 12, 12, 12]
+    for idx, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + idx)].width = w
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=ventas_productos_detalle.xlsx"},
     )
 
 
