@@ -1,0 +1,1649 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Oswald:wght@400;600;700&family=Archivo+Black&family=Black+Ops+One&family=Bungee&family=Cinzel:wght@400;600;700&family=Fjalla+One&family=IBM+Plex+Sans:wght@400;600;700&family=Lato:wght@400;700;900&family=League+Spartan:wght@500;700;800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400;1,700&family=Luckiest+Guy&family=Merriweather:wght@400;700;900&family=Montserrat:wght@500;700;900&family=Nunito:wght@500;700;900&family=Open+Sans:wght@500;700;800&family=Permanent+Marker&family=Playfair+Display:wght@600;700;800&family=Poppins:wght@500;700;900&family=Raleway:wght@500;700;900&family=Roboto+Condensed:wght@400;700&family=Rubik:wght@500;700;900&family=Staatliches&display=swap" rel="stylesheet">
+<style>
+  @font-face {
+    font-family: "Bernard MT Condensed Custom";
+    src:
+      local("Bernard MT Condensed"),
+      local("Bernard MT Condensed Regular"),
+      url("/static/fonts/custom/BernardMTCondensed-Regular.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: "Britannic Bold Custom";
+    src:
+      local("Britannic Bold"),
+      local("Britannic Bold Regular"),
+      url("/static/fonts/custom/BritannicBold-Regular.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+  }
+  :root {
+    --labels-bg: linear-gradient(150deg, #f8fafc, #e2e8f0 58%, #dbeafe);
+    --labels-card: rgba(255, 255, 255, 0.9);
+    --print-inset: 0.02in;
+    --print-canvas-w: 8.46in;
+    --print-canvas-h: 10.96in;
+    --print-canvas-m: 0.02in;
+  }
+  .labels-page {
+    background: var(--labels-bg);
+    min-height: 100vh;
+  }
+  .labels-title {
+    font-family: "Bebas Neue", sans-serif;
+    letter-spacing: 0.04em;
+    color: #111827;
+    font-size: clamp(1.8rem, 3vw, 2.7rem);
+  }
+  .labels-subtitle {
+    color: #475569;
+    max-width: 58ch;
+  }
+  .labels-panel {
+    border: 1px solid #dbe1ea;
+    background: var(--labels-card);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+  }
+  .form-label {
+    color: #1f2937;
+    font-weight: 600;
+  }
+  .sheet-wrap {
+    width: min(100%, 860px);
+    margin-inline: auto;
+  }
+  .sheet-canvas {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 8.5 / 11;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+  }
+  .format-view {
+    position: absolute;
+    inset: 0;
+    display: none;
+    padding: 3.5%;
+    gap: 3%;
+  }
+  .format-view.active {
+    display: grid;
+  }
+  .format-single {
+    grid-template-rows: 1fr;
+  }
+  .format-double {
+    grid-template-rows: 1fr 1fr;
+  }
+  .format-double-sheet {
+    padding: 0;
+    gap: 0;
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+  }
+  .format-double-sheet .label-card {
+    border: 0;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
+  }
+  .format-bolsa50 {
+    grid-template-rows: 68% 1fr;
+  }
+  .format-bolsa50 .label-card:first-child {
+    margin-top: 3%;
+  }
+  .label-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1.8px solid rgba(15, 23, 42, 0.25);
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    isolation: isolate;
+  }
+  .label-text-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    color: #0b0f1a;
+    text-transform: uppercase;
+    text-align: center;
+    font-family: "Anton", "Oswald", sans-serif;
+    letter-spacing: 0.02em;
+    text-rendering: geometricPrecision;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  .label-code {
+    position: absolute;
+    top: 8%;
+    left: 7%;
+    font-family: "Oswald", sans-serif;
+    font-size: var(--fs, clamp(15px, 2.2vw, 36px));
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    transform: translate(var(--dx, 0px), var(--dy, 0px));
+  }
+  .label-name {
+    position: absolute;
+    left: 6%;
+    right: 6%;
+    top: 35%;
+    transform: translate(var(--dx, 0px), calc(-50% + var(--dy, 0px)));
+    line-height: 1;
+    font-size: var(--fs, clamp(30px, 7vw, 108px));
+    font-weight: 700;
+  }
+  .label-weight {
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    top: 63%;
+    transform: translate(var(--dx, 0px), calc(-50% + var(--dy, 0px)));
+    line-height: 1;
+    font-size: var(--fs, clamp(28px, 6vw, 84px));
+    font-weight: 700;
+  }
+  .label-extra1 {
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    top: 77%;
+    transform: translate(var(--dx, 0px), calc(-50% + var(--dy, 0px)));
+    line-height: 1;
+    font-size: var(--fs, clamp(14px, 2.2vw, 34px));
+    font-weight: 600;
+    min-height: 1em;
+  }
+  .label-extra2 {
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    top: 87%;
+    transform: translate(var(--dx, 0px), calc(-50% + var(--dy, 0px)));
+    line-height: 1;
+    font-size: var(--fs, clamp(12px, 2vw, 28px));
+    font-weight: 600;
+    min-height: 1em;
+  }
+  .label-no-code .label-code {
+    display: none;
+  }
+  .format-view[data-format-view="bolsas_2"] .label-name {
+    left: 10%;
+    right: 10%;
+    max-width: 80%;
+    margin-left: auto;
+    margin-right: auto;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+    text-wrap: balance;
+  }
+  .sheet-warning {
+    font-size: 0.85rem;
+    color: #7c2d12;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-radius: 10px;
+    padding: 0.5rem 0.75rem;
+  }
+  .sheet-canvas.design-mode .label-text-layer [data-bind] {
+    cursor: move;
+    outline: 1px dashed rgba(30, 64, 175, 0.5);
+    outline-offset: 2px;
+    user-select: none;
+    touch-action: none;
+    will-change: transform;
+    transition: none !important;
+  }
+  .sheet-canvas.design-mode .label-text-layer [data-bind].active-design-field {
+    outline: 2px solid #2563eb;
+    background: rgba(219, 234, 254, 0.25);
+  }
+  .design-hint {
+    font-size: 0.82rem;
+    color: #334155;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    padding: 0.5rem 0.75rem;
+  }
+  .design-coords {
+    font-size: 0.78rem;
+    color: #334155;
+  }
+  .design-size-controls {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    gap: 0.4rem;
+    align-items: center;
+    margin-top: 0.5rem;
+  }
+  .align-guide-x,
+  .align-guide-y {
+    position: absolute;
+    pointer-events: none;
+    z-index: 3;
+    display: none;
+  }
+  .align-guide-x {
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    border-top: 1px dashed rgba(37, 99, 235, 0.85);
+  }
+  .align-guide-y {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    border-left: 1px dashed rgba(37, 99, 235, 0.85);
+  }
+  .align-guide-x.show,
+  .align-guide-y.show {
+    display: block;
+  }
+  .design-text-toolbar {
+    position: absolute;
+    z-index: 5;
+    display: none;
+    gap: 0.25rem;
+    align-items: center;
+    background: rgba(15, 23, 42, 0.92);
+    color: #fff;
+    border-radius: 8px;
+    padding: 0.2rem;
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.35);
+  }
+  .design-text-toolbar.show {
+    display: inline-flex;
+  }
+  .design-text-toolbar button {
+    border: 0;
+    background: #1e3a8a;
+    color: #fff;
+    border-radius: 6px;
+    min-width: 26px;
+    height: 26px;
+    line-height: 1;
+    font-size: 0.82rem;
+  }
+  .design-text-toolbar .toolbar-size {
+    min-width: 46px;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .font-option-preview {
+    font-size: 0.8rem;
+    color: #64748b;
+  }
+  .label-form-card {
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 0.75rem;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.05);
+  }
+  .label-form-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.88rem;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+    margin-bottom: 0.65rem;
+  }
+  .label-form-title.one {
+    background: #dbeafe;
+    color: #1e3a8a;
+    border: 1px solid #93c5fd;
+  }
+  .label-form-title.two {
+    background: #ede9fe;
+    color: #5b21b6;
+    border: 1px solid #c4b5fd;
+  }
+  .print-only {
+    display: none;
+  }
+  @media (max-width: 991px) {
+    .sheet-wrap {
+      width: 100%;
+    }
+  }
+  @media print {
+    @page {
+      size: Letter;
+      margin: 0;
+    }
+    html, body {
+      width: 8.5in;
+      height: 11in;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #ffffff !important;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    body * {
+      visibility: hidden !important;
+    }
+    .no-print,
+    .sidebar,
+    .offcanvas,
+    .toggle-sidebar,
+    [data-bs-sidebar] {
+      display: none !important;
+    }
+    .print-only,
+    .print-only * {
+      visibility: visible !important;
+    }
+    #layout {
+      display: block !important;
+      min-height: 0 !important;
+      background: #ffffff !important;
+    }
+    main {
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+    .print-only {
+      display: block !important;
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 8.5in !important;
+      height: 11in !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+    }
+    .sheet-wrap {
+      width: 8.5in !important;
+      height: 11in !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .sheet-canvas {
+      width: var(--print-canvas-w) !important;
+      height: var(--print-canvas-h) !important;
+      margin: var(--print-canvas-m) !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+    }
+    .label-card {
+      border: 0 !important;
+      outline: none !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      background-size: 100% 100% !important;
+      background-repeat: no-repeat !important;
+      background-position: center center !important;
+    }
+    .format-view[data-bg-key] {
+      background-size: 100% 100% !important;
+      background-repeat: no-repeat !important;
+      background-position: center center !important;
+    }
+    .label-text-layer [data-bind] {
+      -webkit-font-smoothing: antialiased !important;
+      text-rendering: geometricPrecision !important;
+    }
+    .align-guide-x,
+    .align-guide-y,
+    .design-text-toolbar {
+      display: none !important;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="layout" class="grid min-h-screen lg:grid-cols-[260px_1fr] labels-page">
+  {% include "partials/sidebar.html" %}
+  <main class="p-4 p-lg-6">
+    <div class="no-print d-flex align-items-center justify-content-between flex-wrap gap-3 mb-3">
+      <div>
+        <button class="toggle-sidebar sidebar-toggle-show btn btn-sm btn-outline-secondary mb-2" type="button">
+          <i class="bi bi-layout-sidebar"></i>
+          Mostrar menu
+        </button>
+        <h1 class="labels-title mb-1">Impresion de etiquetas</h1>
+        <p class="labels-subtitle mb-0">
+          Disena y previsualiza etiquetas para pacas y bolsas en hoja carta con calidad de impresion.
+        </p>
+      </div>
+      <div class="d-flex gap-2">
+        <select id="printInsetPreset" class="form-select" style="min-width:210px;">
+          <option value="0.03">Borde conservador</option>
+          <option value="0.02" selected>Borde estandar</option>
+          <option value="0.01">Borde amplio</option>
+          <option value="0.00">Borde maximo</option>
+        </select>
+        <button class="btn btn-outline-secondary" type="button" id="btnResetLabelForm">
+          <i class="bi bi-eraser"></i> Limpiar
+        </button>
+        <button class="btn btn-primary" type="button" id="btnPrintLabels">
+          <i class="bi bi-printer"></i> Imprimir carta
+        </button>
+      </div>
+    </div>
+
+    <div class="row g-3 no-print">
+      <div class="col-12 col-xl-4">
+        <section class="labels-panel p-3 p-lg-4 h-100">
+          <div class="text-uppercase text-muted small mb-2">Configuracion</div>
+          <div class="mb-3">
+            <label class="form-label" for="labelFormat">Formato de etiqueta</label>
+            <select id="labelFormat" class="form-select">
+              <option value="pacas_1">1 etiqueta de paca (carta completa)</option>
+              <option value="pacas_2">2 etiquetas de pacas (media carta + media carta)</option>
+              <option value="bolsas_2">2 etiquetas de bolsas (media carta + media carta)</option>
+              <option value="bolsa_50">Etiqueta especial bolsa 50+ lbs</option>
+            </select>
+          </div>
+          <div class="mb-3 border rounded-3 p-2 bg-white">
+            <label class="form-label" for="fontFamilySelect1">Tipografia etiqueta 1</label>
+            <select id="fontFamilySelect1" class="form-select mb-2"></select>
+            <div class="font-option-preview mb-2" id="fontPreviewText1">Vista previa etiqueta 1</div>
+            <label class="form-label" for="fontFamilySelect2">Tipografia etiqueta 2</label>
+            <select id="fontFamilySelect2" class="form-select mb-2"></select>
+            <div class="font-option-preview" id="fontPreviewText2">Vista previa etiqueta 2</div>
+            <div class="d-flex gap-2 mt-2">
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnSaveFontPreset">Guardar predefinido</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnLoadFontPreset">Cargar predefinido</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" id="btnResetFontPreset">Borrar predefinido</button>
+            </div>
+            <div class="font-option-preview mt-2" id="fontPresetStatus">Predefinido: no guardado para este formato.</div>
+            <div class="font-option-preview mt-2">
+              Para Bernard/Britannic coloca archivos en <code>backend/app/static/fonts/custom/</code>:
+              <code>BernardMTCondensed-Regular.ttf</code> y <code>BritannicBold-Regular.ttf</code>.
+            </div>
+          </div>
+          <div class="mb-3 border rounded-3 p-2 bg-white">
+            <label class="form-label" for="bgTargetFormat">Subir nuevo background</label>
+            <select id="bgTargetFormat" class="form-select mb-2">
+              <option value="pacas_1">1 etiqueta de paca (carta completa)</option>
+              <option value="pacas_2">2 etiquetas de pacas (media carta)</option>
+              <option value="bolsas_2">2 etiquetas de bolsas (media carta)</option>
+              <option value="bolsa_50">Etiqueta especial bolsa 50+ lbs</option>
+            </select>
+            <input id="bgUploadFile" type="file" accept=".jpg,.jpeg,.png,.webp" class="form-control mb-2">
+            <button type="button" class="btn btn-sm btn-outline-dark w-100" id="btnUploadBackground">Subir background al formato</button>
+          </div>
+          <div class="mb-3 border rounded-3 p-2 bg-white">
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" role="switch" id="designModeToggle">
+              <label class="form-check-label" for="designModeToggle">Modo diseno (lienzo editable)</label>
+            </div>
+            <div class="d-flex gap-2 mb-2">
+              <button class="btn btn-sm btn-outline-primary" type="button" id="btnSaveLayout">Guardar layout</button>
+              <button class="btn btn-sm btn-outline-danger" type="button" id="btnResetLayout">Restablecer layout</button>
+            </div>
+            <div class="design-hint mb-1">Arrastra textos sobre la etiqueta y quedaran guardados por formato.</div>
+            <div class="design-coords" id="designCoords">Campo: - | X: 0px | Y: 0px</div>
+            <div class="design-size-controls">
+              <button class="btn btn-sm btn-outline-secondary" type="button" id="btnTextSmaller">A-</button>
+              <input type="range" id="designFontSize" class="form-range m-0" min="12" max="220" step="1" value="72" />
+              <button class="btn btn-sm btn-outline-secondary" type="button" id="btnTextBigger">A+</button>
+              <button class="btn btn-sm btn-outline-dark" type="button" id="btnTextAuto">Auto</button>
+            </div>
+          </div>
+
+          <div class="mb-3 label-form-card">
+            <div class="label-form-title one">
+              <i class="bi bi-tag-fill"></i>
+              Etiqueta 1
+            </div>
+            <label class="form-label" for="labelName1" data-role="label-name">Nombre paca</label>
+            <input id="labelName1" class="form-control mb-2" type="text" maxlength="90" placeholder="Ej: Super Premium">
+            <label class="form-label" for="labelWeight1" data-role="label-weight">Peso paca</label>
+            <input id="labelWeight1" class="form-control mb-2" type="text" maxlength="30" placeholder="Ej: 25">
+            <div id="codeField1Wrap">
+              <label class="form-label" for="labelCode1">Codigo paca</label>
+              <input id="labelCode1" class="form-control" type="text" maxlength="30" placeholder="Ej: 003">
+            </div>
+            <label class="form-label mt-2" for="labelExtra1A">Texto adicional 1</label>
+            <input id="labelExtra1A" class="form-control mb-2" type="text" maxlength="60" placeholder="Ej: Calidad exportacion">
+            <label class="form-label" for="labelExtra1B">Texto adicional 2</label>
+            <input id="labelExtra1B" class="form-control" type="text" maxlength="60" placeholder="Ej: Lote 2026-01">
+          </div>
+
+          <div id="secondLabelBlock" class="mb-3 label-form-card">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="label-form-title two mb-0">
+                <i class="bi bi-tags-fill"></i>
+                Etiqueta 2
+              </div>
+              <button class="btn btn-sm btn-outline-primary" type="button" id="btnCopyToSecond">Duplicar etiqueta 1</button>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" role="switch" id="mirrorSecondLabel">
+              <label class="form-check-label" for="mirrorSecondLabel">Espejo automatico (Etiqueta 2 = Etiqueta 1)</label>
+            </div>
+            <label class="form-label" for="labelName2" data-role="label-name-2">Nombre paca</label>
+            <input id="labelName2" class="form-control mb-2" type="text" maxlength="90" placeholder="Ej: Denim Jackets">
+            <label class="form-label" for="labelWeight2" data-role="label-weight-2">Peso paca</label>
+            <input id="labelWeight2" class="form-control mb-2" type="text" maxlength="30" placeholder="Ej: 25">
+            <div id="codeField2Wrap">
+              <label class="form-label" for="labelCode2">Codigo paca</label>
+              <input id="labelCode2" class="form-control" type="text" maxlength="30" placeholder="Ej: 004">
+            </div>
+            <label class="form-label mt-2" for="labelExtra2A">Texto adicional 1</label>
+            <input id="labelExtra2A" class="form-control mb-2" type="text" maxlength="60" placeholder="Ej: Calidad premium">
+            <label class="form-label" for="labelExtra2B">Texto adicional 2</label>
+            <input id="labelExtra2B" class="form-control" type="text" maxlength="60" placeholder="Ej: Bodega central">
+          </div>
+
+          <div class="sheet-warning mb-0" id="bgWarning">
+            Puedes subir fondos desde esta pantalla o copiarlos en <code>backend/app/static/labels/</code>.
+          </div>
+        </section>
+      </div>
+
+      <div class="col-12 col-xl-8">
+        <section class="labels-panel p-2 p-lg-3">
+          <div class="sheet-wrap">
+            <div class="sheet-canvas" id="sheetCanvas">
+              <div class="format-view format-single active" data-format-view="pacas_1">
+                <article class="label-card label-no-code" data-bg-key="pacas_1">
+                  <div class="label-text-layer">
+                    <div class="label-name" data-bind="name" data-index="1">NOMBRE PACA</div>
+                    <div class="label-weight" data-bind="weight" data-index="1">25 LBS</div>
+                    <div class="label-extra1" data-bind="extra1" data-index="1"></div>
+                    <div class="label-extra2" data-bind="extra2" data-index="1"></div>
+                  </div>
+                </article>
+              </div>
+              <div class="format-view format-double format-double-sheet" data-format-view="pacas_2" data-bg-key="pacas_2">
+                <article class="label-card">
+                  <div class="label-text-layer">
+                    <div class="label-code" data-bind="code" data-index="1">CODE - 001</div>
+                    <div class="label-name" data-bind="name" data-index="1">NOMBRE PACA</div>
+                    <div class="label-weight" data-bind="weight" data-index="1">100 LBS</div>
+                    <div class="label-extra1" data-bind="extra1" data-index="1"></div>
+                    <div class="label-extra2" data-bind="extra2" data-index="1"></div>
+                  </div>
+                </article>
+                <article class="label-card">
+                  <div class="label-text-layer">
+                    <div class="label-code" data-bind="code" data-index="2">CODE - 002</div>
+                    <div class="label-name" data-bind="name" data-index="2">NOMBRE PACA</div>
+                    <div class="label-weight" data-bind="weight" data-index="2">100 LBS</div>
+                    <div class="label-extra1" data-bind="extra1" data-index="2"></div>
+                    <div class="label-extra2" data-bind="extra2" data-index="2"></div>
+                  </div>
+                </article>
+              </div>
+              <div class="format-view format-double format-double-sheet" data-format-view="bolsas_2" data-bg-key="bolsas_2">
+                <article class="label-card label-no-code">
+                  <div class="label-text-layer">
+                    <div class="label-name" data-bind="name" data-index="1">NOMBRE BOLSA</div>
+                    <div class="label-weight" data-bind="weight" data-index="1">25 LBS</div>
+                    <div class="label-extra1" data-bind="extra1" data-index="1"></div>
+                    <div class="label-extra2" data-bind="extra2" data-index="1"></div>
+                  </div>
+                </article>
+                <article class="label-card label-no-code">
+                  <div class="label-text-layer">
+                    <div class="label-name" data-bind="name" data-index="2">NOMBRE BOLSA</div>
+                    <div class="label-weight" data-bind="weight" data-index="2">25 LBS</div>
+                    <div class="label-extra1" data-bind="extra1" data-index="2"></div>
+                    <div class="label-extra2" data-bind="extra2" data-index="2"></div>
+                  </div>
+                </article>
+              </div>
+              <div class="format-view format-bolsa50" data-format-view="bolsa_50">
+                <article class="label-card label-no-code" data-bg-key="bolsa_50">
+                  <div class="label-text-layer">
+                    <div class="label-name" data-bind="name" data-index="1">NOMBRE BOLSA</div>
+                    <div class="label-weight" data-bind="weight" data-index="1">50 LBS</div>
+                    <div class="label-extra1" data-bind="extra1" data-index="1"></div>
+                    <div class="label-extra2" data-bind="extra2" data-index="1"></div>
+                  </div>
+                </article>
+                <div></div>
+              </div>
+              <div class="design-text-toolbar" id="designTextToolbar">
+                <button type="button" id="toolbarTextSmaller">A-</button>
+                <span class="toolbar-size" id="toolbarTextSize">--</span>
+                <button type="button" id="toolbarTextBigger">A+</button>
+                <button type="button" id="toolbarTextAuto">Auto</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="print-only">
+      <div class="sheet-wrap">
+        <div class="sheet-canvas" id="sheetCanvasPrint"></div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (() => {
+    const formatSelect = document.getElementById("labelFormat");
+    if (!formatSelect) return;
+
+    const fields = {
+      name1: document.getElementById("labelName1"),
+      weight1: document.getElementById("labelWeight1"),
+      code1: document.getElementById("labelCode1"),
+      extra1a: document.getElementById("labelExtra1A"),
+      extra1b: document.getElementById("labelExtra1B"),
+      name2: document.getElementById("labelName2"),
+      weight2: document.getElementById("labelWeight2"),
+      code2: document.getElementById("labelCode2"),
+      extra2a: document.getElementById("labelExtra2A"),
+      extra2b: document.getElementById("labelExtra2B"),
+    };
+    const ui = {
+      views: Array.from(document.querySelectorAll("[data-format-view]")),
+      code1Wrap: document.getElementById("codeField1Wrap"),
+      code2Wrap: document.getElementById("codeField2Wrap"),
+      secondBlock: document.getElementById("secondLabelBlock"),
+      nameLabels: Array.from(document.querySelectorAll("[data-role='label-name'], [data-role='label-name-2']")),
+      weightLabels: Array.from(document.querySelectorAll("[data-role='label-weight'], [data-role='label-weight-2']")),
+      btnCopy: document.getElementById("btnCopyToSecond"),
+      mirrorSecondLabel: document.getElementById("mirrorSecondLabel"),
+      btnReset: document.getElementById("btnResetLabelForm"),
+      btnPrint: document.getElementById("btnPrintLabels"),
+      warning: document.getElementById("bgWarning"),
+      sheetPrint: document.getElementById("sheetCanvasPrint"),
+      sheetCanvas: document.getElementById("sheetCanvas"),
+      designToggle: document.getElementById("designModeToggle"),
+      btnSaveLayout: document.getElementById("btnSaveLayout"),
+      btnResetLayout: document.getElementById("btnResetLayout"),
+      designCoords: document.getElementById("designCoords"),
+      designFontSize: document.getElementById("designFontSize"),
+      btnTextSmaller: document.getElementById("btnTextSmaller"),
+      btnTextBigger: document.getElementById("btnTextBigger"),
+      btnTextAuto: document.getElementById("btnTextAuto"),
+      designTextToolbar: document.getElementById("designTextToolbar"),
+      toolbarTextSmaller: document.getElementById("toolbarTextSmaller"),
+      toolbarTextBigger: document.getElementById("toolbarTextBigger"),
+      toolbarTextAuto: document.getElementById("toolbarTextAuto"),
+      toolbarTextSize: document.getElementById("toolbarTextSize"),
+      fontFamilySelect1: document.getElementById("fontFamilySelect1"),
+      fontFamilySelect2: document.getElementById("fontFamilySelect2"),
+      fontPreviewText1: document.getElementById("fontPreviewText1"),
+      fontPreviewText2: document.getElementById("fontPreviewText2"),
+      btnSaveFontPreset: document.getElementById("btnSaveFontPreset"),
+      btnLoadFontPreset: document.getElementById("btnLoadFontPreset"),
+      btnResetFontPreset: document.getElementById("btnResetFontPreset"),
+      fontPresetStatus: document.getElementById("fontPresetStatus"),
+      printInsetPreset: document.getElementById("printInsetPreset"),
+      bgTargetFormat: document.getElementById("bgTargetFormat"),
+      bgUploadFile: document.getElementById("bgUploadFile"),
+      btnUploadBackground: document.getElementById("btnUploadBackground"),
+    };
+    const PRINT_INSET_KEY = "labels_print_inset_v1";
+    const LAYOUT_KEY = "labels_layout_v1";
+    const MIRROR_SECOND_KEY = "labels_mirror_second_v1";
+    const backgroundCandidates = {
+      pacas_1: ["/static/labels/etiquetaPacasuna.jpg", "/static/labels/etiquetaPacasuna.jpeg", "/static/labels/etiquetaPacasuna.png"],
+      pacas_2: ["/static/labels/etiquetaPacas2.jpg", "/static/labels/etiquetaPacas2.jpeg", "/static/labels/etiquetaPacas2.png"],
+      bolsas_2: ["/static/labels/etiquetaBolsas2.jpg", "/static/labels/etiquetaBolsas2.jpeg", "/static/labels/etiquetaBolsas2.png"],
+      bolsa_50: ["/static/labels/etiquetaBolsa50.jpg", "/static/labels/etiquetaBolsa50.jpeg", "/static/labels/etiquetaBolsa50.png"],
+    };
+    const resolvedBackground = {};
+    const savedLayouts = (() => {
+      try {
+        return JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}") || {};
+      } catch (_err) {
+        return {};
+      }
+    })();
+    const dragState = {
+      active: false,
+      node: null,
+      pointerId: null,
+      cardRect: null,
+      gx: null,
+      gy: null,
+      startX: 0,
+      startY: 0,
+      startDx: 0,
+      startDy: 0,
+      liveDx: 0,
+      liveDy: 0,
+      nextClientX: 0,
+      nextClientY: 0,
+      rafId: null,
+    };
+    let designMode = false;
+    const FONT_KEY = "labels_font_by_format_v1";
+    const FONT_PRESET_KEY = "labels_font_presets_v1";
+    const fontCatalog = [
+      { id: "anton_regular", label: "Anton (Impacto)", family: "'Anton', sans-serif", weight: "400", style: "normal" },
+      { id: "bebas_regular", label: "Bebas Neue (Cartel)", family: "'Bebas Neue', sans-serif", weight: "400", style: "normal" },
+      { id: "oswald_regular", label: "Oswald (Etiqueta)", family: "'Oswald', sans-serif", weight: "400", style: "normal" },
+      { id: "archivo_black_regular", label: "Archivo Black (Fuerte)", family: "'Archivo Black', sans-serif", weight: "400", style: "normal" },
+      { id: "black_ops_regular", label: "Black Ops One (Militar)", family: "'Black Ops One', sans-serif", weight: "400", style: "normal" },
+      { id: "bungee_regular", label: "Bungee (Display)", family: "'Bungee', sans-serif", weight: "400", style: "normal" },
+      { id: "fjalla_regular", label: "Fjalla One (Compacta)", family: "'Fjalla One', sans-serif", weight: "400", style: "normal" },
+      { id: "league_spartan_bold", label: "League Spartan (Moderna)", family: "'League Spartan', sans-serif", weight: "700", style: "normal" },
+      { id: "montserrat_bold", label: "Montserrat (Limpia)", family: "'Montserrat', sans-serif", weight: "700", style: "normal" },
+      { id: "poppins_bold", label: "Poppins (Comercial)", family: "'Poppins', sans-serif", weight: "700", style: "normal" },
+      { id: "raleway_bold", label: "Raleway (Elegante)", family: "'Raleway', sans-serif", weight: "700", style: "normal" },
+      { id: "nunito_bold", label: "Nunito (Redonda)", family: "'Nunito', sans-serif", weight: "700", style: "normal" },
+      { id: "rubik_bold", label: "Rubik (Tecnica)", family: "'Rubik', sans-serif", weight: "700", style: "normal" },
+      { id: "roboto_condensed_bold", label: "Roboto Condensed (Estrecha)", family: "'Roboto Condensed', sans-serif", weight: "700", style: "normal" },
+      { id: "open_sans_bold", label: "Open Sans (Universal)", family: "'Open Sans', sans-serif", weight: "700", style: "normal" },
+      { id: "ibm_plex_bold", label: "IBM Plex Sans (Pro)", family: "'IBM Plex Sans', sans-serif", weight: "700", style: "normal" },
+      { id: "lato_bold", label: "Lato (Neutra)", family: "'Lato', sans-serif", weight: "700", style: "normal" },
+      { id: "staatliches_regular", label: "Staatliches (Poster)", family: "'Staatliches', sans-serif", weight: "400", style: "normal" },
+      { id: "luckiest_regular", label: "Luckiest Guy (Creativa)", family: "'Luckiest Guy', cursive", weight: "400", style: "normal" },
+      { id: "marker_regular", label: "Permanent Marker (Marker)", family: "'Permanent Marker', cursive", weight: "400", style: "normal" },
+      { id: "cinzel_regular", label: "Cinzel (Clasica)", family: "'Cinzel', serif", weight: "400", style: "normal" },
+      { id: "playfair_bold", label: "Playfair Display (Serif)", family: "'Playfair Display', serif", weight: "700", style: "normal" },
+      { id: "merriweather_bold", label: "Merriweather (Lectura)", family: "'Merriweather', serif", weight: "700", style: "normal" },
+      { id: "libre_regular", label: "Libre Baskerville Regular", family: "'Libre Baskerville', serif", weight: "400", style: "normal" },
+      { id: "libre_italic", label: "Libre Baskerville Italic", family: "'Libre Baskerville', serif", weight: "400", style: "italic" },
+      { id: "libre_bold", label: "Libre Baskerville Bold", family: "'Libre Baskerville', serif", weight: "700", style: "normal" },
+      { id: "libre_bold_italic", label: "Libre Baskerville Bold Italic", family: "'Libre Baskerville', serif", weight: "700", style: "italic" },
+      { id: "bernard_mt_condensed_regular", label: "Bernard MT Condensed Regular", family: "'Bernard MT Condensed Custom', 'Bernard MT Condensed', serif", weight: "400", style: "normal" },
+      { id: "britannic_bold_regular", label: "Britannic Bold Regular", family: "'Britannic Bold Custom', 'Britannic Bold', sans-serif", weight: "400", style: "normal" },
+    ];
+    const selectedFontsByFormat = (() => {
+      try {
+        return JSON.parse(localStorage.getItem(FONT_KEY) || "{}") || {};
+      } catch (_err) {
+        return {};
+      }
+    })();
+    const fontPresetsByFormat = (() => {
+      try {
+        return JSON.parse(localStorage.getItem(FONT_PRESET_KEY) || "{}") || {};
+      } catch (_err) {
+        return {};
+      }
+    })();
+    const mirrorSecondDefault = (() => {
+      const raw = localStorage.getItem(MIRROR_SECOND_KEY);
+      if (raw === null) return true;
+      return raw === "1";
+    })();
+
+    const nodeKey = (node) => `${node.dataset.bind}_${node.dataset.index || "1"}`;
+    const activeFormat = () => formatSelect.value;
+    const parseNum = (value, fallback = 0) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : fallback;
+    };
+    const notify = (message, icon = "success") => {
+      if (window.Swal) {
+        Swal.fire({ toast: true, icon, title: message, timer: 1700, position: "top-end", showConfirmButton: false });
+      }
+    };
+    const applyPrintInset = (value) => {
+      const raw = `${value || "0.02"}`.trim();
+      const numeric = Number(raw);
+      const safe = Number.isFinite(numeric) ? Math.max(0, Math.min(0.08, numeric)) : 0.02;
+      const cssValue = `${safe.toFixed(2)}in`;
+      const widthIn = Math.max(8.34, 8.5 - (safe * 2));
+      const heightIn = Math.max(10.84, 11 - (safe * 2));
+      document.documentElement.style.setProperty("--print-inset", cssValue);
+      document.documentElement.style.setProperty("--print-canvas-m", cssValue);
+      document.documentElement.style.setProperty("--print-canvas-w", `${widthIn.toFixed(2)}in`);
+      document.documentElement.style.setProperty("--print-canvas-h", `${heightIn.toFixed(2)}in`);
+      if (ui.printInsetPreset) {
+        const normalized = safe.toFixed(2);
+        const exists = Array.from(ui.printInsetPreset.options).some((opt) => opt.value === normalized);
+        if (exists) ui.printInsetPreset.value = normalized;
+      }
+      localStorage.setItem(PRINT_INSET_KEY, safe.toFixed(2));
+    };
+    const defaultFont = "anton_regular";
+    const isValidFont = (value) => fontCatalog.some((item) => item.id === value);
+    const fontById = (id) => fontCatalog.find((item) => item.id === id) || fontCatalog[0];
+    const ensureFormatFonts = (formatCode) => {
+      if (!selectedFontsByFormat[formatCode]) {
+        selectedFontsByFormat[formatCode] = { "1": defaultFont, "2": defaultFont };
+      }
+      if (!isValidFont(selectedFontsByFormat[formatCode]["1"])) {
+        selectedFontsByFormat[formatCode]["1"] = defaultFont;
+      }
+      if (!isValidFont(selectedFontsByFormat[formatCode]["2"])) {
+        selectedFontsByFormat[formatCode]["2"] = defaultFont;
+      }
+    };
+    const persistFonts = () => localStorage.setItem(FONT_KEY, JSON.stringify(selectedFontsByFormat));
+    const persistFontPresets = () => localStorage.setItem(FONT_PRESET_KEY, JSON.stringify(fontPresetsByFormat));
+    const updateFontPresetStatus = () => {
+      if (!ui.fontPresetStatus) return;
+      const fmt = activeFormat();
+      ui.fontPresetStatus.textContent = fontPresetsByFormat[fmt]
+        ? "Predefinido: guardado para este formato."
+        : "Predefinido: no guardado para este formato.";
+    };
+    const saveFontPresetForActiveFormat = () => {
+      const fmt = activeFormat();
+      ensureFormatFonts(fmt);
+      fontPresetsByFormat[fmt] = {
+        "1": selectedFontsByFormat[fmt]["1"],
+        "2": selectedFontsByFormat[fmt]["2"],
+      };
+      persistFontPresets();
+      updateFontPresetStatus();
+      notify("Predefinido de tipografia guardado");
+    };
+    const loadFontPresetForActiveFormat = () => {
+      const fmt = activeFormat();
+      const preset = fontPresetsByFormat[fmt];
+      if (!preset) {
+        notify("No hay predefinido guardado para este formato", "warning");
+        return;
+      }
+      selectedFontsByFormat[fmt] = {
+        "1": isValidFont(preset["1"]) ? preset["1"] : defaultFont,
+        "2": isValidFont(preset["2"]) ? preset["2"] : defaultFont,
+      };
+      persistFonts();
+      syncFontSelectorsForFormat();
+      applySelectedFont();
+      updatePreview();
+      updateFontPresetStatus();
+      notify("Predefinido aplicado");
+    };
+    const clearFontPresetForActiveFormat = () => {
+      const fmt = activeFormat();
+      delete fontPresetsByFormat[fmt];
+      persistFontPresets();
+      updateFontPresetStatus();
+      notify("Predefinido eliminado");
+    };
+    const buildFontCatalog = () => {
+      [ui.fontFamilySelect1, ui.fontFamilySelect2].forEach((selectNode) => {
+        if (!selectNode) return;
+        selectNode.innerHTML = "";
+        fontCatalog.forEach((item) => {
+          const opt = document.createElement("option");
+          opt.value = item.id;
+          opt.textContent = item.label;
+          selectNode.appendChild(opt);
+        });
+      });
+    };
+    const syncFontSelectorsForFormat = () => {
+      const formatCode = activeFormat();
+      ensureFormatFonts(formatCode);
+      if (fontPresetsByFormat[formatCode]) {
+        const preset = fontPresetsByFormat[formatCode];
+        selectedFontsByFormat[formatCode]["1"] = isValidFont(preset["1"]) ? preset["1"] : defaultFont;
+        selectedFontsByFormat[formatCode]["2"] = isValidFont(preset["2"]) ? preset["2"] : defaultFont;
+        persistFonts();
+      }
+      if (ui.fontFamilySelect1) ui.fontFamilySelect1.value = selectedFontsByFormat[formatCode]["1"];
+      if (ui.fontFamilySelect2) ui.fontFamilySelect2.value = selectedFontsByFormat[formatCode]["2"];
+      const showSecond = formatCode === "pacas_2" || formatCode === "bolsas_2";
+      if (ui.fontFamilySelect2) ui.fontFamilySelect2.disabled = !showSecond || isMirrorEnabled();
+      if (ui.fontPreviewText2) ui.fontPreviewText2.style.opacity = showSecond ? "1" : "0.55";
+      updateFontPresetStatus();
+    };
+    const applySelectedFont = () => {
+      const formatCode = activeFormat();
+      ensureFormatFonts(formatCode);
+      document.querySelectorAll(".format-view.active .label-text-layer [data-bind]").forEach((node) => {
+        const idx = (node.dataset.index || "1") === "2" ? "2" : "1";
+        const fontDef = fontById(selectedFontsByFormat[formatCode][idx]);
+        node.style.fontFamily = fontDef.family;
+        node.style.fontWeight = fontDef.weight;
+        node.style.fontStyle = fontDef.style;
+      });
+      if (ui.fontPreviewText1) {
+        const fontDef1 = fontById(selectedFontsByFormat[formatCode]["1"]);
+        ui.fontPreviewText1.style.fontFamily = fontDef1.family;
+        ui.fontPreviewText1.style.fontWeight = fontDef1.weight;
+        ui.fontPreviewText1.style.fontStyle = fontDef1.style;
+        ui.fontPreviewText1.textContent = `Vista previa etiqueta 1: ${fontDef1.label}`;
+      }
+      if (ui.fontPreviewText2) {
+        const fontDef2 = fontById(selectedFontsByFormat[formatCode]["2"]);
+        ui.fontPreviewText2.style.fontFamily = fontDef2.family;
+        ui.fontPreviewText2.style.fontWeight = fontDef2.weight;
+        ui.fontPreviewText2.style.fontStyle = fontDef2.style;
+        ui.fontPreviewText2.textContent = `Vista previa etiqueta 2: ${fontDef2.label}`;
+      }
+    };
+
+    const clampFont = (
+      node,
+      minPx,
+      maxPx,
+      targetFill = 0.9,
+      forceAuto = false,
+      singleLine = false,
+      maxLines = 0,
+    ) => {
+      if (!node) return;
+      if (node.dataset.customSize === "1" && !forceAuto) return;
+      node.style.fontSize = "";
+      node.style.letterSpacing = "";
+      node.style.whiteSpace = singleLine ? "nowrap" : "";
+      node.style.overflow = "";
+      const maxWidth = (node.clientWidth || (node.parentElement ? node.parentElement.clientWidth * 0.9 : 0)) * targetFill;
+      if (!maxWidth) return;
+
+      let lo = Math.max(8, Math.floor(minPx));
+      let hi = Math.max(lo, Math.floor(maxPx));
+      let best = lo;
+
+      // Binary search for best readable size that still fits the width.
+      const fitsNode = () => {
+        if (singleLine) {
+          return node.scrollWidth <= (maxWidth + 1);
+        }
+        if (maxLines > 0) {
+          const cs = window.getComputedStyle(node);
+          const lineHeightPx = parseFloat(cs.lineHeight || "0") || parseFloat(cs.fontSize || "0") || 16;
+          const maxHeight = (lineHeightPx * maxLines) + 2;
+          const clientW = node.clientWidth || maxWidth;
+          const noXOverflow = node.scrollWidth <= (clientW + 2);
+          return noXOverflow && node.scrollHeight <= maxHeight;
+        }
+        return node.scrollWidth <= (maxWidth + 1);
+      };
+
+      for (let i = 0; i < 13 && lo <= hi; i += 1) {
+        const mid = Math.floor((lo + hi) / 2);
+        node.style.fontSize = `${mid}px`;
+        if (fitsNode()) {
+          best = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+
+      node.style.fontSize = `${best}px`;
+      // If text is still slightly overflowing at minimum size, tighten spacing.
+      if (!singleLine && maxLines > 0) {
+        node.style.overflow = "hidden";
+      }
+      if (node.scrollWidth > maxWidth + 1) {
+        node.style.letterSpacing = "-0.8px";
+      }
+    };
+
+    const normalizeUpper = (value) => (value || "").toString().trim().toUpperCase();
+    const normalizeWeight = (value, fallback) => {
+      const raw = normalizeUpper(value);
+      if (!raw) return fallback;
+      if (/LBS|LB|KG/.test(raw)) return raw;
+      if (/^\d+([.,]\d+)?$/.test(raw)) return `${raw.replace(",", ".")} LBS`;
+      return raw;
+    };
+    const hasSecondLabel = () => activeFormat() === "pacas_2" || activeFormat() === "bolsas_2";
+    const supportsMirrorMode = () => activeFormat() === "bolsas_2";
+    const isMirrorEnabled = () => !!(ui.mirrorSecondLabel && supportsMirrorMode() && ui.mirrorSecondLabel.checked);
+    const syncSecondInputsState = () => {
+      const showSecond = hasSecondLabel();
+      const mirrorOn = isMirrorEnabled();
+      const secondFields = [fields.name2, fields.weight2, fields.code2, fields.extra2a, fields.extra2b].filter(Boolean);
+      secondFields.forEach((input) => {
+        input.readOnly = showSecond && mirrorOn;
+        input.classList.toggle("bg-light", showSecond && mirrorOn);
+      });
+      if (ui.fontFamilySelect2) {
+        ui.fontFamilySelect2.disabled = !showSecond || mirrorOn;
+      }
+      if (ui.btnCopy) {
+        ui.btnCopy.disabled = !showSecond;
+      }
+    };
+    const syncSecondFromFirst = () => {
+      if (!hasSecondLabel()) return;
+      fields.name2.value = fields.name1.value;
+      fields.weight2.value = fields.weight1.value;
+      fields.code2.value = fields.code1.value;
+      fields.extra2a.value = fields.extra1a.value;
+      fields.extra2b.value = fields.extra1b.value;
+    };
+    const copyLayoutFirstToSecond = () => {
+      if (!hasSecondLabel()) return;
+      const fmt = activeFormat();
+      const formatLayout = { ...(savedLayouts[fmt] || {}) };
+      const binds = ["name", "weight", "code", "extra1", "extra2"];
+      binds.forEach((bind) => {
+        const src = `${bind}_1`;
+        const dst = `${bind}_2`;
+        if (formatLayout[src]) {
+          formatLayout[dst] = { ...formatLayout[src] };
+        }
+      });
+      savedLayouts[fmt] = formatLayout;
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(savedLayouts));
+    };
+    const applyMirrorSettings = () => {
+      syncSecondInputsState();
+      if (!isMirrorEnabled()) return;
+      syncSecondFromFirst();
+      const fmt = activeFormat();
+      ensureFormatFonts(fmt);
+      selectedFontsByFormat[fmt]["2"] = selectedFontsByFormat[fmt]["1"];
+      persistFonts();
+      copyLayoutFirstToSecond();
+    };
+
+    const applyNodeLayout = (node, data) => {
+      const dx = parseNum(data?.dx, 0);
+      const dy = parseNum(data?.dy, 0);
+      const fs = parseNum(data?.fs, 0);
+      node.style.fontSize = "";
+      node.style.setProperty("--dx", `${dx}px`);
+      node.style.setProperty("--dy", `${dy}px`);
+      node.dataset.dx = String(dx);
+      node.dataset.dy = String(dy);
+      if (fs > 0) {
+        node.style.setProperty("--fs", `${fs}px`);
+        node.dataset.customSize = "1";
+      } else {
+        node.style.removeProperty("--fs");
+        node.dataset.customSize = "0";
+      }
+    };
+
+    const applyLayoutForActiveView = () => {
+      const view = document.querySelector(`.format-view[data-format-view="${activeFormat()}"]`);
+      if (!view) return;
+      const layout = savedLayouts[activeFormat()] || {};
+      view.querySelectorAll("[data-bind]").forEach((node) => applyNodeLayout(node, layout[nodeKey(node)] || {}));
+    };
+
+    const persistCurrentLayout = () => {
+      const view = document.querySelector(`.format-view[data-format-view="${activeFormat()}"]`);
+      if (!view) return;
+      const formatLayout = {};
+      view.querySelectorAll("[data-bind]").forEach((node) => {
+        formatLayout[nodeKey(node)] = {
+          dx: parseNum(node.dataset.dx, 0),
+          dy: parseNum(node.dataset.dy, 0),
+          fs: node.dataset.customSize === "1" ? parseNum((node.style.getPropertyValue("--fs") || "").replace("px", ""), 0) : 0,
+        };
+      });
+      savedLayouts[activeFormat()] = formatLayout;
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(savedLayouts));
+    };
+
+    const setCoordsLabel = (node) => {
+      if (!ui.designCoords) return;
+      if (!node) {
+        ui.designCoords.textContent = "Campo: - | X: 0px | Y: 0px";
+        if (ui.designFontSize) ui.designFontSize.disabled = true;
+        if (ui.toolbarTextSize) ui.toolbarTextSize.textContent = "--";
+        hideDesignToolbar();
+        return;
+      }
+      const dx = parseNum(node.dataset.dx, 0).toFixed(0);
+      const dy = parseNum(node.dataset.dy, 0).toFixed(0);
+      const hasCustom = node.dataset.customSize === "1";
+      const customSize = hasCustom
+        ? parseNum((node.style.getPropertyValue("--fs") || "").replace("px", ""), 72)
+        : Math.round(node.getBoundingClientRect().height * 0.6);
+      ui.designCoords.textContent = `Campo: ${nodeKey(node)} | X: ${dx}px | Y: ${dy}px | Tam: ${Math.round(customSize)}px`;
+      if (ui.designFontSize) {
+        ui.designFontSize.disabled = false;
+        ui.designFontSize.value = `${Math.max(12, Math.min(220, Math.round(customSize)))}`;
+      }
+      if (ui.toolbarTextSize) {
+        ui.toolbarTextSize.textContent = `${Math.round(customSize)}px`;
+      }
+    };
+
+    const hideDesignToolbar = () => {
+      if (!ui.designTextToolbar) return;
+      ui.designTextToolbar.classList.remove("show");
+    };
+
+    const positionDesignToolbar = (node) => {
+      if (!ui.designTextToolbar || !node) return;
+      const canvasRect = ui.sheetCanvas.getBoundingClientRect();
+      const nodeRect = node.getBoundingClientRect();
+      const toolbar = ui.designTextToolbar;
+      const toolbarWidth = toolbar.offsetWidth || 170;
+      const toolbarHeight = toolbar.offsetHeight || 32;
+      const left = Math.max(6, Math.min(canvasRect.width - toolbarWidth - 6, nodeRect.right - canvasRect.left - toolbarWidth));
+      const topCandidate = nodeRect.top - canvasRect.top - toolbarHeight - 6;
+      const top = topCandidate < 6 ? Math.min(canvasRect.height - toolbarHeight - 6, nodeRect.bottom - canvasRect.top + 6) : topCandidate;
+      toolbar.style.left = `${left}px`;
+      toolbar.style.top = `${top}px`;
+      toolbar.classList.add("show");
+    };
+
+    const getActiveDesignNode = () => document.querySelector(".format-view.active [data-bind].active-design-field");
+
+    const setNodeFontSize = (node, nextSize) => {
+      if (!node) return;
+      const size = Math.max(12, Math.min(220, Math.round(nextSize)));
+      node.style.fontSize = "";
+      node.style.setProperty("--fs", `${size}px`);
+      node.dataset.customSize = "1";
+      if (ui.designFontSize) ui.designFontSize.value = `${size}`;
+      setCoordsLabel(node);
+      persistCurrentLayout();
+      updatePreview();
+    };
+
+    const resetNodeFontAuto = (node) => {
+      if (!node) return;
+      node.style.fontSize = "";
+      node.style.removeProperty("--fs");
+      node.dataset.customSize = "0";
+      setCoordsLabel(node);
+      persistCurrentLayout();
+      updatePreview();
+    };
+
+    const updateDesignModeUI = () => {
+      ui.sheetCanvas.classList.toggle("design-mode", designMode);
+      if (!designMode) {
+        hideAllGuides();
+        hideDesignToolbar();
+        document.querySelectorAll(".active-design-field").forEach((n) => n.classList.remove("active-design-field"));
+        setCoordsLabel(null);
+      } else {
+        const activeNode = getActiveDesignNode();
+        setCoordsLabel(activeNode);
+        if (activeNode) positionDesignToolbar(activeNode);
+      }
+    };
+
+    const ensureCardGuides = (card) => {
+      if (!card) return { gx: null, gy: null };
+      let gx = card.querySelector(".align-guide-x");
+      let gy = card.querySelector(".align-guide-y");
+      if (!gx) {
+        gx = document.createElement("div");
+        gx.className = "align-guide-x";
+        card.appendChild(gx);
+      }
+      if (!gy) {
+        gy = document.createElement("div");
+        gy.className = "align-guide-y";
+        card.appendChild(gy);
+      }
+      return { gx, gy };
+    };
+
+    const hideAllGuides = () => {
+      document.querySelectorAll(".align-guide-x.show, .align-guide-y.show").forEach((g) => g.classList.remove("show"));
+    };
+
+    const startDrag = (evt) => {
+      if (!designMode) return;
+      const target = evt.target.closest("[data-bind]");
+      if (!target) return;
+      const card = target.closest(".label-card");
+      if (!card) return;
+      evt.preventDefault();
+      document.querySelectorAll(".active-design-field").forEach((n) => n.classList.remove("active-design-field"));
+      target.classList.add("active-design-field");
+      dragState.active = true;
+      dragState.node = target;
+      dragState.pointerId = evt.pointerId;
+      dragState.startX = evt.clientX;
+      dragState.startY = evt.clientY;
+      dragState.startDx = parseNum(target.dataset.dx, 0);
+      dragState.startDy = parseNum(target.dataset.dy, 0);
+      dragState.liveDx = dragState.startDx;
+      dragState.liveDy = dragState.startDy;
+      dragState.cardRect = card.getBoundingClientRect();
+      dragState.nextClientX = evt.clientX;
+      dragState.nextClientY = evt.clientY;
+      if (typeof target.setPointerCapture === "function") {
+        try {
+          target.setPointerCapture(evt.pointerId);
+        } catch (_err) {}
+      }
+      const guides = ensureCardGuides(card);
+      dragState.gx = guides.gx;
+      dragState.gy = guides.gy;
+      setCoordsLabel(target);
+      hideDesignToolbar();
+    };
+
+    const processDragFrame = () => {
+      dragState.rafId = null;
+      if (!dragState.active || !dragState.node) return;
+      const cardRect = dragState.cardRect;
+      if (!cardRect) return;
+      let nextDx = dragState.startDx + (dragState.nextClientX - dragState.startX);
+      let nextDy = dragState.startDy + (dragState.nextClientY - dragState.startY);
+      const maxX = Math.max(60, cardRect.width * 1.2);
+      const maxY = Math.max(60, cardRect.height * 1.2);
+      nextDx = Math.max(-maxX, Math.min(maxX, nextDx));
+      nextDy = Math.max(-maxY, Math.min(maxY, nextDy));
+      const snapPx = 8;
+      const snapX = Math.abs(nextDx) <= snapPx;
+      const snapY = Math.abs(nextDy) <= snapPx;
+      if (snapX) nextDx = 0;
+      if (snapY) nextDy = 0;
+      dragState.liveDx = nextDx;
+      dragState.liveDy = nextDy;
+      dragState.node.style.setProperty("--dx", `${nextDx}px`);
+      dragState.node.style.setProperty("--dy", `${nextDy}px`);
+      if (dragState.gx) dragState.gx.classList.toggle("show", snapY);
+      if (dragState.gy) dragState.gy.classList.toggle("show", snapX);
+    };
+
+    const moveDrag = (evt) => {
+      if (!dragState.active || !dragState.node) return;
+      if (dragState.pointerId !== null && evt.pointerId !== dragState.pointerId) return;
+      dragState.nextClientX = evt.clientX;
+      dragState.nextClientY = evt.clientY;
+      if (!dragState.rafId) {
+        dragState.rafId = window.requestAnimationFrame(processDragFrame);
+      }
+    };
+
+    const endDrag = (evt) => {
+      if (!dragState.active) return;
+      if (evt && dragState.pointerId !== null && evt.pointerId !== dragState.pointerId) return;
+      if (dragState.rafId) {
+        window.cancelAnimationFrame(dragState.rafId);
+        dragState.rafId = null;
+      }
+      if (dragState.node && dragState.pointerId !== null && typeof dragState.node.releasePointerCapture === "function") {
+        try {
+          dragState.node.releasePointerCapture(dragState.pointerId);
+        } catch (_err) {}
+      }
+      dragState.active = false;
+      dragState.pointerId = null;
+      dragState.cardRect = null;
+      dragState.node.dataset.dx = `${dragState.liveDx}`;
+      dragState.node.dataset.dy = `${dragState.liveDy}`;
+      dragState.gx = null;
+      dragState.gy = null;
+      hideAllGuides();
+      persistCurrentLayout();
+      setCoordsLabel(dragState.node);
+      positionDesignToolbar(getActiveDesignNode());
+    };
+
+    const formatLabelsForMode = () => {
+      const mode = formatSelect.value;
+      const isBolsaMode = mode === "bolsas_2" || mode === "bolsa_50";
+      ui.nameLabels.forEach((el) => { el.textContent = isBolsaMode ? "Nombre bolsa" : "Nombre paca"; });
+      ui.weightLabels.forEach((el) => { el.textContent = isBolsaMode ? "Peso bolsa" : "Peso paca"; });
+      const showSecond = mode === "pacas_2" || mode === "bolsas_2";
+      ui.secondBlock.style.display = showSecond ? "" : "none";
+      if (ui.mirrorSecondLabel) {
+        const mirrorWrap = ui.mirrorSecondLabel.closest(".form-check");
+        if (mirrorWrap) mirrorWrap.style.display = mode === "bolsas_2" ? "" : "none";
+        ui.mirrorSecondLabel.disabled = !supportsMirrorMode();
+        ui.mirrorSecondLabel.checked = supportsMirrorMode()
+          ? (localStorage.getItem(MIRROR_SECOND_KEY) === null ? true : localStorage.getItem(MIRROR_SECOND_KEY) === "1")
+          : false;
+      }
+      ui.code1Wrap.style.display = mode === "pacas_2" ? "" : "none";
+      ui.code2Wrap.style.display = mode === "pacas_2" ? "" : "none";
+      applyMirrorSettings();
+      syncFontSelectorsForFormat();
+    };
+
+    const resolveBackground = (key) => {
+      if (resolvedBackground[key]) return Promise.resolve(resolvedBackground[key]);
+      const options = backgroundCandidates[key] || [];
+      if (!options.length) return Promise.resolve("");
+      return new Promise((resolve) => {
+        const probe = (idx) => {
+          if (idx >= options.length) {
+            resolve("");
+            return;
+          }
+          const img = new Image();
+          img.onload = () => {
+            resolvedBackground[key] = options[idx];
+            resolve(options[idx]);
+          };
+          img.onerror = () => probe(idx + 1);
+          img.src = options[idx];
+        };
+        probe(0);
+      });
+    };
+
+    const applyBackgrounds = async () => {
+      const cards = Array.from(document.querySelectorAll("[data-bg-key]"));
+      const keys = [...new Set(cards.map((card) => card.dataset.bgKey))];
+      await Promise.all(keys.map(async (key) => {
+        const path = await resolveBackground(key);
+        cards.filter((card) => card.dataset.bgKey === key).forEach((card) => {
+          card.style.backgroundImage = path ? `url('${path}')` : "none";
+        });
+      }));
+      const missing = keys.filter((key) => !resolvedBackground[key]);
+      ui.warning.style.display = missing.length ? "" : "none";
+    };
+    const uploadBackground = async () => {
+      const target = (ui.bgTargetFormat?.value || "").trim();
+      const selectedFile = ui.bgUploadFile?.files?.[0];
+      if (!target) {
+        notify("Selecciona el formato destino", "warning");
+        return;
+      }
+      if (!selectedFile) {
+        notify("Selecciona una imagen", "warning");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("target_format", target);
+      formData.append("file", selectedFile);
+      ui.btnUploadBackground.disabled = true;
+      try {
+        const resp = await fetch("/sales/etiquetas/background/upload", {
+          method: "POST",
+          body: formData,
+          headers: { "X-Requested-With": "fetch" },
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) {
+          notify(data.message || "No se pudo subir el background", "error");
+          return;
+        }
+        if (data.url) {
+          resolvedBackground[target] = `${data.url}?v=${Date.now()}`;
+        }
+        await applyBackgrounds();
+        if (ui.bgUploadFile) ui.bgUploadFile.value = "";
+        notify("Background cargado");
+      } catch (_err) {
+        notify("Error de red al subir background", "error");
+      } finally {
+        ui.btnUploadBackground.disabled = false;
+      }
+    };
+
+    const currentData = () => {
+      const mode = formatSelect.value;
+      const name1 = normalizeUpper(fields.name1.value) || (mode === "bolsas_2" || mode === "bolsa_50" ? "NOMBRE BOLSA" : "NOMBRE PACA");
+      const weight1 = normalizeWeight(fields.weight1.value, mode === "bolsa_50" ? "50 LBS" : "25 LBS");
+      const code1 = normalizeUpper(fields.code1.value) || "001";
+      const extra1a = normalizeUpper(fields.extra1a.value);
+      const extra1b = normalizeUpper(fields.extra1b.value);
+      const hasSecond = mode === "pacas_2" || mode === "bolsas_2";
+      const mirrorOn = hasSecond && isMirrorEnabled();
+      const name2 = hasSecond ? (mirrorOn ? name1 : (normalizeUpper(fields.name2.value) || name1)) : name1;
+      const weight2 = hasSecond ? (mirrorOn ? weight1 : (normalizeWeight(fields.weight2.value, weight1) || weight1)) : weight1;
+      const code2 = hasSecond ? (mirrorOn ? code1 : (normalizeUpper(fields.code2.value) || code1)) : code1;
+      const extra2a = hasSecond ? (mirrorOn ? extra1a : (normalizeUpper(fields.extra2a.value) || extra1a)) : extra1a;
+      const extra2b = hasSecond ? (mirrorOn ? extra1b : (normalizeUpper(fields.extra2b.value) || extra1b)) : extra1b;
+      return { mode, name1, weight1, code1, extra1a, extra1b, name2, weight2, code2, extra2a, extra2b };
+    };
+
+    const updatePreview = () => {
+      const state = currentData();
+      ui.views.forEach((view) => view.classList.toggle("active", view.dataset.formatView === state.mode));
+      applyLayoutForActiveView();
+      applySelectedFont();
+      const bindText = (selector, value) => {
+        document.querySelectorAll(selector).forEach((node) => { node.textContent = value; });
+      };
+      bindText('[data-bind="name"][data-index="1"]', state.name1);
+      bindText('[data-bind="weight"][data-index="1"]', state.weight1);
+      bindText('[data-bind="code"][data-index="1"]', `CODE - ${state.code1}`);
+      bindText('[data-bind="extra1"][data-index="1"]', state.extra1a);
+      bindText('[data-bind="extra2"][data-index="1"]', state.extra1b);
+      bindText('[data-bind="name"][data-index="2"]', state.name2);
+      bindText('[data-bind="weight"][data-index="2"]', state.weight2);
+      bindText('[data-bind="code"][data-index="2"]', `CODE - ${state.code2}`);
+      bindText('[data-bind="extra1"][data-index="2"]', state.extra2a);
+      bindText('[data-bind="extra2"][data-index="2"]', state.extra2b);
+      const forceAutoBolsas = state.mode === "bolsas_2" && !designMode;
+      if (state.mode === "bolsas_2") {
+        // For bolsas x2, allow up to 2 lines while always staying inside the frame.
+        document.querySelectorAll(".format-view.active .label-name").forEach((node) => clampFont(node, 30, 240, 1.0, forceAutoBolsas, false, 2));
+        document.querySelectorAll(".format-view.active .label-weight").forEach((node) => clampFont(node, 28, 150, 0.96, forceAutoBolsas, true));
+      } else if (state.mode === "bolsa_50") {
+        document.querySelectorAll(".format-view.active .label-name").forEach((node) => clampFont(node, 24, 150, 0.93));
+        document.querySelectorAll(".format-view.active .label-weight").forEach((node) => clampFont(node, 22, 110, 0.9));
+      } else {
+        document.querySelectorAll(".format-view.active .label-name").forEach((node) => clampFont(node, 26, 130));
+        document.querySelectorAll(".format-view.active .label-weight").forEach((node) => clampFont(node, 24, 100));
+      }
+      document.querySelectorAll(".format-view.active .label-code").forEach((node) => clampFont(node, 12, 44));
+      document.querySelectorAll(".format-view.active .label-extra1").forEach((node) => clampFont(node, 10, 52));
+      document.querySelectorAll(".format-view.active .label-extra2").forEach((node) => clampFont(node, 10, 40));
+      if (designMode) {
+        const activeNode = getActiveDesignNode();
+        if (activeNode) positionDesignToolbar(activeNode);
+      }
+    };
+
+    const refresh = async () => {
+      formatLabelsForMode();
+      await applyBackgrounds();
+      updatePreview();
+    };
+
+    const clonePrintSheet = () => {
+      const activeView = document.querySelector(".format-view.active");
+      if (!activeView || !ui.sheetPrint) return;
+      ui.sheetPrint.innerHTML = "";
+      ui.sheetPrint.appendChild(activeView.cloneNode(true));
+      const cloneView = ui.sheetPrint.querySelector(".format-view");
+      if (cloneView) {
+        cloneView.classList.add("active");
+        cloneView.style.display = "grid";
+        cloneView.style.position = "absolute";
+        // Copia tipografia real de la vista web al clon para evitar reduccion en print preview.
+        const sourceNodes = Array.from(activeView.querySelectorAll("[data-bind]"));
+        const cloneNodes = Array.from(cloneView.querySelectorAll("[data-bind]"));
+        const boostByBind = {
+          name: 1.0,
+          weight: 1.0,
+          code: 1.0,
+          extra1: 1.0,
+          extra2: 1.0,
+        };
+        const minByBind = {
+          name: 16,
+          weight: 16,
+          code: 14,
+          extra1: 12,
+          extra2: 12,
+        };
+        const sourceCanvas = activeView.closest(".sheet-canvas");
+        const sourceWidth = sourceCanvas ? sourceCanvas.getBoundingClientRect().width : 816;
+        const targetLetterWidthPx = 816; // 8.5in * 96 css px
+        const ratio = sourceWidth > 0 ? (targetLetterWidthPx / sourceWidth) : 1;
+        cloneNodes.forEach((node, idx) => {
+          const sourceNode = sourceNodes[idx];
+          if (!sourceNode) return;
+          const sourceStyle = window.getComputedStyle(sourceNode);
+          const baseFont = parseFloat(sourceStyle.fontSize || "0") || 24;
+          const bindKey = (node.dataset.bind || "").toLowerCase();
+          const boost = boostByBind[bindKey] || 1.0;
+          const minPx = minByBind[bindKey] || 24;
+          const targetPx = Math.max(minPx, Math.round(baseFont * boost * ratio));
+          const dxRaw = parseFloat(sourceNode.dataset.dx || "0") || 0;
+          const dyRaw = parseFloat(sourceNode.dataset.dy || "0") || 0;
+          node.style.fontFamily = sourceStyle.fontFamily;
+          node.style.fontWeight = sourceStyle.fontWeight;
+          node.style.fontStyle = sourceStyle.fontStyle;
+          node.style.letterSpacing = sourceStyle.letterSpacing;
+          node.style.removeProperty("white-space");
+          node.style.setProperty("font-size", `${Math.max(minPx, targetPx)}px`, "important");
+          node.style.setProperty("line-height", "1", "important");
+          node.style.setProperty("--dx", `${Math.round(dxRaw * ratio)}px`, "important");
+          node.style.setProperty("--dy", `${Math.round(dyRaw * ratio)}px`, "important");
+        });
+      }
+    };
+
+    formatSelect.addEventListener("change", refresh);
+    Object.values(fields).forEach((field) => {
+      field.addEventListener("input", updatePreview);
+      field.addEventListener("blur", updatePreview);
+    });
+    [fields.name1, fields.weight1, fields.code1, fields.extra1a, fields.extra1b].forEach((field) => {
+      field.addEventListener("input", () => {
+        if (!isMirrorEnabled()) return;
+        applyMirrorSettings();
+        updatePreview();
+      });
+    });
+    ui.fontFamilySelect1.addEventListener("change", () => {
+      ensureFormatFonts(activeFormat());
+      selectedFontsByFormat[activeFormat()]["1"] = ui.fontFamilySelect1.value || defaultFont;
+      if (isMirrorEnabled()) {
+        selectedFontsByFormat[activeFormat()]["2"] = selectedFontsByFormat[activeFormat()]["1"];
+      }
+      persistFonts();
+      applySelectedFont();
+      updatePreview();
+    });
+    ui.fontFamilySelect2.addEventListener("change", () => {
+      ensureFormatFonts(activeFormat());
+      selectedFontsByFormat[activeFormat()]["2"] = ui.fontFamilySelect2.value || defaultFont;
+      persistFonts();
+      applySelectedFont();
+      updatePreview();
+    });
+    ui.btnSaveFontPreset.addEventListener("click", saveFontPresetForActiveFormat);
+    ui.btnLoadFontPreset.addEventListener("click", loadFontPresetForActiveFormat);
+    ui.btnResetFontPreset.addEventListener("click", clearFontPresetForActiveFormat);
+    ui.btnUploadBackground.addEventListener("click", uploadBackground);
+    ui.designToggle.addEventListener("change", () => {
+      designMode = ui.designToggle.checked;
+      updateDesignModeUI();
+    });
+    ui.btnSaveLayout.addEventListener("click", () => {
+      persistCurrentLayout();
+      notify("Layout guardado");
+    });
+    ui.btnResetLayout.addEventListener("click", () => {
+      delete savedLayouts[activeFormat()];
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(savedLayouts));
+      updatePreview();
+      notify("Layout restablecido");
+    });
+    ui.sheetCanvas.addEventListener("pointerdown", startDrag);
+    window.addEventListener("pointermove", moveDrag);
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    ui.designFontSize.addEventListener("input", () => {
+      const node = getActiveDesignNode();
+      if (!designMode || !node) return;
+      setNodeFontSize(node, parseNum(ui.designFontSize.value, 72));
+    });
+    ui.btnTextSmaller.addEventListener("click", () => {
+      const node = getActiveDesignNode();
+      if (!designMode || !node) return;
+      const current = parseNum((node.style.getPropertyValue("--fs") || "").replace("px", ""), 72);
+      setNodeFontSize(node, current - 2);
+    });
+    ui.btnTextBigger.addEventListener("click", () => {
+      const node = getActiveDesignNode();
+      if (!designMode || !node) return;
+      const current = parseNum((node.style.getPropertyValue("--fs") || "").replace("px", ""), 72);
+      setNodeFontSize(node, current + 2);
+    });
+    ui.btnTextAuto.addEventListener("click", () => {
+      const node = getActiveDesignNode();
+      if (!designMode || !node) return;
+      resetNodeFontAuto(node);
+    });
+    ui.toolbarTextSmaller.addEventListener("click", () => {
+      const node = getActiveDesignNode();
+      if (!designMode || !node) return;
+      const current = parseNum((node.style.getPropertyValue("--fs") || "").replace("px", ""), 72);
+      setNodeFontSize(node, current - 2);
+      positionDesignToolbar(node);
+    });
+    ui.toolbarTextBigger.addEventListener("click", () => {
+      const node = getActiveDesignNode();
+      if (!designMode || !node) return;
+      const current = parseNum((node.style.getPropertyValue("--fs") || "").replace("px", ""), 72);
+      setNodeFontSize(node, current + 2);
+      positionDesignToolbar(node);
+    });
+    ui.toolbarTextAuto.addEventListener("click", () => {
+      const node = getActiveDesignNode();
+      if (!designMode || !node) return;
+      resetNodeFontAuto(node);
+      positionDesignToolbar(node);
+    });
+    ui.printInsetPreset.addEventListener("change", () => {
+      applyPrintInset(ui.printInsetPreset.value);
+      notify("Ajuste de borde aplicado");
+    });
+
+    ui.btnCopy.addEventListener("click", () => {
+      syncSecondFromFirst();
+      copyLayoutFirstToSecond();
+      if (hasSecondLabel()) {
+        selectedFontsByFormat[activeFormat()]["2"] = selectedFontsByFormat[activeFormat()]["1"];
+        persistFonts();
+      }
+      updatePreview();
+    });
+    if (ui.mirrorSecondLabel) {
+      ui.mirrorSecondLabel.checked = mirrorSecondDefault;
+      ui.mirrorSecondLabel.addEventListener("change", () => {
+        localStorage.setItem(MIRROR_SECOND_KEY, ui.mirrorSecondLabel.checked ? "1" : "0");
+        applyMirrorSettings();
+        updatePreview();
+      });
+    }
+    ui.btnReset.addEventListener("click", () => {
+      fields.name1.value = "";
+      fields.weight1.value = "";
+      fields.code1.value = "";
+      fields.name2.value = "";
+      fields.weight2.value = "";
+      fields.code2.value = "";
+      fields.extra1a.value = "";
+      fields.extra1b.value = "";
+      fields.extra2a.value = "";
+      fields.extra2b.value = "";
+      updatePreview();
+    });
+    ui.btnPrint.addEventListener("click", () => {
+      clonePrintSheet();
+      setTimeout(() => window.print(), 40);
+    });
+    window.addEventListener("resize", updatePreview);
+    buildFontCatalog();
+    syncFontSelectorsForFormat();
+    applySelectedFont();
+    applyMirrorSettings();
+    applyPrintInset(localStorage.getItem(PRINT_INSET_KEY) || ui.printInsetPreset.value || "0.02");
+    if (ui.bgTargetFormat) ui.bgTargetFormat.value = formatSelect.value;
+    formatSelect.addEventListener("change", () => {
+      if (ui.bgTargetFormat) ui.bgTargetFormat.value = formatSelect.value;
+    });
+    updateDesignModeUI();
+    refresh();
+  })();
+</script>
+{% endblock %}

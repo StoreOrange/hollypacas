@@ -85,6 +85,15 @@
             </select>
           </div>
           <div class="col-12 col-md-4">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Buscar producto (rapido)</label>
+            <input
+              name="producto"
+              class="form-control form-control-sm"
+              placeholder="Ej: saco, jean, blusa..."
+              value="{{ producto_q or '' }}"
+            >
+          </div>
+          <div class="col-12 col-md-4">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto</label>
             <select name="producto_id" class="form-select form-select-sm">
               <option value="">Todos</option>
@@ -109,7 +118,73 @@
       </div>
 
       <div class="odoo-card text-sm">
-        <div class="odoo-section-title mb-3 text-base">Detalle por producto</div>
+        <div class="odoo-section-title mb-3 text-base">Detalle por factura</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Fecha</th>
+                <th>Factura</th>
+                <th>Cliente</th>
+                <th>Vendedor</th>
+                <th>Sucursal</th>
+                <th>Codigo</th>
+                <th>Producto</th>
+                <th class="text-end">Cantidad</th>
+                <th class="text-end">Precio USD</th>
+                <th class="text-end">Precio C$</th>
+                <th class="text-end">Venta USD</th>
+                <th class="text-end">Venta C$</th>
+                <th class="text-end">Costo USD</th>
+                <th class="text-end">Costo C$</th>
+                <th class="text-end">Margen USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in detail_rows %}
+              <tr>
+                <td>{{ row.fecha }}</td>
+                <td class="fw-semibold">{{ row.factura }}</td>
+                <td>{{ row.cliente }}</td>
+                <td>{{ row.vendedor }}</td>
+                <td>{{ row.sucursal }}</td>
+                <td class="fw-semibold">{{ row.codigo }}</td>
+                <td>{{ row.producto }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
+                <td class="text-end">$ {{ "%.2f"|format(row.precio_usd or 0) }}</td>
+                <td class="text-end">C$ {{ "%.2f"|format(row.precio_cs or 0) }}</td>
+                <td class="text-end">$ {{ "%.2f"|format(row.venta_usd or 0) }}</td>
+                <td class="text-end">C$ {{ "%.2f"|format(row.venta_cs or 0) }}</td>
+                <td class="text-end">$ {{ "%.2f"|format(row.costo_usd or 0) }}</td>
+                <td class="text-end">C$ {{ "%.2f"|format(row.costo_cs or 0) }}</td>
+                <td class="text-end">$ {{ "%.2f"|format(row.margen_usd or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if detail_rows|length == 0 %}
+              <tr>
+                <td colspan="15" class="text-center text-slate py-3">Sin resultados.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+            <tfoot>
+              <tr class="table-light">
+                <th colspan="7" class="text-end">Totales</th>
+                <th class="text-end">{{ "%.2f"|format(total_qty or 0) }}</th>
+                <th class="text-end">-</th>
+                <th class="text-end">-</th>
+                <th class="text-end">$ {{ "%.2f"|format(total_usd or 0) }}</th>
+                <th class="text-end">C$ {{ "%.2f"|format(total_cs or 0) }}</th>
+                <th class="text-end">$ {{ "%.2f"|format(total_cost_usd or 0) }}</th>
+                <th class="text-end">C$ {{ "%.2f"|format(total_cost_cs or 0) }}</th>
+                <th class="text-end">$ {{ "%.2f"|format((total_usd or 0) - (total_cost_usd or 0)) }}</th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="odoo-section-title mb-3 text-base">Resumen por item</div>
         <div class="table-responsive">
           <table class="table table-sm table-hover odoo-table text-sm align-middle">
             <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
@@ -143,17 +218,6 @@
               </tr>
               {% endif %}
             </tbody>
-            <tfoot>
-              <tr class="table-light">
-                <th colspan="2" class="text-end">Totales</th>
-                <th class="text-end">{{ "%.2f"|format(total_qty or 0) }}</th>
-                <th class="text-end">$ {{ "%.2f"|format(total_usd or 0) }}</th>
-                <th class="text-end">C$ {{ "%.2f"|format(total_cs or 0) }}</th>
-                <th class="text-end">$ {{ "%.2f"|format(total_cost_usd or 0) }}</th>
-                <th class="text-end">C$ {{ "%.2f"|format(total_cost_cs or 0) }}</th>
-                <th class="text-end">$ {{ "%.2f"|format((total_usd or 0) - (total_cost_usd or 0)) }}</th>
-              </tr>
-            </tfoot>
           </table>
         </div>
       </div>

@@ -63,6 +63,12 @@
         <span class="nav-text fw-semibold">Utilitario Ventas</span>
       </a>
       {% endif %}
+      {% if not has_perms or 'menu.sales.etiquetas' in perms %}
+      <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/etiquetas">
+        <i class="bi bi-printer-fill text-primary fs-5"></i>
+        <span class="nav-text fw-semibold">Impresion de etiquetas</span>
+      </a>
+      {% endif %}
       {% if not has_perms or 'menu.sales.roc' in perms %}
       <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/roc">
         <i class="bi bi-file-earmark-text text-primary fs-5"></i>
@@ -200,6 +206,12 @@
         <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/utilitario">
           <i class="bi bi-tools text-primary fs-5"></i>
           <span class="nav-text fw-semibold">Utilitario Ventas</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.sales.etiquetas' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/sales/etiquetas">
+          <i class="bi bi-printer-fill text-primary fs-5"></i>
+          <span class="nav-text fw-semibold">Impresion de etiquetas</span>
         </a>
         {% endif %}
         {% if not has_perms or 'menu.sales.roc' in perms %}

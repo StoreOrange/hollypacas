@@ -79,7 +79,7 @@
         <div class="table-responsive">
           <table class="table table-sm table-hover odoo-table text-sm">
             <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-              <tr>
+              <tr data-sale-id="{{ venta.id }}">
                 <th>Fecha</th>
                 <th>Hora</th>
                 <th>Factura</th>
@@ -279,6 +279,9 @@
   const reversionSendCode = document.getElementById("reversion-send-code");
   const reversionConfirm = document.getElementById("reversion-confirm");
   let currentReversionId = null;
+  const focusParams = new URLSearchParams(window.location.search || "");
+  const focusSaleId = (focusParams.get("focus_sale_id") || "").trim();
+  const focusProductoId = (focusParams.get("focus_producto_id") || "").trim();
 
   const formatMoney = (value, currency) => {
     const amount = Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -288,6 +291,13 @@
   document.querySelectorAll(".view-sale").forEach((button) => {
     button.addEventListener("click", async () => {
       const ventaId = button.dataset.id;
+      const row = button.closest("tr");
+      document.querySelectorAll("tr[data-sale-id].table-primary").forEach((r) => r.classList.remove("table-primary"));
+      if (row) {
+        row.classList.add("table-primary");
+        row.style.outline = "2px solid #2563eb";
+        row.style.outlineOffset = "-2px";
+      }
       const response = await fetch(`/sales/${ventaId}/detail`);
       const payload = await response.json();
       if (!payload.ok) {
@@ -310,8 +320,9 @@
       detailItems.innerHTML = (factura.items || []).map((item) => {
         const price = factura.moneda === "USD" ? item.precio_usd : item.precio_cs;
         const subtotal = factura.moneda === "USD" ? item.subtotal_usd : item.subtotal_cs;
+        const productId = item.producto_id || "";
         return `
-          <tr>
+          <tr data-product-id="${productId}">
             <td>${item.codigo}</td>
             <td>${item.descripcion}</td>
             <td class="text-end">${item.cantidad.toFixed(2)}</td>
@@ -320,12 +331,34 @@
           </tr>
         `;
       }).join("") || `<tr><td colspan="5" class="text-center text-slate py-3">Sin items</td></tr>`;
+      if (focusProductoId) {
+        const itemRow = detailItems.querySelector(`tr[data-product-id="${focusProductoId}"]`);
+        if (itemRow) {
+          itemRow.classList.add("table-primary");
+          itemRow.style.outline = "2px solid #2563eb";
+          itemRow.style.outlineOffset = "-2px";
+        }
+      }
       if (window.bootstrap) {
         const modal = new bootstrap.Modal(detailModal);
         modal.show();
       }
     });
   });
+
+  if (focusSaleId) {
+    const focusButton = document.querySelector(`.view-sale[data-id="${focusSaleId}"]`);
+    const focusRow = document.querySelector(`tr[data-sale-id="${focusSaleId}"]`);
+    if (focusRow) {
+      focusRow.classList.add("table-primary");
+      focusRow.style.outline = "2px solid #2563eb";
+      focusRow.style.outlineOffset = "-2px";
+      focusRow.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    if (focusButton) {
+      setTimeout(() => focusButton.click(), 120);
+    }
+  }
 
   document.querySelectorAll(".reprint-sale").forEach((button) => {
     button.addEventListener("click", async () => {

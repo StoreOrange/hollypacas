@@ -102,6 +102,7 @@
               <tr>
                 <th>Fecha</th>
                 <th>Tipo</th>
+                <th>Concepto</th>
                 <th>Sucursal / Bodega</th>
                 <th>Producto</th>
                 <th class="text-end">Cantidad</th>
@@ -115,7 +116,14 @@
               {% for row in rows %}
               <tr>
                 <td>{{ row.fecha }}</td>
-                <td>{{ row.tipo }}</td>
+                <td>
+                  {% if row.source_url %}
+                  <a href="{{ row.source_url }}" class="fw-semibold text-decoration-none">{{ row.tipo }}</a>
+                  {% else %}
+                  {{ row.tipo }}
+                  {% endif %}
+                </td>
+                <td>{{ row.concepto or "-" }}</td>
                 <td>{{ row.branch }} / {{ row.bodega }}</td>
                 <td>{{ row.codigo }} - {{ row.descripcion }}</td>
                 <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
@@ -127,7 +135,7 @@
               {% endfor %}
               {% if rows|length == 0 %}
               <tr>
-                <td colspan="9" class="text-center text-slate py-3">Sin resultados.</td>
+                <td colspan="10" class="text-center text-slate py-3">Sin resultados.</td>
               </tr>
               {% endif %}
             </tbody>

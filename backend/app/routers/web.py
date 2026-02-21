@@ -240,6 +240,7 @@ PERMISSION_GROUPS = [
         "title": "Ventas (visibilidad sub-menu)",
         "items": [
             {"name": "menu.sales.utilitario", "label": "Utilitario de ventas"},
+            {"name": "menu.sales.etiquetas", "label": "Impresion de etiquetas"},
             {"name": "menu.sales.cobranza", "label": "Gestion de cobranza"},
             {"name": "menu.sales.roc", "label": "Recibos de caja"},
             {"name": "menu.sales.depositos", "label": "Registro de depositos"},
@@ -264,6 +265,7 @@ PERMISSION_GROUPS = [
             {"name": "access.sales.registrar", "label": "Registrar facturas"},
             {"name": "access.sales.pagos", "label": "Aplicar pagos"},
             {"name": "access.sales.utilitario", "label": "Utilitario de ventas"},
+            {"name": "access.sales.etiquetas", "label": "Impresion de etiquetas"},
             {"name": "access.sales.cobranza", "label": "Cobranza / abonos"},
             {"name": "access.sales.roc", "label": "Recibos de caja"},
             {"name": "access.sales.depositos", "label": "Depositos bancarios"},
@@ -805,6 +807,27 @@ def _scoped_bodegas_query(db: Session):
         .filter(Bodega.activo.is_(True))
         .filter(func.lower(Branch.code).in_(codes))
     )
+
+
+def _user_scoped_branch_ids(db: Session, user: User) -> set[int]:
+    allowed_codes = _allowed_branch_codes(db)
+    user_ids = {
+        int(branch.id)
+        for branch in (user.branches or [])
+        if (branch.code or "").lower() in allowed_codes
+    }
+    if user_ids:
+        return user_ids
+    if user.default_branch_id:
+        branch = (
+            db.query(Branch)
+            .filter(Branch.id == user.default_branch_id)
+            .filter(func.lower(Branch.code).in_(allowed_codes))
+            .first()
+        )
+        if branch:
+            return {int(branch.id)}
+    return {int(row.id) for row in _scoped_branches_query(db).all()}
 
 
 def _resolve_logo_path(logo_url: str, *, prefer_pos: bool = False, pos_logo_url: Optional[str] = None) -> Path:
@@ -3008,7 +3031,13 @@ def sales_preventas_panel(
             repaired_any = True
     if repaired_any:
         db.commit()
-    branches = _scoped_branches_query(db).order_by(Branch.name).all()
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
     vendedores = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre).all()
     rows = [
         {
@@ -3206,6 +3235,7 @@ def sales_utilitario(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.utilitario")
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
     def _parse_date(value: Optional[str]) -> Optional[date]:
         if not value:
             return None
@@ -3228,10 +3258,15 @@ def sales_utilitario(
         db.query(VentaFactura)
         .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
         .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+        .filter(Branch.id.in_(scoped_branch_ids))
     )
     if branch_id and branch_id != "all":
         try:
-            ventas_query = ventas_query.filter(Branch.id == int(branch_id))
+            branch_id_int = int(branch_id)
+            if branch_id_int not in scoped_branch_ids:
+                ventas_query = ventas_query.filter(Branch.id == -1)
+            else:
+                ventas_query = ventas_query.filter(Branch.id == branch_id_int)
         except ValueError:
             pass
     if start_date:
@@ -3263,7 +3298,13 @@ def sales_utilitario(
     )
     _, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
-    branches = _scoped_branches_query(db).order_by(Branch.name).all()
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
 
     return request.app.state.templates.TemplateResponse(
         "sales_utilitario.html",
@@ -3282,6 +3323,75 @@ def sales_utilitario(
             "version": settings.UI_VERSION,
         },
     )
+
+
+@router.get("/sales/etiquetas")
+def sales_etiquetas(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.etiquetas")
+    return request.app.state.templates.TemplateResponse(
+        "sales_etiquetas.html",
+        {
+            "request": request,
+            "user": user,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/sales/etiquetas/background/upload")
+async def sales_etiquetas_upload_background(
+    request: Request,
+    target_format: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.etiquetas")
+    format_map = {
+        "pacas_1": "etiquetaPacasuna",
+        "pacas_2": "etiquetaPacas2",
+        "bolsas_2": "etiquetaBolsas2",
+        "bolsa_50": "etiquetaBolsa50",
+    }
+    key = (target_format or "").strip().lower()
+    if key not in format_map:
+        return JSONResponse({"ok": False, "message": "Formato no valido"}, status_code=400)
+    if not file or not file.filename:
+        return JSONResponse({"ok": False, "message": "Archivo requerido"}, status_code=400)
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+        return JSONResponse({"ok": False, "message": "Formato de imagen no permitido"}, status_code=400)
+
+    try:
+        payload = await file.read()
+    except Exception:
+        return JSONResponse({"ok": False, "message": "No se pudo leer el archivo"}, status_code=400)
+    if not payload:
+        return JSONResponse({"ok": False, "message": "Archivo vacio"}, status_code=400)
+    if len(payload) > 15 * 1024 * 1024:
+        return JSONResponse({"ok": False, "message": "Archivo excede 15MB"}, status_code=400)
+
+    labels_dir = Path(__file__).resolve().parents[1] / "static" / "labels"
+    labels_dir.mkdir(parents=True, exist_ok=True)
+    base_name = format_map[key]
+    out_path = labels_dir / f"{base_name}{ext}"
+    # Evitar fondos duplicados con distintas extensiones para el mismo formato.
+    for candidate in labels_dir.glob(f"{base_name}.*"):
+        if candidate != out_path:
+            try:
+                candidate.unlink()
+            except OSError:
+                pass
+
+    with out_path.open("wb") as fh:
+        fh.write(payload)
+
+    return JSONResponse({"ok": True, "message": "Background actualizado", "url": f"/static/labels/{out_path.name}"})
 
 
 def _sales_commissions_filters(request: Request):
@@ -6055,7 +6165,12 @@ def sales_ventas_caliente(
             return Decimal("0")
         return Decimal(str(factura.total_cs or 0)) / tasa
 
-    branches = _scoped_branches_query(db).order_by(Branch.name).all()
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
 
     base_query = (
         db.query(VentaFactura)
@@ -6200,6 +6315,7 @@ def _sales_products_report_filters(request: Request):
     branch_id = request.query_params.get("branch_id")
     vendedor_id = request.query_params.get("vendedor_id")
     producto_id = request.query_params.get("producto_id")
+    producto_q = (request.query_params.get("producto") or "").strip()
 
     today = local_today()
     start_date = today
@@ -6217,18 +6333,21 @@ def _sales_products_report_filters(request: Request):
     if not branch_id:
         branch_id = "all"
 
-    return start_date, end_date, branch_id, vendedor_id, producto_id
+    return start_date, end_date, branch_id, vendedor_id, producto_id, producto_q
 
 
 def _build_sales_products_report(
     db: Session,
+    user: User,
     start_date: date,
     end_date: date,
     branch_id: str | None,
     vendedor_id: str | None,
     producto_id: str | None,
+    producto_q: str,
 ):
     allowed_codes = _allowed_branch_codes(db)
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
@@ -6241,10 +6360,15 @@ def _build_sales_products_report(
         .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
         .filter(VentaFactura.estado != "ANULADA")
         .filter(func.lower(Branch.code).in_(allowed_codes))
+        .filter(Branch.id.in_(scoped_branch_ids))
     )
     if branch_id and branch_id != "all":
         try:
-            base_query = base_query.filter(Branch.id == int(branch_id))
+            branch_id_int = int(branch_id)
+            if branch_id_int not in scoped_branch_ids:
+                base_query = base_query.filter(Branch.id == -1)
+            else:
+                base_query = base_query.filter(Branch.id == branch_id_int)
         except ValueError:
             pass
     if vendedor_id:
@@ -6257,10 +6381,19 @@ def _build_sales_products_report(
             base_query = base_query.filter(VentaItem.producto_id == int(producto_id))
         except ValueError:
             pass
+    if producto_q:
+        like = f"%{producto_q.lower()}%"
+        base_query = base_query.filter(
+            or_(
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+            )
+        )
 
     rows = base_query.all()
     report_map: dict[int, dict] = {}
     facturas_set = set()
+    detail_rows = []
 
     for factura, item, producto, branch in rows:
         moneda = factura.moneda or "CS"
@@ -6312,6 +6445,25 @@ def _build_sales_products_report(
         report_row["costo_usd"] += costo_usd
         report_row["costo_cs"] += costo_cs
         facturas_set.add(factura.id)
+        detail_rows.append(
+            {
+                "fecha": factura.fecha.strftime("%d/%m/%Y") if factura.fecha else "",
+                "factura": factura.numero or f"FAC-{factura.id}",
+                "cliente": factura.cliente.nombre if factura.cliente else "Consumidor final",
+                "vendedor": factura.vendedor.nombre if factura.vendedor else "-",
+                "sucursal": branch.name if branch else "-",
+                "codigo": producto.cod_producto,
+                "producto": producto.descripcion,
+                "cantidad": float(cantidad),
+                "precio_usd": float(item.precio_unitario_usd or 0),
+                "precio_cs": float(item.precio_unitario_cs or 0),
+                "subtotal_usd": float(subtotal_usd),
+                "subtotal_cs": float(subtotal_cs),
+                "costo_usd": float(costo_usd),
+                "costo_cs": float(costo_cs),
+                "margen_usd": float(venta_usd - costo_usd),
+            }
+        )
 
     report_rows = []
     total_qty = Decimal("0")
@@ -6339,9 +6491,11 @@ def _build_sales_products_report(
         )
 
     report_rows.sort(key=lambda r: r["venta_usd"], reverse=True)
+    detail_rows.sort(key=lambda r: (r["fecha"], r["factura"], r["producto"]))
     total_facturas = len(facturas_set)
     return (
         report_rows,
+        detail_rows,
         total_qty,
         total_usd,
         total_cs,
@@ -7221,11 +7375,12 @@ def _build_kardex_movements(
     movimientos = []
 
     ingresos_q = (
-        db.query(IngresoInventario, IngresoItem, Producto, Bodega, Branch)
+        db.query(IngresoInventario, IngresoItem, Producto, Bodega, Branch, IngresoTipo)
         .join(IngresoItem, IngresoItem.ingreso_id == IngresoInventario.id)
         .join(Producto, Producto.id == IngresoItem.producto_id)
         .join(Bodega, Bodega.id == IngresoInventario.bodega_id)
         .join(Branch, Branch.id == Bodega.branch_id)
+        .join(IngresoTipo, IngresoTipo.id == IngresoInventario.tipo_id, isouter=True)
         .filter(IngresoInventario.fecha >= start_date, IngresoInventario.fecha <= end_date)
     )
     if branch_filter:
@@ -7233,14 +7388,26 @@ def _build_kardex_movements(
     if producto_filter is not None:
         ingresos_q = ingresos_q.filter(producto_filter)
 
-    for ingreso, item, producto, bodega, branch in ingresos_q.all():
+    for ingreso, item, producto, bodega, branch, ingreso_tipo in ingresos_q.all():
         cantidad = Decimal(str(item.cantidad or 0))
         costo_unit_cs = Decimal(str(item.costo_unitario_cs or 0))
         costo_unit_usd = Decimal(str(item.costo_unitario_usd or 0))
+        concepto = (ingreso_tipo.nombre or "").strip() if ingreso_tipo else ""
+        tipo_label = f"Ingreso - {concepto}" if concepto else "Ingreso"
+        fecha_text = ingreso.fecha.isoformat() if ingreso.fecha else ""
+        source_url = (
+            f"/inventory/ingresos?start_date={fecha_text}&end_date={fecha_text}"
+            f"&focus_ingreso_id={ingreso.id}&focus_producto_id={producto.id}"
+        )
         movimientos.append(
             {
                 "fecha": ingreso.fecha,
-                "tipo": "Ingreso",
+                "tipo": tipo_label,
+                "tipo_base": "Ingreso",
+                "concepto": concepto or "-",
+                "source_kind": "ingreso",
+                "source_id": ingreso.id,
+                "source_url": source_url,
                 "branch": branch.name if branch else "-",
                 "bodega": bodega.name if bodega else "-",
                 "producto_id": producto.id,
@@ -7254,11 +7421,12 @@ def _build_kardex_movements(
         )
 
     egresos_q = (
-        db.query(EgresoInventario, EgresoItem, Producto, Bodega, Branch)
+        db.query(EgresoInventario, EgresoItem, Producto, Bodega, Branch, EgresoTipo)
         .join(EgresoItem, EgresoItem.egreso_id == EgresoInventario.id)
         .join(Producto, Producto.id == EgresoItem.producto_id)
         .join(Bodega, Bodega.id == EgresoInventario.bodega_id)
         .join(Branch, Branch.id == Bodega.branch_id)
+        .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id, isouter=True)
         .filter(EgresoInventario.fecha >= start_date, EgresoInventario.fecha <= end_date)
     )
     if branch_filter:
@@ -7266,14 +7434,26 @@ def _build_kardex_movements(
     if producto_filter is not None:
         egresos_q = egresos_q.filter(producto_filter)
 
-    for egreso, item, producto, bodega, branch in egresos_q.all():
+    for egreso, item, producto, bodega, branch, egreso_tipo in egresos_q.all():
         cantidad = Decimal(str(item.cantidad or 0)) * Decimal("-1")
         costo_unit_cs = Decimal(str(item.costo_unitario_cs or 0))
         costo_unit_usd = Decimal(str(item.costo_unitario_usd or 0))
+        concepto = (egreso_tipo.nombre or "").strip() if egreso_tipo else ""
+        tipo_label = f"Egreso - {concepto}" if concepto else "Egreso"
+        fecha_text = egreso.fecha.isoformat() if egreso.fecha else ""
+        source_url = (
+            f"/inventory/egresos?start_date={fecha_text}&end_date={fecha_text}"
+            f"&focus_egreso_id={egreso.id}&focus_producto_id={producto.id}"
+        )
         movimientos.append(
             {
                 "fecha": egreso.fecha,
-                "tipo": "Egreso",
+                "tipo": tipo_label,
+                "tipo_base": "Egreso",
+                "concepto": concepto or "-",
+                "source_kind": "egreso",
+                "source_id": egreso.id,
+                "source_url": source_url,
                 "branch": branch.name if branch else "-",
                 "bodega": bodega.name if bodega else "-",
                 "producto_id": producto.id,
@@ -7306,10 +7486,21 @@ def _build_kardex_movements(
         tasa_factura = Decimal(str(factura.tasa_cambio or 0))
         costo_unit_usd = _kardex_cost_unit_usd(db, producto, tasa_factura)
         costo_unit_cs = Decimal(str(producto.costo_producto or 0))
+        fecha_mov = factura.fecha.date() if isinstance(factura.fecha, datetime) else factura.fecha
+        fecha_text = fecha_mov.isoformat() if fecha_mov else ""
+        source_url = (
+            f"/sales/utilitario?start_date={fecha_text}&end_date={fecha_text}"
+            f"&focus_sale_id={factura.id}&focus_producto_id={producto.id}"
+        )
         movimientos.append(
             {
-                "fecha": factura.fecha.date() if isinstance(factura.fecha, datetime) else factura.fecha,
+                "fecha": fecha_mov,
                 "tipo": "Venta",
+                "tipo_base": "Venta",
+                "concepto": "Venta",
+                "source_kind": "venta",
+                "source_id": factura.id,
+                "source_url": source_url,
                 "branch": branch.name if branch else "-",
                 "bodega": bodega.name if bodega else "-",
                 "producto_id": producto.id,
@@ -7345,9 +7536,9 @@ def _build_kardex_movements(
     resumen = {
         "movimientos": len(rows),
         "dias": (end_date - start_date).days + 1,
-        "total_ingresos": sum((r["cantidad"] for r in rows if r["tipo"] == "Ingreso"), Decimal("0")),
-        "total_egresos": sum((abs(r["cantidad"]) for r in rows if r["tipo"] == "Egreso"), Decimal("0")),
-        "total_ventas": sum((abs(r["cantidad"]) for r in rows if r["tipo"] == "Venta"), Decimal("0")),
+        "total_ingresos": sum((r["cantidad"] for r in rows if r.get("tipo_base") == "Ingreso"), Decimal("0")),
+        "total_egresos": sum((abs(r["cantidad"]) for r in rows if r.get("tipo_base") == "Egreso"), Decimal("0")),
+        "total_ventas": sum((abs(r["cantidad"]) for r in rows if r.get("tipo_base") == "Venta"), Decimal("0")),
     }
 
     return rows, resumen
@@ -7363,6 +7554,7 @@ def _build_sales_report_rows(
     producto_q: str,
 ):
     allowed_codes = _allowed_branch_codes(db)
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
     _, bodega_user = _resolve_branch_bodega(db, user)
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
@@ -7377,10 +7569,15 @@ def _build_sales_report_rows(
         .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
         .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
         .filter(func.lower(Branch.code).in_(allowed_codes))
+        .filter(Branch.id.in_(scoped_branch_ids))
     )
     if branch_id and branch_id != "all":
         try:
-            query = query.filter(Branch.id == int(branch_id))
+            branch_id_int = int(branch_id)
+            if branch_id_int not in scoped_branch_ids:
+                query = query.filter(Branch.id == -1)
+            else:
+                query = query.filter(Branch.id == branch_id_int)
         except ValueError:
             pass
     if vendedor_id:
@@ -7714,18 +7911,25 @@ def report_sales_products(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
-    start_date, end_date, branch_id, vendedor_id, producto_id = _sales_products_report_filters(request)
+    start_date, end_date, branch_id, vendedor_id, producto_id, producto_q = _sales_products_report_filters(request)
     (
         report_rows,
+        detail_rows,
         total_qty,
         total_usd,
         total_cs,
         total_cost_usd,
         total_cost_cs,
         total_facturas,
-    ) = _build_sales_products_report(db, start_date, end_date, branch_id, vendedor_id, producto_id)
+    ) = _build_sales_products_report(db, user, start_date, end_date, branch_id, vendedor_id, producto_id, producto_q)
 
-    branches = _scoped_branches_query(db).order_by(Branch.name).all()
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
     _, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
     productos = (
@@ -7741,6 +7945,7 @@ def report_sales_products(
             "request": request,
             "user": user,
             "rows": report_rows,
+            "detail_rows": detail_rows,
             "branches": branches,
             "vendedores": vendedores,
             "productos": productos,
@@ -7749,6 +7954,7 @@ def report_sales_products(
             "selected_branch": branch_id or "",
             "selected_vendedor": vendedor_id or "",
             "selected_producto": producto_id or "",
+            "producto_q": producto_q,
             "total_qty": float(total_qty),
             "total_usd": float(total_usd),
             "total_cs": float(total_cs),
@@ -8114,13 +8320,14 @@ def report_kardex_export(
 
     c.setFont("Times-Bold", 8)
     c.drawString(24, y, "Fecha")
-    c.drawString(70, y, "Sucursal/Bodega")
-    c.drawString(170, y, "Producto")
-    c.drawRightString(230, y, "Cant")
-    c.drawRightString(270, y, "Saldo")
-    c.drawRightString(330, y, "Costo Unit")
-    c.drawRightString(390, y, "Costo Total")
-    c.drawString(395, y, "Vendedor")
+    c.drawString(70, y, "Tipo")
+    c.drawString(116, y, "Sucursal/Bodega")
+    c.drawString(196, y, "Producto")
+    c.drawRightString(252, y, "Cant")
+    c.drawRightString(284, y, "Saldo")
+    c.drawRightString(336, y, "C.Unit")
+    c.drawRightString(388, y, "C.Total")
+    c.drawString(392, y, "Vendedor")
     y -= 12
     c.setFont("Times-Roman", 8)
 
@@ -8129,16 +8336,18 @@ def report_kardex_export(
             c.showPage()
             y = 660
         fecha_text = row["fecha"].strftime("%d/%m/%Y") if row["fecha"] else ""
+        tipo_text = row.get("concepto") or row.get("tipo") or "-"
         sucursal_text = f"{row['branch']} / {row['bodega']}"
-        prod_text = f"{row['codigo']} {row['descripcion'][:14]}"
+        prod_text = f"{row['codigo']} {row['descripcion'][:10]}"
         c.drawString(24, y, fecha_text)
-        c.drawString(70, y, sucursal_text[:18])
-        c.drawString(170, y, prod_text)
-        c.drawRightString(230, y, f"{row['cantidad']:.2f}")
-        c.drawRightString(270, y, f"{row['saldo']:.2f}")
-        c.drawRightString(330, y, f"{row['costo_unit_cs']:.2f}")
-        c.drawRightString(390, y, f"{row['costo_total_cs']:.2f}")
-        c.drawString(395, y, (row.get("vendedor") or "-")[:12])
+        c.drawString(70, y, tipo_text[:18])
+        c.drawString(116, y, sucursal_text[:16])
+        c.drawString(196, y, prod_text)
+        c.drawRightString(252, y, f"{row['cantidad']:.2f}")
+        c.drawRightString(284, y, f"{row['saldo']:.2f}")
+        c.drawRightString(336, y, f"{row['costo_unit_cs']:.2f}")
+        c.drawRightString(388, y, f"{row['costo_total_cs']:.2f}")
+        c.drawString(392, y, (row.get("vendedor") or "-")[:10])
         y -= 12
 
     c.showPage()
@@ -8159,6 +8368,7 @@ def report_sales_export(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
     company_profile = _company_profile_payload(db)
     start_date, end_date, branch_id, vendedor_id, producto_q = _sales_report_filters(request)
     report_rows, total_usd, total_cs, total_facturas, total_items, vendor_summary = _build_sales_report_rows(
@@ -8195,7 +8405,9 @@ def report_sales_export(
         selected_branch = None
         if branch_id and branch_id != "all":
             try:
-                selected_branch = db.query(Branch).filter(Branch.id == int(branch_id)).first()
+                branch_id_int = int(branch_id)
+                if branch_id_int in scoped_branch_ids:
+                    selected_branch = db.query(Branch).filter(Branch.id == branch_id_int).first()
             except Exception:
                 selected_branch = None
         branch_label = selected_branch.name if selected_branch else "Todas"
@@ -8227,11 +8439,14 @@ def report_sales_export(
             rate = tasa if tasa else rate_for_date(value_date)
             return (Decimal(str(monto_cs or 0)) / rate) if rate else Decimal('0')
 
-        bodega_ids = None
+        bodega_ids = [row[0] for row in db.query(Bodega.id).filter(Bodega.branch_id.in_(scoped_branch_ids)).all()]
         if branch_id and branch_id != 'all':
             try:
                 branch_int = int(branch_id)
-                bodega_ids = [row[0] for row in db.query(Bodega.id).filter(Bodega.branch_id == branch_int).all()]
+                if branch_int in scoped_branch_ids:
+                    bodega_ids = [row[0] for row in db.query(Bodega.id).filter(Bodega.branch_id == branch_int).all()]
+                else:
+                    bodega_ids = []
             except Exception:
                 bodega_ids = []
 
@@ -9086,6 +9301,7 @@ def sales_detail(
     for item in factura.items:
         items.append(
             {
+                "producto_id": item.producto_id,
                 "codigo": item.producto.cod_producto if item.producto else "",
                 "descripcion": item.producto.descripcion if item.producto else "",
                 "cantidad": float(item.cantidad or 0),

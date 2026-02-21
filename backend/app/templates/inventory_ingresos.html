@@ -848,7 +848,11 @@
       </thead>
       <tbody>
         {% for ingreso in ingresos %}
-        <tr class="border-b border-slate-100">
+        <tr
+          class="border-b border-slate-100"
+          data-ingreso-id="{{ ingreso.id }}"
+          data-product-ids="{{ ingreso.items | map(attribute='producto_id') | join(',') }}"
+        >
           <td class="px-4 py-3 text-slate">{{ ingreso.fecha }}</td>
           <td class="px-4 py-3 font-semibold text-ink">{{ ingreso.tipo.nombre if ingreso.tipo else "-" }}</td>
           <td class="px-4 py-3 text-slate">{{ ingreso.bodega.name if ingreso.bodega else "-" }}</td>
@@ -1595,6 +1599,26 @@
   {% if print_id %}
   window.open("/inventory/ingresos/{{ print_id }}/pdf", "_blank");
   {% endif %}
+
+  const params = new URLSearchParams(window.location.search || "");
+  const focusIngresoId = (params.get("focus_ingreso_id") || "").trim();
+  const focusProductoId = (params.get("focus_producto_id") || "").trim();
+  if (focusIngresoId) {
+    setIngresoView("list");
+    const targetRow = document.querySelector(`#ingresos-table tr[data-ingreso-id="${focusIngresoId}"]`);
+    if (targetRow) {
+      targetRow.classList.add("table-primary");
+      targetRow.style.outline = "2px solid #2563eb";
+      targetRow.style.outlineOffset = "-2px";
+      if (focusProductoId) {
+        const ids = (targetRow.getAttribute("data-product-ids") || "").split(",").map((v) => v.trim());
+        if (ids.includes(focusProductoId)) {
+          targetRow.setAttribute("title", `Incluye producto ID ${focusProductoId}`);
+        }
+      }
+      targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
   });
 
   if (editSelect) {

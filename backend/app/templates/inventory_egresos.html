@@ -207,7 +207,11 @@
             </thead>
             <tbody>
               {% for egreso in egresos %}
-              <tr class="border-b border-slate-100">
+              <tr
+                class="border-b border-slate-100"
+                data-egreso-id="{{ egreso.id }}"
+                data-product-ids="{{ egreso.items | map(attribute='producto_id') | join(',') }}"
+              >
                 <td class="px-4 py-3 text-slate">{{ egreso.fecha }}</td>
                 <td class="px-4 py-3 font-semibold text-ink">{{ egreso.tipo.nombre if egreso.tipo else "-" }}</td>
                 <td class="px-4 py-3 text-slate">{{ egreso.bodega.name if egreso.bodega else "-" }}</td>
@@ -971,6 +975,26 @@
   {% if print_id %}
   window.open("/inventory/egresos/{{ print_id }}/pdf", "_blank");
   {% endif %}
+
+  const params = new URLSearchParams(window.location.search || "");
+  const focusEgresoId = (params.get("focus_egreso_id") || "").trim();
+  const focusProductoId = (params.get("focus_producto_id") || "").trim();
+  if (focusEgresoId) {
+    setEgresoView("list");
+    const targetRow = document.querySelector(`#egresos-table tr[data-egreso-id="${focusEgresoId}"]`);
+    if (targetRow) {
+      targetRow.classList.add("table-primary");
+      targetRow.style.outline = "2px solid #2563eb";
+      targetRow.style.outlineOffset = "-2px";
+      if (focusProductoId) {
+        const ids = (targetRow.getAttribute("data-product-ids") || "").split(",").map((v) => v.trim());
+        if (ids.includes(focusProductoId)) {
+          targetRow.setAttribute("title", `Incluye producto ID ${focusProductoId}`);
+        }
+      }
+      targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
   });
 
   if (productSearch) {
