@@ -135,9 +135,6 @@
                 <th class="text-end">Precio C$</th>
                 <th class="text-end">Venta USD</th>
                 <th class="text-end">Venta C$</th>
-                <th class="text-end">Costo USD</th>
-                <th class="text-end">Costo C$</th>
-                <th class="text-end">Margen USD</th>
               </tr>
             </thead>
             <tbody>
@@ -155,14 +152,11 @@
                 <td class="text-end">C$ {{ "%.2f"|format(row.precio_cs or 0) }}</td>
                 <td class="text-end">$ {{ "%.2f"|format(row.venta_usd or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.venta_cs or 0) }}</td>
-                <td class="text-end">$ {{ "%.2f"|format(row.costo_usd or 0) }}</td>
-                <td class="text-end">C$ {{ "%.2f"|format(row.costo_cs or 0) }}</td>
-                <td class="text-end">$ {{ "%.2f"|format(row.margen_usd or 0) }}</td>
               </tr>
               {% endfor %}
               {% if detail_rows|length == 0 %}
               <tr>
-                <td colspan="15" class="text-center text-slate py-3">Sin resultados.</td>
+                <td colspan="12" class="text-center text-slate py-3">Sin resultados.</td>
               </tr>
               {% endif %}
             </tbody>
@@ -174,9 +168,6 @@
                 <th class="text-end">-</th>
                 <th class="text-end">$ {{ "%.2f"|format(total_usd or 0) }}</th>
                 <th class="text-end">C$ {{ "%.2f"|format(total_cs or 0) }}</th>
-                <th class="text-end">$ {{ "%.2f"|format(total_cost_usd or 0) }}</th>
-                <th class="text-end">C$ {{ "%.2f"|format(total_cost_cs or 0) }}</th>
-                <th class="text-end">$ {{ "%.2f"|format((total_usd or 0) - (total_cost_usd or 0)) }}</th>
               </tr>
             </tfoot>
           </table>
@@ -194,9 +185,6 @@
                 <th class="text-end">Cantidad</th>
                 <th class="text-end">Venta USD</th>
                 <th class="text-end">Venta C$</th>
-                <th class="text-end">Costo USD</th>
-                <th class="text-end">Costo C$</th>
-                <th class="text-end">Margen USD</th>
               </tr>
             </thead>
             <tbody>
@@ -207,14 +195,11 @@
                 <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
                 <td class="text-end">$ {{ "%.2f"|format(row.venta_usd or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.venta_cs or 0) }}</td>
-                <td class="text-end">$ {{ "%.2f"|format(row.costo_usd or 0) }}</td>
-                <td class="text-end">C$ {{ "%.2f"|format(row.costo_cs or 0) }}</td>
-                <td class="text-end">$ {{ "%.2f"|format(row.margen_usd or 0) }}</td>
               </tr>
               {% endfor %}
               {% if rows|length == 0 %}
               <tr>
-                <td colspan="8" class="text-center text-slate py-3">Sin resultados.</td>
+                <td colspan="5" class="text-center text-slate py-3">Sin resultados.</td>
               </tr>
               {% endif %}
             </tbody>

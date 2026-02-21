@@ -79,7 +79,7 @@
         <div class="table-responsive">
           <table class="table table-sm table-hover odoo-table text-sm">
             <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-              <tr data-sale-id="{{ venta.id }}">
+              <tr>
                 <th>Fecha</th>
                 <th>Hora</th>
                 <th>Factura</th>
@@ -93,7 +93,7 @@
             </thead>
             <tbody>
               {% for venta in ventas %}
-              <tr>
+              <tr data-sale-id="{{ venta.id }}">
                 <td>{{ venta.fecha }}</td>
                 <td>{{ venta.created_at.strftime("%H:%M") if venta.created_at else "-" }}</td>
                 <td class="fw-semibold">{{ venta.numero }}</td>
