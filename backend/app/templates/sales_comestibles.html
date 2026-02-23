@@ -3378,6 +3378,8 @@
   }
   (function () {
     const printLink = document.getElementById("sales-print-ticket");
+    const printId = "{{ print_id or '' }}";
+    const printGuardKey = printId ? `sales_print_once_${printId}` : "";
     if (!printLink) {
       setTimeout(() => {
         window.location.href = "/sales";
@@ -3390,9 +3392,19 @@
         window.location.href = "/sales";
       }, 300);
     };
+    let opened = false;
     const openPrint = () => {
+      if (opened) return;
       const url = printLink.getAttribute("href");
       if (!url) return;
+      opened = true;
+      if (printGuardKey && window.sessionStorage) {
+        try {
+          sessionStorage.setItem(printGuardKey, "1");
+        } catch (_) {
+          // noop
+        }
+      }
       const result = window.erpOpenPrintable
         ? window.erpOpenPrintable(url, { fallbackSameTab: true })
         : { opened: Boolean(window.open(url, "_blank", "noopener")) };
@@ -3409,6 +3421,20 @@
       event.preventDefault();
       openPrint();
     });
+
+    if (printGuardKey && window.sessionStorage) {
+      try {
+        const already = sessionStorage.getItem(printGuardKey) === "1";
+        if (already) {
+          setTimeout(() => {
+            window.location.href = "/sales";
+          }, 500);
+          return;
+        }
+      } catch (_) {
+        // noop
+      }
+    }
 
     setTimeout(() => {
       openPrint();
