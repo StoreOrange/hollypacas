@@ -130,30 +130,55 @@
         };
 
         let remaining = copies;
+        let waitingNextCopy = false;
+        const helper = document.createElement("div");
+        helper.style.position = "fixed";
+        helper.style.left = "50%";
+        helper.style.bottom = "16px";
+        helper.style.transform = "translateX(-50%)";
+        helper.style.background = "#111827";
+        helper.style.color = "#fff";
+        helper.style.padding = "8px 12px";
+        helper.style.borderRadius = "8px";
+        helper.style.fontSize = "12px";
+        helper.style.zIndex = "9999";
+        helper.style.display = "none";
+        document.body.appendChild(helper);
+
+        const showHelper = (text) => {
+          helper.textContent = text;
+          helper.style.display = "block";
+        };
+
+        const hideHelper = () => {
+          helper.style.display = "none";
+        };
+
         const triggerPrint = () => window.print();
         window.addEventListener("afterprint", () => {
           if (exited) return;
           remaining -= 1;
           if (remaining > 0) {
-            setTimeout(() => triggerPrint(), 350);
+            waitingNextCopy = true;
+            showHelper(`Copia enviada. Presiona Enter para imprimir la siguiente (${remaining} pendiente).`);
           } else {
             exitToReturn();
           }
         });
-        const mediaQuery = window.matchMedia ? window.matchMedia("print") : null;
-        if (mediaQuery && typeof mediaQuery.addEventListener === "function") {
-          mediaQuery.addEventListener("change", (event) => {
-            if (event.matches || exited) return;
-            if (remaining <= 1) {
-              exitToReturn();
-            }
-          });
-        }
-        setTimeout(() => {
-          if (!exited && remaining <= 1) {
+        window.addEventListener("keydown", (event) => {
+          if (exited) return;
+          if (event.key === "Enter" && waitingNextCopy) {
+            event.preventDefault();
+            waitingNextCopy = false;
+            hideHelper();
+            setTimeout(() => triggerPrint(), 120);
+            return;
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
             exitToReturn();
           }
-        }, 25000);
+        });
         setTimeout(() => triggerPrint(), 420);
       });
     </script>
