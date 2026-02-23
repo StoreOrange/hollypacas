@@ -104,6 +104,7 @@
       window.addEventListener("load", () => {
         const params = new URLSearchParams(window.location.search);
         const returnTo = params.get("return_to") || "/sales";
+        let exited = false;
         let copies = parseInt(params.get("copies") || "2", 10);
         if (!Number.isFinite(copies) || copies < 1) {
           copies = 2;
@@ -117,21 +118,42 @@
           dynamicStyle.textContent = `@page { size: 80mm ${dynamicPageMm}mm; margin: 2mm; }`;
           document.head.appendChild(dynamicStyle);
         }
+        const exitToReturn = () => {
+          if (exited) return;
+          exited = true;
+          window.close();
+          setTimeout(() => {
+            if (!window.closed) {
+              window.location.replace(returnTo);
+            }
+          }, 180);
+        };
+
         let remaining = copies;
         const triggerPrint = () => window.print();
         window.addEventListener("afterprint", () => {
+          if (exited) return;
           remaining -= 1;
           if (remaining > 0) {
             setTimeout(() => triggerPrint(), 350);
           } else {
-            window.close();
-            setTimeout(() => {
-              if (!window.closed) {
-                window.location.href = returnTo;
-              }
-            }, 250);
+            exitToReturn();
           }
         });
+        const mediaQuery = window.matchMedia ? window.matchMedia("print") : null;
+        if (mediaQuery && typeof mediaQuery.addEventListener === "function") {
+          mediaQuery.addEventListener("change", (event) => {
+            if (event.matches || exited) return;
+            if (remaining <= 1) {
+              exitToReturn();
+            }
+          });
+        }
+        setTimeout(() => {
+          if (!exited && remaining <= 1) {
+            exitToReturn();
+          }
+        }, 25000);
         setTimeout(() => triggerPrint(), 420);
       });
     </script>
