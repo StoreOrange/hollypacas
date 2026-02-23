@@ -3405,16 +3405,8 @@
           // noop
         }
       }
-      const result = window.erpOpenPrintable
-        ? window.erpOpenPrintable(url, { fallbackSameTab: true })
-        : { opened: Boolean(window.open(url, "_blank", "noopener")) };
-      if (!result.opened) {
-        return;
-      }
-      window.addEventListener("focus", reloadAfterPrint, { once: true });
-      setTimeout(() => {
-        window.location.href = "/sales";
-      }, 12000);
+      // Flujo solicitado: no abrir ventana nueva, imprimir en la misma pestaña.
+      window.location.href = url;
     };
 
     printLink.addEventListener("click", (event) => {
