@@ -11227,17 +11227,34 @@ def data_update_vendedor(
     vendedor.telefono = telefono
     vendedor.activo = activo == "on"
     selected_ids = {int(b) for b in (bodega_ids or []) if str(b).strip()}
-    if default_bodega_id:
-        selected_ids.add(int(default_bodega_id))
-    vendedor.assignments.clear()
+    default_bodega_id_int: Optional[int] = None
+    if default_bodega_id and str(default_bodega_id).strip():
+        default_bodega_id_int = int(default_bodega_id)
+        selected_ids.add(default_bodega_id_int)
+
+    # Evita conflicto de unicidad uq_vendedor_bodega al editar:
+    # actualiza asignaciones existentes y solo inserta/elimina diferencias.
+    existing_by_bodega = {int(asig.bodega_id): asig for asig in (vendedor.assignments or [])}
+
+    # Eliminar asignaciones que ya no fueron seleccionadas.
+    for bodega_id, asig in list(existing_by_bodega.items()):
+        if bodega_id not in selected_ids:
+            db.delete(asig)
+
+    # Insertar faltantes o actualizar bandera default en existentes.
     for bodega_id in sorted(selected_ids):
-        vendedor.assignments.append(
-            VendedorBodega(
-                vendedor_id=vendedor.id,
-                bodega_id=bodega_id,
-                is_default=default_bodega_id and int(default_bodega_id) == bodega_id,
+        is_default = default_bodega_id_int is not None and default_bodega_id_int == bodega_id
+        current = existing_by_bodega.get(bodega_id)
+        if current:
+            current.is_default = is_default
+        else:
+            vendedor.assignments.append(
+                VendedorBodega(
+                    vendedor_id=vendedor.id,
+                    bodega_id=bodega_id,
+                    is_default=is_default,
+                )
             )
-        )
     db.commit()
     return RedirectResponse("/data/vendedores?success=Vendedor+actualizado", status_code=303)
 
