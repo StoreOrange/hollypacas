@@ -14,7 +14,7 @@ from email.message import EmailMessage
 import io
 from pathlib import Path
 from urllib import request as urlrequest
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 from dotenv import dotenv_values
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font
@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import and_, create_engine, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from ..config import (
     get_active_company_key,
@@ -46,6 +46,7 @@ from ..core.utils import local_now, local_now_naive, local_today
 from ..database import get_current_database_url, refresh_engine
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from decimal import InvalidOperation
 
 from ..models.inventory import (
     Bodega,
@@ -65,6 +66,10 @@ from ..models.inventory import (
     Segmento,
 )
 from ..models.sales import (
+    AccountingPolicySetting,
+    AccountingEntry,
+    AccountingEntryLine,
+    AccountingVoucherType,
     Banco,
     CajaDiaria,
     CierreCaja,
@@ -232,6 +237,7 @@ PERMISSION_GROUPS = [
             {"name": "menu.inventory", "label": "Inventarios"},
             {"name": "menu.inventory.caliente", "label": "Inventario en caliente"},
             {"name": "menu.finance", "label": "Finanzas"},
+            {"name": "menu.accounting", "label": "Contabilidad"},
             {"name": "menu.reports", "label": "Informes"},
             {"name": "menu.data", "label": "Datos / catalogos"},
         ],
@@ -281,6 +287,10 @@ PERMISSION_GROUPS = [
             {"name": "access.inventory.productos", "label": "Crear/editar productos"},
             {"name": "access.finance", "label": "Acceso a finanzas"},
             {"name": "access.finance.rates", "label": "Configurar tasas"},
+            {"name": "access.accounting", "label": "Acceso a contabilidad"},
+            {"name": "access.accounting.financial_data", "label": "Datos financieros"},
+            {"name": "access.accounting.entries", "label": "Comprobantes contables"},
+            {"name": "access.accounting.voucher_types", "label": "Tipos de comprobantes"},
             {"name": "access.reports", "label": "Acceso a informes"},
             {"name": "access.data", "label": "Acceso a datos"},
             {"name": "access.data.permissions", "label": "Gestion de permisos"},
@@ -1850,6 +1860,875 @@ def finance_home(
             "user": user,
             "version": settings.UI_VERSION,
         },
+    )
+
+
+def _accounting_period(entry_date: date) -> str:
+    return entry_date.strftime("%Y-%m")
+
+
+def _next_accounting_sequence(
+    db: Session,
+    tipo_id: int,
+    branch_id: Optional[int],
+    period: str,
+) -> int:
+    query = db.query(func.max(AccountingEntry.secuencia)).filter(
+        AccountingEntry.tipo_id == tipo_id,
+        AccountingEntry.periodo == period,
+    )
+    if branch_id is None:
+        query = query.filter(AccountingEntry.branch_id.is_(None))
+    else:
+        query = query.filter(AccountingEntry.branch_id == branch_id)
+    last_seq = query.scalar() or 0
+    return int(last_seq) + 1
+
+
+def _build_accounting_entry_number(voucher_type: AccountingVoucherType, period: str, seq: int) -> str:
+    compact_period = period.replace("-", "")
+    prefix = (voucher_type.prefijo or voucher_type.code or "CPB").strip().upper()
+    return f"{prefix}-{compact_period}-{seq:05d}"
+
+
+def _build_accounting_entry_pdf_bytes(entry: AccountingEntry) -> bytes:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    margin = 42
+    y = height - 50
+
+    pdf.setFont("Helvetica-Bold", 13)
+    pdf.drawString(margin, y, "Comprobante contable")
+    y -= 20
+    pdf.setFont("Helvetica", 10)
+    pdf.drawString(margin, y, f"Numero: {entry.numero}")
+    y -= 14
+    tipo_nombre = entry.tipo.nombre if entry.tipo else "-"
+    pdf.drawString(margin, y, f"Tipo: {tipo_nombre}")
+    y -= 14
+    branch_name = entry.branch.name if entry.branch else "General"
+    pdf.drawString(margin, y, f"Sucursal: {branch_name}")
+    y -= 14
+    pdf.drawString(margin, y, f"Fecha: {entry.fecha.strftime('%Y-%m-%d') if entry.fecha else '-'}")
+    y -= 14
+    pdf.drawString(margin, y, f"Estado: {entry.estado}")
+    y -= 14
+    if entry.referencia:
+        pdf.drawString(margin, y, f"Referencia: {entry.referencia}")
+        y -= 14
+    pdf.drawString(margin, y, f"Concepto: {entry.descripcion or '-'}")
+
+    y -= 24
+    pdf.setFont("Helvetica-Bold", 9)
+    pdf.drawString(margin, y, "Codigo")
+    pdf.drawString(margin + 70, y, "Cuenta")
+    pdf.drawString(margin + 280, y, "Detalle")
+    pdf.drawRightString(width - 120, y, "Debe")
+    pdf.drawRightString(width - margin, y, "Haber")
+    y -= 12
+    pdf.line(margin, y, width - margin, y)
+    y -= 14
+
+    pdf.setFont("Helvetica", 8)
+    for line in entry.lines:
+        if y < 70:
+            pdf.showPage()
+            y = height - 50
+            pdf.setFont("Helvetica-Bold", 9)
+            pdf.drawString(margin, y, "Codigo")
+            pdf.drawString(margin + 70, y, "Cuenta")
+            pdf.drawString(margin + 280, y, "Detalle")
+            pdf.drawRightString(width - 120, y, "Debe")
+            pdf.drawRightString(width - margin, y, "Haber")
+            y -= 12
+            pdf.line(margin, y, width - margin, y)
+            y -= 14
+            pdf.setFont("Helvetica", 8)
+        code = line.cuenta.codigo if line.cuenta else "-"
+        name = line.cuenta.nombre if line.cuenta else "-"
+        detail = line.descripcion or ""
+        pdf.drawString(margin, y, code[:14])
+        pdf.drawString(margin + 70, y, name[:38])
+        pdf.drawString(margin + 280, y, detail[:22])
+        pdf.drawRightString(width - 120, y, f"{float(line.debe or 0):,.2f}")
+        pdf.drawRightString(width - margin, y, f"{float(line.haber or 0):,.2f}")
+        y -= 12
+
+    y -= 8
+    pdf.line(margin, y, width - margin, y)
+    y -= 14
+    pdf.setFont("Helvetica-Bold", 10)
+    pdf.drawRightString(width - 120, y, f"{float(entry.total_debe or 0):,.2f}")
+    pdf.drawRightString(width - margin, y, f"{float(entry.total_haber or 0):,.2f}")
+    y -= 18
+    pdf.drawString(margin, y, "Cuadre contable (debe = haber):")
+    pdf.drawString(margin + 175, y, "SI" if to_decimal(entry.total_debe) == to_decimal(entry.total_haber) else "NO")
+
+    pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
+
+
+def _suggest_counter_account_id(
+    db: Session,
+    selected_account: CuentaContable,
+    active_accounts: list[CuentaContable],
+) -> Optional[int]:
+    if not selected_account:
+        return None
+
+    line_base = aliased(AccountingEntryLine)
+    line_other = aliased(AccountingEntryLine)
+    historical = (
+        db.query(line_other.cuenta_id, func.count(line_other.id).label("hits"))
+        .select_from(line_base)
+        .join(AccountingEntry, AccountingEntry.id == line_base.entry_id)
+        .join(line_other, line_other.entry_id == line_base.entry_id)
+        .filter(line_base.cuenta_id == selected_account.id)
+        .filter(line_other.cuenta_id != selected_account.id)
+        .filter(AccountingEntry.estado != "ANULADO")
+    )
+    if (selected_account.naturaleza or "").upper() == "DEBE":
+        historical = historical.filter(line_base.debe > 0, line_other.haber > 0)
+    else:
+        historical = historical.filter(line_base.haber > 0, line_other.debe > 0)
+    best = (
+        historical.group_by(line_other.cuenta_id)
+        .order_by(func.count(line_other.id).desc(), line_other.cuenta_id.asc())
+        .first()
+    )
+    if best and best[0]:
+        return int(best[0])
+
+    target_nature = "HABER" if (selected_account.naturaleza or "").upper() == "DEBE" else "DEBE"
+    candidates = [
+        acc
+        for acc in active_accounts
+        if acc.id != selected_account.id and (acc.naturaleza or "").upper() == target_nature
+    ]
+    if not candidates:
+        return None
+
+    haystack = f"{(selected_account.codigo or '').lower()} {(selected_account.nombre or '').lower()}"
+    priority_terms = []
+    if any(term in haystack for term in ["venta", "ingreso"]):
+        priority_terms = ["caja", "banco", "cliente", "cobrar"]
+    elif any(term in haystack for term in ["gasto", "costo"]):
+        priority_terms = ["caja", "banco", "proveedor", "pagar"]
+    elif any(term in haystack for term in ["inventario", "mercaderia"]):
+        priority_terms = ["proveedor", "pagar", "caja", "banco"]
+    elif any(term in haystack for term in ["caja", "banco"]):
+        priority_terms = ["venta", "ingreso", "gasto", "costo", "inventario"]
+
+    if priority_terms:
+        for term in priority_terms:
+            match = next(
+                (
+                    acc
+                    for acc in candidates
+                    if term in (acc.nombre or "").lower() or term in (acc.codigo or "").lower()
+                ),
+                None,
+            )
+            if match:
+                return int(match.id)
+
+    candidates.sort(key=lambda acc: ((acc.codigo or ""), (acc.nombre or "")))
+    return int(candidates[0].id) if candidates else None
+
+
+def _find_account_by_terms(
+    active_accounts: list[CuentaContable],
+    terms: list[str],
+    naturaleza: Optional[str] = None,
+) -> Optional[int]:
+    target_nat = (naturaleza or "").upper().strip()
+    for term in terms:
+        term_lower = term.lower()
+        for account in active_accounts:
+            if target_nat and (account.naturaleza or "").upper() != target_nat:
+                continue
+            name = (account.nombre or "").lower()
+            code = (account.codigo or "").lower()
+            if term_lower in name or term_lower in code:
+                return int(account.id)
+    return None
+
+
+def _terms_from_csv(value: Optional[str], fallback: list[str]) -> list[str]:
+    raw = (value or "").strip()
+    if not raw:
+        return fallback
+    items = [item.strip().lower() for item in raw.split(",") if item.strip()]
+    return items or fallback
+
+
+def _get_accounting_policy(db: Session) -> dict:
+    row = db.query(AccountingPolicySetting).order_by(AccountingPolicySetting.id.asc()).first()
+    defaults = {
+        "strict_mode": True,
+        "auto_entry_enabled": False,
+        "ingreso_debe_terms": ["caja", "banco", "cliente", "cobrar"],
+        "ingreso_haber_terms": ["venta", "ingreso"],
+        "egreso_debe_terms": ["gasto", "costo", "compra", "inventario"],
+        "egreso_haber_terms": ["caja", "banco", "proveedor", "pagar"],
+    }
+    if not row:
+        return defaults
+    return {
+        "strict_mode": bool(row.strict_mode),
+        "auto_entry_enabled": bool(row.auto_entry_enabled),
+        "ingreso_debe_terms": _terms_from_csv(row.ingreso_debe_terms, defaults["ingreso_debe_terms"]),
+        "ingreso_haber_terms": _terms_from_csv(row.ingreso_haber_terms, defaults["ingreso_haber_terms"]),
+        "egreso_debe_terms": _terms_from_csv(row.egreso_debe_terms, defaults["egreso_debe_terms"]),
+        "egreso_haber_terms": _terms_from_csv(row.egreso_haber_terms, defaults["egreso_haber_terms"]),
+    }
+
+
+def _build_voucher_template(
+    voucher_type: AccountingVoucherType,
+    active_accounts: list[CuentaContable],
+    policy: dict,
+) -> dict:
+    code = (voucher_type.code or "").upper().strip()
+    debit_terms = ["caja", "banco", "cliente", "cobrar"]
+    credit_terms = ["venta", "ingreso"]
+    if code == "EGRESO":
+        debit_terms = ["gasto", "costo", "compra", "inventario"]
+        credit_terms = ["caja", "banco", "proveedor", "pagar"]
+    elif code == "AJUSTE":
+        debit_terms = ["inventario", "costo", "gasto", "ajuste"]
+        credit_terms = ["inventario", "costo", "ingreso", "ajuste"]
+    elif code == "DIARIO":
+        debit_terms = ["gasto", "inventario", "cliente", "caja"]
+        credit_terms = ["ingreso", "venta", "proveedor", "banco"]
+    if code == "INGRESO":
+        debit_terms = list(policy.get("ingreso_debe_terms") or debit_terms)
+        credit_terms = list(policy.get("ingreso_haber_terms") or credit_terms)
+    elif code == "EGRESO":
+        debit_terms = list(policy.get("egreso_debe_terms") or debit_terms)
+        credit_terms = list(policy.get("egreso_haber_terms") or credit_terms)
+
+    debit_id = _find_account_by_terms(active_accounts, debit_terms, "DEBE")
+    credit_id = _find_account_by_terms(active_accounts, credit_terms, "HABER")
+    if not debit_id:
+        debit_id = _find_account_by_terms(active_accounts, debit_terms)
+    if not credit_id:
+        credit_id = _find_account_by_terms(active_accounts, credit_terms)
+    return {
+        "debit_account_id": debit_id,
+        "credit_account_id": credit_id,
+        "debit_hint": " / ".join(debit_terms),
+        "credit_hint": " / ".join(credit_terms),
+        "concept": f"Asiento sugerido para {voucher_type.nombre}",
+    }
+
+
+def _validate_accounting_entry_policy(
+    voucher_type: AccountingVoucherType,
+    line_payloads: list[dict],
+    policy: dict,
+) -> Optional[str]:
+    if not policy.get("strict_mode", True):
+        return None
+    code = (voucher_type.code or "").upper().strip()
+    if code not in {"INGRESO", "EGRESO"}:
+        return None
+
+    if not line_payloads:
+        return "El comprobante no tiene lineas validas."
+
+    has_cross_same_account = False
+    by_account: dict[int, dict[str, Decimal]] = {}
+    for item in line_payloads:
+        account_id = int(item["account"].id)
+        if account_id not in by_account:
+            by_account[account_id] = {"debe": Decimal("0"), "haber": Decimal("0")}
+        by_account[account_id]["debe"] += item["debe"]
+        by_account[account_id]["haber"] += item["haber"]
+    for totals in by_account.values():
+        if totals["debe"] > 0 and totals["haber"] > 0:
+            has_cross_same_account = True
+            break
+    if has_cross_same_account:
+        return "Politica contable: una misma cuenta no debe ir al Debe y Haber en el mismo comprobante."
+
+    debit_lines = [item for item in line_payloads if item["debe"] > 0]
+    credit_lines = [item for item in line_payloads if item["haber"] > 0]
+    if not debit_lines or not credit_lines:
+        return "Politica contable: debe existir afectacion en ambos lados (Debe y Haber)."
+
+    def _has_terms(lines: list[dict], terms: list[str]) -> bool:
+        for item in lines:
+            text = f"{(item['account'].codigo or '').lower()} {(item['account'].nombre or '').lower()}"
+            if any(term in text for term in terms):
+                return True
+        return False
+
+    if code == "INGRESO":
+        ingreso_debe_terms = list(policy.get("ingreso_debe_terms") or ["caja", "banco", "cliente", "cobrar"])
+        ingreso_haber_terms = list(policy.get("ingreso_haber_terms") or ["venta", "ingreso"])
+        if not _has_terms(debit_lines, ingreso_debe_terms):
+            return "Politica INGRESO: en Debe debe participar caja/banco/cliente por cobrar."
+        if not _has_terms(credit_lines, ingreso_haber_terms):
+            return "Politica INGRESO: en Haber debe participar una cuenta de ventas/ingresos."
+    if code == "EGRESO":
+        egreso_debe_terms = list(policy.get("egreso_debe_terms") or ["gasto", "costo", "compra", "inventario"])
+        egreso_haber_terms = list(policy.get("egreso_haber_terms") or ["caja", "banco", "proveedor", "pagar"])
+        if not _has_terms(debit_lines, egreso_debe_terms):
+            return "Politica EGRESO: en Debe debe participar gasto/costo/compra/inventario."
+        if not _has_terms(credit_lines, egreso_haber_terms):
+            return "Politica EGRESO: en Haber debe participar caja/banco/proveedor por pagar."
+    return None
+
+
+def _find_voucher_type_for_code(db: Session, code: str) -> Optional[AccountingVoucherType]:
+    normalized = (code or "").strip().upper()
+    if not normalized:
+        return None
+    vt = (
+        db.query(AccountingVoucherType)
+        .filter(func.upper(AccountingVoucherType.code) == normalized, AccountingVoucherType.activo.is_(True))
+        .first()
+    )
+    if vt:
+        return vt
+    return (
+        db.query(AccountingVoucherType)
+        .filter(func.upper(AccountingVoucherType.code) == "DIARIO", AccountingVoucherType.activo.is_(True))
+        .first()
+    )
+
+
+def _build_auto_accounting_entry(
+    db: Session,
+    *,
+    event_code: str,
+    branch_id: Optional[int],
+    entry_date: date,
+    amount: Decimal,
+    reference: str,
+    description: str,
+) -> Optional[AccountingEntry]:
+    policy = _get_accounting_policy(db)
+    if not policy.get("auto_entry_enabled", False):
+        return None
+    if amount <= 0:
+        return None
+
+    voucher_type = _find_voucher_type_for_code(db, "INGRESO" if event_code == "SALE" else "EGRESO")
+    if not voucher_type:
+        return None
+
+    active_accounts = (
+        db.query(CuentaContable)
+        .filter(CuentaContable.activo.is_(True))
+        .order_by(CuentaContable.codigo)
+        .all()
+    )
+    template = _build_voucher_template(voucher_type, active_accounts, policy)
+    debit_id = int(template["debit_account_id"]) if template.get("debit_account_id") else None
+    credit_id = int(template["credit_account_id"]) if template.get("credit_account_id") else None
+
+    if event_code == "INV_IN":
+        debit_id = _find_account_by_terms(active_accounts, ["inventario"], "DEBE") or debit_id
+        credit_id = (
+            _find_account_by_terms(active_accounts, ["proveedor", "pagar", "caja", "banco"], "HABER")
+            or credit_id
+        )
+    elif event_code == "INV_OUT":
+        debit_id = _find_account_by_terms(active_accounts, ["costo", "gasto", "merma"], "DEBE") or debit_id
+        credit_id = _find_account_by_terms(active_accounts, ["inventario"], "HABER") or credit_id
+
+    if not debit_id or not credit_id or debit_id == credit_id:
+        return None
+    debit_account = db.query(CuentaContable).filter(CuentaContable.id == debit_id).first()
+    credit_account = db.query(CuentaContable).filter(CuentaContable.id == credit_id).first()
+    if not debit_account or not credit_account:
+        return None
+
+    period = _accounting_period(entry_date)
+    seq = _next_accounting_sequence(db, voucher_type.id, branch_id, period)
+    number = _build_accounting_entry_number(voucher_type, period, seq)
+    line_amount = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    entry = AccountingEntry(
+        tipo_id=voucher_type.id,
+        branch_id=branch_id,
+        fecha=entry_date,
+        periodo=period,
+        secuencia=seq,
+        numero=number,
+        referencia=reference[:160],
+        descripcion=description[:400],
+        estado="POSTEADO",
+        total_debe=line_amount,
+        total_haber=line_amount,
+        creado_por="auto-system",
+        lines=[
+            AccountingEntryLine(
+                cuenta_id=debit_account.id,
+                descripcion=f"Auto {event_code} - Debe",
+                debe=line_amount,
+                haber=Decimal("0.00"),
+            ),
+            AccountingEntryLine(
+                cuenta_id=credit_account.id,
+                descripcion=f"Auto {event_code} - Haber",
+                debe=Decimal("0.00"),
+                haber=line_amount,
+            ),
+        ],
+    )
+    return entry
+
+
+@router.get("/accounting")
+def accounting_home(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting")
+    return request.app.state.templates.TemplateResponse(
+        "accounting.html",
+        {
+            "request": request,
+            "user": user,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/accounting/financial-data")
+def accounting_financial_data(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.financial_data")
+    cuentas_total = db.query(func.count(CuentaContable.id)).scalar() or 0
+    cuentas_activas = (
+        db.query(func.count(CuentaContable.id)).filter(CuentaContable.activo.is_(True)).scalar() or 0
+    )
+    voucher_types = db.query(AccountingVoucherType).order_by(AccountingVoucherType.code).all()
+    policy = _get_accounting_policy(db)
+    return request.app.state.templates.TemplateResponse(
+        "accounting_financial_data.html",
+        {
+            "request": request,
+            "user": user,
+            "voucher_types": voucher_types,
+            "policy": policy,
+            "cuentas_total": cuentas_total,
+            "cuentas_activas": cuentas_activas,
+            "version": settings.UI_VERSION,
+            "error": request.query_params.get("error"),
+            "success": request.query_params.get("success"),
+        },
+    )
+
+
+@router.post("/accounting/voucher-types")
+def accounting_voucher_type_create(
+    request: Request,
+    code: str = Form(...),
+    nombre: str = Form(...),
+    prefijo: str = Form(...),
+    activo: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.voucher_types")
+    code = (code or "").strip().upper()
+    nombre = (nombre or "").strip()
+    prefijo = (prefijo or "").strip().upper()
+    if not code or not nombre or not prefijo:
+        return RedirectResponse("/accounting/financial-data?error=Datos+incompletos", status_code=303)
+    exists = (
+        db.query(AccountingVoucherType)
+        .filter(func.lower(AccountingVoucherType.code) == code.lower())
+        .first()
+    )
+    if exists:
+        return RedirectResponse("/accounting/financial-data?error=Codigo+ya+existe", status_code=303)
+    db.add(
+        AccountingVoucherType(
+            code=code,
+            nombre=nombre,
+            prefijo=prefijo[:10],
+            activo=activo == "on",
+        )
+    )
+    db.commit()
+    return RedirectResponse("/accounting/financial-data?success=Tipo+creado", status_code=303)
+
+
+@router.post("/accounting/voucher-types/{item_id}/update")
+def accounting_voucher_type_update(
+    request: Request,
+    item_id: int,
+    nombre: str = Form(...),
+    prefijo: str = Form(...),
+    activo: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.voucher_types")
+    row = db.query(AccountingVoucherType).filter(AccountingVoucherType.id == item_id).first()
+    if not row:
+        return RedirectResponse("/accounting/financial-data?error=Tipo+no+existe", status_code=303)
+    row.nombre = (nombre or "").strip()
+    row.prefijo = (prefijo or "").strip().upper()[:10]
+    row.activo = activo == "on"
+    db.commit()
+    return RedirectResponse("/accounting/financial-data?success=Tipo+actualizado", status_code=303)
+
+
+@router.post("/accounting/policies")
+def accounting_policy_update(
+    request: Request,
+    strict_mode: Optional[str] = Form(None),
+    auto_entry_enabled: Optional[str] = Form(None),
+    ingreso_debe_terms: str = Form(""),
+    ingreso_haber_terms: str = Form(""),
+    egreso_debe_terms: str = Form(""),
+    egreso_haber_terms: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.financial_data")
+    row = db.query(AccountingPolicySetting).order_by(AccountingPolicySetting.id.asc()).first()
+    if not row:
+        row = AccountingPolicySetting()
+        db.add(row)
+    row.strict_mode = strict_mode == "on"
+    row.auto_entry_enabled = auto_entry_enabled == "on"
+    row.ingreso_debe_terms = (ingreso_debe_terms or "").strip()
+    row.ingreso_haber_terms = (ingreso_haber_terms or "").strip()
+    row.egreso_debe_terms = (egreso_debe_terms or "").strip()
+    row.egreso_haber_terms = (egreso_haber_terms or "").strip()
+    row.updated_by = user.email
+    db.commit()
+    return RedirectResponse("/accounting/financial-data?success=Politicas+contables+actualizadas", status_code=303)
+
+
+@router.get("/accounting/entries")
+def accounting_entries_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    branch_ids = _user_scoped_branch_ids(db, user)
+    entries_query = (
+        db.query(AccountingEntry)
+        .outerjoin(Branch, Branch.id == AccountingEntry.branch_id)
+        .filter(or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)))
+    )
+    start = request.query_params.get("start")
+    end = request.query_params.get("end")
+    if start:
+        try:
+            start_date = datetime.strptime(start, "%Y-%m-%d").date()
+            entries_query = entries_query.filter(AccountingEntry.fecha >= start_date)
+        except ValueError:
+            pass
+    if end:
+        try:
+            end_date = datetime.strptime(end, "%Y-%m-%d").date()
+            entries_query = entries_query.filter(AccountingEntry.fecha <= end_date)
+        except ValueError:
+            pass
+    entries = (
+        entries_query.order_by(AccountingEntry.fecha.desc(), AccountingEntry.id.desc())
+        .limit(120)
+        .all()
+    )
+    voucher_types = (
+        db.query(AccountingVoucherType)
+        .filter(AccountingVoucherType.activo.is_(True))
+        .order_by(AccountingVoucherType.code)
+        .all()
+    )
+    policy = _get_accounting_policy(db)
+    cuentas = (
+        db.query(CuentaContable)
+        .filter(CuentaContable.activo.is_(True))
+        .order_by(CuentaContable.codigo)
+        .all()
+    )
+    counter_suggestions: dict[int, int] = {}
+    for account in cuentas:
+        suggested = _suggest_counter_account_id(db, account, cuentas)
+        if suggested:
+            counter_suggestions[int(account.id)] = int(suggested)
+    voucher_templates: dict[int, dict] = {}
+    for vt in voucher_types:
+        voucher_templates[int(vt.id)] = _build_voucher_template(vt, cuentas, policy)
+    branches = (
+        db.query(Branch)
+        .filter(Branch.id.in_(branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
+    return request.app.state.templates.TemplateResponse(
+        "accounting_entries.html",
+        {
+            "request": request,
+            "user": user,
+            "entries": entries,
+            "voucher_types": voucher_types,
+            "cuentas": cuentas,
+            "cuentas_json": [
+                {
+                    "id": int(c.id),
+                    "codigo": c.codigo,
+                    "nombre": c.nombre,
+                    "naturaleza": c.naturaleza,
+                    "tipo": c.tipo,
+                }
+                for c in cuentas
+            ],
+            "counter_suggestions": counter_suggestions,
+            "voucher_templates": voucher_templates,
+            "policy": policy,
+            "branches": branches,
+            "version": settings.UI_VERSION,
+            "error": request.query_params.get("error"),
+            "success": request.query_params.get("success"),
+            "today": local_today().isoformat(),
+        },
+    )
+
+
+@router.get("/accounting/accounts/search")
+def accounting_accounts_search(
+    request: Request,
+    q: str = "",
+    side: str = "",
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    limit = max(5, min(int(limit or 20), 50))
+    query = (q or "").strip().lower()
+    side_norm = (side or "").strip().lower()
+
+    rows_q = db.query(CuentaContable).filter(CuentaContable.activo.is_(True))
+    if side_norm == "debe":
+        rows_q = rows_q.filter(func.upper(CuentaContable.naturaleza) == "DEBE")
+    elif side_norm == "haber":
+        rows_q = rows_q.filter(func.upper(CuentaContable.naturaleza) == "HABER")
+
+    if query:
+        like = f"%{query}%"
+        rows_q = rows_q.filter(
+            or_(
+                func.lower(CuentaContable.codigo).like(like),
+                func.lower(CuentaContable.nombre).like(like),
+                func.lower(CuentaContable.tipo).like(like),
+                func.lower(CuentaContable.naturaleza).like(like),
+            )
+        )
+
+    rows = rows_q.order_by(CuentaContable.codigo).limit(limit).all()
+    return JSONResponse(
+        {
+            "items": [
+                {
+                    "id": int(r.id),
+                    "codigo": r.codigo,
+                    "nombre": r.nombre,
+                    "naturaleza": r.naturaleza,
+                    "tipo": r.tipo,
+                }
+                for r in rows
+            ]
+        }
+    )
+
+
+@router.post("/accounting/entries")
+def accounting_entries_create(
+    request: Request,
+    fecha: str = Form(...),
+    tipo_id: int = Form(...),
+    branch_id: Optional[str] = Form(None),
+    referencia: str = Form(""),
+    descripcion: str = Form(...),
+    line_cuenta_id: list[str] = Form(...),
+    line_descripcion: list[str] = Form([]),
+    line_debe: list[str] = Form([]),
+    line_haber: list[str] = Form([]),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    try:
+        entry_date = datetime.strptime(fecha, "%Y-%m-%d").date()
+    except ValueError:
+        return RedirectResponse("/accounting/entries?error=Fecha+invalida", status_code=303)
+
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    selected_branch_id: Optional[int] = None
+    if branch_id and branch_id.strip():
+        try:
+            selected_branch_id = int(branch_id)
+        except ValueError:
+            return RedirectResponse("/accounting/entries?error=Sucursal+invalida", status_code=303)
+    if selected_branch_id and selected_branch_id not in scoped_branch_ids:
+        return RedirectResponse("/accounting/entries?error=Sucursal+no+permitida", status_code=303)
+
+    voucher_type = (
+        db.query(AccountingVoucherType)
+        .filter(AccountingVoucherType.id == tipo_id, AccountingVoucherType.activo.is_(True))
+        .first()
+    )
+    if not voucher_type:
+        return RedirectResponse("/accounting/entries?error=Tipo+de+comprobante+invalido", status_code=303)
+
+    if len(line_cuenta_id) < 2:
+        return RedirectResponse("/accounting/entries?error=Debes+registrar+al+menos+2+lineas", status_code=303)
+
+    lines: list[AccountingEntryLine] = []
+    line_payloads: list[dict] = []
+    total_debe = Decimal("0")
+    total_haber = Decimal("0")
+    for index, cuenta_raw in enumerate(line_cuenta_id):
+        if not cuenta_raw:
+            return RedirectResponse("/accounting/entries?error=Cuenta+contable+requerida", status_code=303)
+        try:
+            cuenta_id = int(cuenta_raw)
+        except ValueError:
+            return RedirectResponse("/accounting/entries?error=Cuenta+contable+invalida", status_code=303)
+        cuenta = db.query(CuentaContable).filter(CuentaContable.id == cuenta_id).first()
+        if not cuenta:
+            return RedirectResponse("/accounting/entries?error=Cuenta+contable+invalida", status_code=303)
+        debe_raw = (line_debe[index] if index < len(line_debe) else "0").replace(",", ".")
+        haber_raw = (line_haber[index] if index < len(line_haber) else "0").replace(",", ".")
+        try:
+            debe_value = to_decimal(debe_raw).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            haber_value = to_decimal(haber_raw).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+        except (InvalidOperation, ValueError):
+            return RedirectResponse("/accounting/entries?error=Monto+invalido+en+lineas", status_code=303)
+        if debe_value < 0 or haber_value < 0:
+            return RedirectResponse("/accounting/entries?error=No+se+permiten+valores+negativos", status_code=303)
+        if debe_value == 0 and haber_value == 0:
+            continue
+        if debe_value > 0 and haber_value > 0:
+            return RedirectResponse("/accounting/entries?error=Cada+linea+solo+puede+tener+Debe+o+Haber", status_code=303)
+        total_debe += debe_value
+        total_haber += haber_value
+        line_detail = line_descripcion[index].strip() if index < len(line_descripcion) else ""
+        lines.append(
+            AccountingEntryLine(
+                cuenta_id=cuenta_id,
+                descripcion=line_detail[:200] if line_detail else None,
+                debe=debe_value,
+                haber=haber_value,
+            )
+        )
+        line_payloads.append(
+            {
+                "account": cuenta,
+                "debe": debe_value,
+                "haber": haber_value,
+            }
+        )
+
+    if len(lines) < 2:
+        return RedirectResponse("/accounting/entries?error=Debes+registrar+lineas+con+monto", status_code=303)
+    if total_debe <= 0 or total_haber <= 0:
+        return RedirectResponse("/accounting/entries?error=Debe+y+Haber+deben+ser+mayores+a+0", status_code=303)
+    if total_debe != total_haber:
+        return RedirectResponse("/accounting/entries?error=El+comprobante+no+cuadra+(Debe+!=+Haber)", status_code=303)
+    policy = _get_accounting_policy(db)
+    policy_error = _validate_accounting_entry_policy(voucher_type, line_payloads, policy)
+    if policy_error:
+        return RedirectResponse(f"/accounting/entries?error={quote_plus(policy_error)}", status_code=303)
+
+    period = _accounting_period(entry_date)
+    seq = _next_accounting_sequence(db, tipo_id, selected_branch_id, period)
+    number = _build_accounting_entry_number(voucher_type, period, seq)
+    entry = AccountingEntry(
+        tipo_id=tipo_id,
+        branch_id=selected_branch_id,
+        fecha=entry_date,
+        periodo=period,
+        secuencia=seq,
+        numero=number,
+        referencia=(referencia or "").strip()[:160] or None,
+        descripcion=(descripcion or "").strip(),
+        estado="POSTEADO",
+        total_debe=total_debe,
+        total_haber=total_haber,
+        creado_por=user.email,
+        lines=lines,
+    )
+    db.add(entry)
+    db.commit()
+    return RedirectResponse("/accounting/entries?success=Comprobante+registrado", status_code=303)
+
+
+@router.post("/accounting/entries/{entry_id}/annul")
+def accounting_entry_annul(
+    request: Request,
+    entry_id: int,
+    motivo: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    entry = (
+        db.query(AccountingEntry)
+        .filter(AccountingEntry.id == entry_id)
+        .filter(or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(scoped_branch_ids)))
+        .first()
+    )
+    if not entry:
+        return RedirectResponse("/accounting/entries?error=Comprobante+no+encontrado", status_code=303)
+    if entry.estado == "ANULADO":
+        return RedirectResponse("/accounting/entries?error=El+comprobante+ya+esta+anulado", status_code=303)
+    entry.estado = "ANULADO"
+    entry.anulado_motivo = (motivo or "").strip()[:260] or "Anulacion manual"
+    entry.anulado_por = user.email
+    entry.anulado_at = local_now_naive()
+    db.commit()
+    return RedirectResponse("/accounting/entries?success=Comprobante+anulado", status_code=303)
+
+
+@router.get("/accounting/entries/{entry_id}/pdf")
+def accounting_entry_pdf(
+    request: Request,
+    entry_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    entry = (
+        db.query(AccountingEntry)
+        .filter(AccountingEntry.id == entry_id)
+        .filter(or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(scoped_branch_ids)))
+        .first()
+    )
+    if not entry:
+        raise HTTPException(status_code=404, detail="Comprobante no encontrado")
+    pdf_bytes = _build_accounting_entry_pdf_bytes(entry)
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={entry.numero}.pdf"},
     )
 
 
@@ -6034,6 +6913,60 @@ def sales_roc_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"inline; filename=roc_{recibo.numero}.pdf"},
     )
+
+
+@router.post("/sales/roc/{recibo_id}/anular")
+def sales_roc_anular(
+    request: Request,
+    recibo_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.roc")
+    recibo = db.query(ReciboCaja).filter(ReciboCaja.id == recibo_id).first()
+    if not recibo:
+        return RedirectResponse("/sales/roc?error=Recibo+no+encontrado", status_code=303)
+    _, bodega = _resolve_branch_bodega(db, user)
+    if bodega and recibo.bodega_id != bodega.id:
+        return RedirectResponse("/sales/roc?error=Recibo+fuera+de+tu+bodega", status_code=303)
+
+    cierre = (
+        db.query(CierreCaja)
+        .filter(
+            CierreCaja.fecha == recibo.fecha,
+            CierreCaja.bodega_id == recibo.bodega_id,
+        )
+        .first()
+    )
+    if cierre:
+        return RedirectResponse(
+            "/sales/roc?error=No+se+puede+anular+porque+la+caja+ya+esta+cerrada+en+esa+fecha",
+            status_code=303,
+        )
+
+    if recibo.afecta_caja:
+        caja = (
+            db.query(CajaDiaria)
+            .filter(
+                CajaDiaria.branch_id == recibo.branch_id,
+                CajaDiaria.bodega_id == recibo.bodega_id,
+                CajaDiaria.fecha == recibo.fecha,
+            )
+            .first()
+        )
+        if caja:
+            monto_usd = Decimal(str(recibo.monto_usd or 0))
+            monto_cs = Decimal(str(recibo.monto_cs or 0))
+            if recibo.tipo == "INGRESO":
+                caja.saldo_usd = Decimal(str(caja.saldo_usd or 0)) - monto_usd
+                caja.saldo_cs = Decimal(str(caja.saldo_cs or 0)) - monto_cs
+            else:
+                caja.saldo_usd = Decimal(str(caja.saldo_usd or 0)) + monto_usd
+                caja.saldo_cs = Decimal(str(caja.saldo_cs or 0)) + monto_cs
+
+    db.delete(recibo)
+    db.commit()
+    return RedirectResponse("/sales/roc?success=Recibo+anulado", status_code=303)
 
 
 @router.get("/sales/depositos")
@@ -12867,6 +13800,19 @@ async def inventory_create_ingreso(
 
     ingreso.total_usd = total_usd
     ingreso.total_cs = total_cs
+    bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
+    auto_amount = to_decimal(total_usd if moneda == "USD" else total_cs)
+    auto_entry = _build_auto_accounting_entry(
+        db,
+        event_code="INV_IN",
+        branch_id=bodega_obj.branch_id if bodega_obj else None,
+        entry_date=fecha_value,
+        amount=auto_amount,
+        reference=f"AUTO-ING-{ingreso.id}",
+        description=f"Asiento automatico por ingreso inventario #{ingreso.id}",
+    )
+    if auto_entry:
+        db.add(auto_entry)
     db.commit()
     return RedirectResponse(
         f"/inventory/ingresos?success=Ingreso+registrado&print_id={ingreso.id}",
@@ -13061,6 +14007,19 @@ async def inventory_create_egreso(
 
     egreso.total_usd = total_usd
     egreso.total_cs = total_cs
+    bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
+    auto_amount = to_decimal(total_usd if moneda == "USD" else total_cs)
+    auto_entry = _build_auto_accounting_entry(
+        db,
+        event_code="INV_OUT",
+        branch_id=bodega_obj.branch_id if bodega_obj else None,
+        entry_date=fecha_value,
+        amount=auto_amount,
+        reference=f"AUTO-EGR-{egreso.id}",
+        description=f"Asiento automatico por egreso inventario #{egreso.id}",
+    )
+    if auto_entry:
+        db.add(auto_entry)
     db.commit()
     return RedirectResponse(
         f"/inventory/egresos?success=Egreso+registrado&print_id={egreso.id}",
@@ -13461,6 +14420,19 @@ async def sales_create_invoice(
         preventa.venta_factura_id = factura.id
     for pago in pagos:
         db.add(pago)
+
+    auto_amount = to_decimal(total_usd if moneda == "USD" else total_cs)
+    auto_entry = _build_auto_accounting_entry(
+        db,
+        event_code="SALE",
+        branch_id=bodega.branch_id if bodega else None,
+        entry_date=fecha_value,
+        amount=auto_amount,
+        reference=f"AUTO-VTA-{factura.id}",
+        description=f"Asiento automatico por venta {factura.numero}",
+    )
+    if auto_entry:
+        db.add(auto_entry)
 
     db.commit()
     pos_print = (
@@ -14509,6 +15481,8 @@ def finance_rates(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.finance.rates")
+    error = request.query_params.get("error")
+    success = request.query_params.get("success")
     rates = db.query(ExchangeRate).order_by(ExchangeRate.effective_date.desc()).all()
     return request.app.state.templates.TemplateResponse(
         "finance_rates.html",
@@ -14516,6 +15490,8 @@ def finance_rates(
             "request": request,
             "user": user,
             "rates": rates,
+            "error": error,
+            "success": success,
             "version": settings.UI_VERSION,
         },
     )
@@ -14531,6 +15507,8 @@ def finance_rates_create(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.finance.rates")
+    if rate <= 0:
+        return RedirectResponse("/finance/rates?error=Tasa+no+valida", status_code=303)
     exists = (
         db.query(ExchangeRate)
         .filter(
@@ -14542,7 +15520,58 @@ def finance_rates_create(
     if not exists:
         db.add(ExchangeRate(effective_date=effective_date, period=period, rate=rate))
         db.commit()
-    return RedirectResponse("/finance/rates", status_code=303)
+        return RedirectResponse("/finance/rates?success=Tasa+creada", status_code=303)
+    return RedirectResponse("/finance/rates?error=Ya+existe+una+tasa+con+esa+fecha+y+periodo", status_code=303)
+
+
+@router.post("/finance/rates/{rate_id}/update")
+def finance_rates_update(
+    request: Request,
+    rate_id: int,
+    effective_date: date = Form(...),
+    period: str = Form(...),
+    rate: float = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.finance.rates")
+    if rate <= 0:
+        return RedirectResponse("/finance/rates?error=Tasa+no+valida", status_code=303)
+    row = db.query(ExchangeRate).filter(ExchangeRate.id == rate_id).first()
+    if not row:
+        return RedirectResponse("/finance/rates?error=Registro+no+encontrado", status_code=303)
+    exists = (
+        db.query(ExchangeRate)
+        .filter(
+            ExchangeRate.effective_date == effective_date,
+            ExchangeRate.period == period,
+            ExchangeRate.id != rate_id,
+        )
+        .first()
+    )
+    if exists:
+        return RedirectResponse("/finance/rates?error=Ya+existe+otra+tasa+con+esa+fecha+y+periodo", status_code=303)
+    row.effective_date = effective_date
+    row.period = period
+    row.rate = rate
+    db.commit()
+    return RedirectResponse("/finance/rates?success=Tasa+actualizada", status_code=303)
+
+
+@router.post("/finance/rates/{rate_id}/delete")
+def finance_rates_delete(
+    request: Request,
+    rate_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.finance.rates")
+    row = db.query(ExchangeRate).filter(ExchangeRate.id == rate_id).first()
+    if not row:
+        return RedirectResponse("/finance/rates?error=Registro+no+encontrado", status_code=303)
+    db.delete(row)
+    db.commit()
+    return RedirectResponse("/finance/rates?success=Tasa+eliminada", status_code=303)
 
 
 @router.post("/inventory/product/{product_id}/deactivate")

@@ -531,18 +531,22 @@
               </div>
             </a>
           </div>
+          {% if not has_perms or 'menu.accounting' in perms %}
           <div class="col-md-6 col-xl-4 d-none d-lg-block">
-            <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
-              <div class="d-flex align-items-center justify-content-between">
-                <div class="odoo-section-title">Contabilidad</div>
-                <span class="odoo-pill">
-                  <i class="bi bi-journal-text"></i>
-                  Proximo
-                </span>
+            <a class="text-decoration-none" href="/accounting">
+              <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="odoo-section-title">Contabilidad</div>
+                  <span class="odoo-pill">
+                    <i class="bi bi-journal-text"></i>
+                    Asientos
+                  </span>
+                </div>
+                <p class="text-slate mt-2">Comprobantes, plan de cuentas y control del ejercicio diario.</p>
               </div>
-              <p class="text-slate mt-2">Libros contables y conciliaciones.</p>
-            </div>
+            </a>
           </div>
+          {% endif %}
           <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <a class="text-decoration-none" href="/data">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">

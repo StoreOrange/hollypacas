@@ -6,6 +6,8 @@ from ..database import Base, get_engine, get_session_local
 from ..models.user import Branch, Permission, Role, User
 from ..models.inventory import Bodega, EgresoTipo, IngresoTipo, Linea, Marca, Segmento
 from ..models.sales import (
+    AccountingPolicySetting,
+    AccountingVoucherType,
     Banco,
     CompanyProfileSetting,
     CuentaContable,
@@ -23,7 +25,7 @@ from .security import hash_password
 
 
 def _seed_roles(db: Session) -> None:
-    role_names = ["administrador", "vendedor", "cajero", "seguridad"]
+    role_names = ["administrador", "vendedor", "cajero", "seguridad", "contador"]
     existing = {role.name for role in db.query(Role).all()}
     for name in role_names:
         if name not in existing:
@@ -75,6 +77,7 @@ def _seed_permissions(db: Session) -> None:
         "menu.inventory.ingresos",
         "menu.inventory.egresos",
         "menu.finance",
+        "menu.accounting",
         "menu.reports",
         "menu.data",
         "access.sales",
@@ -97,6 +100,10 @@ def _seed_permissions(db: Session) -> None:
         "access.inventory.productos",
         "access.finance",
         "access.finance.rates",
+        "access.accounting",
+        "access.accounting.financial_data",
+        "access.accounting.entries",
+        "access.accounting.voucher_types",
         "access.reports",
         "access.data",
         "access.data.permissions",
@@ -166,6 +173,88 @@ def _seed_role_permissions(db: Session) -> None:
         role = db.query(Role).filter(Role.name == role_name).first()
         if role and permissions:
             role.permissions = permissions
+    contador = db.query(Role).filter(Role.name == "contador").first()
+    if contador and not contador.permissions:
+        contador_perm_names = {
+            "menu.home",
+            "menu.reports",
+            "menu.accounting",
+            "access.reports",
+            "access.accounting",
+            "access.accounting.financial_data",
+            "access.accounting.entries",
+            "access.accounting.voucher_types",
+        }
+        contador.permissions = (
+            db.query(Permission).filter(Permission.name.in_(contador_perm_names)).all()
+        )
+    db.commit()
+
+
+def _seed_accounting_voucher_types(db: Session) -> None:
+    defaults = [
+        ("DIARIO", "Comprobante diario", "CD"),
+        ("INGRESO", "Comprobante de ingreso", "CI"),
+        ("EGRESO", "Comprobante de egreso", "CE"),
+        ("AJUSTE", "Comprobante de ajuste", "CA"),
+    ]
+    existing = {item.code.upper(): item for item in db.query(AccountingVoucherType).all()}
+    changed = False
+    for code, nombre, prefijo in defaults:
+        row = existing.get(code)
+        if not row:
+            db.add(AccountingVoucherType(code=code, nombre=nombre, prefijo=prefijo, activo=True))
+            changed = True
+            continue
+        if (row.nombre or "") != nombre:
+            row.nombre = nombre
+            changed = True
+        if (row.prefijo or "") != prefijo:
+            row.prefijo = prefijo
+            changed = True
+        if row.activo is None:
+            row.activo = True
+            changed = True
+    if changed:
+        db.commit()
+
+
+def _seed_accounting_policy_settings(db: Session) -> None:
+    row = db.query(AccountingPolicySetting).order_by(AccountingPolicySetting.id.asc()).first()
+    if row:
+        changed = False
+        if row.strict_mode is None:
+            row.strict_mode = True
+            changed = True
+        if row.auto_entry_enabled is None:
+            row.auto_entry_enabled = False
+            changed = True
+        if not (row.ingreso_debe_terms or "").strip():
+            row.ingreso_debe_terms = "caja,banco,cliente,cobrar"
+            changed = True
+        if not (row.ingreso_haber_terms or "").strip():
+            row.ingreso_haber_terms = "venta,ingreso"
+            changed = True
+        if not (row.egreso_debe_terms or "").strip():
+            row.egreso_debe_terms = "gasto,costo,compra,inventario"
+            changed = True
+        if not (row.egreso_haber_terms or "").strip():
+            row.egreso_haber_terms = "caja,banco,proveedor,pagar"
+            changed = True
+        if changed:
+            db.commit()
+        return
+    db.add(
+        AccountingPolicySetting(
+            strict_mode=True,
+            auto_entry_enabled=False,
+            ingreso_debe_terms="caja,banco,cliente,cobrar",
+            ingreso_haber_terms="venta,ingreso",
+            egreso_debe_terms="gasto,costo,compra,inventario",
+            egreso_haber_terms="caja,banco,proveedor,pagar",
+            updated_by="system-bootstrap",
+        )
+    )
     db.commit()
 
 
@@ -377,11 +466,73 @@ def _seed_recibos_rubros(db: Session) -> None:
         "Gastos financieros",
         "Gastos de Ventas",
         "Otros gastos",
+        "Ingresos por venta",
+        "Devoluciones sobre ventas",
+        "Ventas netas",
+        "Ingresos financieros",
+        "Mantenimiento de valor",
+        "Intereses bancarios",
+        "Cuentas por cobrar clientes",
+        "Cuentas por cobrar empleados",
+        "Inventarios",
+        "Vehiculos",
+        "Depreciacion de vehiculos",
+        "Depreciacion mob. y equipo de oficina",
+        "Activo diferido",
+        "Otros ingresos",
+        "Costo de ventas",
+        "Gastos de operacion",
+        "Gastos de venta",
+        "Gastos de administracion",
+        "Intereses corrientes y moratorios",
+        "Perdida por diferencia cambiaria",
+        "Gastos y comisiones bancarias",
+        "Otras cuentas por cobrar",
+        "Impuestos por pagar",
+        "Activo circulante",
+        "Cajas y bancos",
+        "Impuestos pagados por anticipado",
+        "Activo fijo",
+        "Mobiliario y equipo de oficina",
+        "Gastos diferidos",
+        "Seguros",
+        "Matricula de alcaldia",
+        "Pasivo circulante",
+        "Proveedores nacionales",
+        "Proveedores extranjeros",
+        "Gastos acumulados por pagar",
+        "Retenciones por pagar",
+        "Cuentas por pagar corto plazo",
+        "Prestamos por pagar vehiculos",
+        "Pasivos fijos",
+        "Cuentas por pagar largo plazo",
+        "Capital social",
+        "Aportacion de capital",
+        "Utilidad/perdida acumulada periodo anterior",
+        "Utilidad/perdida del ejercicio",
+        "Ajuste periodos anteriores",
+        "Reserva legal",
+        "Provision cuentas incobrables",
+        "Descuento sobre ventas",
+        "Utilidad o perdida de operacion",
+        "Utilidad o perdida del ejercicio",
+        "Total pasivo",
+        "A C T I V O",
+        "Total activo",
+        "Pasivos",
+        "Capital",
+        "Total pasivo mas capital",
     ]
-    existing = {r.nombre for r in db.query(ReciboRubro).all()}
+    existing = {str(r.nombre or "").strip().lower() for r in db.query(ReciboRubro).all()}
+    seen_in_batch: set[str] = set()
     for nombre in rubros:
-        if nombre not in existing:
-            db.add(ReciboRubro(nombre=nombre, activo=True))
+        normalized = nombre.strip().lower()
+        if not normalized:
+            continue
+        if normalized in existing or normalized in seen_in_batch:
+            continue
+        db.add(ReciboRubro(nombre=nombre.strip(), activo=True))
+        seen_in_batch.add(normalized)
     db.commit()
 
 
@@ -478,6 +629,48 @@ def _seed_cuentas_contables(db: Session) -> None:
         ("6301", "Gastos Financieros", "RESULTADO", "DEBE", "63"),
         ("6401", "Gastos de Ventas", "RESULTADO", "DEBE", "64"),
         ("6901", "Otros Gastos", "RESULTADO", "DEBE", "69"),
+        # Cuentas ampliadas de rubros solicitados
+        ("1107", "Cuentas por Cobrar Clientes", "BALANCE", "DEBE", "11"),
+        ("1108", "Cuentas por Cobrar Empleados", "BALANCE", "DEBE", "11"),
+        ("1109", "Otras Cuentas por Cobrar", "BALANCE", "DEBE", "11"),
+        ("1110", "Impuestos Pagados por Anticipado", "BALANCE", "DEBE", "11"),
+        ("1111", "Provision Cuentas Incobrables", "BALANCE", "HABER", "11"),
+        ("1204", "Vehiculos", "BALANCE", "DEBE", "12"),
+        ("1205", "Mobiliario y Equipo de Oficina", "BALANCE", "DEBE", "12"),
+        ("1206", "Depreciacion de Vehiculos", "BALANCE", "HABER", "12"),
+        ("1207", "Depreciacion Mob. y Equipo de Oficina", "BALANCE", "HABER", "12"),
+        ("1208", "Gastos Diferidos", "BALANCE", "DEBE", "12"),
+        ("1209", "Seguros", "BALANCE", "DEBE", "12"),
+        ("1210", "Matricula de Alcaldia", "BALANCE", "DEBE", "12"),
+        ("1211", "Activo Diferido", "BALANCE", "DEBE", "12"),
+        ("2106", "Impuestos por Pagar", "BALANCE", "HABER", "21"),
+        ("2107", "Proveedores Nacionales", "BALANCE", "HABER", "21"),
+        ("2108", "Proveedores Extranjeros", "BALANCE", "HABER", "21"),
+        ("2109", "Gastos Acumulados por Pagar", "BALANCE", "HABER", "21"),
+        ("2110", "Retenciones por Pagar", "BALANCE", "HABER", "21"),
+        ("2111", "Cuentas por Pagar Corto Plazo", "BALANCE", "HABER", "21"),
+        ("2203", "Prestamos por Pagar Vehiculos", "BALANCE", "HABER", "22"),
+        ("2204", "Cuentas por Pagar Largo Plazo", "BALANCE", "HABER", "22"),
+        ("3102", "Aportacion de Capital", "BALANCE", "HABER", "31"),
+        ("3202", "Utilidad/Perdida Acum. Periodo Ant.", "BALANCE", "HABER", "32"),
+        ("3203", "Utilidad/Perdida del Ejercicio", "BALANCE", "HABER", "32"),
+        ("3204", "Ajuste Periodos Anteriores", "BALANCE", "HABER", "32"),
+        ("3205", "Reserva Legal", "BALANCE", "HABER", "32"),
+        ("4103", "Ingresos por Venta", "RESULTADO", "HABER", "41"),
+        ("4104", "Devoluciones sobre Ventas", "RESULTADO", "DEBE", "41"),
+        ("4105", "Ventas Netas", "RESULTADO", "HABER", "41"),
+        ("4106", "Descuento sobre Ventas", "RESULTADO", "DEBE", "41"),
+        ("4202", "Ingresos Financieros", "RESULTADO", "HABER", "42"),
+        ("4203", "Mantenimiento de Valor", "RESULTADO", "HABER", "42"),
+        ("4204", "Intereses Bancarios", "RESULTADO", "HABER", "42"),
+        ("4205", "Otros Ingresos", "RESULTADO", "HABER", "42"),
+        ("5102", "Costo de Ventas", "RESULTADO", "DEBE", "51"),
+        ("6102", "Gastos de Operacion", "RESULTADO", "DEBE", "61"),
+        ("6202", "Gastos de Administracion", "RESULTADO", "DEBE", "62"),
+        ("6402", "Gastos de Venta", "RESULTADO", "DEBE", "64"),
+        ("6302", "Intereses Corrientes y Moratorios", "RESULTADO", "DEBE", "63"),
+        ("6303", "Perdida por Dif. Cambiarios", "RESULTADO", "DEBE", "63"),
+        ("6304", "Gastos y Comisiones Bancarias", "RESULTADO", "DEBE", "63"),
     ]
 
     existing = {c.codigo: c for c in db.query(CuentaContable).all()}
@@ -770,6 +963,8 @@ def init_db() -> None:
         _seed_cuentas_bancarias(db)
         _seed_vendedores(db)
         _seed_cuentas_contables(db)
+        _seed_accounting_voucher_types(db)
+        _seed_accounting_policy_settings(db)
         _seed_recibos_rubros(db)
         _seed_recibos_motivos(db)
         _seed_pos_print_settings(db)

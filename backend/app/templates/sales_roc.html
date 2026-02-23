@@ -54,7 +54,20 @@
       <div class="alert alert-danger">{{ error }}</div>
       {% endif %}
       {% if success %}
-      <div class="alert alert-success">{{ success }}</div>
+      <div class="alert alert-success d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <span>{{ success }}</span>
+        {% if print_id %}
+        <a
+          href="/sales/roc/{{ print_id }}/pdf"
+          target="_blank"
+          rel="noopener"
+          id="roc-print-link"
+          class="btn btn-sm btn-outline-success"
+        >
+          Ver e imprimir recibo
+        </a>
+        {% endif %}
+      </div>
       {% endif %}
 
       <div class="row g-4">
@@ -193,6 +206,7 @@
                     <th class="text-end">Monto CS</th>
                     <th class="text-end">Monto USD</th>
                     <th>Arqueo</th>
+                    <th class="text-end">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -206,6 +220,16 @@
                     <td class="text-end">{{ "%.2f"|format(rec.monto_cs or 0) }}</td>
                     <td class="text-end">{{ "%.2f"|format(rec.monto_usd or 0) }}</td>
                     <td>{{ "Si" if rec.afecta_caja else "No" }}</td>
+                    <td class="text-end">
+                      <div class="d-inline-flex gap-1">
+                        <a class="btn btn-sm btn-outline-secondary" href="/sales/roc/{{ rec.id }}/pdf" target="_blank" rel="noopener">
+                          PDF
+                        </a>
+                        <form method="post" action="/sales/roc/{{ rec.id }}/anular" onsubmit="return confirm('Anular recibo {{ rec.numero }}? Esta accion no se puede deshacer.');">
+                          <button type="submit" class="btn btn-sm btn-outline-danger">Anular</button>
+                        </form>
+                      </div>
+                    </td>
                   </tr>
                   {% endfor %}
                 </tbody>
@@ -214,6 +238,7 @@
                     <th colspan="5" class="text-end">Total C$</th>
                     <th class="text-end">{{ "%.2f"|format(recibos|sum(attribute='monto_cs') or 0) }}</th>
                     <th class="text-end">{{ "%.2f"|format(recibos|sum(attribute='monto_usd') or 0) }}</th>
+                    <th></th>
                     <th></th>
                   </tr>
                   <tr>
@@ -225,6 +250,7 @@
                     {% else %}
                     <th class="text-end" colspan="2">0.00</th>
                     {% endif %}
+                    <th></th>
                     <th></th>
                   </tr>
                 </tfoot>
@@ -348,10 +374,22 @@
   }
   updateTotals();
 
-  const rocPrintId = "{{ print_id or '' }}";
-  if (rocPrintId) {
-    const url = `/sales/roc/${rocPrintId}/pdf`;
-    window.open(url, "_blank", "noopener");
+  const rocPrintLink = document.getElementById("roc-print-link");
+  if (rocPrintLink) {
+    const openPrint = () => {
+      const url = rocPrintLink.getAttribute("href");
+      if (!url) return;
+      window.erpOpenPrintable
+        ? window.erpOpenPrintable(url, { fallbackSameTab: true })
+        : window.open(url, "_blank", "noopener");
+    };
+    rocPrintLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      openPrint();
+    });
+    setTimeout(() => {
+      openPrint();
+    }, 350);
   }
 </script>
 {% endblock %}

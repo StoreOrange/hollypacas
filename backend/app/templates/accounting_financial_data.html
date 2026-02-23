@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 sm:p-6 lg:p-8 text-[18px]">
+    <div class="odoo-page">
+      <div class="odoo-header d-flex align-items-start justify-content-between gap-3 flex-wrap">
+        <div>
+          <h1 class="odoo-title mb-1">Datos financieros</h1>
+          <p class="odoo-subtitle mb-0">Base contable para un registro consistente: plan de cuentas + tipos de comprobante.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="/accounting">Volver a contabilidad</a>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger mt-3">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success mt-3">{{ success }}</div>
+      {% endif %}
+
+      <div class="row g-3 mt-1">
+        <div class="col-md-6">
+          <div class="odoo-card h-100">
+            <div class="odoo-section-title mb-2">Plan de cuentas</div>
+            <p class="text-slate mb-2">Total cuentas: <strong>{{ cuentas_total }}</strong> | Activas: <strong>{{ cuentas_activas }}</strong></p>
+            <a class="btn btn-primary btn-sm" href="/data/cuentas-contables">Administrar cuentas contables</a>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="odoo-card h-100">
+            <div class="odoo-section-title mb-2">Crear tipo de comprobante</div>
+            <form class="row g-2" method="post" action="/accounting/voucher-types">
+              <div class="col-4">
+                <label class="form-label">Codigo</label>
+                <input class="form-control" name="code" maxlength="20" placeholder="DIARIO" required />
+              </div>
+              <div class="col-4">
+                <label class="form-label">Prefijo</label>
+                <input class="form-control" name="prefijo" maxlength="10" placeholder="CD" required />
+              </div>
+              <div class="col-4">
+                <label class="form-label">Activo</label>
+                <div class="form-check mt-2">
+                  <input class="form-check-input" type="checkbox" name="activo" checked />
+                  <label class="form-check-label">Si</label>
+                </div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Nombre visible</label>
+                <input class="form-control" name="nombre" maxlength="120" placeholder="Comprobante diario" required />
+              </div>
+              <div class="col-12">
+                <button class="btn btn-dark btn-sm" type="submit">Guardar tipo</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card mt-3">
+        <div class="odoo-section-title mb-2">Politicas contables (editable)</div>
+        <form class="row g-2 mb-3" method="post" action="/accounting/policies">
+          <div class="col-md-3">
+            <div class="form-check mt-4">
+              <input class="form-check-input" type="checkbox" name="strict_mode" {% if policy.strict_mode %}checked{% endif %} />
+              <label class="form-check-label">Validacion estricta</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="form-check mt-4">
+              <input class="form-check-input" type="checkbox" name="auto_entry_enabled" {% if policy.auto_entry_enabled %}checked{% endif %} />
+              <label class="form-check-label">Habilitar auto-asientos por eventos</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">INGRESO - Debe (CSV)</label>
+            <input class="form-control" name="ingreso_debe_terms" value="{{ policy.ingreso_debe_terms | join(',') }}" />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">INGRESO - Haber (CSV)</label>
+            <input class="form-control" name="ingreso_haber_terms" value="{{ policy.ingreso_haber_terms | join(',') }}" />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">EGRESO - Debe (CSV)</label>
+            <input class="form-control" name="egreso_debe_terms" value="{{ policy.egreso_debe_terms | join(',') }}" />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">EGRESO - Haber (CSV)</label>
+            <input class="form-control" name="egreso_haber_terms" value="{{ policy.egreso_haber_terms | join(',') }}" />
+          </div>
+          <div class="col-12">
+            <button class="btn btn-outline-dark btn-sm" type="submit">Guardar politicas</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="odoo-card mt-3">
+        <div class="odoo-section-title mb-2">Tipos de comprobante</div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Codigo</th>
+                <th>Nombre</th>
+                <th>Prefijo</th>
+                <th>Estado</th>
+                <th style="width: 320px;">Accion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in voucher_types %}
+              <tr>
+                <td class="fw-semibold">{{ row.code }}</td>
+                <td>
+                  <form class="d-flex gap-2" method="post" action="/accounting/voucher-types/{{ row.id }}/update">
+                    <input class="form-control form-control-sm" name="nombre" value="{{ row.nombre }}" required />
+                </td>
+                <td>
+                    <input class="form-control form-control-sm" name="prefijo" value="{{ row.prefijo }}" maxlength="10" required />
+                </td>
+                <td>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="activo" {% if row.activo %}checked{% endif %} />
+                      <label class="form-check-label small">{% if row.activo %}Activo{% else %}Inactivo{% endif %}</label>
+                    </div>
+                </td>
+                <td>
+                    <button class="btn btn-outline-primary btn-sm" type="submit">Actualizar</button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="5" class="text-muted">No hay tipos registrados.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

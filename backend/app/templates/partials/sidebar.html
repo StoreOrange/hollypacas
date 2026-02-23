@@ -129,6 +129,12 @@
         <span class="nav-text fw-semibold">Finanzas</span>
       </a>
       {% endif %}
+      {% if not has_perms or 'menu.accounting' in perms %}
+      <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/accounting">
+        <i class="bi bi-journal-check text-primary fs-5"></i>
+        <span class="nav-text fw-semibold">Contabilidad</span>
+      </a>
+      {% endif %}
       {% if not has_perms or 'menu.data' in perms %}
       <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/data">
         <i class="bi bi-database text-primary fs-5"></i>
@@ -272,6 +278,12 @@
         <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/finance">
           <i class="bi bi-currency-dollar text-primary fs-5"></i>
           <span class="nav-text fw-semibold">Finanzas</span>
+        </a>
+        {% endif %}
+        {% if not has_perms or 'menu.accounting' in perms %}
+        <a class="nav-link d-flex align-items-center gap-2 rounded-3 bg-white py-2 px-3" href="/accounting">
+          <i class="bi bi-journal-check text-primary fs-5"></i>
+          <span class="nav-text fw-semibold">Contabilidad</span>
         </a>
         {% endif %}
         {% if not has_perms or 'menu.data' in perms %}

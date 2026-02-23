@@ -103,6 +103,7 @@
     <script>
       window.addEventListener("load", () => {
         const params = new URLSearchParams(window.location.search);
+        const returnTo = params.get("return_to") || "/sales";
         let copies = parseInt(params.get("copies") || "2", 10);
         if (!Number.isFinite(copies) || copies < 1) {
           copies = 2;
@@ -124,6 +125,11 @@
             setTimeout(() => triggerPrint(), 350);
           } else {
             window.close();
+            setTimeout(() => {
+              if (!window.closed) {
+                window.location.href = returnTo;
+              }
+            }, 250);
           }
         });
         setTimeout(() => triggerPrint(), 420);

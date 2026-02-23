@@ -28,6 +28,13 @@
         </li>
       </ul>
 
+      {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success">{{ success }}</div>
+      {% endif %}
+
       <div class="row g-4">
         <div class="col-lg-4">
           <div class="card shadow-sm border-0">
@@ -74,19 +81,42 @@
                       <th>Fecha</th>
                       <th>Periodo</th>
                       <th>Tasa</th>
+                      <th class="text-end">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {% for rate in rates %}
                     <tr>
-                      <td>{{ rate.effective_date }}</td>
-                      <td>{{ rate.period }}</td>
-                      <td>C$ {{ "%.4f"|format(rate.rate or 0) }}</td>
+                      <td>
+                        <input form="rate-update-{{ rate.id }}" name="effective_date" type="date" class="form-control form-control-sm" value="{{ rate.effective_date }}" required />
+                      </td>
+                      <td>
+                        <select form="rate-update-{{ rate.id }}" name="period" class="form-select form-select-sm">
+                          <option value="daily" {% if rate.period == "daily" %}selected{% endif %}>Dia</option>
+                          <option value="month" {% if rate.period == "month" %}selected{% endif %}>Mes</option>
+                          <option value="quarter" {% if rate.period == "quarter" %}selected{% endif %}>3 meses</option>
+                          <option value="semester" {% if rate.period == "semester" %}selected{% endif %}>6 meses</option>
+                          <option value="year" {% if rate.period == "year" %}selected{% endif %}>1 ano</option>
+                        </select>
+                      </td>
+                      <td>
+                        <input form="rate-update-{{ rate.id }}" name="rate" type="number" step="0.0001" class="form-control form-control-sm" value="{{ '%.4f'|format(rate.rate or 0) }}" required />
+                      </td>
+                      <td class="text-end">
+                        <div class="d-inline-flex gap-1">
+                          <form id="rate-update-{{ rate.id }}" method="post" action="/finance/rates/{{ rate.id }}/update">
+                            <button type="submit" class="btn btn-sm btn-outline-primary">Actualizar</button>
+                          </form>
+                          <form method="post" action="/finance/rates/{{ rate.id }}/delete" onsubmit="return confirm('Eliminar tasa del {{ rate.effective_date }}?');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Borrar</button>
+                          </form>
+                        </div>
+                      </td>
                     </tr>
                     {% endfor %}
                     {% if rates|length == 0 %}
                     <tr>
-                      <td colspan="3" class="text-center text-muted py-4">Sin registros</td>
+                      <td colspan="4" class="text-center text-muted py-4">Sin registros</td>
                     </tr>
                     {% endif %}
                   </tbody>

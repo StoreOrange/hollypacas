@@ -3390,20 +3390,31 @@
         window.location.href = "/sales";
       }, 300);
     };
-    printLink.addEventListener("click", (event) => {
-      event.preventDefault();
+    const openPrint = () => {
       const url = printLink.getAttribute("href");
-      if (url) {
-        window.open(url, "_blank", "noopener");
+      if (!url) return;
+      const result = window.erpOpenPrintable
+        ? window.erpOpenPrintable(url, { fallbackSameTab: true })
+        : { opened: Boolean(window.open(url, "_blank", "noopener")) };
+      if (!result.opened) {
+        return;
       }
       window.addEventListener("focus", reloadAfterPrint, { once: true });
       setTimeout(() => {
         window.location.href = "/sales";
       }, 12000);
+    };
+
+    printLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      openPrint();
     });
+
+    setTimeout(() => {
+      openPrint();
+    }, 350);
   })();
   {% endif %}
-  // La impresion se hace manual con el boton de vista previa.
 </script>
 {% endblock %}
 

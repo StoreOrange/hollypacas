@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 sm:p-6 lg:p-8 text-[18px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <h1 class="odoo-title mb-1">Modulo de contabilidad</h1>
+        <p class="odoo-subtitle mb-0">
+          Flujo guiado para usuarios no contadores. Primero define catalogos, luego registra comprobantes y valida cuadre Debe/Haber.
+        </p>
+      </div>
+
+      <div class="row g-4 mt-1">
+        <div class="col-md-6">
+          <a class="text-decoration-none" href="/accounting/financial-data">
+            <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="odoo-section-title">Datos financieros</div>
+                <span class="odoo-pill"><i class="bi bi-diagram-3"></i> Catalogos</span>
+              </div>
+              <p class="text-slate mt-2 mb-0">Plan de cuentas, tipos de comprobante y configuracion base para el ejercicio contable.</p>
+            </div>
+          </a>
+        </div>
+        <div class="col-md-6">
+          <a class="text-decoration-none" href="/accounting/entries">
+            <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="odoo-section-title">Comprobantes contables</div>
+                <span class="odoo-pill"><i class="bi bi-journal-check"></i> Diario</span>
+              </div>
+              <p class="text-slate mt-2 mb-0">Asientos con numeracion consecutiva automatica, validacion de cuadre y salida PDF por comprobante.</p>
+            </div>
+          </a>
+        </div>
+      </div>
+
+      <div class="odoo-card mt-4">
+        <div class="odoo-section-title mb-2">Guia rapida</div>
+        <ol class="mb-0 ps-3 text-slate">
+          <li>Configura o revisa las cuentas contables.</li>
+          <li>Define tipos de comprobante (diario, ingreso, egreso, ajuste).</li>
+          <li>Registra lineas Debe/Haber hasta lograr cuadre exacto.</li>
+          <li>Guarda y genera PDF para respaldo y revision.</li>
+        </ol>
+      </div>
+
+      <div class="text-end text-slate text-sm mt-4">Version {{ version }}</div>
+    </div>
+  </main>
+</div>
+{% endblock %}

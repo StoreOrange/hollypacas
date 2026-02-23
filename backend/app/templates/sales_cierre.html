@@ -54,7 +54,20 @@
       <div class="alert alert-danger">{{ error }}</div>
       {% endif %}
       {% if success %}
-      <div class="alert alert-success">{{ success }}</div>
+      <div class="alert alert-success d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <span>{{ success }}</span>
+        {% if print_id %}
+        <a
+          href="/sales/cierre/{{ print_id }}/pdf"
+          target="_blank"
+          rel="noopener"
+          id="cierre-print-link"
+          class="btn btn-sm btn-outline-success"
+        >
+          Ver e imprimir cierre
+        </a>
+        {% endif %}
+      </div>
       {% endif %}
 
       <div class="odoo-card odoo-elevated-soft odoo-plate mb-3">
@@ -334,9 +347,22 @@
   }
   renderResumen();
 
-  const cierrePrintId = "{{ print_id or '' }}";
-  if (cierrePrintId) {
-    window.open(`/sales/cierre/${cierrePrintId}/pdf`, "_blank", "noopener");
+  const cierrePrintLink = document.getElementById("cierre-print-link");
+  if (cierrePrintLink) {
+    const openPrint = () => {
+      const url = cierrePrintLink.getAttribute("href");
+      if (!url) return;
+      window.erpOpenPrintable
+        ? window.erpOpenPrintable(url, { fallbackSameTab: true })
+        : window.open(url, "_blank", "noopener");
+    };
+    cierrePrintLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      openPrint();
+    });
+    setTimeout(() => {
+      openPrint();
+    }, 350);
   }
 </script>
 {% endblock %}

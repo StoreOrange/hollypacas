@@ -515,3 +515,75 @@ class CuentaContable(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     parent = relationship("CuentaContable", remote_side=[id])
+
+
+class AccountingVoucherType(Base):
+    __tablename__ = "accounting_voucher_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(20), nullable=False, unique=True)
+    nombre = Column(String(120), nullable=False)
+    prefijo = Column(String(10), nullable=False, default="CPB")
+    activo = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class AccountingEntry(Base):
+    __tablename__ = "accounting_entries"
+    __table_args__ = (
+        UniqueConstraint("tipo_id", "branch_id", "periodo", "secuencia", name="uq_accounting_entry_sequence"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    tipo_id = Column(Integer, ForeignKey("accounting_voucher_types.id"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    fecha = Column(Date, nullable=False)
+    periodo = Column(String(7), nullable=False)  # YYYY-MM
+    secuencia = Column(Integer, nullable=False, default=1)
+    numero = Column(String(40), nullable=False, unique=True)
+    referencia = Column(String(160), nullable=True)
+    descripcion = Column(Text, nullable=False, default="")
+    estado = Column(String(20), nullable=False, default="POSTEADO")
+    total_debe = Column(Numeric(14, 2), nullable=False, default=0)
+    total_haber = Column(Numeric(14, 2), nullable=False, default=0)
+    reversa_de_id = Column(Integer, ForeignKey("accounting_entries.id"), nullable=True)
+    anulado_por = Column(String(160), nullable=True)
+    anulado_motivo = Column(String(260), nullable=True)
+    anulado_at = Column(DateTime, nullable=True)
+    creado_por = Column(String(160), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    tipo = relationship("AccountingVoucherType")
+    branch = relationship("Branch")
+    lines = relationship("AccountingEntryLine", back_populates="entry", cascade="all, delete-orphan")
+    reversa_de = relationship("AccountingEntry", remote_side=[id])
+
+
+class AccountingEntryLine(Base):
+    __tablename__ = "accounting_entry_lines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entry_id = Column(Integer, ForeignKey("accounting_entries.id"), nullable=False)
+    cuenta_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=False)
+    descripcion = Column(String(200), nullable=True)
+    debe = Column(Numeric(14, 2), nullable=False, default=0)
+    haber = Column(Numeric(14, 2), nullable=False, default=0)
+
+    entry = relationship("AccountingEntry", back_populates="lines")
+    cuenta = relationship("CuentaContable")
+
+
+class AccountingPolicySetting(Base):
+    __tablename__ = "accounting_policy_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    strict_mode = Column(Boolean, nullable=False, default=True)
+    auto_entry_enabled = Column(Boolean, nullable=False, default=False)
+    ingreso_debe_terms = Column(String(260), nullable=False, default="caja,banco,cliente,cobrar")
+    ingreso_haber_terms = Column(String(260), nullable=False, default="venta,ingreso")
+    egreso_debe_terms = Column(String(260), nullable=False, default="gasto,costo,compra,inventario")
+    egreso_haber_terms = Column(String(260), nullable=False, default="caja,banco,proveedor,pagar")
+    updated_by = Column(String(160), nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())

@@ -973,7 +973,11 @@
   }
   {% endif %}
   {% if print_id %}
-  window.open("/inventory/egresos/{{ print_id }}/pdf", "_blank");
+  if (window.erpOpenPrintable) {
+    window.erpOpenPrintable("/inventory/egresos/{{ print_id }}/pdf", { fallbackSameTab: true });
+  } else {
+    window.open("/inventory/egresos/{{ print_id }}/pdf", "_blank", "noopener");
+  }
   {% endif %}
 
   const params = new URLSearchParams(window.location.search || "");

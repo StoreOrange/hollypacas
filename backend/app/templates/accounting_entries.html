@@ -1,0 +1,812 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 sm:p-6 lg:p-8 text-[18px]">
+    <div class="odoo-page">
+      <div class="odoo-header d-flex align-items-start justify-content-between gap-3 flex-wrap">
+        <div>
+          <h1 class="odoo-title mb-1">Comprobantes contables</h1>
+          <p class="odoo-subtitle mb-0">Paso guiado: define fecha y tipo, agrega lineas Debe/Haber, valida cuadre y guarda.</p>
+        </div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-outline-secondary" href="/accounting/financial-data">Datos financieros</a>
+          <a class="btn btn-outline-secondary" href="/accounting">Volver</a>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger mt-3">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success mt-3">{{ success }}</div>
+      {% endif %}
+
+      <div class="odoo-card mt-3">
+        <div class="odoo-section-title mb-2">Nuevo comprobante</div>
+        <div class="mb-2">
+          {% if policy.strict_mode %}
+          <span class="badge text-bg-success">Politica estricta activa</span>
+          {% else %}
+          <span class="badge text-bg-warning">Politica estricta desactivada</span>
+          {% endif %}
+          {% if policy.auto_entry_enabled %}
+          <span class="badge text-bg-info">Auto-asientos por eventos: habilitado (fase de integracion)</span>
+          {% endif %}
+        </div>
+        <form method="post" action="/accounting/entries" id="entryForm">
+          <div class="row g-3">
+            <div class="col-md-2">
+              <label class="form-label">Fecha</label>
+              <input class="form-control" type="date" name="fecha" value="{{ today }}" required />
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Tipo comprobante</label>
+              <select class="form-select" name="tipo_id" id="voucherTypeSelect" required>
+                {% for t in voucher_types %}
+                <option value="{{ t.id }}">{{ t.code }} - {{ t.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Sucursal</label>
+              <select class="form-select" name="branch_id">
+                <option value="">General</option>
+                {% for b in branches %}
+                <option value="{{ b.id }}">{{ b.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Referencia</label>
+              <input class="form-control" name="referencia" maxlength="160" placeholder="Factura, recibo, transferencia..." />
+            </div>
+            <div class="col-12">
+              <label class="form-label">Descripcion del comprobante</label>
+              <input class="form-control" name="descripcion" maxlength="400" required />
+              <small id="policyHint" class="text-muted d-block mt-1"></small>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center justify-content-between mt-3 mb-2">
+            <div class="odoo-section-title mb-0">Detalle contable</div>
+            <div class="d-flex gap-2">
+              <select class="form-select form-select-sm" id="presetSelect" style="max-width: 220px;">
+                <option value="">Preset transaccional...</option>
+                <option value="sale_cash">Venta contado</option>
+                <option value="sale_credit">Venta credito</option>
+                <option value="purchase_inventory">Compra inventario</option>
+                <option value="expense_cash">Gasto contado</option>
+              </select>
+              <button class="btn btn-sm btn-outline-secondary" type="button" id="btnApplyPreset">
+                <i class="bi bi-lightning-charge"></i> Aplicar preset
+              </button>
+              <button class="btn btn-sm btn-outline-dark" type="button" id="btnApplyTemplate">
+                <i class="bi bi-robot"></i> Plantilla por tipo
+              </button>
+              <button class="btn btn-sm btn-outline-success" type="button" id="btnAutoCounterpart">
+                <i class="bi bi-magic"></i> Contrapartida inteligente
+              </button>
+              <button class="btn btn-sm btn-outline-primary" type="button" id="btnAddLine">
+                <i class="bi bi-plus-lg"></i> Agregar linea
+              </button>
+            </div>
+          </div>
+          <div class="row g-3">
+            <div class="col-xl-8">
+              <div class="table-responsive">
+                <table class="table table-bordered table-hover table-sm align-middle" id="linesTable">
+                  <thead class="table-light">
+                    <tr>
+                      <th style="min-width: 260px;">Cuenta</th>
+                      <th>Detalle</th>
+                      <th style="min-width: 130px;">Debe</th>
+                      <th style="min-width: 130px;">Haber</th>
+                      <th style="width: 70px;">Accion</th>
+                    </tr>
+                  </thead>
+                  <tbody id="linesBody"></tbody>
+                  <tfoot>
+                    <tr>
+                      <th colspan="2" class="text-end">Totales:</th>
+                      <th><input class="form-control form-control-sm" id="totalDebe" readonly /></th>
+                      <th><input class="form-control form-control-sm" id="totalHaber" readonly /></th>
+                      <th></th>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+            <div class="col-xl-4">
+              <div class="border rounded p-3 bg-light-subtle">
+                <div class="fw-semibold mb-2">Asistente contable</div>
+                <div class="small text-muted mb-1">Cuenta activa</div>
+                <div id="assistantAccount" class="fw-semibold">-</div>
+                <div id="assistantNature" class="small text-muted mb-2">Sin seleccion</div>
+                <hr class="my-2" />
+                <div class="small text-muted mb-1">Sugerencia de contrapartida</div>
+                <div id="assistantCounterpart" class="fw-semibold">-</div>
+                <div id="assistantReason" class="small text-muted">Selecciona una cuenta en la grilla para recibir guia inteligente.</div>
+                <hr class="my-2" />
+                <div class="small text-muted mb-1">Atajos</div>
+                <ul class="small mb-0 ps-3">
+                  <li>`Enter`: siguiente celda</li>
+                  <li>`Flechas`: moverte en la grilla</li>
+                  <li>`Tab`: avanza y oculta sugerencias</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div id="accountSuggest" class="list-group position-fixed shadow d-none" style="z-index: 1080; max-height: 240px; overflow-y: auto; min-width: 420px;"></div>
+          <div id="gridHiddenInputs"></div>
+
+          <div class="d-flex gap-2">
+            <button class="btn btn-dark" type="submit">Guardar comprobante</button>
+            <small class="text-muted align-self-center">Regla: el total Debe debe ser igual al total Haber.</small>
+          </div>
+        </form>
+      </div>
+
+      <div class="odoo-card mt-3">
+        <div class="odoo-section-title mb-2">Ultimos comprobantes</div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Numero</th>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Sucursal</th>
+                <th>Estado</th>
+                <th class="text-end">Debe</th>
+                <th class="text-end">Haber</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in entries %}
+              <tr>
+                <td class="fw-semibold">{{ row.numero }}</td>
+                <td>{{ row.fecha }}</td>
+                <td>{{ row.tipo.code if row.tipo else "-" }}</td>
+                <td>{{ row.branch.name if row.branch else "General" }}</td>
+                <td>
+                  {% if row.estado == "ANULADO" %}
+                    <span class="badge text-bg-danger">ANULADO</span>
+                  {% else %}
+                    <span class="badge text-bg-success">{{ row.estado }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">{{ "%.2f"|format(row.total_debe or 0) }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.total_haber or 0) }}</td>
+                <td>
+                  <a class="btn btn-sm btn-outline-secondary" target="_blank" href="/accounting/entries/{{ row.id }}/pdf">PDF</a>
+                  {% if row.estado != "ANULADO" %}
+                  <form method="post" action="/accounting/entries/{{ row.id }}/annul" class="d-inline">
+                    <input type="hidden" name="motivo" value="Anulacion manual desde interfaz" />
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Anular</button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="8" class="text-muted">Sin comprobantes registrados.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const ACCOUNTING_ACCOUNTS = {{ cuentas_json | tojson }};
+  const ACCOUNTING_SUGGESTIONS = {{ counter_suggestions | tojson }};
+  const ACCOUNTING_TEMPLATES = {{ voucher_templates | tojson }};
+  const ACCOUNTING_POLICY = {{ policy | tojson }};
+</script>
+
+<template id="lineTemplate">
+  <tr>
+    <td>
+      <input type="hidden" class="line-account-id" />
+      <input class="form-control form-control-sm line-account-search" type="text" placeholder="Escribe cuenta: codigo o nombre" autocomplete="off" />
+      <small class="text-muted line-account-caption"></small>
+    </td>
+    <td>
+      <input class="form-control form-control-sm line-detail" type="text" placeholder="Detalle opcional" maxlength="200" />
+    </td>
+    <td>
+      <input class="form-control form-control-sm text-end line-debe" type="number" min="0" step="0.01" value="0.00" />
+    </td>
+    <td>
+      <input class="form-control form-control-sm text-end line-haber" type="number" min="0" step="0.01" value="0.00" />
+    </td>
+    <td>
+      <button class="btn btn-sm btn-outline-danger btn-remove-line" type="button"><i class="bi bi-trash"></i></button>
+    </td>
+  </tr>
+</template>
+
+<script>
+  (function () {
+    const linesBody = document.getElementById("linesBody");
+    const template = document.getElementById("lineTemplate");
+    const addBtn = document.getElementById("btnAddLine");
+    const applyPresetBtn = document.getElementById("btnApplyPreset");
+    const presetSelect = document.getElementById("presetSelect");
+    const applyTemplateBtn = document.getElementById("btnApplyTemplate");
+    const autoBtn = document.getElementById("btnAutoCounterpart");
+    const voucherTypeSelect = document.getElementById("voucherTypeSelect");
+    const policyHint = document.getElementById("policyHint");
+    const totalDebe = document.getElementById("totalDebe");
+    const totalHaber = document.getElementById("totalHaber");
+    const accountSuggest = document.getElementById("accountSuggest");
+    const hiddenContainer = document.getElementById("gridHiddenInputs");
+    const assistantAccount = document.getElementById("assistantAccount");
+    const assistantNature = document.getElementById("assistantNature");
+    const assistantCounterpart = document.getElementById("assistantCounterpart");
+    const assistantReason = document.getElementById("assistantReason");
+    const accountMap = Object.fromEntries((ACCOUNTING_ACCOUNTS || []).map((item) => [String(item.id), item]));
+    const accountList = (ACCOUNTING_ACCOUNTS || []).map((item) => ({
+      ...item,
+      id: String(item.id),
+      searchText: (item.codigo + " " + item.nombre + " " + (item.naturaleza || "") + " " + (item.tipo || "")).toLowerCase(),
+    }));
+
+    function getAccountId(row) {
+      return row.querySelector(".line-account-id")?.value || "";
+    }
+
+    function setAccount(row, accountId) {
+      const hidden = row.querySelector(".line-account-id");
+      const search = row.querySelector(".line-account-search");
+      const caption = row.querySelector(".line-account-caption");
+      const meta = accountMap[String(accountId)];
+      if (!search || !hidden) return;
+      if (!meta) {
+        hidden.value = "";
+        search.value = "";
+        if (caption) caption.textContent = "";
+        return;
+      }
+      hidden.value = String(meta.id);
+      search.value = meta.codigo + " - " + meta.nombre;
+      if (caption) caption.textContent = "Naturaleza: " + (meta.naturaleza || "-") + " | Tipo: " + (meta.tipo || "-");
+    }
+
+    function searchAccounts(query, sideHint) {
+      const q = (query || "").trim().toLowerCase();
+      let rows = accountList;
+      if (sideHint === "debe") rows = rows.filter((a) => (a.naturaleza || "").toUpperCase() === "DEBE");
+      if (sideHint === "haber") rows = rows.filter((a) => (a.naturaleza || "").toUpperCase() === "HABER");
+      if (!q) return rows.slice(0, 25);
+      const terms = q.split(/\s+/).filter(Boolean);
+      return rows
+        .map((a) => {
+          let score = 0;
+          for (const term of terms) {
+            if (a.codigo.toLowerCase().startsWith(term)) score += 6;
+            else if (a.codigo.toLowerCase().includes(term)) score += 4;
+            if (a.nombre.toLowerCase().startsWith(term)) score += 5;
+            else if (a.nombre.toLowerCase().includes(term)) score += 3;
+            if ((a.naturaleza || "").toLowerCase().includes(term)) score += 1;
+            if ((a.tipo || "").toLowerCase().includes(term)) score += 1;
+          }
+          return { ...a, score };
+        })
+        .filter((a) => a.score > 0 || terms.every((t) => a.searchText.includes(t)))
+        .sort((a, b) => b.score - a.score || a.codigo.localeCompare(b.codigo))
+        .slice(0, 25);
+    }
+
+    function findAccountByTerms(terms, naturaleza) {
+      const n = (naturaleza || "").toUpperCase();
+      const candidates = accountList.filter((a) => !n || (a.naturaleza || "").toUpperCase() === n);
+      for (const term of terms) {
+        const t = term.toLowerCase();
+        const exact = candidates.find((a) => a.codigo.toLowerCase() === t || a.nombre.toLowerCase() === t);
+        if (exact) return exact;
+        const starts = candidates.find((a) => a.codigo.toLowerCase().startsWith(t) || a.nombre.toLowerCase().startsWith(t));
+        if (starts) return starts;
+        const contains = candidates.find((a) => a.searchText.includes(t));
+        if (contains) return contains;
+      }
+      return null;
+    }
+
+    async function searchAccountsRemote(query, sideHint) {
+      const text = (query || "").trim();
+      if (text.length < 2) return null;
+      const params = new URLSearchParams({
+        q: text,
+        side: sideHint || "",
+        limit: "20",
+      });
+      try {
+        const response = await fetch("/accounting/accounts/search?" + params.toString(), {
+          headers: { "x-requested-with": "fetch" },
+        });
+        if (!response.ok) return null;
+        const payload = await response.json();
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        if (!items.length) return null;
+        return items.map((item) => ({
+          ...item,
+          id: String(item.id),
+          searchText: (item.codigo + " " + item.nombre + " " + (item.naturaleza || "") + " " + (item.tipo || "")).toLowerCase(),
+        }));
+      } catch (_e) {
+        return null;
+      }
+    }
+
+    function hideResults() {
+      accountSuggest.classList.add("d-none");
+      accountSuggest.innerHTML = "";
+      accountSuggest.dataset.rowUid = "";
+    }
+
+    function showResults(row, options) {
+      const field = row.querySelector(".line-account-search");
+      if (!field) return;
+      const rect = field.getBoundingClientRect();
+      accountSuggest.style.left = Math.round(rect.left) + "px";
+      accountSuggest.style.top = Math.round(rect.bottom + 4) + "px";
+      accountSuggest.style.minWidth = Math.max(360, Math.round(rect.width)) + "px";
+      accountSuggest.innerHTML = "";
+      accountSuggest.dataset.rowUid = row.dataset.uid || "";
+      for (const opt of options) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "list-group-item list-group-item-action py-1 px-2";
+        button.innerHTML = "<strong>" + opt.codigo + "</strong> - " + opt.nombre + " <small class='text-muted'>(" + (opt.naturaleza || "-") + ")</small>";
+        button.addEventListener("click", () => {
+          setAccount(row, opt.id);
+          hideResults();
+          const debeValue = parseAmount(row.querySelector(".line-debe")?.value || "0");
+          const haberValue = parseAmount(row.querySelector(".line-haber")?.value || "0");
+          if (debeValue === 0 && haberValue === 0) {
+            if ((opt.naturaleza || "").toUpperCase() === "DEBE") row.querySelector(".line-debe")?.focus();
+            else row.querySelector(".line-haber")?.focus();
+          }
+          calculateTotals();
+        });
+        accountSuggest.appendChild(button);
+      }
+      accountSuggest.classList.toggle("d-none", options.length === 0);
+    }
+
+    function focusCell(row, colIdx) {
+      if (!row) return;
+      const cols = [
+        ".line-account-search",
+        ".line-detail",
+        ".line-debe",
+        ".line-haber",
+      ];
+      const selector = cols[Math.max(0, Math.min(colIdx, cols.length - 1))];
+      const cell = row.querySelector(selector);
+      if (!cell) return;
+      cell.focus();
+      if (cell.select) cell.select();
+    }
+
+    function moveByKeyboard(currentRow, currentCol, direction) {
+      const rows = Array.from(linesBody.querySelectorAll("tr"));
+      const rowIndex = rows.indexOf(currentRow);
+      if (rowIndex < 0) return;
+      let nextRowIndex = rowIndex;
+      let nextCol = currentCol;
+      if (direction === "right") nextCol += 1;
+      if (direction === "left") nextCol -= 1;
+      if (direction === "down") nextRowIndex += 1;
+      if (direction === "up") nextRowIndex -= 1;
+      if (nextCol > 3) {
+        nextCol = 0;
+        nextRowIndex += 1;
+      }
+      if (nextCol < 0) {
+        nextCol = 3;
+        nextRowIndex -= 1;
+      }
+      if (nextRowIndex < 0) nextRowIndex = 0;
+      if (nextRowIndex >= rows.length) {
+        addLine();
+      }
+      const nextRows = Array.from(linesBody.querySelectorAll("tr"));
+      focusCell(nextRows[Math.max(0, Math.min(nextRowIndex, nextRows.length - 1))], nextCol);
+    }
+
+    function refreshAssistant(row) {
+      if (!row) {
+        assistantAccount.textContent = "-";
+        assistantNature.textContent = "Sin seleccion";
+        assistantCounterpart.textContent = "-";
+        assistantReason.textContent = "Selecciona una cuenta en la grilla para recibir guia inteligente.";
+        return;
+      }
+      const accountId = getAccountId(row);
+      const account = accountMap[String(accountId)];
+      if (!account) {
+        assistantAccount.textContent = "Cuenta no seleccionada";
+        assistantNature.textContent = "Escribe codigo o nombre para buscar";
+        assistantCounterpart.textContent = "-";
+        assistantReason.textContent = "La sugerencia se habilita cuando la fila tiene una cuenta valida.";
+        return;
+      }
+      assistantAccount.textContent = account.codigo + " - " + account.nombre;
+      assistantNature.textContent = "Naturaleza: " + (account.naturaleza || "-") + " | Tipo: " + (account.tipo || "-");
+      const counterpartId = String(ACCOUNTING_SUGGESTIONS?.[String(account.id)] || "");
+      const counterpart = counterpartId ? accountMap[counterpartId] : null;
+      if (counterpart) {
+        assistantCounterpart.textContent = counterpart.codigo + " - " + counterpart.nombre;
+        assistantReason.textContent = "Sugerida por historial de asientos y naturaleza contable opuesta.";
+      } else {
+        assistantCounterpart.textContent = "Sin sugerencia historica";
+        assistantReason.textContent = "Usa plantilla por tipo o preset transaccional para generar cuentas base.";
+      }
+    }
+
+    function parseAmount(value) {
+      const clean = String(value || "").replace(",", ".").replace(/[^0-9.-]/g, "");
+      return parseFloat(clean || "0") || 0;
+    }
+
+    function calculateTotals() {
+      const parseValue = (selector) => Array.from(linesBody.querySelectorAll(selector))
+        .reduce((acc, input) => acc + parseAmount(input.value), 0);
+      const d = parseValue(".line-debe");
+      const h = parseValue(".line-haber");
+      totalDebe.value = d.toFixed(2);
+      totalHaber.value = h.toFixed(2);
+      totalDebe.classList.toggle("is-invalid", d !== h);
+      totalHaber.classList.toggle("is-invalid", d !== h);
+    }
+
+    function findOrCreateTargetRow() {
+      const rows = Array.from(linesBody.querySelectorAll("tr"));
+      const emptyRow = rows.find((row) => {
+        const accountId = getAccountId(row);
+        const debeInput = row.querySelector(".line-debe");
+        const haberInput = row.querySelector(".line-haber");
+        const hasAccount = !!accountId;
+        const hasAmount = parseAmount(debeInput?.value || "0") > 0 || parseAmount(haberInput?.value || "0") > 0;
+        return !hasAccount && !hasAmount;
+      });
+      if (emptyRow) return emptyRow;
+      addLine();
+      return linesBody.lastElementChild;
+    }
+
+    function applySmartCounterpart() {
+      const rows = Array.from(linesBody.querySelectorAll("tr"));
+      const source = rows.find((row) => {
+        const accountId = getAccountId(row);
+        const debeValue = parseAmount(row.querySelector(".line-debe")?.value || "0");
+        const haberValue = parseAmount(row.querySelector(".line-haber")?.value || "0");
+        return accountId && (debeValue > 0 || haberValue > 0);
+      });
+      if (!source) {
+        alert("Primero registra una linea con cuenta y monto para generar la contrapartida.");
+        return;
+      }
+
+      const sourceAccountId = getAccountId(source);
+      const sourceDebe = parseAmount(source.querySelector(".line-debe").value || "0");
+      const sourceHaber = parseAmount(source.querySelector(".line-haber").value || "0");
+      const amount = sourceDebe > 0 ? sourceDebe : sourceHaber;
+      const targetSide = sourceDebe > 0 ? "haber" : "debe";
+
+      const suggestedId = String(ACCOUNTING_SUGGESTIONS?.[sourceAccountId] || "");
+      if (!suggestedId) {
+        alert("No encontre sugerencia automatica para esta cuenta. Agrega la contrapartida manualmente.");
+        return;
+      }
+
+      const targetRow = findOrCreateTargetRow();
+      const targetDebe = targetRow.querySelector(".line-debe");
+      const targetHaber = targetRow.querySelector(".line-haber");
+
+      setAccount(targetRow, suggestedId);
+      if (targetSide === "debe") {
+        targetDebe.value = amount.toFixed(2);
+        targetHaber.value = "0.00";
+      } else {
+        targetHaber.value = amount.toFixed(2);
+        targetDebe.value = "0.00";
+      }
+      calculateTotals();
+    }
+
+    function clearLines() {
+      linesBody.innerHTML = "";
+    }
+
+    function updatePolicyHint() {
+      const templateMeta = ACCOUNTING_TEMPLATES?.[voucherTypeSelect.value];
+      if (!templateMeta) {
+        policyHint.textContent = "";
+        return;
+      }
+      policyHint.textContent =
+        "Sugerencia: Debe -> " + templateMeta.debit_hint + " | Haber -> " + templateMeta.credit_hint;
+    }
+
+    function applyVoucherTemplate() {
+      const templateMeta = ACCOUNTING_TEMPLATES?.[voucherTypeSelect.value];
+      if (!templateMeta) {
+        alert("No hay plantilla disponible para este tipo.");
+        return;
+      }
+      if (!templateMeta.debit_account_id || !templateMeta.credit_account_id) {
+        alert("No pude construir plantilla automatica con el catalogo actual. Revisa nombres de cuentas.");
+        return;
+      }
+      clearLines();
+      addLine();
+      addLine();
+      const rows = Array.from(linesBody.querySelectorAll("tr"));
+      const debitRow = rows[0];
+      const creditRow = rows[1];
+      setAccount(debitRow, String(templateMeta.debit_account_id));
+      setAccount(creditRow, String(templateMeta.credit_account_id));
+      debitRow.querySelector(".line-debe").value = "1.00";
+      debitRow.querySelector(".line-haber").value = "0.00";
+      creditRow.querySelector(".line-debe").value = "0.00";
+      creditRow.querySelector(".line-haber").value = "1.00";
+
+      const descInput = document.querySelector('input[name="descripcion"]');
+      if (descInput && !descInput.value.trim()) {
+        descInput.value = templateMeta.concept || "";
+      }
+      calculateTotals();
+    }
+
+    function applyPreset() {
+      const preset = (presetSelect.value || "").trim();
+      if (!preset) {
+        alert("Selecciona un preset transaccional.");
+        return;
+      }
+      const policyIngresoDebe = ACCOUNTING_POLICY?.ingreso_debe_terms || ["caja", "banco", "cliente", "cobrar"];
+      const policyIngresoHaber = ACCOUNTING_POLICY?.ingreso_haber_terms || ["venta", "ingreso"];
+      const policyEgresoDebe = ACCOUNTING_POLICY?.egreso_debe_terms || ["gasto", "costo", "compra", "inventario"];
+      const policyEgresoHaber = ACCOUNTING_POLICY?.egreso_haber_terms || ["caja", "banco", "proveedor", "pagar"];
+
+      const definitions = {
+        sale_cash: {
+          deb: ["caja", "banco", ...policyIngresoDebe],
+          hab: [...policyIngresoHaber, "venta", "ingreso"],
+          desc: "Venta de contado",
+        },
+        sale_credit: {
+          deb: ["cliente", "cobrar", ...policyIngresoDebe],
+          hab: [...policyIngresoHaber, "venta", "ingreso"],
+          desc: "Venta al credito",
+        },
+        purchase_inventory: {
+          deb: ["inventario", ...policyEgresoDebe],
+          hab: ["proveedor", "pagar", ...policyEgresoHaber],
+          desc: "Compra de inventario",
+        },
+        expense_cash: {
+          deb: ["gasto", "administracion", "operacion", ...policyEgresoDebe],
+          hab: ["caja", "banco", ...policyEgresoHaber],
+          desc: "Registro de gasto contado",
+        },
+      };
+      const def = definitions[preset];
+      if (!def) return;
+      const debitAccount = findAccountByTerms(def.deb, "DEBE") || findAccountByTerms(def.deb, "");
+      const creditAccount = findAccountByTerms(def.hab, "HABER") || findAccountByTerms(def.hab, "");
+      if (!debitAccount || !creditAccount) {
+        alert("No encontre cuentas para este preset. Revisa catalogo y politicas.");
+        return;
+      }
+      clearLines();
+      addLine();
+      addLine();
+      const rows = Array.from(linesBody.querySelectorAll("tr"));
+      setAccount(rows[0], debitAccount.id);
+      setAccount(rows[1], creditAccount.id);
+      rows[0].querySelector(".line-detail").value = def.desc + " - Debe";
+      rows[1].querySelector(".line-detail").value = def.desc + " - Haber";
+      rows[0].querySelector(".line-debe").value = "1.00";
+      rows[0].querySelector(".line-haber").value = "0.00";
+      rows[1].querySelector(".line-debe").value = "0.00";
+      rows[1].querySelector(".line-haber").value = "1.00";
+      const descInput = document.querySelector('input[name="descripcion"]');
+      if (descInput && !descInput.value.trim()) descInput.value = def.desc;
+      calculateTotals();
+      refreshAssistant(rows[0]);
+    }
+
+    function bindRowEvents(row) {
+      const accountSearch = row.querySelector(".line-account-search");
+      const debeInput = row.querySelector(".line-debe");
+      const haberInput = row.querySelector(".line-haber");
+      const removeBtn = row.querySelector(".btn-remove-line");
+      row.dataset.uid = row.dataset.uid || String(Date.now() + Math.random());
+
+      [debeInput, haberInput].forEach((input) => {
+        input.addEventListener("blur", () => {
+          const v = parseAmount(input.value);
+          input.value = v.toFixed(2);
+          calculateTotals();
+        });
+        input.addEventListener("focus", () => refreshAssistant(row));
+      });
+      row.querySelector(".line-detail").addEventListener("focus", () => refreshAssistant(row));
+      debeInput.addEventListener("input", () => {
+        if (!getAccountId(row)) {
+          const templateMeta = ACCOUNTING_TEMPLATES?.[voucherTypeSelect.value];
+          if (templateMeta?.debit_account_id) setAccount(row, String(templateMeta.debit_account_id));
+        }
+      });
+      haberInput.addEventListener("input", () => {
+        if (!getAccountId(row)) {
+          const templateMeta = ACCOUNTING_TEMPLATES?.[voucherTypeSelect.value];
+          if (templateMeta?.credit_account_id) setAccount(row, String(templateMeta.credit_account_id));
+        }
+      });
+      removeBtn.addEventListener("click", () => {
+        row.remove();
+        calculateTotals();
+        refreshAssistant(Array.from(linesBody.querySelectorAll("tr"))[0] || null);
+      });
+      accountSearch.addEventListener("focus", async () => {
+        refreshAssistant(row);
+        const sideHint = parseAmount(debeInput.value) > 0 ? "debe" : (parseAmount(haberInput.value) > 0 ? "haber" : "");
+        const remote = await searchAccountsRemote(accountSearch.value, sideHint);
+        showResults(row, remote || searchAccounts(accountSearch.value, sideHint));
+      });
+      accountSearch.addEventListener("input", async () => {
+        const selected = accountMap[getAccountId(row)];
+        if (selected && accountSearch.value.trim() !== (selected.codigo + " - " + selected.nombre)) {
+          setAccount(row, "");
+        }
+        const sideHint = parseAmount(debeInput.value) > 0 ? "debe" : (parseAmount(haberInput.value) > 0 ? "haber" : "");
+        const remote = await searchAccountsRemote(accountSearch.value, sideHint);
+        const options = remote || searchAccounts(accountSearch.value, sideHint);
+        if (options.length === 1 && options[0].searchText.includes((accountSearch.value || "").trim().toLowerCase())) {
+          setAccount(row, options[0].id);
+        }
+        showResults(row, options);
+      });
+      accountSearch.addEventListener("keydown", (event) => {
+        const colIdx = 0;
+        if (event.key === "Tab") {
+          hideResults();
+          return;
+        }
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          moveByKeyboard(row, colIdx, "down");
+          return;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          moveByKeyboard(row, colIdx, "up");
+          return;
+        }
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          moveByKeyboard(row, colIdx, "right");
+          return;
+        }
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          moveByKeyboard(row, colIdx, "left");
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          const sideHint = parseAmount(debeInput.value) > 0 ? "debe" : (parseAmount(haberInput.value) > 0 ? "haber" : "");
+          const options = searchAccounts(accountSearch.value, sideHint);
+          if (options.length > 0) {
+            setAccount(row, options[0].id);
+            hideResults();
+            if (parseAmount(debeInput.value) === 0 && parseAmount(haberInput.value) === 0) {
+              if ((options[0].naturaleza || "").toUpperCase() === "DEBE") debeInput.focus();
+              else haberInput.focus();
+            } else {
+              moveByKeyboard(row, colIdx, "right");
+            }
+          }
+        }
+      });
+
+      const cellBindings = [
+        [row.querySelector(".line-detail"), 1],
+        [row.querySelector(".line-debe"), 2],
+        [row.querySelector(".line-haber"), 3],
+      ];
+      for (const [cell, colIdx] of cellBindings) {
+        if (!cell) continue;
+        cell.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            moveByKeyboard(row, colIdx, "right");
+            return;
+          }
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            moveByKeyboard(row, colIdx, "down");
+            return;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            moveByKeyboard(row, colIdx, "up");
+            return;
+          }
+          if (event.key === "ArrowRight" && colIdx < 3) {
+            event.preventDefault();
+            moveByKeyboard(row, colIdx, "right");
+            return;
+          }
+          if (event.key === "ArrowLeft" && colIdx > 0) {
+            event.preventDefault();
+            moveByKeyboard(row, colIdx, "left");
+            return;
+          }
+        });
+      }
+    }
+
+    function addLine() {
+      const row = template.content.firstElementChild.cloneNode(true);
+      bindRowEvents(row);
+      linesBody.appendChild(row);
+      calculateTotals();
+    }
+
+    function appendHidden(name, value) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      hiddenContainer.appendChild(input);
+    }
+
+    addBtn.addEventListener("click", addLine);
+    applyPresetBtn.addEventListener("click", applyPreset);
+    applyTemplateBtn.addEventListener("click", applyVoucherTemplate);
+    autoBtn.addEventListener("click", applySmartCounterpart);
+    voucherTypeSelect.addEventListener("change", updatePolicyHint);
+    document.getElementById("entryForm").addEventListener("submit", (event) => {
+      hiddenContainer.innerHTML = "";
+      const rows = Array.from(linesBody.querySelectorAll("tr"));
+      let validRows = 0;
+      for (const row of rows) {
+        const accountId = getAccountId(row);
+        const detail = (row.querySelector(".line-detail")?.value || "").trim();
+        const debe = parseAmount(row.querySelector(".line-debe")?.value || "0");
+        const haber = parseAmount(row.querySelector(".line-haber")?.value || "0");
+        if (!accountId || (debe === 0 && haber === 0)) continue;
+        validRows += 1;
+        appendHidden("line_cuenta_id", accountId);
+        appendHidden("line_descripcion", detail);
+        appendHidden("line_debe", debe.toFixed(2));
+        appendHidden("line_haber", haber.toFixed(2));
+      }
+      if (validRows < 2) {
+        event.preventDefault();
+        alert("La grilla requiere al menos 2 lineas validas con cuenta y montos.");
+      }
+      hideResults();
+    });
+    document.addEventListener("click", (event) => {
+      if (!accountSuggest.contains(event.target) && !linesBody.contains(event.target)) hideResults();
+    });
+    addLine();
+    addLine();
+    updatePolicyHint();
+    refreshAssistant(null);
+  })();
+</script>
+{% endblock %}
