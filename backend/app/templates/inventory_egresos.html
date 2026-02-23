@@ -177,14 +177,16 @@
                 <span class="input-group-text bg-white border-0">a</span>
                 <input name="end_date" type="date" class="form-control border-0" value="{{ end_date }}" />
               </div>
-              <select name="product_id" class="form-select form-select-sm" style="min-width: 220px;">
-                <option value="">Todos los productos</option>
-                {% for producto in productos %}
-                <option value="{{ producto.id }}" {% if selected_product_id == producto.id %}selected{% endif %}>
-                  {{ producto.cod_producto }} - {{ producto.descripcion }}
-                </option>
-                {% endfor %}
-              </select>
+              <div class="input-group input-group-sm" style="min-width: 260px;">
+                <span class="input-group-text bg-white"><i class="bi bi-upc-scan"></i></span>
+                <input
+                  name="product_q"
+                  type="text"
+                  class="form-control"
+                  placeholder="Producto rapido: codigo o descripcion"
+                  value="{{ selected_product_query or '' }}"
+                />
+              </div>
               <button class="btn btn-outline-secondary btn-sm" type="submit">
                 <i class="bi bi-search"></i>
                 Filtrar
@@ -930,7 +932,7 @@
   const focusEgresoId = (params.get("focus_egreso_id") || "").trim();
   const focusProductoId = (params.get("focus_producto_id") || "").trim();
   const forceListView = (params.get("view") || "").trim().toLowerCase() === "list";
-  const hasFilter = ["start_date", "end_date", "product_id"].some((key) => (params.get(key) || "").trim() !== "");
+  const hasFilter = ["start_date", "end_date", "product_q", "product_id"].some((key) => (params.get(key) || "").trim() !== "");
   if (focusEgresoId || forceListView || hasFilter) {
     setEgresoView("list");
   } else {

@@ -3159,6 +3159,7 @@ def inventory_ingresos_page(
     end_date = _parse_date(request.query_params.get("end_date"))
     selected_product_id_raw = (request.query_params.get("product_id") or "").strip()
     selected_product_id = int(selected_product_id_raw) if selected_product_id_raw.isdigit() else None
+    selected_product_query = (request.query_params.get("product_q") or "").strip()
     if not start_date and not end_date:
         end_date = local_today()
         start_date = end_date - timedelta(days=30)
@@ -3167,7 +3168,19 @@ def inventory_ingresos_page(
         ingresos_query = ingresos_query.filter(IngresoInventario.fecha >= start_date)
     if end_date:
         ingresos_query = ingresos_query.filter(IngresoInventario.fecha <= end_date)
-    if selected_product_id:
+    if selected_product_query:
+        q = f"%{selected_product_query.lower()}%"
+        ingresos_query = ingresos_query.filter(
+            IngresoInventario.items.any(
+                IngresoItem.producto.has(
+                    or_(
+                        func.lower(Producto.cod_producto).like(q),
+                        func.lower(Producto.descripcion).like(q),
+                    )
+                )
+            )
+        )
+    elif selected_product_id:
         ingresos_query = ingresos_query.filter(
             IngresoInventario.items.any(IngresoItem.producto_id == selected_product_id)
         )
@@ -3233,6 +3246,7 @@ def inventory_ingresos_page(
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
             "selected_product_id": selected_product_id,
+            "selected_product_query": selected_product_query,
             "success": success,
             "print_id": print_id,
             "inventory_cs_only": inventory_cs_only,
@@ -3262,6 +3276,7 @@ def inventory_egresos_page(
     end_date = _parse_date(request.query_params.get("end_date"))
     selected_product_id_raw = (request.query_params.get("product_id") or "").strip()
     selected_product_id = int(selected_product_id_raw) if selected_product_id_raw.isdigit() else None
+    selected_product_query = (request.query_params.get("product_q") or "").strip()
     if not start_date and not end_date:
         end_date = local_today()
         start_date = end_date - timedelta(days=30)
@@ -3270,7 +3285,19 @@ def inventory_egresos_page(
         egresos_query = egresos_query.filter(EgresoInventario.fecha >= start_date)
     if end_date:
         egresos_query = egresos_query.filter(EgresoInventario.fecha <= end_date)
-    if selected_product_id:
+    if selected_product_query:
+        q = f"%{selected_product_query.lower()}%"
+        egresos_query = egresos_query.filter(
+            EgresoInventario.items.any(
+                EgresoItem.producto.has(
+                    or_(
+                        func.lower(Producto.cod_producto).like(q),
+                        func.lower(Producto.descripcion).like(q),
+                    )
+                )
+            )
+        )
+    elif selected_product_id:
         egresos_query = egresos_query.filter(
             EgresoInventario.items.any(EgresoItem.producto_id == selected_product_id)
         )
@@ -3321,6 +3348,7 @@ def inventory_egresos_page(
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
             "selected_product_id": selected_product_id,
+            "selected_product_query": selected_product_query,
             "success": success,
             "print_id": print_id,
             "inventory_cs_only": inventory_cs_only,
