@@ -80,7 +80,7 @@ class PosPrintSetting(Base):
     id = Column(Integer, primary_key=True, index=True)
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False, unique=True)
     printer_name = Column(String(120), nullable=False, default="HP Receipt")
-    copies = Column(Integer, nullable=False, default=1)
+    copies = Column(Integer, nullable=False, default=2)
     auto_print = Column(Boolean, default=True)
     roc_printer_name = Column(String(120), nullable=True)
     roc_copies = Column(Integer, nullable=True)

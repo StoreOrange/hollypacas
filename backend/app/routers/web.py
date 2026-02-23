@@ -10454,7 +10454,7 @@ def sales_reprint(
     return JSONResponse(
         {
             "ok": True,
-            "print_url": f"/sales/{factura.id}/ticket/print",
+            "print_url": f"/sales/{factura.id}/ticket/print?copies=2",
         }
     )
 
@@ -11040,7 +11040,7 @@ def data_pos_print_save(
     request: Request,
     branch_id: int = Form(...),
     printer_name: str = Form(...),
-    copies: int = Form(1),
+    copies: int = Form(2),
     auto_print: Optional[str] = Form(None),
     roc_printer_name: Optional[str] = Form(None),
     roc_copies: Optional[int] = Form(None),
@@ -11059,7 +11059,7 @@ def data_pos_print_save(
     setting = db.query(PosPrintSetting).filter(PosPrintSetting.branch_id == branch_id).first()
     if setting:
         setting.printer_name = printer_name
-        setting.copies = max(copies, 1)
+        setting.copies = max(copies, 2)
         setting.auto_print = auto_print == "on"
         setting.roc_printer_name = roc_printer_name.strip() if roc_printer_name else None
         setting.roc_copies = max(roc_copies or 1, 1) if roc_copies is not None else None
@@ -11072,7 +11072,7 @@ def data_pos_print_save(
         setting = PosPrintSetting(
             branch_id=branch_id,
             printer_name=printer_name,
-            copies=max(copies, 1),
+            copies=max(copies, 2),
             auto_print=auto_print == "on",
             roc_printer_name=roc_printer_name.strip() if roc_printer_name else None,
             roc_copies=max(roc_copies or 1, 1) if roc_copies is not None else None,
@@ -11093,7 +11093,7 @@ def data_pos_print_update(
     setting_id: int,
     branch_id: int = Form(...),
     printer_name: str = Form(...),
-    copies: int = Form(1),
+    copies: int = Form(2),
     auto_print: Optional[str] = Form(None),
     roc_printer_name: Optional[str] = Form(None),
     roc_copies: Optional[int] = Form(None),
@@ -11111,7 +11111,7 @@ def data_pos_print_update(
         return RedirectResponse("/data/pos-print?error=Configuracion+no+existe", status_code=303)
     setting.branch_id = branch_id
     setting.printer_name = printer_name.strip()
-    setting.copies = max(copies, 1)
+    setting.copies = max(copies, 2)
     setting.auto_print = auto_print == "on"
     setting.roc_printer_name = roc_printer_name.strip() if roc_printer_name else None
     setting.roc_copies = max(roc_copies or 1, 1) if roc_copies is not None else None
@@ -12869,11 +12869,11 @@ def sales_ticket_print(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales")
-    copies_value = request.query_params.get("copies", "1")
+    copies_value = request.query_params.get("copies", "2")
     try:
         copies = max(int(copies_value), 1)
     except ValueError:
-        copies = 1
+        copies = 2
     factura = (
         db.query(VentaFactura)
         .filter(VentaFactura.id == venta_id)
@@ -14443,10 +14443,11 @@ async def sales_create_invoice(
     if pos_print and pos_print.auto_print:
         try:
             company_profile = _company_profile_payload(db)
+            copies_to_print = max(int(pos_print.copies or 0), 2)
             _print_pos_ticket(
                 factura,
                 pos_print.printer_name,
-                pos_print.copies,
+                copies_to_print,
                 company_profile,
                 pos_print.sumatra_path,
             )
