@@ -2128,6 +2128,63 @@ def _build_voucher_template(
     }
 
 
+def _smart_entry_terms(voucher_type: AccountingVoucherType, description: str, policy: dict) -> dict:
+    text = (description or "").strip().lower()
+    code = (voucher_type.code or "").upper().strip()
+    ingreso_debe = list(policy.get("ingreso_debe_terms") or ["caja", "banco", "cliente", "cobrar"])
+    ingreso_haber = list(policy.get("ingreso_haber_terms") or ["venta", "ingreso"])
+    egreso_debe = list(policy.get("egreso_debe_terms") or ["gasto", "costo", "compra", "inventario"])
+    egreso_haber = list(policy.get("egreso_haber_terms") or ["caja", "banco", "proveedor", "pagar"])
+
+    debit_terms: list[str] = []
+    credit_terms: list[str] = []
+    concept = (description or "").strip()
+
+    if code == "INGRESO":
+        if any(k in text for k in ["credito", "cxc", "por cobrar", "cliente"]):
+            debit_terms = ["cliente", "cobrar", *ingreso_debe]
+            concept = concept or "Ingreso a credito"
+        else:
+            debit_terms = ["caja", "banco", *ingreso_debe]
+            concept = concept or "Ingreso de contado"
+        credit_terms = [*ingreso_haber, "venta", "ingreso"]
+    elif code == "EGRESO":
+        if any(k in text for k in ["inventario", "compra", "mercaderia", "proveedor"]):
+            debit_terms = ["inventario", "compra", *egreso_debe]
+            if any(k in text for k in ["credito", "cxp", "por pagar", "proveedor"]):
+                credit_terms = ["proveedor", "pagar", *egreso_haber]
+            else:
+                credit_terms = ["caja", "banco", *egreso_haber]
+            concept = concept or "Compra / egreso de inventario"
+        elif any(k in text for k in ["planilla", "nomina", "salario"]):
+            debit_terms = ["gasto", "planilla", "administracion", *egreso_debe]
+            credit_terms = ["caja", "banco", *egreso_haber]
+            concept = concept or "Pago de planilla"
+        else:
+            debit_terms = ["gasto", "administracion", "operacion", *egreso_debe]
+            credit_terms = ["caja", "banco", *egreso_haber]
+            concept = concept or "Egreso operativo"
+    else:
+        if any(k in text for k in ["depreciacion", "amortizacion"]):
+            debit_terms = ["gasto", "depreciacion", "amortizacion", *egreso_debe]
+            credit_terms = ["depreciacion", "acumulada", "activo", "ajuste"]
+            concept = concept or "Ajuste por depreciacion/amortizacion"
+        elif any(k in text for k in ["ajuste", "inventario", "merma"]):
+            debit_terms = ["gasto", "costo", "ajuste", "inventario"]
+            credit_terms = ["inventario", "ajuste", "costo", "ingreso"]
+            concept = concept or "Ajuste contable"
+        else:
+            debit_terms = ["gasto", "inventario", "cliente", "caja"]
+            credit_terms = ["ingreso", "venta", "proveedor", "banco"]
+            concept = concept or f"Asiento sugerido para {voucher_type.nombre}"
+
+    return {
+        "debit_terms": debit_terms,
+        "credit_terms": credit_terms,
+        "concept": concept,
+    }
+
+
 def _validate_accounting_entry_policy(
     voucher_type: AccountingVoucherType,
     line_payloads: list[dict],
@@ -2549,6 +2606,98 @@ def accounting_accounts_search(
                 }
                 for r in rows
             ]
+        }
+    )
+
+
+@router.get("/accounting/entries/assist")
+def accounting_entries_assist(
+    request: Request,
+    tipo_id: int,
+    descripcion: str = "",
+    monto: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    voucher_type = (
+        db.query(AccountingVoucherType)
+        .filter(AccountingVoucherType.id == tipo_id, AccountingVoucherType.activo.is_(True))
+        .first()
+    )
+    if not voucher_type:
+        return JSONResponse({"ok": False, "message": "Tipo de comprobante invalido"}, status_code=400)
+
+    policy = _get_accounting_policy(db)
+    active_accounts = (
+        db.query(CuentaContable)
+        .filter(CuentaContable.activo.is_(True))
+        .order_by(CuentaContable.codigo)
+        .all()
+    )
+    template = _build_voucher_template(voucher_type, active_accounts, policy)
+    smart = _smart_entry_terms(voucher_type, descripcion, policy)
+
+    debit_id = _find_account_by_terms(active_accounts, smart["debit_terms"], "DEBE")
+    if not debit_id:
+        debit_id = _find_account_by_terms(active_accounts, smart["debit_terms"])
+    credit_id = _find_account_by_terms(active_accounts, smart["credit_terms"], "HABER")
+    if not credit_id:
+        credit_id = _find_account_by_terms(active_accounts, smart["credit_terms"])
+
+    if not debit_id:
+        debit_id = int(template.get("debit_account_id") or 0) or None
+    if not credit_id:
+        credit_id = int(template.get("credit_account_id") or 0) or None
+
+    # Si por heuristica quedaron iguales, fuerza contrapartida historica.
+    if debit_id and credit_id and debit_id == credit_id:
+        selected = next((acc for acc in active_accounts if int(acc.id) == int(debit_id)), None)
+        suggested_counter = _suggest_counter_account_id(db, selected, active_accounts) if selected else None
+        if suggested_counter:
+            credit_id = int(suggested_counter)
+
+    if not debit_id or not credit_id:
+        return JSONResponse(
+            {
+                "ok": False,
+                "message": "No pude inferir cuentas. Revisa politicas o catalogo contable.",
+                "debit_terms": smart["debit_terms"],
+                "credit_terms": smart["credit_terms"],
+            },
+            status_code=400,
+        )
+
+    amount = Decimal("1.00")
+    if (monto or "").strip():
+        try:
+            amount = to_decimal((monto or "").replace(",", ".")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if amount <= 0:
+                amount = Decimal("1.00")
+        except (InvalidOperation, ValueError):
+            amount = Decimal("1.00")
+
+    debit_acc = next((acc for acc in active_accounts if int(acc.id) == int(debit_id)), None)
+    credit_acc = next((acc for acc in active_accounts if int(acc.id) == int(credit_id)), None)
+    return JSONResponse(
+        {
+            "ok": True,
+            "concept": smart["concept"],
+            "amount": float(amount),
+            "debit_terms": smart["debit_terms"],
+            "credit_terms": smart["credit_terms"],
+            "debit_account": {
+                "id": int(debit_acc.id),
+                "codigo": debit_acc.codigo,
+                "nombre": debit_acc.nombre,
+                "naturaleza": debit_acc.naturaleza,
+            } if debit_acc else None,
+            "credit_account": {
+                "id": int(credit_acc.id),
+                "codigo": credit_acc.codigo,
+                "nombre": credit_acc.nombre,
+                "naturaleza": credit_acc.naturaleza,
+            } if credit_acc else None,
         }
     )
 
@@ -3008,6 +3157,8 @@ def inventory_ingresos_page(
 
     start_date = _parse_date(request.query_params.get("start_date"))
     end_date = _parse_date(request.query_params.get("end_date"))
+    selected_product_id_raw = (request.query_params.get("product_id") or "").strip()
+    selected_product_id = int(selected_product_id_raw) if selected_product_id_raw.isdigit() else None
     if not start_date and not end_date:
         end_date = local_today()
         start_date = end_date - timedelta(days=30)
@@ -3016,6 +3167,10 @@ def inventory_ingresos_page(
         ingresos_query = ingresos_query.filter(IngresoInventario.fecha >= start_date)
     if end_date:
         ingresos_query = ingresos_query.filter(IngresoInventario.fecha <= end_date)
+    if selected_product_id:
+        ingresos_query = ingresos_query.filter(
+            IngresoInventario.items.any(IngresoItem.producto_id == selected_product_id)
+        )
     ingresos = (
         ingresos_query.order_by(IngresoInventario.fecha.desc(), IngresoInventario.id.desc())
         .all()
@@ -3077,6 +3232,7 @@ def inventory_ingresos_page(
             "error": error,
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
+            "selected_product_id": selected_product_id,
             "success": success,
             "print_id": print_id,
             "inventory_cs_only": inventory_cs_only,
@@ -3104,6 +3260,8 @@ def inventory_egresos_page(
 
     start_date = _parse_date(request.query_params.get("start_date"))
     end_date = _parse_date(request.query_params.get("end_date"))
+    selected_product_id_raw = (request.query_params.get("product_id") or "").strip()
+    selected_product_id = int(selected_product_id_raw) if selected_product_id_raw.isdigit() else None
     if not start_date and not end_date:
         end_date = local_today()
         start_date = end_date - timedelta(days=30)
@@ -3112,6 +3270,10 @@ def inventory_egresos_page(
         egresos_query = egresos_query.filter(EgresoInventario.fecha >= start_date)
     if end_date:
         egresos_query = egresos_query.filter(EgresoInventario.fecha <= end_date)
+    if selected_product_id:
+        egresos_query = egresos_query.filter(
+            EgresoInventario.items.any(EgresoItem.producto_id == selected_product_id)
+        )
     egresos = (
         egresos_query.order_by(EgresoInventario.fecha.desc(), EgresoInventario.id.desc())
         .all()
@@ -3158,6 +3320,7 @@ def inventory_egresos_page(
             "error": error,
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
+            "selected_product_id": selected_product_id,
             "success": success,
             "print_id": print_id,
             "inventory_cs_only": inventory_cs_only,

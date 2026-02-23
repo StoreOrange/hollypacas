@@ -72,6 +72,7 @@
           <div class="d-flex align-items-center justify-content-between mt-3 mb-2">
             <div class="odoo-section-title mb-0">Detalle contable</div>
             <div class="d-flex gap-2">
+              <input class="form-control form-control-sm" id="smartAmount" type="number" min="0.01" step="0.01" value="1.00" style="max-width: 120px;" title="Monto base para autollenado" />
               <select class="form-select form-select-sm" id="presetSelect" style="max-width: 220px;">
                 <option value="">Preset transaccional...</option>
                 <option value="sale_cash">Venta contado</option>
@@ -79,6 +80,9 @@
                 <option value="purchase_inventory">Compra inventario</option>
                 <option value="expense_cash">Gasto contado</option>
               </select>
+              <button class="btn btn-sm btn-outline-primary" type="button" id="btnSmartAssist">
+                <i class="bi bi-stars"></i> Autollenado inteligente
+              </button>
               <button class="btn btn-sm btn-outline-secondary" type="button" id="btnApplyPreset">
                 <i class="bi bi-lightning-charge"></i> Aplicar preset
               </button>
@@ -237,6 +241,8 @@
     const linesBody = document.getElementById("linesBody");
     const template = document.getElementById("lineTemplate");
     const addBtn = document.getElementById("btnAddLine");
+    const smartAssistBtn = document.getElementById("btnSmartAssist");
+    const smartAmountInput = document.getElementById("smartAmount");
     const applyPresetBtn = document.getElementById("btnApplyPreset");
     const presetSelect = document.getElementById("presetSelect");
     const applyTemplateBtn = document.getElementById("btnApplyTemplate");
@@ -626,6 +632,59 @@
       refreshAssistant(rows[0]);
     }
 
+    async function applySmartAssist() {
+      const tipoId = voucherTypeSelect?.value;
+      const descInput = document.querySelector('input[name="descripcion"]');
+      const descripcion = (descInput?.value || "").trim();
+      const montoBase = parseAmount(smartAmountInput?.value || "0");
+      if (!tipoId) {
+        alert("Selecciona el tipo de comprobante.");
+        return;
+      }
+      if (montoBase <= 0) {
+        alert("Ingresa un monto base valido mayor a 0.");
+        return;
+      }
+      try {
+        const params = new URLSearchParams({
+          tipo_id: String(tipoId),
+          descripcion,
+          monto: montoBase.toFixed(2),
+        });
+        const response = await fetch("/accounting/entries/assist?" + params.toString(), {
+          headers: { "x-requested-with": "fetch" },
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.ok) {
+          alert(payload?.message || "No pude autocompletar el comprobante.");
+          return;
+        }
+        if (!payload.debit_account || !payload.credit_account) {
+          alert("No se encontraron cuentas sugeridas.");
+          return;
+        }
+        clearLines();
+        addLine();
+        addLine();
+        const rows = Array.from(linesBody.querySelectorAll("tr"));
+        setAccount(rows[0], String(payload.debit_account.id));
+        setAccount(rows[1], String(payload.credit_account.id));
+        rows[0].querySelector(".line-detail").value = (payload.concept || "Asiento automatico") + " - Debe";
+        rows[1].querySelector(".line-detail").value = (payload.concept || "Asiento automatico") + " - Haber";
+        rows[0].querySelector(".line-debe").value = Number(payload.amount || montoBase).toFixed(2);
+        rows[0].querySelector(".line-haber").value = "0.00";
+        rows[1].querySelector(".line-debe").value = "0.00";
+        rows[1].querySelector(".line-haber").value = Number(payload.amount || montoBase).toFixed(2);
+        if (descInput && !descInput.value.trim()) {
+          descInput.value = payload.concept || "";
+        }
+        calculateTotals();
+        refreshAssistant(rows[0]);
+      } catch (_e) {
+        alert("No se pudo conectar con el asistente inteligente.");
+      }
+    }
+
     function bindRowEvents(row) {
       const accountSearch = row.querySelector(".line-account-search");
       const debeInput = row.querySelector(".line-debe");
@@ -774,6 +833,7 @@
     }
 
     addBtn.addEventListener("click", addLine);
+    smartAssistBtn?.addEventListener("click", applySmartAssist);
     applyPresetBtn.addEventListener("click", applyPreset);
     applyTemplateBtn.addEventListener("click", applyVoucherTemplate);
     autoBtn.addEventListener("click", applySmartCounterpart);

@@ -811,17 +811,26 @@
     <div class="odoo-section-title">Ingresos registrados</div>
     <div class="d-flex flex-wrap align-items-center gap-3 text-sm text-slate">
       <form class="d-flex flex-wrap align-items-center gap-2" method="get" action="/inventory/ingresos">
+        <input type="hidden" name="view" value="list" />
         <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
           <span class="input-group-text bg-white border-0"><i class="bi bi-calendar-range text-brand"></i></span>
           <input name="start_date" type="date" class="form-control border-0" value="{{ start_date }}" />
           <span class="input-group-text bg-white border-0">a</span>
           <input name="end_date" type="date" class="form-control border-0" value="{{ end_date }}" />
         </div>
+        <select name="product_id" class="form-select form-select-sm" style="min-width: 220px;">
+          <option value="">Todos los productos</option>
+          {% for producto in productos %}
+          <option value="{{ producto.id }}" {% if selected_product_id == producto.id %}selected{% endif %}>
+            {{ producto.cod_producto }} - {{ producto.descripcion }}
+          </option>
+          {% endfor %}
+        </select>
         <button class="btn btn-outline-secondary btn-sm" type="submit">
           <i class="bi bi-search"></i>
           Filtrar
         </button>
-        <a class="btn btn-outline-secondary btn-sm" href="/inventory/ingresos">
+        <a class="btn btn-outline-secondary btn-sm" href="/inventory/ingresos?view=list">
           <i class="bi bi-eraser"></i>
           Ultimos 30 dias
         </a>
@@ -1541,7 +1550,16 @@
   if (productSearch) {
     filterProductRows(productSearch.value || "");
   }
-  setIngresoView("form");
+  const params = new URLSearchParams(window.location.search || "");
+  const focusIngresoId = (params.get("focus_ingreso_id") || "").trim();
+  const focusProductoId = (params.get("focus_producto_id") || "").trim();
+  const forceListView = (params.get("view") || "").trim().toLowerCase() === "list";
+  const hasFilter = ["start_date", "end_date", "product_id"].some((key) => (params.get(key) || "").trim() !== "");
+  if (focusIngresoId || forceListView || hasFilter) {
+    setIngresoView("list");
+  } else {
+    setIngresoView("form");
+  }
 
   if (window.DataTable) {
     const ingresosTable = new DataTable("#ingresos-table", {
@@ -1604,9 +1622,6 @@
   }
   {% endif %}
 
-  const params = new URLSearchParams(window.location.search || "");
-  const focusIngresoId = (params.get("focus_ingreso_id") || "").trim();
-  const focusProductoId = (params.get("focus_producto_id") || "").trim();
   if (focusIngresoId) {
     setIngresoView("list");
     const targetRow = document.querySelector(`#ingresos-table tr[data-ingreso-id="${focusIngresoId}"]`);
