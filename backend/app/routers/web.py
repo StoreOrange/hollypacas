@@ -11176,7 +11176,7 @@ def data_create_vendedor(
     nombre = nombre.strip()
     if not nombre:
         return RedirectResponse("/data/vendedores?error=Nombre+requerido", status_code=303)
-    exists = db.query(Vendedor).filter(Vendedor.nombre == nombre).first()
+    exists = db.query(Vendedor).filter(func.lower(Vendedor.nombre) == nombre.lower()).first()
     if exists:
         return RedirectResponse("/data/vendedores?error=Vendedor+ya+existe", status_code=303)
     vendedor = Vendedor(nombre=nombre, telefono=telefono, activo=True)
@@ -11213,7 +11213,17 @@ def data_update_vendedor(
     vendedor = db.query(Vendedor).filter(Vendedor.id == item_id).first()
     if not vendedor:
         return RedirectResponse("/data/vendedores?error=Vendedor+no+existe", status_code=303)
-    vendedor.nombre = nombre.strip()
+    nombre = nombre.strip()
+    if not nombre:
+        return RedirectResponse("/data/vendedores?error=Nombre+requerido", status_code=303)
+    exists = (
+        db.query(Vendedor)
+        .filter(func.lower(Vendedor.nombre) == nombre.lower(), Vendedor.id != item_id)
+        .first()
+    )
+    if exists:
+        return RedirectResponse("/data/vendedores?error=Ya+existe+otro+vendedor+con+ese+nombre", status_code=303)
+    vendedor.nombre = nombre
     vendedor.telefono = telefono
     vendedor.activo = activo == "on"
     selected_ids = {int(b) for b in (bodega_ids or []) if str(b).strip()}
@@ -11230,6 +11240,24 @@ def data_update_vendedor(
         )
     db.commit()
     return RedirectResponse("/data/vendedores?success=Vendedor+actualizado", status_code=303)
+
+
+@router.post("/data/vendedores/{item_id}/toggle")
+def data_toggle_vendedor(
+    request: Request,
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    vendedor = db.query(Vendedor).filter(Vendedor.id == item_id).first()
+    if not vendedor:
+        return RedirectResponse("/data/vendedores?error=Vendedor+no+existe", status_code=303)
+    vendedor.activo = not bool(vendedor.activo)
+    db.commit()
+    if vendedor.activo:
+        return RedirectResponse("/data/vendedores?success=Vendedor+activado", status_code=303)
+    return RedirectResponse("/data/vendedores?success=Vendedor+desactivado", status_code=303)
 
 
 @router.get("/data/bancos")

@@ -114,7 +114,16 @@
                       <span class="odoo-pill {{ 'success' if item.activo else '' }}">{{ "Activo" if item.activo else "Inactivo" }}</span>
                     </td>
                     <td class="text-end">
-                      <a class="btn btn-sm btn-outline-secondary" href="/data/vendedores?edit_id={{ item.id }}">Editar</a>
+                      <div class="d-inline-flex gap-1">
+                        <a class="btn btn-sm btn-outline-secondary" href="/data/vendedores?edit_id={{ item.id }}">Editar</a>
+                        <form method="post" action="/data/vendedores/{{ item.id }}/toggle" onsubmit="return confirm('{{ 'Desactivar' if item.activo else 'Activar' }} vendedor {{ item.nombre }}?');">
+                          {% if item.activo %}
+                          <button type="submit" class="btn btn-sm btn-outline-warning">Desactivar</button>
+                          {% else %}
+                          <button type="submit" class="btn btn-sm btn-outline-success">Activar</button>
+                          {% endif %}
+                        </form>
+                      </div>
                     </td>
                   </tr>
                   {% endfor %}
