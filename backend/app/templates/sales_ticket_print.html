@@ -118,9 +118,26 @@
           dynamicStyle.textContent = `@page { size: 80mm ${dynamicPageMm}mm; margin: 2mm; }`;
           document.head.appendChild(dynamicStyle);
         }
-        const exitToReturn = () => {
+        let printed = 0;
+        let printing = false;
+
+        const triggerPrint = () => {
+          if (exited || printing) return;
+          if (printed >= copies) return;
+          printing = true;
+          window.print();
+        };
+
+        const finishFlow = () => {
           if (exited) return;
           exited = true;
+          if (window.opener && !window.opener.closed) {
+            try {
+              window.opener.location.href = returnTo;
+            } catch (_) {
+              // noop
+            }
+          }
           window.close();
           setTimeout(() => {
             if (!window.closed) {
@@ -129,56 +146,25 @@
           }, 180);
         };
 
-        let remaining = copies;
-        let waitingNextCopy = false;
-        const helper = document.createElement("div");
-        helper.style.position = "fixed";
-        helper.style.left = "50%";
-        helper.style.bottom = "16px";
-        helper.style.transform = "translateX(-50%)";
-        helper.style.background = "#111827";
-        helper.style.color = "#fff";
-        helper.style.padding = "8px 12px";
-        helper.style.borderRadius = "8px";
-        helper.style.fontSize = "12px";
-        helper.style.zIndex = "9999";
-        helper.style.display = "none";
-        document.body.appendChild(helper);
-
-        const showHelper = (text) => {
-          helper.textContent = text;
-          helper.style.display = "block";
-        };
-
-        const hideHelper = () => {
-          helper.style.display = "none";
-        };
-
-        const triggerPrint = () => window.print();
         window.addEventListener("afterprint", () => {
           if (exited) return;
-          remaining -= 1;
-          if (remaining > 0) {
-            waitingNextCopy = true;
-            showHelper(`Copia enviada. Presiona Enter para imprimir la siguiente (${remaining} pendiente).`);
+          if (!printing) return;
+          printing = false;
+          printed += 1;
+          if (printed < copies) {
+            setTimeout(() => triggerPrint(), 280);
           } else {
-            exitToReturn();
+            finishFlow();
           }
         });
-        window.addEventListener("keydown", (event) => {
-          if (exited) return;
-          if (event.key === "Enter" && waitingNextCopy) {
-            event.preventDefault();
-            waitingNextCopy = false;
-            hideHelper();
-            setTimeout(() => triggerPrint(), 120);
-            return;
+
+        // Fallback por si el navegador no dispara afterprint consistentemente.
+        setTimeout(() => {
+          if (!exited && printed >= copies) {
+            finishFlow();
           }
-          if (event.key === "Escape") {
-            event.preventDefault();
-            exitToReturn();
-          }
-        });
+        }, 30000);
+
         setTimeout(() => triggerPrint(), 420);
       });
     </script>
