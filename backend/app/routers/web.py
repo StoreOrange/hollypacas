@@ -18471,6 +18471,9 @@ def sales_cobranza(
             end_date = date.fromisoformat(end_raw)
         except ValueError:
             end_date = None
+    if not start_date and not end_date:
+        start_date = local_today()
+        end_date = start_date
 
     db_name = _current_db_name()
     active_company_key = (get_active_company_key() or "").strip().lower()
@@ -18706,6 +18709,9 @@ def sales_cobranza_export(
             end_date = date.fromisoformat(end_raw)
         except ValueError:
             end_date = None
+    if not start_date and not end_date:
+        start_date = local_today()
+        end_date = start_date
 
     db_name = _current_db_name()
     active_company_key = (get_active_company_key() or "").strip().lower()
