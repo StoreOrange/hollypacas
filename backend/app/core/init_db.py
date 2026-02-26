@@ -914,6 +914,10 @@ def init_db() -> None:
         if "numero" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE cobranza_abonos ADD COLUMN numero VARCHAR(20)"))
+        if "tipo_mov" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE cobranza_abonos ADD COLUMN tipo_mov VARCHAR(20) DEFAULT 'ABONO'"))
+                conn.execute(text("UPDATE cobranza_abonos SET tipo_mov = 'ABONO' WHERE tipo_mov IS NULL OR tipo_mov = ''"))
     if "recibos_rubros" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("recibos_rubros")}
         if "cuenta_id" not in columns:
