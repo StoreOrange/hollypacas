@@ -15,7 +15,7 @@
               </ol>
             </nav>
             <div class="odoo-title mt-2 text-xl">Reporte Kardex por producto</div>
-            <div class="odoo-subtitle mt-1 text-sm">Movimientos completos de entradas, salidas y ventas.</div>
+            <div class="odoo-subtitle mt-1 text-sm">Movimientos completos de inventario con entradas, salidas y saldo acumulado.</div>
           </div>
           <div class="d-flex flex-wrap align-items-center gap-2">
             <div class="odoo-pill primary">
@@ -105,7 +105,8 @@
                 <th>Concepto</th>
                 <th>Sucursal / Bodega</th>
                 <th>Producto</th>
-                <th class="text-end">Cantidad</th>
+                <th class="text-end">Entradas</th>
+                <th class="text-end">Salidas</th>
                 <th class="text-end">Saldo</th>
                 <th class="text-end">Costo Unit</th>
                 <th class="text-end">Costo Total</th>
@@ -126,7 +127,8 @@
                 <td>{{ row.concepto or "-" }}</td>
                 <td>{{ row.branch }} / {{ row.bodega }}</td>
                 <td>{{ row.codigo }} - {{ row.descripcion }}</td>
-                <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.entrada or 0) }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.salida or 0) }}</td>
                 <td class="text-end">{{ "%.2f"|format(row.saldo or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.costo_unit_cs or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.costo_total_cs or 0) }}</td>
@@ -135,7 +137,7 @@
               {% endfor %}
               {% if rows|length == 0 %}
               <tr>
-                <td colspan="10" class="text-center text-slate py-3">Sin resultados.</td>
+                <td colspan="11" class="text-center text-slate py-3">Sin resultados.</td>
               </tr>
               {% endif %}
             </tbody>

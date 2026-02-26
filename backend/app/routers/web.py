@@ -6523,11 +6523,6 @@ def sales_preventas_notifications_poll(
         query = query.filter(Preventa.branch_id == branch.id)
     query = query.order_by(Preventa.id.asc()).limit(20)
 
-    active_company_key = (get_active_company_key() or "").strip().lower()
-    is_amajo_mode = "amajo" in active_company_key
-    show_item_code = not is_amajo_mode
-    show_item_subtotal = is_amajo_mode
-
     items = []
     for row in query.all():
         items.append(
@@ -11582,13 +11577,18 @@ def _build_kardex_movements(
     for mov in movimientos:
         key = (mov["producto_id"], mov["bodega"])
         saldo = saldos.get(key, Decimal("0"))
-        saldo += mov["cantidad"]
+        cantidad_mov = Decimal(str(mov.get("cantidad") or 0))
+        entrada = cantidad_mov if cantidad_mov > 0 else Decimal("0")
+        salida = abs(cantidad_mov) if cantidad_mov < 0 else Decimal("0")
+        saldo += cantidad_mov
         saldos[key] = saldo
         costo_unit_cs = mov["costo_unit_cs"]
         costo_unit_usd = mov["costo_unit_usd"]
         rows.append(
             {
                 **mov,
+                "entrada": entrada,
+                "salida": salida,
                 "saldo": saldo,
                 "costo_total_cs": saldo * costo_unit_cs,
                 "costo_total_usd": saldo * costo_unit_usd,
@@ -12556,10 +12556,11 @@ def report_kardex_export(
     c.drawString(70, y, "Tipo")
     c.drawString(116, y, "Sucursal/Bodega")
     c.drawString(196, y, "Producto")
-    c.drawRightString(252, y, "Cant")
-    c.drawRightString(284, y, "Saldo")
-    c.drawRightString(336, y, "C.Unit")
-    c.drawRightString(388, y, "C.Total")
+    c.drawRightString(252, y, "Entr.")
+    c.drawRightString(284, y, "Sal.")
+    c.drawRightString(316, y, "Saldo")
+    c.drawRightString(352, y, "C.Unit")
+    c.drawRightString(404, y, "C.Total")
     c.drawString(392, y, "Vendedor")
     y -= 12
     c.setFont("Times-Roman", 8)
@@ -12576,10 +12577,11 @@ def report_kardex_export(
         c.drawString(70, y, tipo_text[:18])
         c.drawString(116, y, sucursal_text[:16])
         c.drawString(196, y, prod_text)
-        c.drawRightString(252, y, f"{row['cantidad']:.2f}")
-        c.drawRightString(284, y, f"{row['saldo']:.2f}")
-        c.drawRightString(336, y, f"{row['costo_unit_cs']:.2f}")
-        c.drawRightString(388, y, f"{row['costo_total_cs']:.2f}")
+        c.drawRightString(252, y, f"{float(row.get('entrada') or 0):.2f}")
+        c.drawRightString(284, y, f"{float(row.get('salida') or 0):.2f}")
+        c.drawRightString(316, y, f"{row['saldo']:.2f}")
+        c.drawRightString(352, y, f"{row['costo_unit_cs']:.2f}")
+        c.drawRightString(404, y, f"{row['costo_total_cs']:.2f}")
         c.drawString(392, y, (row.get("vendedor") or "-")[:10])
         y -= 12
 
@@ -16431,6 +16433,11 @@ def sales_ticket_print(
     def format_amount(value: float) -> str:
         return f"{value:,.2f}"
 
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    is_amajo_mode = "amajo" in active_company_key
+    show_item_code = not is_amajo_mode
+    show_item_subtotal = True
+
     items = []
     total_unidades = 0.0
     line_count = 0
@@ -16477,7 +16484,7 @@ def sales_ticket_print(
         )
 
     pagos_render = []
-    line_count += 3  # total unds + subtotal + total
+    line_count += 4  # total unds + subtotal + descuentos + total
     for pago in pagos:
         forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
         banco = pago.banco.nombre if pago.banco else ""
@@ -16526,7 +16533,7 @@ def sales_ticket_print(
             "format_amount": format_amount,
             "copies": copies,
             "page_height_mm": page_height_mm,
-            "compact_ticket": _is_shoes_mode(),
+            "compact_ticket": is_amajo_mode,
             "show_item_code": show_item_code,
             "show_item_subtotal": show_item_subtotal,
             "version": settings.UI_VERSION,
@@ -18448,9 +18455,9 @@ def sales_cobranza(
     producto_q = (request.query_params.get("producto") or "").strip()
     vendedor_q = (request.query_params.get("vendedor_id") or "").strip()
     cliente_q = (request.query_params.get("cliente") or "").strip()
-    estado_q = (request.query_params.get("estado") or "PENDIENTE").strip().upper()
+    estado_q = (request.query_params.get("estado") or "TODAS").strip().upper()
     if estado_q not in {"PENDIENTE", "PAGADA", "TODAS"}:
-        estado_q = "PENDIENTE"
+        estado_q = "TODAS"
 
     start_date = None
     end_date = None
@@ -18465,9 +18472,13 @@ def sales_cobranza(
         except ValueError:
             end_date = None
 
+    scoped_bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
+    scoped_bodega_ids = [int(b.id) for b in scoped_bodegas]
     _, bodega = _resolve_branch_bodega(db, user)
     ventas_query = db.query(VentaFactura).filter(VentaFactura.condicion_venta == "CREDITO")
-    if bodega:
+    if scoped_bodega_ids:
+        ventas_query = ventas_query.filter(VentaFactura.bodega_id.in_(scoped_bodega_ids))
+    elif bodega:
         ventas_query = ventas_query.filter(VentaFactura.bodega_id == bodega.id)
     if start_date:
         ventas_query = ventas_query.filter(VentaFactura.fecha >= start_date)
@@ -18550,7 +18561,8 @@ def sales_cobranza(
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
-    vendedores = _vendedores_for_bodega(db, bodega)
+    default_bodega = bodega if len(scoped_bodega_ids) == 1 else None
+    vendedores = _vendedores_for_bodega(db, default_bodega)
     clientes = (
         db.query(Cliente)
         .filter(Cliente.activo.is_(True))
@@ -18586,7 +18598,9 @@ def sales_cobranza(
             VentaFactura.condicion_venta == "CREDITO",
             VentaFactura.cliente_id == selected_cliente.id,
         )
-        if bodega:
+        if scoped_bodega_ids:
+            estado_query = estado_query.filter(VentaFactura.bodega_id.in_(scoped_bodega_ids))
+        elif bodega:
             estado_query = estado_query.filter(VentaFactura.bodega_id == bodega.id)
         estado_facturas = estado_query.order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc()).all()
         for factura in estado_facturas:
@@ -18644,7 +18658,7 @@ def sales_cobranza(
                 "abonado_usd": float(cliente_totals["abonado_usd"]),
                 "saldo_usd": float(cliente_totals["saldo_usd"]),
             },
-            "default_vendedor_id": _default_vendedor_id(db, bodega),
+            "default_vendedor_id": _default_vendedor_id(db, default_bodega),
             "total_saldo_cs": float(total_saldo_cs),
             "total_saldo_usd": float(total_saldo_usd),
             "total_pacas": float(total_pacas),
@@ -18668,9 +18682,9 @@ def sales_cobranza_export(
     producto_q = (request.query_params.get("producto") or "").strip()
     vendedor_q = (request.query_params.get("vendedor_id") or "").strip()
     cliente_q = (request.query_params.get("cliente") or "").strip()
-    estado_q = (request.query_params.get("estado") or "PENDIENTE").strip().upper()
+    estado_q = (request.query_params.get("estado") or "TODAS").strip().upper()
     if estado_q not in {"PENDIENTE", "PAGADA", "TODAS"}:
-        estado_q = "PENDIENTE"
+        estado_q = "TODAS"
     start_date = None
     end_date = None
     if start_raw:
@@ -18684,9 +18698,13 @@ def sales_cobranza_export(
         except ValueError:
             end_date = None
 
+    scoped_bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
+    scoped_bodega_ids = [int(b.id) for b in scoped_bodegas]
     _, bodega = _resolve_branch_bodega(db, user)
     ventas_query = db.query(VentaFactura).filter(VentaFactura.condicion_venta == "CREDITO")
-    if bodega:
+    if scoped_bodega_ids:
+        ventas_query = ventas_query.filter(VentaFactura.bodega_id.in_(scoped_bodega_ids))
+    elif bodega:
         ventas_query = ventas_query.filter(VentaFactura.bodega_id == bodega.id)
     if start_date:
         ventas_query = ventas_query.filter(VentaFactura.fecha >= start_date)
@@ -18789,8 +18807,10 @@ def sales_cobranza_export(
     c.drawString(150, y - 8, "Informe de Cuentas por Cobrar")
     y -= 35
     c.setFont("Times-Roman", 10)
-    branch_name = "-"
-    if bodega and bodega.branch:
+    branch_name = "Todas"
+    if len(scoped_bodegas) == 1 and scoped_bodegas[0].branch:
+        branch_name = scoped_bodegas[0].branch.name
+    elif not scoped_bodegas and bodega and bodega.branch:
         branch_name = bodega.branch.name
     c.drawString(40, y, f"Sucursal: {branch_name}")
     y -= 14
