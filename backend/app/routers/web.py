@@ -1153,8 +1153,8 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
         or ("amajo" in db_name) or ("comestibles" in db_name)
     )
     show_item_code = not is_amajo_mode
-    title_size = 10 if is_amajo_mode else 10
-    normal_size = 9 if is_amajo_mode else 9
+    title_size = 10.5 if is_amajo_mode else 10
+    normal_size = 9.5 if is_amajo_mode else 9
 
     lines: list[tuple[str, str, bool, int]] = []
 
