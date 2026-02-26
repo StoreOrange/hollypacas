@@ -78,7 +78,7 @@
           <div class="item-desc">{{ item.descripcion }}</div>
           <div class="row small">
             <span>Cant: {{ "%.2f"|format(item.cantidad) }}</span>
-            {% if show_item_subtotal %}
+            {% if show_item_subtotal or (show_item_subtotal_if_multi_qty and item.cantidad >= 2) %}
             <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }} | Subtotal: {{ currency_label }} {{ format_amount(item.subtotal) }}</span>
             {% else %}
             <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }}</span>

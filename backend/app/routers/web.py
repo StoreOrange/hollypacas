@@ -16435,8 +16435,10 @@ def sales_ticket_print(
 
     active_company_key = (get_active_company_key() or "").strip().lower()
     is_amajo_mode = "amajo" in active_company_key
+    is_hollpacas_mode = ("hollpacas" in active_company_key) or ("hollywoodpacas" in active_company_key)
     show_item_code = not is_amajo_mode
     show_item_subtotal = is_amajo_mode
+    show_item_subtotal_if_multi_qty = is_hollpacas_mode
 
     items = []
     total_unidades = 0.0
@@ -16536,6 +16538,7 @@ def sales_ticket_print(
             "compact_ticket": is_amajo_mode,
             "show_item_code": show_item_code,
             "show_item_subtotal": show_item_subtotal,
+            "show_item_subtotal_if_multi_qty": show_item_subtotal_if_multi_qty,
             "version": settings.UI_VERSION,
         },
     )
