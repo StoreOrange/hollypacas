@@ -1146,19 +1146,28 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
         for pago in pagos
     )
     saldo = total_paid - total_amount
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    db_name = _current_db_name().strip().lower()
+    is_amajo_mode = (
+        ("amajo" in active_company_key) or ("comestibles" in active_company_key)
+        or ("amajo" in db_name) or ("comestibles" in db_name)
+    )
+    show_item_code = not is_amajo_mode
+    title_size = 10 if is_amajo_mode else 10
+    normal_size = 9 if is_amajo_mode else 9
 
     lines: list[tuple[str, str, bool, int]] = []
 
     def add_line(text: str, align: str = "left", bold: bool = False, size: int = 8):
         lines.append((text, align, bold, size))
 
-    add_line(company_name.upper(), "center", True, 10)
+    add_line(company_name.upper(), "center", True, title_size)
     add_line(f"RUC: {ruc}", "center")
     add_line(f"Tel: {telefono}", "center")
     direccion_lines = wrap_text(direccion, 32)[:2]
     for line in direccion_lines:
         add_line(line, "center")
-    add_line(f"Sucursal: {sucursal}", "center", True, 9)
+    add_line(f"Sucursal: {sucursal}", "center", True, normal_size)
     add_line("-" * 32, "center")
     add_line(f"Factura: {factura.numero}", "left", True)
     add_line(f"Tipo: {(factura.condicion_venta or 'CONTADO').upper()}", "left", True)
@@ -1168,7 +1177,7 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     add_line(f"Vendedor: {vendedor}")
     add_line("-" * 32, "center")
 
-    max_desc = 32
+    max_desc = 34 if is_amajo_mode else 32
     total_unidades = 0.0
     for item in factura.items:
         codigo = item.producto.cod_producto if item.producto else "-"
@@ -1194,25 +1203,28 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
             else float(item.subtotal_usd or 0)
         )
         total_unidades += qty
-        add_line(f"Codigo: {codigo}{combo_label}", "left", True, 9)
+        if show_item_code:
+            add_line(f"Codigo: {codigo}{combo_label}", "left", True, normal_size)
+        elif combo_label:
+            add_line(combo_label.strip(), "left", True, normal_size)
         for part in wrap_text(descripcion, max_desc):
-            add_line(part, "left", False, 9)
+            add_line(part, "left", False, normal_size)
         add_line(
             f"Cant: {format_qty(qty)}  Precio: {currency_label} {format_amount(price)}  Subtotal: {currency_label} {format_amount(subtotal)}",
             "left",
             False,
-            9,
+            normal_size,
         )
         add_line("-" * 32, "center")
 
-    add_line(f"Total unds: {format_qty(total_unidades)}", "left", True, 9)
-    add_line(f"Subtotal: {currency_label} {format_amount(subtotal_amount)}", "right", True, 9)
-    add_line(f"Descuentos: {currency_label} 0.00", "right", False, 9)
-    add_line(f"Total: {currency_label} {format_amount(total_amount)}", "right", True, 10)
+    add_line(f"Total unds: {format_qty(total_unidades)}", "left", True, normal_size)
+    add_line(f"Subtotal: {currency_label} {format_amount(subtotal_amount)}", "right", True, normal_size)
+    add_line(f"Descuentos: {currency_label} 0.00", "right", False, normal_size)
+    add_line(f"Total: {currency_label} {format_amount(total_amount)}", "right", True, title_size)
 
     if pagos:
         add_line("-" * 32, "center")
-        add_line("Pagos aplicados", "left", True, 9)
+        add_line("Pagos aplicados", "left", True, normal_size)
         for pago in pagos:
             forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
             banco = pago.banco.nombre if pago.banco else ""
@@ -1222,18 +1234,18 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
                 if moneda == "CS"
                 else float(pago.monto_usd or 0)
             )
-            add_line(f"{label}: {currency_label} {format_amount(monto)}", "left", False, 9)
+            add_line(f"{label}: {currency_label} {format_amount(monto)}", "left", False, normal_size)
 
     if saldo >= 0:
-        add_line(f"Vuelto: {currency_label} {format_amount(saldo)}", "left", True, 9)
+        add_line(f"Vuelto: {currency_label} {format_amount(saldo)}", "left", True, normal_size)
     else:
-        add_line(f"Saldo: {currency_label} {format_amount(abs(saldo))}", "left", True, 9)
+        add_line(f"Saldo: {currency_label} {format_amount(abs(saldo))}", "left", True, normal_size)
 
     add_line("")
-    add_line("Gracias por su compra", "center", True, 9)
-    add_line("Revise su mercaderia antes de salir.", "center", False, 9)
-    add_line("No se aceptan cambios ni devoluciones", "center", False, 9)
-    add_line("de mercaderia ni de dinero.", "center", False, 9)
+    add_line("Gracias por su compra", "center", True, normal_size)
+    add_line("Revise su mercaderia antes de salir.", "center", False, normal_size)
+    add_line("No se aceptan cambios ni devoluciones", "center", False, normal_size)
+    add_line("de mercaderia ni de dinero.", "center", False, normal_size)
 
     content_width = 70 * mm
     width = 80 * mm
@@ -16434,8 +16446,15 @@ def sales_ticket_print(
         return f"{value:,.2f}"
 
     active_company_key = (get_active_company_key() or "").strip().lower()
-    is_amajo_mode = "amajo" in active_company_key
-    is_hollpacas_mode = ("hollpacas" in active_company_key) or ("hollywoodpacas" in active_company_key)
+    db_name = _current_db_name().strip().lower()
+    is_amajo_mode = (
+        ("amajo" in active_company_key) or ("comestibles" in active_company_key)
+        or ("amajo" in db_name) or ("comestibles" in db_name)
+    )
+    is_hollpacas_mode = (
+        ("hollpacas" in active_company_key) or ("hollywoodpacas" in active_company_key)
+        or ("holl" in db_name) or ("pacas" in db_name)
+    )
     show_item_code = not is_amajo_mode
     show_item_subtotal = is_amajo_mode
     show_item_subtotal_if_multi_qty = is_hollpacas_mode
