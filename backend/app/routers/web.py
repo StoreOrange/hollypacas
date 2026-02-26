@@ -16436,7 +16436,7 @@ def sales_ticket_print(
     active_company_key = (get_active_company_key() or "").strip().lower()
     is_amajo_mode = "amajo" in active_company_key
     show_item_code = not is_amajo_mode
-    show_item_subtotal = True
+    show_item_subtotal = is_amajo_mode
 
     items = []
     total_unidades = 0.0
@@ -18472,10 +18472,14 @@ def sales_cobranza(
         except ValueError:
             end_date = None
 
+    db_name = _current_db_name()
+    include_all_facturas = ("holl" in db_name) or ("pacas" in db_name)
     scoped_bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     scoped_bodega_ids = [int(b.id) for b in scoped_bodegas]
     _, bodega = _resolve_branch_bodega(db, user)
-    ventas_query = db.query(VentaFactura).filter(VentaFactura.condicion_venta == "CREDITO")
+    ventas_query = db.query(VentaFactura)
+    if not include_all_facturas:
+        ventas_query = ventas_query.filter(VentaFactura.condicion_venta == "CREDITO")
     if scoped_bodega_ids:
         ventas_query = ventas_query.filter(VentaFactura.bodega_id.in_(scoped_bodega_ids))
     elif bodega:
@@ -18594,10 +18598,9 @@ def sales_cobranza(
                 .first()
             )
     if selected_cliente:
-        estado_query = db.query(VentaFactura).filter(
-            VentaFactura.condicion_venta == "CREDITO",
-            VentaFactura.cliente_id == selected_cliente.id,
-        )
+        estado_query = db.query(VentaFactura).filter(VentaFactura.cliente_id == selected_cliente.id)
+        if not include_all_facturas:
+            estado_query = estado_query.filter(VentaFactura.condicion_venta == "CREDITO")
         if scoped_bodega_ids:
             estado_query = estado_query.filter(VentaFactura.bodega_id.in_(scoped_bodega_ids))
         elif bodega:
@@ -18698,10 +18701,14 @@ def sales_cobranza_export(
         except ValueError:
             end_date = None
 
+    db_name = _current_db_name()
+    include_all_facturas = ("holl" in db_name) or ("pacas" in db_name)
     scoped_bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     scoped_bodega_ids = [int(b.id) for b in scoped_bodegas]
     _, bodega = _resolve_branch_bodega(db, user)
-    ventas_query = db.query(VentaFactura).filter(VentaFactura.condicion_venta == "CREDITO")
+    ventas_query = db.query(VentaFactura)
+    if not include_all_facturas:
+        ventas_query = ventas_query.filter(VentaFactura.condicion_venta == "CREDITO")
     if scoped_bodega_ids:
         ventas_query = ventas_query.filter(VentaFactura.bodega_id.in_(scoped_bodega_ids))
     elif bodega:
