@@ -66,7 +66,9 @@
       <div class="center bold">Sucursal: {{ sucursal }}</div>
       <div class="line"></div>
       <div class="row"><span class="bold">Factura:</span><span>{{ factura.numero }}</span></div>
+      {% if show_sale_type %}
       <div class="row"><span class="bold">Tipo:</span><span>{{ condicion_venta }}</span></div>
+      {% endif %}
       <div class="row"><span>Fecha:</span><span>{{ fecha_str }} {{ hora_str }}</span></div>
       <div class="row"><span>Cliente:</span><span>{{ cliente }}</span></div>
       <div class="row"><span>Identificacion R/C:</span><span>{{ cliente_id }}</span></div>

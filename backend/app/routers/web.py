@@ -1170,7 +1170,8 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     add_line(f"Sucursal: {sucursal}", "center", True, normal_size)
     add_line("-" * 32, "center")
     add_line(f"Factura: {factura.numero}", "left", True)
-    add_line(f"Tipo: {(factura.condicion_venta or 'CONTADO').upper()}", "left", True)
+    if not is_amajo_mode:
+        add_line(f"Tipo: {(factura.condicion_venta or 'CONTADO').upper()}", "left", True)
     add_line(f"Fecha: {fecha_str} {hora_str}".strip())
     add_line(f"Cliente: {cliente}")
     add_line(f"Identificacion R/C: {cliente_id}")
@@ -16468,7 +16469,8 @@ def sales_ticket_print(
     line_count += len(direccion_lines)
     line_count += 1  # sucursal
     line_count += 1  # divider
-    line_count += 6  # factura/tipo/fecha/cliente/id/vendedor
+    show_sale_type = not is_amajo_mode
+    line_count += 6 if show_sale_type else 5  # factura/tipo/fecha/cliente/id/vendedor
     line_count += 1  # divider
     for item in factura.items:
         qty = float(item.cantidad or 0)
@@ -16555,6 +16557,7 @@ def sales_ticket_print(
             "copies": copies,
             "page_height_mm": page_height_mm,
             "compact_ticket": is_amajo_mode,
+            "show_sale_type": show_sale_type,
             "show_item_code": show_item_code,
             "show_item_subtotal": show_item_subtotal,
             "show_item_subtotal_if_multi_qty": show_item_subtotal_if_multi_qty,
