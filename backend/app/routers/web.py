@@ -19017,6 +19017,9 @@ async def sales_cobranza_abono(
     moneda = (form.get("moneda") or "CS").upper()
     monto_raw = form.get("monto")
     observacion = (form.get("observacion") or "").strip()
+    return_to = (form.get("return_to") or "/sales/cobranza").strip()
+    if not return_to.startswith("/sales/cobranza"):
+        return_to = "/sales/cobranza"
     if not monto_raw:
         return JSONResponse({"ok": False, "message": "Monto requerido"}, status_code=400)
     if moneda not in {"CS", "USD"}:
@@ -19119,6 +19122,11 @@ async def sales_cobranza_abono(
         factura.estado_cobranza = "PAGADA" if total_paid_cs >= due_cs else "PENDIENTE"
 
     db.commit()
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    is_hollpacas_mode = ("hollpacas" in active_company_key) or ("hollywoodpacas" in active_company_key)
+    if is_hollpacas_mode:
+        return JSONResponse({"ok": True, "message": "Movimiento aplicado", "refresh_url": return_to})
+
     copies = 1
     if factura.bodega and factura.bodega.branch_id:
         pos_print = (
@@ -19132,7 +19140,7 @@ async def sales_cobranza_abono(
                 copies = max(int(configured), 1)
             except Exception:
                 copies = 1
-    print_url = f"/sales/cobranza/abono/{abono.id}/ticket/print?copies={copies}&return_to=/sales/cobranza"
+    print_url = f"/sales/cobranza/abono/{abono.id}/ticket/print?copies={copies}&return_to={quote_plus(return_to)}"
     return JSONResponse({"ok": True, "message": "Movimiento aplicado", "print_url": print_url})
 
 

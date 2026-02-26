@@ -748,7 +748,8 @@
       const moneda = document.getElementById("abono-moneda").value;
       const monto = parseMoneyValue(document.getElementById("abono-monto").value).toFixed(2);
       const observacion = document.getElementById("abono-observacion").value;
-      const body = new URLSearchParams({ tipo_mov: tipoMov, moneda, monto, observacion });
+      const returnTo = `${window.location.pathname}${window.location.search || ""}`;
+      const body = new URLSearchParams({ tipo_mov: tipoMov, moneda, monto, observacion, return_to: returnTo });
       const endpoint = abonoId
         ? `/sales/cobranza/${facturaId}/abono/${abonoId}`
         : `/sales/cobranza/${facturaId}/abono`;
@@ -763,6 +764,10 @@
         } else {
           window.open(payload.print_url, "_blank", "noopener");
         }
+        return;
+      }
+      if (payload.refresh_url) {
+        window.location.href = payload.refresh_url;
         return;
       }
       window.location.reload();
