@@ -1,0 +1,576 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .transfer-search-box {
+    border-color: #1e3a5f;
+    background: #f3f7fd;
+  }
+  .transfer-search-box .input-group-text {
+    background: #1e3a5f;
+    color: #fff;
+    border-color: #1e3a5f;
+  }
+  .transfer-search-box .form-control {
+    border-color: #1e3a5f;
+  }
+  .transfer-search-box .form-control:focus {
+    border-color: #16314f;
+    box-shadow: 0 0 0 .2rem rgba(30, 58, 95, .15);
+  }
+  .transfer-grid-sm {
+    font-size: 0.82rem;
+  }
+  .transfer-grid-sm thead th {
+    font-size: 0.75rem;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    color: #334155;
+  }
+  .transfer-grid-sm td,
+  .transfer-grid-sm th {
+    padding-top: .32rem;
+    padding-bottom: .32rem;
+  }
+</style>
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header mb-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div>
+            <button class="toggle-sidebar sidebar-toggle-show btn btn-sm btn-outline-secondary mb-2" type="button">
+              <i class="bi bi-layout-sidebar"></i>
+              Mostrar menu
+            </button>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Inventario</li>
+                <li class="breadcrumb-item active" aria-current="page">Traslados rapidos</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2">Traslados rapidos entre bodegas</div>
+            <div class="odoo-subtitle mt-1">Escaneo por codigo de variante y carga en grid para traslado inmediato.</div>
+          </div>
+          {% if rate_today %}
+          <span class="odoo-pill primary">Tasa: C$ {{ "%.4f"|format(rate_today.rate) }}</span>
+          {% endif %}
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/inventory/ingresos">Ingresos de inventario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/inventory/egresos">Egresos de inventario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/inventory/traslados-rapidos">Traslados rapidos</a>
+          </li>
+        </ul>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger py-2">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success py-2">{{ success }}</div>
+      {% endif %}
+
+      <div class="odoo-card mb-4">
+        <form id="quick-transfer-form" method="post" action="/inventory/egresos" class="row g-3">
+          <input type="hidden" name="redirect_to" value="/inventory/traslados-rapidos" />
+          <input type="hidden" name="tipo_id" value="{{ traslado_tipo_id }}" />
+          <input type="hidden" name="moneda" value="CS" />
+          <div class="col-12 col-md-2">
+            <label class="form-label">Fecha *</label>
+            <input id="fecha" type="date" name="fecha" class="form-control form-control-sm" required />
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label">Bodega origen *</label>
+            <select id="bodega-origen" name="bodega_id" class="form-select form-select-sm" required>
+              {% for b in bodegas %}
+              <option value="{{ b.id }}" {% if b.id == default_origen_id %}selected{% endif %}>{{ b.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label">Bodega destino *</label>
+            <select id="bodega-destino" name="bodega_destino_id" class="form-select form-select-sm" required>
+              {% for b in bodegas %}
+              <option value="{{ b.id }}" {% if b.id == default_destino_id %}selected{% endif %}>{{ b.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label">Observacion</label>
+            <input type="text" name="observacion" class="form-control form-control-sm" placeholder="Motivo o nota del traslado" />
+          </div>
+
+          <div class="col-12 col-lg-8">
+            <label class="form-label">Escanear codigo de barra variante</label>
+            <div class="input-group input-group-sm transfer-search-box">
+              <span class="input-group-text"><i class="bi bi-upc-scan"></i></span>
+              <input id="scan-input" type="text" class="form-control" placeholder="Escanea y presiona Enter" autocomplete="off" />
+              <button id="scan-add" class="btn btn-primary" type="button">Agregar</button>
+            </div>
+          </div>
+          <div class="col-12 col-lg-4 d-flex align-items-end">
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100" data-bs-toggle="modal" data-bs-target="#variant-search-modal">
+              <i class="bi bi-search me-1"></i> Buscar variante manual
+            </button>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Busqueda manual rapida (como ventas)</label>
+            <div class="input-group input-group-sm transfer-search-box">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input id="manual-search-input" type="text" class="form-control" placeholder="Escribe codigo, descripcion, color o talla y Enter" autocomplete="off" />
+            </div>
+            <div id="manual-search-status" class="form-text">Escribe para buscar variantes de forma manual.</div>
+            <div class="table-responsive mt-2">
+              <table class="table table-sm align-middle mb-0 transfer-grid-sm">
+                <thead>
+                  <tr>
+                    <th>Codigo</th>
+                    <th>Producto</th>
+                    <th>Color</th>
+                    <th>Talla</th>
+                    <th class="text-end">Exist.</th>
+                    <th class="text-end">Accion</th>
+                  </tr>
+                </thead>
+                <tbody id="manual-search-body">
+                  <tr><td colspan="6" class="text-center text-muted py-2">Sin busqueda.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle transfer-grid-sm">
+                <thead>
+                  <tr>
+                    <th>Codigo</th>
+                    <th>Producto</th>
+                    <th>Color</th>
+                    <th>Talla</th>
+                    <th class="text-end">Stock origen</th>
+                    <th class="text-end">Cantidad</th>
+                    <th class="text-end">Quitar</th>
+                  </tr>
+                </thead>
+                <tbody id="transfer-items-body">
+                  <tr id="empty-transfer-row"><td colspan="7" class="text-center text-muted py-3">Sin items cargados</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="col-12 d-flex justify-content-end gap-2">
+            <button id="clear-transfer" type="button" class="btn btn-outline-secondary btn-sm">Limpiar</button>
+            <button id="submit-transfer" type="submit" class="btn btn-primary btn-sm">Registrar traslado</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="odoo-card">
+        <div class="odoo-section-title mb-2">Traslados recientes</div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle transfer-grid-sm">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Origen</th>
+                <th>Destino</th>
+                <th class="text-end">Total C$</th>
+                <th class="text-end">Accion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for mov in transfers %}
+              <tr>
+                <td>{{ mov.fecha.strftime("%Y-%m-%d") if mov.fecha else "-" }}</td>
+                <td>{{ mov.bodega.name if mov.bodega else "-" }}</td>
+                <td>{{ mov.bodega_destino.name if mov.bodega_destino else "-" }}</td>
+                <td class="text-end">{{ "%.2f"|format(mov.total_cs or 0) }}</td>
+                <td class="text-end">
+                  <a class="btn btn-outline-secondary btn-sm" href="/inventory/egresos/{{ mov.id }}/pdf" target="_blank" rel="noopener">PDF</a>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="5" class="text-center text-muted py-3">Sin traslados registrados</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal fade" id="variant-search-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header">
+        <h5 class="modal-title">Buscar variantes</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2 mb-2">
+          <div class="col-12 col-md-5"><input id="variant-q" class="form-control form-control-sm" placeholder="Codigo, descripcion, color o talla" /></div>
+          <div class="col-6 col-md-3"><input id="variant-color" class="form-control form-control-sm" placeholder="Color" /></div>
+          <div class="col-6 col-md-2"><input id="variant-size" class="form-control form-control-sm" placeholder="Talla" /></div>
+          <div class="col-12 col-md-2"><button id="variant-search-btn" class="btn btn-primary btn-sm w-100" type="button">Buscar</button></div>
+        </div>
+        <div id="variant-search-status" class="form-text mb-2">Escribe para buscar variantes.</div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle transfer-grid-sm">
+            <thead>
+              <tr>
+                <th>Codigo</th>
+                <th>Producto</th>
+                <th>Color</th>
+                <th>Talla</th>
+                <th class="text-end">Exist.</th>
+                <th class="text-end">Accion</th>
+              </tr>
+            </thead>
+            <tbody id="variant-search-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const scanInput = document.getElementById("scan-input");
+  const scanAdd = document.getElementById("scan-add");
+  const form = document.getElementById("quick-transfer-form");
+  const body = document.getElementById("transfer-items-body");
+  const emptyRow = document.getElementById("empty-transfer-row");
+  const origenEl = document.getElementById("bodega-origen");
+  const destinoEl = document.getElementById("bodega-destino");
+  const clearBtn = document.getElementById("clear-transfer");
+  const fechaEl = document.getElementById("fecha");
+  const manualSearchInput = document.getElementById("manual-search-input");
+  const manualSearchStatus = document.getElementById("manual-search-status");
+  const manualSearchBody = document.getElementById("manual-search-body");
+
+  const variantQ = document.getElementById("variant-q");
+  const variantColor = document.getElementById("variant-color");
+  const variantSize = document.getElementById("variant-size");
+  const variantSearchBtn = document.getElementById("variant-search-btn");
+  const variantSearchBody = document.getElementById("variant-search-body");
+  const variantSearchStatus = document.getElementById("variant-search-status");
+
+  const items = new Map();
+  let manualRowsCache = [];
+  let manualTimer = null;
+  let variantTimer = null;
+
+  if (fechaEl && !fechaEl.value) {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    fechaEl.value = `${yyyy}-${mm}-${dd}`;
+  }
+
+  const fmt = (v) => Number(v || 0).toFixed(2);
+
+  const updateRows = () => {
+    body.querySelectorAll("tr[data-item-row]").forEach((el) => el.remove());
+    if (!items.size) {
+      if (emptyRow) emptyRow.classList.remove("d-none");
+      return;
+    }
+    if (emptyRow) emptyRow.classList.add("d-none");
+
+    for (const [key, item] of items.entries()) {
+      const tr = document.createElement("tr");
+      tr.dataset.itemRow = "1";
+      tr.innerHTML = `
+        <td>${item.cod_variante}</td>
+        <td>${item.cod_producto} - ${item.descripcion}</td>
+        <td>${item.color}</td>
+        <td>${item.talla}</td>
+        <td class="text-end">${fmt(item.existencia)}</td>
+        <td class="text-end" style="width:120px;">
+          <input type="number" class="form-control form-control-sm text-end row-qty" min="1" max="${item.existencia}" value="${item.cantidad}" step="1" />
+        </td>
+        <td class="text-end"><button class="btn btn-outline-danger btn-sm row-remove" type="button"><i class="bi bi-x-lg"></i></button></td>
+        <input type="hidden" name="item_producto_id" value="${item.producto_id}" />
+        <input type="hidden" name="item_variante_id" value="${item.variant_id}" />
+        <input type="hidden" name="item_costo" value="${item.costo_cs}" />
+        <input type="hidden" name="item_precio" value="${item.selected_price_cs || 0}" />
+      `;
+      const qtyInput = tr.querySelector(".row-qty");
+      qtyInput.addEventListener("change", () => {
+        let q = parseFloat(qtyInput.value || "0");
+        if (!Number.isFinite(q) || q <= 0) q = 1;
+        if (q > item.existencia) q = item.existencia;
+        item.cantidad = q;
+        qtyInput.value = String(q);
+        let hiddenQty = tr.querySelector("input[name='item_cantidad']");
+        if (!hiddenQty) {
+          hiddenQty = document.createElement("input");
+          hiddenQty.type = "hidden";
+          hiddenQty.name = "item_cantidad";
+          tr.appendChild(hiddenQty);
+        }
+        hiddenQty.value = String(q);
+      });
+      const hiddenQty = document.createElement("input");
+      hiddenQty.type = "hidden";
+      hiddenQty.name = "item_cantidad";
+      hiddenQty.value = String(item.cantidad);
+      tr.appendChild(hiddenQty);
+
+      tr.querySelector(".row-remove").addEventListener("click", () => {
+        items.delete(key);
+        updateRows();
+      });
+      body.appendChild(tr);
+    }
+  };
+
+  const addVariantItem = (variant) => {
+    if (!variant || !variant.variant_id) return;
+    const key = String(variant.variant_id);
+    if (items.has(key)) {
+      const row = items.get(key);
+      row.cantidad = Math.min(Number(row.existencia || 0), Number(row.cantidad || 0) + 1);
+    } else {
+      items.set(key, {
+        variant_id: Number(variant.variant_id),
+        producto_id: Number(variant.producto_id),
+        cod_variante: String(variant.cod_variante || ""),
+        cod_producto: String(variant.cod_producto || ""),
+        descripcion: String(variant.descripcion || ""),
+        color: String(variant.color || ""),
+        talla: String(variant.talla || ""),
+        existencia: Number(variant.existencia || 0),
+        costo_cs: Number(variant.costo_cs || 0),
+        selected_price_cs: Number(variant.selected_price_cs || 0),
+        cantidad: 1,
+      });
+    }
+    updateRows();
+  };
+
+  const getSearchUrl = (query) => {
+    const params = new URLSearchParams();
+    params.set("q", query || "");
+    const selectedBodega = (origenEl?.value || "").trim();
+    if (selectedBodega) params.set("bodega_id", selectedBodega);
+    params.set("limit", "120");
+    if ((variantColor?.value || "").trim()) params.set("color", (variantColor.value || "").trim());
+    if ((variantSize?.value || "").trim()) params.set("talla", (variantSize.value || "").trim());
+    return `/inventory/traslados-rapidos/search?${params.toString()}`;
+  };
+
+  const renderManualRows = (rows) => {
+    manualRowsCache = Array.isArray(rows) ? rows : [];
+    if (!manualRowsCache.length) {
+      manualSearchBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-2">Sin resultados</td></tr>`;
+      return;
+    }
+    manualSearchBody.innerHTML = "";
+    for (const it of manualRowsCache) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${it.cod_variante || ""}</td>
+        <td>${it.cod_producto || ""} - ${it.descripcion || ""}</td>
+        <td>${it.color || ""}</td>
+        <td>${it.talla || ""}</td>
+        <td class="text-end">${fmt(it.existencia)}</td>
+        <td class="text-end"><button type="button" class="btn btn-outline-primary btn-sm">+</button></td>
+      `;
+      const add = () => {
+        if (Number(it.existencia || 0) <= 0) return;
+        addVariantItem(it);
+      };
+      tr.querySelector("button").addEventListener("click", add);
+      tr.addEventListener("dblclick", add);
+      manualSearchBody.appendChild(tr);
+    }
+  };
+
+  const searchManual = async () => {
+    const q = (manualSearchInput?.value || "").trim();
+    if (q.length < 1) {
+      manualSearchStatus.textContent = "Escribe para buscar variantes de forma manual.";
+      manualSearchBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-2">Sin busqueda.</td></tr>`;
+      manualRowsCache = [];
+      return;
+    }
+    manualSearchStatus.textContent = "Buscando...";
+    try {
+      const resp = await fetch(getSearchUrl(q), { headers: { "X-Requested-With": "fetch" } });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const rows = data.items || [];
+      manualSearchStatus.textContent = rows.length ? `${rows.length} variantes encontradas.` : "Sin resultados.";
+      renderManualRows(rows);
+    } catch (err) {
+      const msg = err && err.message ? err.message : "sin detalle";
+      manualSearchStatus.textContent = `Error al buscar (${msg}).`;
+      manualSearchBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-2">Error al buscar</td></tr>`;
+    }
+  };
+
+  const searchVariants = async (queryOverride = null) => {
+    const q = queryOverride !== null ? queryOverride : variantQ.value.trim();
+    if (!q && !variantColor.value.trim() && !variantSize.value.trim()) {
+      variantSearchStatus.textContent = "Escribe para buscar variantes.";
+      variantSearchBody.innerHTML = "";
+      return;
+    }
+    variantSearchStatus.textContent = "Buscando...";
+    try {
+      const resp = await fetch(getSearchUrl(q), { headers: { "X-Requested-With": "fetch" } });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const rows = data.items || [];
+      if (!rows.length) {
+        variantSearchStatus.textContent = "Sin resultados.";
+        variantSearchBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-2">Sin resultados</td></tr>`;
+        return;
+      }
+      variantSearchStatus.textContent = `${rows.length} variantes encontradas`;
+      variantSearchBody.innerHTML = "";
+      for (const it of rows) {
+        const tr = document.createElement("tr");
+        tr.className = "variant-row";
+        tr.innerHTML = `
+          <td>${it.cod_variante || ""}</td>
+          <td>${it.cod_producto || ""} - ${it.descripcion || ""}</td>
+          <td>${it.color || ""}</td>
+          <td>${it.talla || ""}</td>
+          <td class="text-end">${fmt(it.existencia)}</td>
+          <td class="text-end"><button type="button" class="btn btn-outline-primary btn-sm variant-add">+</button></td>
+        `;
+        const add = () => {
+          if (Number(it.existencia || 0) <= 0) return;
+          addVariantItem(it);
+        };
+        tr.querySelector(".variant-add").addEventListener("click", add);
+        tr.addEventListener("dblclick", add);
+        variantSearchBody.appendChild(tr);
+      }
+    } catch (err) {
+      const msg = err && err.message ? err.message : "sin detalle";
+      variantSearchStatus.textContent = `Error al buscar variantes (${msg}).`;
+    }
+  };
+
+  const addByScan = async () => {
+    const code = (scanInput.value || "").trim();
+    if (!code) return;
+    const selectedBodega = (origenEl?.value || "").trim();
+    const params = new URLSearchParams();
+    params.set("q", code);
+    params.set("limit", "10");
+    if (selectedBodega) params.set("bodega_id", selectedBodega);
+    try {
+      const resp = await fetch(`/inventory/traslados-rapidos/search?${params.toString()}`, {
+        headers: { "X-Requested-With": "fetch" },
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const rows = data.items || [];
+      const exact = rows.find((r) => String(r.cod_variante || "").toLowerCase() === code.toLowerCase()) || rows[0];
+      if (exact && Number(exact.existencia || 0) > 0) {
+        addVariantItem(exact);
+      } else {
+        manualSearchStatus.textContent = "No se encontro variante con stock para ese codigo.";
+      }
+    } finally {
+      scanInput.value = "";
+      scanInput.focus();
+    }
+  };
+
+  scanAdd?.addEventListener("click", addByScan);
+  scanInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addByScan();
+    }
+  });
+  variantSearchBtn?.addEventListener("click", () => searchVariants());
+  variantQ?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      searchVariants();
+    }
+  });
+  const scheduleVariantSearch = () => {
+    if (variantTimer) clearTimeout(variantTimer);
+    variantTimer = setTimeout(() => searchVariants(), 180);
+  };
+  variantQ?.addEventListener("input", scheduleVariantSearch);
+  variantColor?.addEventListener("input", scheduleVariantSearch);
+  variantSize?.addEventListener("input", scheduleVariantSearch);
+  [variantColor, variantSize].forEach((el) => {
+    el?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        searchVariants();
+      }
+    });
+  });
+  clearBtn?.addEventListener("click", () => {
+    items.clear();
+    updateRows();
+    scanInput?.focus();
+  });
+  manualSearchInput?.addEventListener("input", () => {
+    if (manualTimer) clearTimeout(manualTimer);
+    manualTimer = setTimeout(() => {
+      searchManual();
+    }, 180);
+  });
+  manualSearchInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const first = manualRowsCache.find((r) => Number(r.existencia || 0) > 0);
+      if (first) {
+        addVariantItem(first);
+        return;
+      }
+      searchManual();
+    }
+  });
+  origenEl?.addEventListener("change", () => {
+    items.clear();
+    updateRows();
+    searchManual();
+  });
+  form?.addEventListener("submit", (e) => {
+    if (!items.size) {
+      e.preventDefault();
+      alert("Agrega al menos una variante al traslado.");
+      return;
+    }
+    if ((origenEl.value || "") === (destinoEl.value || "")) {
+      e.preventDefault();
+      alert("Origen y destino deben ser diferentes.");
+    }
+  });
+
+  const layout = document.getElementById("layout");
+  document.querySelectorAll(".toggle-sidebar").forEach((toggle) => {
+    toggle.addEventListener("click", () => layout?.classList.toggle("sidebar-collapsed"));
+  });
+
+  {% if print_id %}
+  if (window.erpOpenPrintable) {
+    window.erpOpenPrintable("/inventory/egresos/{{ print_id }}/ticket/print?copies=1&return_to=/inventory/traslados-rapidos", { fallbackSameTab: true });
+  }
+  {% endif %}
+})();
+</script>
+{% endblock %}

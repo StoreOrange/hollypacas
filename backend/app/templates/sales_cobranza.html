@@ -144,6 +144,23 @@
             </select>
           </div>
           <div class="flex-grow-1">
+            <label class="odoo-field-label text-xs text-slate">Cliente</label>
+            <input class="form-control form-control-sm odoo-input" type="text" id="cobranza-cliente" value="{{ cliente_q }}" placeholder="Nombre cliente" list="cobranza-clientes-list">
+            <datalist id="cobranza-clientes-list">
+              {% for c in clientes %}
+              <option value="{{ c.nombre }}"></option>
+              {% endfor %}
+            </datalist>
+          </div>
+          <div>
+            <label class="odoo-field-label text-xs text-slate">Estado</label>
+            <select class="form-select form-select-sm odoo-input" id="cobranza-estado">
+              <option value="PENDIENTE" {% if estado_q == "PENDIENTE" %}selected{% endif %}>Pendientes</option>
+              <option value="PAGADA" {% if estado_q == "PAGADA" %}selected{% endif %}>Pagadas</option>
+              <option value="TODAS" {% if estado_q == "TODAS" %}selected{% endif %}>Todas</option>
+            </select>
+          </div>
+          <div class="flex-grow-1">
             <label class="odoo-field-label text-xs text-slate">Producto</label>
             <input class="form-control form-control-sm odoo-input" type="text" id="cobranza-product" value="{{ producto_q }}" placeholder="Codigo o descripcion">
           </div>
@@ -160,6 +177,66 @@
             </button>
           </div>
         </div>
+
+        {% if selected_cliente %}
+        <div class="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <div>
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Estado de cuenta del cliente</div>
+              <div class="fw-semibold text-ink">{{ selected_cliente.nombre }}</div>
+            </div>
+            <div class="small text-muted">Historial de facturas credito, abonos y saldo acumulado</div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-12 col-md-4">
+              <div class="p-2 rounded border bg-white">
+                <div class="text-xs text-slate">Facturado C$</div>
+                <div class="fw-bold text-ink">{{ "C$ {:,.2f}".format(cliente_totals.facturado_cs) }}</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="p-2 rounded border bg-white">
+                <div class="text-xs text-slate">Abonado C$</div>
+                <div class="fw-bold text-ink">{{ "C$ {:,.2f}".format(cliente_totals.abonado_cs) }}</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="p-2 rounded border bg-white">
+                <div class="text-xs text-slate">Saldo C$</div>
+                <div class="fw-bold text-danger">{{ "C$ {:,.2f}".format(cliente_totals.saldo_cs) }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm odoo-table text-sm mb-0">
+              <thead>
+                <tr>
+                  <th>Factura</th>
+                  <th>Fecha</th>
+                  <th class="text-end">Total</th>
+                  <th class="text-end">Abonado</th>
+                  <th class="text-end">Saldo</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in cliente_estado_rows %}
+                <tr>
+                  <td>{{ item.numero }}</td>
+                  <td>{{ item.fecha }}</td>
+                  <td class="text-end">{{ "C$" if item.moneda != "USD" else "$" }} {{ "{:,.2f}".format(item.total_cs if item.moneda != "USD" else item.total_usd) }}</td>
+                  <td class="text-end">{{ "C$" if item.moneda != "USD" else "$" }} {{ "{:,.2f}".format(item.abonado_cs if item.moneda != "USD" else item.abonado_usd) }}</td>
+                  <td class="text-end">{{ "C$" if item.moneda != "USD" else "$" }} {{ "{:,.2f}".format(item.saldo_cs if item.moneda != "USD" else item.saldo_usd) }}</td>
+                  <td><span class="badge {% if item.estado == 'PAGADA' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ item.estado }}</span></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-slate py-2">Sin historial para este cliente.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
 
         <div class="table-responsive cobranza-grid-wrap">
           <table class="table table-sm table-hover odoo-table text-sm cobranza-table cobranza-grid">
@@ -285,8 +362,17 @@
           </div>
           <div class="text-xs uppercase tracking-[0.2em] text-slate">Saldo pendiente</div>
           <div class="fs-5 fw-bold text-ink" id="abono-saldo">--</div>
+          <div class="text-xs text-muted mt-1">Nota de credito disminuye saldo. Nota de debito aumenta saldo.</div>
         </div>
         <div class="row g-3">
+          <div class="col-6">
+            <label class="odoo-field-label">Tipo movimiento</label>
+            <select class="form-select odoo-input" id="abono-tipo">
+              <option value="ABONO">Abono</option>
+              <option value="NOTA_CREDITO">Nota de credito</option>
+              <option value="NOTA_DEBITO">Nota de debito</option>
+            </select>
+          </div>
           <div class="col-6">
             <label class="odoo-field-label">Moneda</label>
             <select class="form-select odoo-input" id="abono-moneda">
@@ -294,7 +380,7 @@
               <option value="USD">Dolares</option>
             </select>
           </div>
-          <div class="col-6">
+          <div class="col-12">
             <label class="odoo-field-label">Monto</label>
             <input class="form-control odoo-input" id="abono-monto" type="text" placeholder="0.00">
           </div>
@@ -317,6 +403,7 @@
                 <tr>
                   <th>Recibo</th>
                   <th>Fecha</th>
+                  <th>Tipo</th>
                   <th>Moneda</th>
                   <th class="text-end">Monto</th>
                   <th>Obs.</th>
@@ -325,7 +412,7 @@
               </thead>
               <tbody id="abono-list">
                 <tr>
-                  <td colspan="6" class="text-center text-slate py-2">Sin abonos</td>
+                  <td colspan="7" class="text-center text-slate py-2">Sin abonos</td>
                 </tr>
               </tbody>
             </table>
@@ -450,11 +537,15 @@
         const end = document.getElementById("cobranza-end").value;
         const prod = document.getElementById("cobranza-product").value;
         const vendedor = document.getElementById("cobranza-vendedor").value;
+        const cliente = document.getElementById("cobranza-cliente").value;
+        const estado = document.getElementById("cobranza-estado").value;
         const params = new URLSearchParams();
         if (start) params.set("start_date", start);
         if (end) params.set("end_date", end);
         if (prod) params.set("producto", prod);
         if (vendedor) params.set("vendedor_id", vendedor);
+        if (cliente) params.set("cliente", cliente);
+        if (estado) params.set("estado", estado);
         window.location.href = `/sales/cobranza?${params.toString()}`;
       });
     }
@@ -466,11 +557,15 @@
         const end = document.getElementById("cobranza-end").value;
         const prod = document.getElementById("cobranza-product").value;
         const vendedor = document.getElementById("cobranza-vendedor").value;
+        const cliente = document.getElementById("cobranza-cliente").value;
+        const estado = document.getElementById("cobranza-estado").value;
         const params = new URLSearchParams();
         if (start) params.set("start_date", start);
         if (end) params.set("end_date", end);
         if (prod) params.set("producto", prod);
         if (vendedor) params.set("vendedor_id", vendedor);
+        if (cliente) params.set("cliente", cliente);
+        if (estado) params.set("estado", estado);
         params.set("format", "pdf");
         window.open(`/sales/cobranza/export?${params.toString()}`, "_blank", "noopener");
       });
@@ -543,12 +638,15 @@
         document.getElementById("abono-factura-vendedor").textContent = abonoBtn.dataset.vendedor || "--";
         const moneda = abonoBtn.dataset.moneda || "CS";
         const saldo = parseFloat(abonoBtn.dataset.saldo || 0);
+        const abonoTipoEl = document.getElementById("abono-tipo");
         const abonoMonedaEl = document.getElementById("abono-moneda");
         const abonoMontoEl = document.getElementById("abono-monto");
         const abonoObsEl = document.getElementById("abono-observacion");
         const abonoSubmitEl = document.getElementById("abono-submit");
+        abonoTipoEl.value = "ABONO";
         abonoMonedaEl.value = moneda;
         document.getElementById("abono-saldo").textContent = formatMoney(saldo, moneda);
+        abonoTipoEl.disabled = readOnly;
         abonoMonedaEl.disabled = readOnly;
         abonoMontoEl.disabled = readOnly;
         abonoObsEl.disabled = readOnly;
@@ -567,11 +665,11 @@
       listBody.innerHTML = `<tr><td colspan="6" class="text-center text-slate py-2">Cargando...</td></tr>`;
       const payload = await handleFetchJson(`/sales/cobranza/${abonoBtn.dataset.abono}/abonos`);
       if (!payload || !payload.ok) {
-        listBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-2">No se pudo cargar</td></tr>`;
+        listBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-2">No se pudo cargar</td></tr>`;
         return;
       }
       if (!payload.items.length) {
-        listBody.innerHTML = `<tr><td colspan="6" class="text-center text-slate py-2">Sin abonos</td></tr>`;
+        listBody.innerHTML = `<tr><td colspan="7" class="text-center text-slate py-2">Sin movimientos</td></tr>`;
         return;
       }
       listBody.innerHTML = payload.items
@@ -579,6 +677,7 @@
           <tr data-abono-row="${item.id}">
             <td class="fw-semibold">${item.numero}</td>
             <td>${item.fecha}</td>
+            <td><span class="badge ${item.tipo_mov === "NOTA_DEBITO" ? "bg-danger" : item.tipo_mov === "NOTA_CREDITO" ? "bg-info text-dark" : "bg-secondary"}">${item.tipo_mov}</span></td>
             <td>${item.moneda}</td>
             <td class="text-end">${formatMoney(item.monto, item.moneda)}</td>
             <td>${item.observacion || "-"}</td>
@@ -597,6 +696,7 @@
             const item = payload.items.find((i) => String(i.id) === String(id));
             if (!item) return;
             document.getElementById("abono-id").value = item.id;
+            document.getElementById("abono-tipo").value = item.tipo_mov || "ABONO";
             document.getElementById("abono-moneda").value = item.moneda;
             document.getElementById("abono-monto").value = formatMoney(item.monto, item.moneda);
             document.getElementById("abono-observacion").value = item.observacion || "";
@@ -644,16 +744,25 @@
     document.getElementById("abono-submit")?.addEventListener("click", async () => {
       const facturaId = document.getElementById("abono-factura-id").value;
       const abonoId = document.getElementById("abono-id").value;
+      const tipoMov = document.getElementById("abono-tipo").value;
       const moneda = document.getElementById("abono-moneda").value;
       const monto = parseMoneyValue(document.getElementById("abono-monto").value).toFixed(2);
       const observacion = document.getElementById("abono-observacion").value;
-      const body = new URLSearchParams({ moneda, monto, observacion });
+      const body = new URLSearchParams({ tipo_mov: tipoMov, moneda, monto, observacion });
       const endpoint = abonoId
         ? `/sales/cobranza/${facturaId}/abono/${abonoId}`
         : `/sales/cobranza/${facturaId}/abono`;
       const payload = await handleFetchJson(endpoint, { method: "POST", body });
       if (!payload || !payload.ok) {
         alert(payload?.message || "No se pudo registrar el abono");
+        return;
+      }
+      if (!abonoId && payload.print_url) {
+        if (window.erpOpenPrintable) {
+          window.erpOpenPrintable(payload.print_url, { fallbackSameTab: true });
+        } else {
+          window.open(payload.print_url, "_blank", "noopener");
+        }
         return;
       }
       window.location.reload();

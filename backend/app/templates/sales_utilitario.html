@@ -87,6 +87,7 @@
                 <th>Vendedor</th>
                 <th>Sucursal</th>
                 <th>Bodega</th>
+                <th>Tipo</th>
                 <th class="text-end">Monto</th>
                 <th class="text-center">Acciones</th>
               </tr>
@@ -101,6 +102,11 @@
                 <td>{{ venta.vendedor.nombre if venta.vendedor else "-" }}</td>
                 <td>{{ venta.bodega.branch.name if venta.bodega and venta.bodega.branch else "-" }}</td>
                 <td>{{ venta.bodega.name if venta.bodega else "-" }}</td>
+                <td>
+                  <span class="odoo-pill {{ 'success' if (venta.condicion_venta or 'CONTADO') == 'CONTADO' else '' }}">
+                    {{ (venta.condicion_venta or "CONTADO") }}
+                  </span>
+                </td>
                 <td class="text-end">
                   {% if venta.moneda == "USD" %}
                     $ {{ "%.2f"|format(venta.total_usd or 0) }}
@@ -115,7 +121,11 @@
                   </button>
                   <button class="btn btn-outline-secondary btn-sm reprint-sale" data-id="{{ venta.id }}" type="button">
                     <i class="bi bi-printer"></i>
-                    Reimprimir
+                    Ticket
+                  </button>
+                  <button class="btn btn-outline-secondary btn-sm reprint-sale-letter" data-id="{{ venta.id }}" type="button">
+                    <i class="bi bi-file-earmark-pdf"></i>
+                    Carta
                   </button>
                   {% if venta.estado == "ANULADA" %}
                   <button class="btn btn-outline-danger btn-sm" type="button" disabled>
@@ -133,7 +143,7 @@
               {% endfor %}
               {% if ventas|length == 0 %}
               <tr>
-                <td colspan="9" class="text-center py-3 text-slate">Sin ventas registradas.</td>
+                <td colspan="10" class="text-center py-3 text-slate">Sin ventas registradas.</td>
               </tr>
               {% endif %}
             </tbody>
@@ -178,6 +188,10 @@
               <div class="d-flex justify-content-between text-sm mb-2">
                 <span class="text-slate">Fecha</span>
                 <strong id="detail-fecha">-</strong>
+              </div>
+              <div class="d-flex justify-content-between text-sm mb-2">
+                <span class="text-slate">Tipo de venta</span>
+                <strong id="detail-condicion">-</strong>
               </div>
               <div class="d-flex justify-content-between text-sm">
                 <span class="text-slate">Total</span>
@@ -269,6 +283,7 @@
   const detailSucursal = document.getElementById("detail-sucursal");
   const detailBodega = document.getElementById("detail-bodega");
   const detailFecha = document.getElementById("detail-fecha");
+  const detailCondicion = document.getElementById("detail-condicion");
   const detailTotal = document.getElementById("detail-total");
   const detailItems = document.getElementById("sale-detail-items");
   const reversionModal = document.getElementById("sale-reversion-modal");
@@ -313,6 +328,7 @@
       detailSucursal.textContent = factura.sucursal || "-";
       detailBodega.textContent = factura.bodega || "-";
       detailFecha.textContent = `${factura.fecha || ""} ${factura.hora || ""}`.trim();
+      detailCondicion.textContent = factura.condicion_venta || "CONTADO";
       detailTotal.textContent = formatMoney(
         factura.moneda === "USD" ? factura.total_usd : factura.total_cs,
         factura.moneda
@@ -379,6 +395,26 @@
       }
       if (typeof Swal !== "undefined") {
         Swal.fire({ icon: "success", title: "Vista previa abierta", timer: 1500, showConfirmButton: false });
+      }
+    });
+  });
+
+  document.querySelectorAll(".reprint-sale-letter").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const ventaId = button.dataset.id;
+      const response = await fetch(`/sales/${ventaId}/reprint`, { method: "POST" });
+      const payload = await response.json().catch(() => null);
+      if (!payload || !payload.ok) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: payload?.message || "No se pudo abrir impresion carta" });
+        }
+        return;
+      }
+      const printUrl = payload?.letter_print_url || `/sales/${ventaId}/pdf`;
+      if (window.erpOpenPrintable) {
+        window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
+      } else {
+        window.open(printUrl, "_blank", "noopener");
       }
     });
   });

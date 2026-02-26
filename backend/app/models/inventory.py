@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -33,8 +33,89 @@ class Marca(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(120), unique=True, nullable=False)
+    abreviatura = Column(String(20), nullable=True)
     activo = Column(Boolean, default=True)
     registro = Column(DateTime, server_default=func.now())
+
+
+class ColorCatalog(Base):
+    __tablename__ = "color_catalog"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(120), unique=True, nullable=False)
+    abreviatura = Column(String(20), nullable=False)
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class ShoeSizeFormat(Base):
+    __tablename__ = "shoe_size_formats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    codigo = Column(String(40), unique=True, nullable=False)
+    nombre = Column(String(160), nullable=False)
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    lineas = relationship(
+        "ShoeSizeFormatLine",
+        back_populates="formato",
+        cascade="all, delete-orphan",
+        order_by="ShoeSizeFormatLine.orden",
+    )
+
+
+class ShoeSizeFormatLine(Base):
+    __tablename__ = "shoe_size_format_lines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    formato_id = Column(Integer, ForeignKey("shoe_size_formats.id"), nullable=False)
+    talla = Column(String(20), nullable=False)
+    cantidad = Column(Integer, nullable=False, default=0)
+    orden = Column(Integer, nullable=False, default=0)
+
+    formato = relationship("ShoeSizeFormat", back_populates="lineas")
+
+
+class ShoeProductVariant(Base):
+    __tablename__ = "shoe_product_variants"
+    __table_args__ = (
+        UniqueConstraint("producto_id", "color_id", "talla", name="uq_shoe_variant_producto_color_talla"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    color_id = Column(Integer, ForeignKey("color_catalog.id"), nullable=False)
+    talla = Column(String(20), nullable=False)
+    cod_variante = Column(String(80), unique=True, nullable=False)
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    producto = relationship("Producto")
+    color = relationship("ColorCatalog")
+    saldos = relationship(
+        "ShoeVariantStock",
+        back_populates="variante",
+        cascade="all, delete-orphan",
+    )
+
+
+class ShoeVariantStock(Base):
+    __tablename__ = "shoe_variant_stocks"
+    __table_args__ = (
+        UniqueConstraint("variante_id", "bodega_id", name="uq_shoe_variant_stock_bodega"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    variante_id = Column(Integer, ForeignKey("shoe_product_variants.id"), nullable=False)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=False)
+    existencia = Column(Numeric(14, 2), default=0)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    variante = relationship("ShoeProductVariant", back_populates="saldos")
+    bodega = relationship("Bodega")
 
 
 class Producto(Base):
@@ -49,9 +130,17 @@ class Producto(Base):
     precio_venta1 = Column(Numeric(12, 2), default=0)
     precio_venta2 = Column(Numeric(12, 2), default=0)
     precio_venta3 = Column(Numeric(12, 2), default=0)
+    precio_venta4 = Column(Numeric(12, 2), default=0)
+    precio_venta5 = Column(Numeric(12, 2), default=0)
+    precio_venta6 = Column(Numeric(12, 2), default=0)
+    precio_venta7 = Column(Numeric(12, 2), default=0)
     precio_venta1_usd = Column(Numeric(12, 2), nullable=True)
     precio_venta2_usd = Column(Numeric(12, 2), nullable=True)
     precio_venta3_usd = Column(Numeric(12, 2), nullable=True)
+    precio_venta4_usd = Column(Numeric(12, 2), nullable=True)
+    precio_venta5_usd = Column(Numeric(12, 2), nullable=True)
+    precio_venta6_usd = Column(Numeric(12, 2), nullable=True)
+    precio_venta7_usd = Column(Numeric(12, 2), nullable=True)
     tasa_cambio = Column(Numeric(12, 4), nullable=True)
     activo = Column(Boolean, default=True)
     servicio_producto = Column(Boolean, default=False)
@@ -213,6 +302,7 @@ class EgresoItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     egreso_id = Column(Integer, ForeignKey("egresos_inventario.id"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    variante_id = Column(Integer, ForeignKey("shoe_product_variants.id"), nullable=True)
     cantidad = Column(Numeric(14, 2), default=0)
     costo_unitario_usd = Column(Numeric(14, 2), default=0)
     costo_unitario_cs = Column(Numeric(14, 2), default=0)
@@ -221,3 +311,4 @@ class EgresoItem(Base):
 
     egreso = relationship("EgresoInventario", back_populates="items")
     producto = relationship("Producto")
+    variante = relationship("ShoeProductVariant")

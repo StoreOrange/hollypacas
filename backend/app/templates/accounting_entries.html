@@ -1,14 +1,45 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  .accounting-compact .odoo-title {
+    font-size: 1.45rem;
+  }
+  .accounting-compact .odoo-subtitle {
+    font-size: 0.9rem;
+  }
+  .accounting-compact .form-label {
+    font-size: 0.85rem;
+    margin-bottom: 0.2rem;
+  }
+  .accounting-compact .form-control,
+  .accounting-compact .form-select,
+  .accounting-compact .btn {
+    font-size: 0.86rem;
+  }
+  .accounting-compact .table {
+    font-size: 0.84rem;
+  }
+  .accounting-compact .odoo-section-title {
+    font-size: 1rem;
+  }
+  .accounting-compact .assistant-panel {
+    font-size: 0.76rem;
+  }
+  .accounting-compact .assistant-panel .fw-semibold {
+    font-size: 0.82rem;
+  }
+  .accounting-compact .assistant-panel .small {
+    font-size: 0.72rem !important;
+  }
+</style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
-  <main class="p-4 sm:p-6 lg:p-8 text-[18px]">
+  <main class="p-4 sm:p-6 lg:p-8 text-[15px] accounting-compact">
     <div class="odoo-page">
       <div class="odoo-header d-flex align-items-start justify-content-between gap-3 flex-wrap">
         <div>
           <h1 class="odoo-title mb-1">Comprobantes contables</h1>
-          <p class="odoo-subtitle mb-0">Paso guiado: define fecha y tipo, agrega lineas Debe/Haber, valida cuadre y guarda.</p>
         </div>
         <div class="d-flex gap-2">
           <a class="btn btn-outline-secondary" href="/accounting/financial-data">Datos financieros</a>
@@ -42,14 +73,6 @@
               <input class="form-control" type="date" name="fecha" value="{{ today }}" required />
             </div>
             <div class="col-md-3">
-              <label class="form-label">Tipo comprobante</label>
-              <select class="form-select" name="tipo_id" id="voucherTypeSelect" required>
-                {% for t in voucher_types %}
-                <option value="{{ t.id }}">{{ t.code }} - {{ t.nombre }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-3">
               <label class="form-label">Sucursal</label>
               <select class="form-select" name="branch_id">
                 <option value="">General</option>
@@ -62,32 +85,50 @@
               <label class="form-label">Referencia</label>
               <input class="form-control" name="referencia" maxlength="160" placeholder="Factura, recibo, transferencia..." />
             </div>
-            <div class="col-12">
+            <div class="col-md-3">
+              <label class="form-label">Tipo comprobante</label>
+              <select class="form-select" name="tipo_id" id="voucherTypeSelect" required>
+                {% for t in voucher_types %}
+                <option
+                  value="{{ t.id }}"
+                  {% if (t.code or '')|upper == 'DIARIO' %}selected{% endif %}
+                >
+                  {{ t.code }} - {{ t.nombre }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Subrubro contable (guia)</label>
+              <input type="hidden" id="subrubroCode" name="subrubro_code" />
+              <input
+                class="form-control"
+                id="subrubroSearch"
+                list="subrubroOptions"
+                placeholder="Escribe para filtrar subrubros..."
+                autocomplete="off"
+              />
+              <datalist id="subrubroOptions">
+                {% for item in subrubros %}
+                <option value="{{ item.label }}"></option>
+                {% endfor %}
+              </datalist>
+            </div>
+            <div class="col-md-8">
               <label class="form-label">Descripcion del comprobante</label>
               <input class="form-control" name="descripcion" maxlength="400" required />
-              <small id="policyHint" class="text-muted d-block mt-1"></small>
             </div>
           </div>
 
           <div class="d-flex align-items-center justify-content-between mt-3 mb-2">
             <div class="odoo-section-title mb-0">Detalle contable</div>
-            <div class="d-flex gap-2">
-              <input class="form-control form-control-sm" id="smartAmount" type="number" min="0.01" step="0.01" value="1.00" style="max-width: 120px;" title="Monto base para autollenado" />
-              <select class="form-select form-select-sm" id="presetSelect" style="max-width: 220px;">
-                <option value="">Preset transaccional...</option>
-                <option value="sale_cash">Venta contado</option>
-                <option value="sale_credit">Venta credito</option>
-                <option value="purchase_inventory">Compra inventario</option>
-                <option value="expense_cash">Gasto contado</option>
-              </select>
+            <div class="d-flex gap-2 align-items-end">
+              <div style="min-width: 130px;">
+                <label for="smartAmount" class="form-label mb-1">Monto</label>
+                <input class="form-control form-control-sm" id="smartAmount" type="number" min="0.01" step="0.01" value="1.00" title="Monto base para autollenado" />
+              </div>
               <button class="btn btn-sm btn-outline-primary" type="button" id="btnSmartAssist">
                 <i class="bi bi-stars"></i> Autollenado inteligente
-              </button>
-              <button class="btn btn-sm btn-outline-secondary" type="button" id="btnApplyPreset">
-                <i class="bi bi-lightning-charge"></i> Aplicar preset
-              </button>
-              <button class="btn btn-sm btn-outline-dark" type="button" id="btnApplyTemplate">
-                <i class="bi bi-robot"></i> Plantilla por tipo
               </button>
               <button class="btn btn-sm btn-outline-success" type="button" id="btnAutoCounterpart">
                 <i class="bi bi-magic"></i> Contrapartida inteligente
@@ -123,7 +164,7 @@
               </div>
             </div>
             <div class="col-xl-4">
-              <div class="border rounded p-3 bg-light-subtle">
+              <div class="border rounded p-3 bg-light-subtle assistant-panel">
                 <div class="fw-semibold mb-2">Asistente contable</div>
                 <div class="small text-muted mb-1">Cuenta activa</div>
                 <div id="assistantAccount" class="fw-semibold">-</div>
@@ -147,9 +188,126 @@
 
           <div class="d-flex gap-2">
             <button class="btn btn-dark" type="submit">Guardar comprobante</button>
-            <small class="text-muted align-self-center">Regla: el total Debe debe ser igual al total Haber.</small>
           </div>
         </form>
+      </div>
+
+      <div class="odoo-card mt-3">
+        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
+          <div class="odoo-section-title mb-0">Catalogo de criterios del asistente</div>
+          <input id="subrubroGridFilter" class="form-control form-control-sm" style="max-width: 320px;" placeholder="Filtrar por codigo, nombre o criterio..." />
+        </div>
+        <div class="row g-3">
+          <div class="col-xl-5">
+            <form method="post" action="/accounting/subrubros/save" class="border rounded p-3 bg-light-subtle">
+              <div class="fw-semibold mb-2">Registrar / editar subrubro</div>
+              <input type="hidden" name="subrubro_id" value="{{ subrubro_edit_item.id if subrubro_edit_item else '' }}" />
+              <div class="row g-2">
+                <div class="col-5">
+                  <label class="form-label">Codigo</label>
+                  <input class="form-control form-control-sm" name="code" required maxlength="60" value="{{ subrubro_edit_item.code if subrubro_edit_item else '' }}" placeholder="INSUMOS_TIENDA" />
+                </div>
+                <div class="col-7">
+                  <label class="form-label">Nombre</label>
+                  <input class="form-control form-control-sm" name="label" required maxlength="160" value="{{ subrubro_edit_item.label if subrubro_edit_item else '' }}" placeholder="Insumos para tienda" />
+                </div>
+                <div class="col-5">
+                  <label class="form-label">Tipo</label>
+                  <select class="form-select form-select-sm" name="intent_code">
+                    {% set _intent = (subrubro_edit_item.intent_code if subrubro_edit_item else 'EGRESO') %}
+                    <option value="EGRESO" {% if _intent == 'EGRESO' %}selected{% endif %}>EGRESO</option>
+                    <option value="INGRESO" {% if _intent == 'INGRESO' %}selected{% endif %}>INGRESO</option>
+                    <option value="DIARIO" {% if _intent == 'DIARIO' %}selected{% endif %}>DIARIO</option>
+                    <option value="AJUSTE" {% if _intent == 'AJUSTE' %}selected{% endif %}>AJUSTE</option>
+                  </select>
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Orden</label>
+                  <input class="form-control form-control-sm" type="number" min="0" step="1" name="sort_order" value="{{ subrubro_edit_item.sort_order if subrubro_edit_item else 1000 }}" />
+                </div>
+                <div class="col-3 d-flex align-items-end">
+                  <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" name="activo" id="subrubroActivo" {% if not subrubro_edit_item or subrubro_edit_item.activo %}checked{% endif %} />
+                    <label class="form-check-label" for="subrubroActivo">Activo</label>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Criterios Debe (coma)</label>
+                  <input class="form-control form-control-sm" name="debit_terms" maxlength="500" value="{{ subrubro_edit_item.debit_terms if subrubro_edit_item else '' }}" placeholder="gasto operativo,suministros,insumos" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Criterios Haber directo (opcional)</label>
+                  <input class="form-control form-control-sm" name="credit_terms" maxlength="500" value="{{ subrubro_edit_item.credit_terms if subrubro_edit_item else '' }}" placeholder="ingreso,ventas" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Criterios Haber contado (coma)</label>
+                  <input class="form-control form-control-sm" name="credit_cash_terms" maxlength="500" value="{{ subrubro_edit_item.credit_cash_terms if subrubro_edit_item else '' }}" placeholder="caja,banco,efectivo" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Criterios Haber credito (coma)</label>
+                  <input class="form-control form-control-sm" name="credit_credit_terms" maxlength="500" value="{{ subrubro_edit_item.credit_credit_terms if subrubro_edit_item else '' }}" placeholder="proveedor,pagar,cxp" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Concepto por defecto</label>
+                  <input class="form-control form-control-sm" name="default_concept" maxlength="220" value="{{ subrubro_edit_item.default_concept if subrubro_edit_item else '' }}" placeholder="Compra de insumos operativos" />
+                </div>
+              </div>
+              <div class="d-flex gap-2 mt-3">
+                <button class="btn btn-sm btn-dark" type="submit">Guardar criterio</button>
+                <a class="btn btn-sm btn-outline-secondary" href="/accounting/entries">Nuevo</a>
+              </div>
+            </form>
+          </div>
+          <div class="col-xl-7">
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle" id="subrubroGridTable">
+                <thead class="table-light">
+                  <tr>
+                    <th>Codigo</th>
+                    <th>Nombre</th>
+                    <th>Tipo</th>
+                    <th>Criterios Debe/Haber</th>
+                    <th>Estado</th>
+                    <th>Accion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in custom_subrubros %}
+                  <tr data-subrubro-row>
+                    <td class="fw-semibold">{{ row.code }}</td>
+                    <td>{{ row.label }}</td>
+                    <td>{{ row.intent_code }}</td>
+                    <td class="small">
+                      <div><span class="text-muted">Debe:</span> {{ row.debit_terms or "-" }}</div>
+                      <div><span class="text-muted">Haber contado:</span> {{ row.credit_cash_terms or "-" }}</div>
+                      <div><span class="text-muted">Haber credito:</span> {{ row.credit_credit_terms or "-" }}</div>
+                    </td>
+                    <td>
+                      {% if row.activo %}
+                      <span class="badge text-bg-success">Activo</span>
+                      {% else %}
+                      <span class="badge text-bg-secondary">Inactivo</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-nowrap">
+                      <a class="btn btn-sm btn-outline-primary" href="/accounting/entries?subrubro_edit_id={{ row.id }}">Editar</a>
+                      {% if row.activo %}
+                      <form method="post" action="/accounting/subrubros/{{ row.id }}/deactivate" class="d-inline">
+                        <button class="btn btn-sm btn-outline-danger" type="submit">Desactivar</button>
+                      </form>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  {% else %}
+                  <tr>
+                    <td colspan="6" class="text-muted">No hay criterios personalizados registrados.</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="odoo-card mt-3">
@@ -210,8 +368,8 @@
 <script>
   const ACCOUNTING_ACCOUNTS = {{ cuentas_json | tojson }};
   const ACCOUNTING_SUGGESTIONS = {{ counter_suggestions | tojson }};
-  const ACCOUNTING_TEMPLATES = {{ voucher_templates | tojson }};
   const ACCOUNTING_POLICY = {{ policy | tojson }};
+  const ACCOUNTING_SUBRUBROS = {{ subrubros | tojson }};
 </script>
 
 <template id="lineTemplate">
@@ -243,12 +401,10 @@
     const addBtn = document.getElementById("btnAddLine");
     const smartAssistBtn = document.getElementById("btnSmartAssist");
     const smartAmountInput = document.getElementById("smartAmount");
-    const applyPresetBtn = document.getElementById("btnApplyPreset");
-    const presetSelect = document.getElementById("presetSelect");
-    const applyTemplateBtn = document.getElementById("btnApplyTemplate");
     const autoBtn = document.getElementById("btnAutoCounterpart");
     const voucherTypeSelect = document.getElementById("voucherTypeSelect");
-    const policyHint = document.getElementById("policyHint");
+    const subrubroSearchInput = document.getElementById("subrubroSearch");
+    const subrubroCodeInput = document.getElementById("subrubroCode");
     const totalDebe = document.getElementById("totalDebe");
     const totalHaber = document.getElementById("totalHaber");
     const accountSuggest = document.getElementById("accountSuggest");
@@ -257,12 +413,53 @@
     const assistantNature = document.getElementById("assistantNature");
     const assistantCounterpart = document.getElementById("assistantCounterpart");
     const assistantReason = document.getElementById("assistantReason");
+    const descriptionInput = document.querySelector('input[name="descripcion"]');
     const accountMap = Object.fromEntries((ACCOUNTING_ACCOUNTS || []).map((item) => [String(item.id), item]));
     const accountList = (ACCOUNTING_ACCOUNTS || []).map((item) => ({
       ...item,
       id: String(item.id),
       searchText: (item.codigo + " " + item.nombre + " " + (item.naturaleza || "") + " " + (item.tipo || "")).toLowerCase(),
     }));
+    const subrubroMap = Object.fromEntries((ACCOUNTING_SUBRUBROS || []).map((item) => [String(item.code || ""), item]));
+    const subrubroLabelMap = Object.fromEntries((ACCOUNTING_SUBRUBROS || []).map((item) => [String(item.label || "").toLowerCase(), String(item.code || "")]));
+    let smartAssistTimer = null;
+    let autoManagedGrid = false;
+
+    function markManualGridEdit() {
+      autoManagedGrid = false;
+    }
+
+    function normalizeText(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function resolveSubrubroCodeFromText(rawText) {
+      const text = normalizeText(rawText);
+      if (!text) return "";
+      if (subrubroLabelMap[text]) return subrubroLabelMap[text];
+      // Preferencia solo para consulta generica: "insumo"/"insumos"
+      if (text === "insumo" || text === "insumos") {
+        const preferred = (ACCOUNTING_SUBRUBROS || []).find((item) => {
+          const code = normalizeText(item.code);
+          return code === "insumos_tienda" || code === "insumos_productos";
+        });
+        if (preferred) return String(preferred.code || "");
+      }
+      const byCode = (ACCOUNTING_SUBRUBROS || []).find((item) => normalizeText(item.code) === text);
+      if (byCode) return String(byCode.code || "");
+      const contains = (ACCOUNTING_SUBRUBROS || []).find((item) => {
+        const label = normalizeText(item.label);
+        const code = normalizeText(item.code);
+        return label.includes(text) || text.includes(label) || code.includes(text);
+      });
+      return contains ? String(contains.code || "") : "";
+    }
+
+    function syncSubrubroCode() {
+      const code = resolveSubrubroCodeFromText(subrubroSearchInput?.value || "");
+      if (subrubroCodeInput) subrubroCodeInput.value = code;
+      return code;
+    }
 
     function getAccountId(row) {
       return row.querySelector(".line-account-id")?.value || "";
@@ -454,7 +651,7 @@
         assistantReason.textContent = "Sugerida por historial de asientos y naturaleza contable opuesta.";
       } else {
         assistantCounterpart.textContent = "Sin sugerencia historica";
-        assistantReason.textContent = "Usa plantilla por tipo o preset transaccional para generar cuentas base.";
+        assistantReason.textContent = "Usa plantilla por tipo o autollenado inteligente para generar cuentas base.";
       }
     }
 
@@ -533,116 +730,34 @@
       linesBody.innerHTML = "";
     }
 
-    function updatePolicyHint() {
-      const templateMeta = ACCOUNTING_TEMPLATES?.[voucherTypeSelect.value];
-      if (!templateMeta) {
-        policyHint.textContent = "";
-        return;
-      }
-      policyHint.textContent =
-        "Sugerencia: Debe -> " + templateMeta.debit_hint + " | Haber -> " + templateMeta.credit_hint;
-    }
-
-    function applyVoucherTemplate() {
-      const templateMeta = ACCOUNTING_TEMPLATES?.[voucherTypeSelect.value];
-      if (!templateMeta) {
-        alert("No hay plantilla disponible para este tipo.");
-        return;
-      }
-      if (!templateMeta.debit_account_id || !templateMeta.credit_account_id) {
-        alert("No pude construir plantilla automatica con el catalogo actual. Revisa nombres de cuentas.");
-        return;
-      }
-      clearLines();
-      addLine();
-      addLine();
+    function gridHasMeaningfulData() {
       const rows = Array.from(linesBody.querySelectorAll("tr"));
-      const debitRow = rows[0];
-      const creditRow = rows[1];
-      setAccount(debitRow, String(templateMeta.debit_account_id));
-      setAccount(creditRow, String(templateMeta.credit_account_id));
-      debitRow.querySelector(".line-debe").value = "1.00";
-      debitRow.querySelector(".line-haber").value = "0.00";
-      creditRow.querySelector(".line-debe").value = "0.00";
-      creditRow.querySelector(".line-haber").value = "1.00";
-
-      const descInput = document.querySelector('input[name="descripcion"]');
-      if (descInput && !descInput.value.trim()) {
-        descInput.value = templateMeta.concept || "";
-      }
-      calculateTotals();
+      return rows.some((row) => {
+        const accountId = getAccountId(row);
+        const detail = (row.querySelector(".line-detail")?.value || "").trim();
+        const debe = parseAmount(row.querySelector(".line-debe")?.value || "0");
+        const haber = parseAmount(row.querySelector(".line-haber")?.value || "0");
+        return !!accountId || !!detail || debe > 0 || haber > 0;
+      });
     }
 
-    function applyPreset() {
-      const preset = (presetSelect.value || "").trim();
-      if (!preset) {
-        alert("Selecciona un preset transaccional.");
-        return;
-      }
-      const policyIngresoDebe = ACCOUNTING_POLICY?.ingreso_debe_terms || ["caja", "banco", "cliente", "cobrar"];
-      const policyIngresoHaber = ACCOUNTING_POLICY?.ingreso_haber_terms || ["venta", "ingreso"];
-      const policyEgresoDebe = ACCOUNTING_POLICY?.egreso_debe_terms || ["gasto", "costo", "compra", "inventario"];
-      const policyEgresoHaber = ACCOUNTING_POLICY?.egreso_haber_terms || ["caja", "banco", "proveedor", "pagar"];
-
-      const definitions = {
-        sale_cash: {
-          deb: ["caja", "banco", ...policyIngresoDebe],
-          hab: [...policyIngresoHaber, "venta", "ingreso"],
-          desc: "Venta de contado",
-        },
-        sale_credit: {
-          deb: ["cliente", "cobrar", ...policyIngresoDebe],
-          hab: [...policyIngresoHaber, "venta", "ingreso"],
-          desc: "Venta al credito",
-        },
-        purchase_inventory: {
-          deb: ["inventario", ...policyEgresoDebe],
-          hab: ["proveedor", "pagar", ...policyEgresoHaber],
-          desc: "Compra de inventario",
-        },
-        expense_cash: {
-          deb: ["gasto", "administracion", "operacion", ...policyEgresoDebe],
-          hab: ["caja", "banco", ...policyEgresoHaber],
-          desc: "Registro de gasto contado",
-        },
-      };
-      const def = definitions[preset];
-      if (!def) return;
-      const debitAccount = findAccountByTerms(def.deb, "DEBE") || findAccountByTerms(def.deb, "");
-      const creditAccount = findAccountByTerms(def.hab, "HABER") || findAccountByTerms(def.hab, "");
-      if (!debitAccount || !creditAccount) {
-        alert("No encontre cuentas para este preset. Revisa catalogo y politicas.");
-        return;
-      }
-      clearLines();
-      addLine();
-      addLine();
-      const rows = Array.from(linesBody.querySelectorAll("tr"));
-      setAccount(rows[0], debitAccount.id);
-      setAccount(rows[1], creditAccount.id);
-      rows[0].querySelector(".line-detail").value = def.desc + " - Debe";
-      rows[1].querySelector(".line-detail").value = def.desc + " - Haber";
-      rows[0].querySelector(".line-debe").value = "1.00";
-      rows[0].querySelector(".line-haber").value = "0.00";
-      rows[1].querySelector(".line-debe").value = "0.00";
-      rows[1].querySelector(".line-haber").value = "1.00";
-      const descInput = document.querySelector('input[name="descripcion"]');
-      if (descInput && !descInput.value.trim()) descInput.value = def.desc;
-      calculateTotals();
-      refreshAssistant(rows[0]);
-    }
-
-    async function applySmartAssist() {
+    async function applySmartAssist(options = {}) {
+      const silent = !!options.silent;
+      const force = !!options.force;
       const tipoId = voucherTypeSelect?.value;
-      const descInput = document.querySelector('input[name="descripcion"]');
-      const descripcion = (descInput?.value || "").trim();
+      const descripcion = (descriptionInput?.value || "").trim();
+      const subrubroCode = syncSubrubroCode();
       const montoBase = parseAmount(smartAmountInput?.value || "0");
       if (!tipoId) {
-        alert("Selecciona el tipo de comprobante.");
+        if (!silent) alert("Selecciona el tipo de comprobante.");
         return;
       }
+      if (descripcion.length < 4 && !subrubroCode) return;
       if (montoBase <= 0) {
-        alert("Ingresa un monto base valido mayor a 0.");
+        if (!silent) alert("Ingresa un monto base valido mayor a 0.");
+        return;
+      }
+      if (!force && gridHasMeaningfulData() && !autoManagedGrid) {
         return;
       }
       try {
@@ -650,17 +765,18 @@
           tipo_id: String(tipoId),
           descripcion,
           monto: montoBase.toFixed(2),
+          subrubro_code: subrubroCode,
         });
         const response = await fetch("/accounting/entries/assist?" + params.toString(), {
           headers: { "x-requested-with": "fetch" },
         });
         const payload = await response.json().catch(() => null);
         if (!response.ok || !payload?.ok) {
-          alert(payload?.message || "No pude autocompletar el comprobante.");
+          if (!silent) alert(payload?.message || "No pude autocompletar el comprobante.");
           return;
         }
         if (!payload.debit_account || !payload.credit_account) {
-          alert("No se encontraron cuentas sugeridas.");
+          if (!silent) alert("No se encontraron cuentas sugeridas.");
           return;
         }
         clearLines();
@@ -675,13 +791,14 @@
         rows[0].querySelector(".line-haber").value = "0.00";
         rows[1].querySelector(".line-debe").value = "0.00";
         rows[1].querySelector(".line-haber").value = Number(payload.amount || montoBase).toFixed(2);
-        if (descInput && !descInput.value.trim()) {
-          descInput.value = payload.concept || "";
+        if (descriptionInput && !descriptionInput.value.trim()) {
+          descriptionInput.value = payload.concept || "";
         }
+        autoManagedGrid = true;
         calculateTotals();
         refreshAssistant(rows[0]);
       } catch (_e) {
-        alert("No se pudo conectar con el asistente inteligente.");
+        if (!silent) alert("No se pudo conectar con el asistente inteligente.");
       }
     }
 
@@ -699,20 +816,10 @@
           calculateTotals();
         });
         input.addEventListener("focus", () => refreshAssistant(row));
+        input.addEventListener("input", markManualGridEdit);
       });
+      row.querySelector(".line-detail").addEventListener("input", markManualGridEdit);
       row.querySelector(".line-detail").addEventListener("focus", () => refreshAssistant(row));
-      debeInput.addEventListener("input", () => {
-        if (!getAccountId(row)) {
-          const templateMeta = ACCOUNTING_TEMPLATES?.[voucherTypeSelect.value];
-          if (templateMeta?.debit_account_id) setAccount(row, String(templateMeta.debit_account_id));
-        }
-      });
-      haberInput.addEventListener("input", () => {
-        if (!getAccountId(row)) {
-          const templateMeta = ACCOUNTING_TEMPLATES?.[voucherTypeSelect.value];
-          if (templateMeta?.credit_account_id) setAccount(row, String(templateMeta.credit_account_id));
-        }
-      });
       removeBtn.addEventListener("click", () => {
         row.remove();
         calculateTotals();
@@ -725,6 +832,7 @@
         showResults(row, remote || searchAccounts(accountSearch.value, sideHint));
       });
       accountSearch.addEventListener("input", async () => {
+        markManualGridEdit();
         const selected = accountMap[getAccountId(row)];
         if (selected && accountSearch.value.trim() !== (selected.codigo + " - " + selected.nombre)) {
           setAccount(row, "");
@@ -833,12 +941,52 @@
     }
 
     addBtn.addEventListener("click", addLine);
-    smartAssistBtn?.addEventListener("click", applySmartAssist);
-    applyPresetBtn.addEventListener("click", applyPreset);
-    applyTemplateBtn.addEventListener("click", applyVoucherTemplate);
-    autoBtn.addEventListener("click", applySmartCounterpart);
-    voucherTypeSelect.addEventListener("change", updatePolicyHint);
+    smartAssistBtn?.addEventListener("click", () => applySmartAssist({ force: true }));
+      autoBtn.addEventListener("click", applySmartCounterpart);
+    voucherTypeSelect.addEventListener("change", () => {
+      if (smartAssistTimer) clearTimeout(smartAssistTimer);
+      smartAssistTimer = window.setTimeout(() => applySmartAssist({ silent: true }), 220);
+    });
+    subrubroSearchInput?.addEventListener("input", () => {
+      const code = syncSubrubroCode();
+      const selected = subrubroMap[String(code || "")];
+      if (selected && descriptionInput && !descriptionInput.value.trim()) {
+        descriptionInput.value = String(selected.default_concept || "").trim();
+      }
+      if (smartAssistTimer) clearTimeout(smartAssistTimer);
+      smartAssistTimer = window.setTimeout(() => applySmartAssist({ silent: true }), 180);
+    });
+    subrubroSearchInput?.addEventListener("change", () => {
+      syncSubrubroCode();
+    });
+    descriptionInput?.addEventListener("input", () => {
+      if (smartAssistTimer) clearTimeout(smartAssistTimer);
+      smartAssistTimer = window.setTimeout(() => applySmartAssist({ silent: true }), 320);
+    });
+    smartAmountInput?.addEventListener("change", () => {
+      if (smartAssistTimer) clearTimeout(smartAssistTimer);
+      smartAssistTimer = window.setTimeout(() => applySmartAssist({ silent: true }), 220);
+    });
+    smartAmountInput?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.code !== "NumpadEnter") return;
+      event.preventDefault();
+      if (smartAssistTimer) clearTimeout(smartAssistTimer);
+      applySmartAssist({ force: true });
+    });
+    smartAmountInput?.addEventListener("focus", () => {
+      smartAmountInput.select();
+    });
+    smartAmountInput?.addEventListener("click", () => {
+      smartAmountInput.select();
+    });
     document.getElementById("entryForm").addEventListener("submit", (event) => {
+      const activeEl = document.activeElement;
+      if (activeEl === smartAmountInput) {
+        event.preventDefault();
+        if (smartAssistTimer) clearTimeout(smartAssistTimer);
+        applySmartAssist({ force: true });
+        return;
+      }
       hiddenContainer.innerHTML = "";
       const rows = Array.from(linesBody.querySelectorAll("tr"));
       let validRows = 0;
@@ -865,8 +1013,23 @@
     });
     addLine();
     addLine();
-    updatePolicyHint();
+    syncSubrubroCode();
+    applySmartAssist({ silent: true });
     refreshAssistant(null);
+  })();
+</script>
+<script>
+  (function () {
+    const filterInput = document.getElementById("subrubroGridFilter");
+    const rows = Array.from(document.querySelectorAll("#subrubroGridTable tbody tr[data-subrubro-row]"));
+    if (!filterInput || !rows.length) return;
+    filterInput.addEventListener("input", () => {
+      const q = (filterInput.value || "").trim().toLowerCase();
+      rows.forEach((row) => {
+        const text = (row.textContent || "").toLowerCase();
+        row.style.display = !q || text.includes(q) ? "" : "none";
+      });
+    });
   })();
 </script>
 {% endblock %}

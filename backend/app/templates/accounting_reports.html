@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 sm:p-6 lg:p-8 text-[15px]">
+    <div class="odoo-page">
+      <div class="odoo-header d-flex align-items-start justify-content-between gap-3 flex-wrap">
+        <div>
+          <h1 class="odoo-title mb-1">Informes financieros</h1>
+          <p class="odoo-subtitle mb-0">Libro diario, mayor, balanza de comprobacion, resultados, balance, flujo de caja y notas financieras por mes operativo.</p>
+        </div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-outline-secondary" href="/accounting/entries">Comprobantes</a>
+          <a class="btn btn-outline-secondary" href="/accounting">Volver</a>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger mt-3">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success mt-3">{{ success }}</div>
+      {% endif %}
+
+      <div class="odoo-card mt-3">
+        <div class="odoo-section-title mb-2">Carga de saldos iniciales (Balanza)</div>
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <a class="btn btn-outline-primary w-100" href="/accounting/opening-balance/template">
+              Descargar formato Excel de saldos iniciales
+            </a>
+          </div>
+          <div class="col-lg-8">
+            <form method="post" action="/accounting/opening-balance/upload" enctype="multipart/form-data" class="row g-2">
+              <div class="col-md-3">
+                <label class="form-label">Fecha comprobante</label>
+                <input type="date" class="form-control" name="fecha" value="{{ start }}" required />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Sucursal</label>
+                <select class="form-select" name="branch_id">
+                  <option value="">General</option>
+                  {% for b in branches %}
+                  <option value="{{ b.id }}">{{ b.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Referencia</label>
+                <input class="form-control" name="referencia" value="Apertura contable inicial" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Archivo Excel</label>
+                <input type="file" class="form-control" name="file" accept=".xlsx" required />
+              </div>
+              <div class="col-md-12">
+                <label class="form-label">Descripcion</label>
+                <input class="form-control" name="descripcion" value="Registro de saldos iniciales desde plantilla Excel" />
+              </div>
+              <div class="col-12">
+                <button class="btn btn-dark" type="submit">Subir Excel y crear comprobante diario</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card mt-3">
+        <form method="get" action="/accounting/reports" class="row g-2 align-items-end">
+          <div class="col-md-2">
+            <label class="form-label">Mes operativo</label>
+            <input type="month" class="form-control" name="month" value="{{ month }}" />
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Desde</label>
+            <input type="date" class="form-control" name="start" value="{{ start }}" />
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Hasta</label>
+            <input type="date" class="form-control" name="end" value="{{ end }}" />
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Corte balance</label>
+            <input type="date" class="form-control" name="cutoff" value="{{ cutoff }}" />
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Sucursal</label>
+            <select class="form-select" name="branch_id">
+              <option value="">Todas permitidas</option>
+              {% for b in branches %}
+              <option value="{{ b.id }}" {% if selected_branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-1 d-grid">
+            <button class="btn btn-dark" type="submit">Aplicar</button>
+          </div>
+          <div class="col-md-2 d-grid">
+            <a
+              class="btn btn-outline-success"
+              href="/accounting/reports/export.xlsx?month={{ month }}&start={{ start }}&end={{ end }}&cutoff={{ cutoff }}{% if selected_branch_id %}&branch_id={{ selected_branch_id }}{% endif %}"
+            >
+              Exportar Excel
+            </a>
+          </div>
+          <div class="col-md-2 d-grid">
+            <a
+              class="btn btn-outline-danger"
+              href="/accounting/reports/export.pdf?month={{ month }}&start={{ start }}&end={{ end }}&cutoff={{ cutoff }}{% if selected_branch_id %}&branch_id={{ selected_branch_id }}{% endif %}"
+            >
+              Exportar PDF
+            </a>
+          </div>
+        </form>
+      </div>
+
+      <ul class="nav nav-tabs mt-3" id="reportTabs" role="tablist">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-diario" type="button">Libro Diario</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-mayor" type="button">Libro Mayor</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-balanza" type="button">Balanza de Comprobacion</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-resultados" type="button">Estado de Resultados</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-balance" type="button">Balance General</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-flujo" type="button">Flujo de Caja</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-notas" type="button">Notas Financieras</button></li>
+      </ul>
+
+      <div class="tab-content border border-top-0 rounded-bottom p-3 bg-white">
+        <div class="tab-pane fade show active" id="tab-diario">
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Fecha</th><th>Comprobante</th><th>Cuenta</th><th>Detalle</th><th class="text-end">Debe</th><th class="text-end">Haber</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for line, entry, account in line_rows %}
+                <tr>
+                  <td>{{ entry.fecha }}</td>
+                  <td>{{ entry.numero }}</td>
+                  <td>{{ account.codigo }} - {{ account.nombre }}</td>
+                  <td>{{ line.descripcion or entry.descripcion }}</td>
+                  <td class="text-end">{{ "%.2f"|format(line.debe or 0) }}</td>
+                  <td class="text-end">{{ "%.2f"|format(line.haber or 0) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-muted">Sin movimientos en el periodo.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-mayor">
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Cuenta</th><th>Naturaleza</th><th class="text-end">Saldo inicial</th><th class="text-end">Debe</th><th class="text-end">Haber</th><th class="text-end">Saldo final</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in ledger_rows %}
+                <tr>
+                  <td>{{ row.codigo }} - {{ row.nombre }}</td>
+                  <td>{{ row.naturaleza }}</td>
+                  <td class="text-end">{{ "%.2f"|format(row.saldo_inicial) }}</td>
+                  <td class="text-end">{{ "%.2f"|format(row.debe) }}</td>
+                  <td class="text-end">{{ "%.2f"|format(row.haber) }}</td>
+                  <td class="text-end fw-semibold">{{ "%.2f"|format(row.saldo_final) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-muted">Sin saldos para mostrar.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-balanza">
+          <div class="small text-muted mb-2">
+            Balanza del periodo mensual: {{ start }} al {{ end }}.
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th rowspan="2">Cuenta</th>
+                  <th colspan="2" class="text-center">Saldo inicial</th>
+                  <th colspan="2" class="text-center">Movimientos</th>
+                  <th colspan="2" class="text-center">Saldo final</th>
+                </tr>
+                <tr>
+                  <th class="text-end">Deudor</th>
+                  <th class="text-end">Acreedor</th>
+                  <th class="text-end">Debe</th>
+                  <th class="text-end">Haber</th>
+                  <th class="text-end">Deudor</th>
+                  <th class="text-end">Acreedor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in balanza_rows %}
+                <tr>
+                  <td>{{ row.codigo }} - {{ row.nombre }}</td>
+                  <td class="text-end">{{ "%.2f"|format(row.saldo_inicial_deudor) }}</td>
+                  <td class="text-end">{{ "%.2f"|format(row.saldo_inicial_acreedor) }}</td>
+                  <td class="text-end">{{ "%.2f"|format(row.mov_debe) }}</td>
+                  <td class="text-end">{{ "%.2f"|format(row.mov_haber) }}</td>
+                  <td class="text-end fw-semibold">{{ "%.2f"|format(row.saldo_final_deudor) }}</td>
+                  <td class="text-end fw-semibold">{{ "%.2f"|format(row.saldo_final_acreedor) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-muted">Sin movimientos para balanza en el periodo.</td></tr>
+                {% endfor %}
+              </tbody>
+              <tfoot class="table-light">
+                <tr>
+                  <th class="text-end">Totales</th>
+                  <th class="text-end">-</th>
+                  <th class="text-end">-</th>
+                  <th class="text-end">{{ "%.2f"|format(balanza_debe) }}</th>
+                  <th class="text-end">{{ "%.2f"|format(balanza_haber) }}</th>
+                  <th class="text-end">{{ "%.2f"|format(balanza_saldo_deudor) }}</th>
+                  <th class="text-end">{{ "%.2f"|format(balanza_saldo_acreedor) }}</th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-resultados">
+          <div class="row g-3">
+            <div class="col-lg-8">
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle">
+                  <thead class="table-light"><tr><th>Cuenta</th><th>Clasificacion</th><th class="text-end">Monto</th></tr></thead>
+                  <tbody>
+                    {% for row in result_rows %}
+                    <tr>
+                      <td>{{ row.codigo }} - {{ row.nombre }}</td>
+                      <td>{{ row.clasificacion }}</td>
+                      <td class="text-end">{{ "%.2f"|format(row.monto) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="text-muted">Sin cuentas de resultado para el periodo.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="col-lg-4">
+              <div class="border rounded p-3 bg-light-subtle">
+                <div class="d-flex justify-content-between"><span>Ingresos</span><strong>{{ "%.2f"|format(total_ingresos) }}</strong></div>
+                <div class="d-flex justify-content-between"><span>Gastos</span><strong>{{ "%.2f"|format(total_gastos) }}</strong></div>
+                <hr />
+                <div class="d-flex justify-content-between"><span>Utilidad / Perdida</span><strong>{{ "%.2f"|format(utilidad_neta) }}</strong></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-balance">
+          <div class="row g-3">
+            <div class="col-lg-4">
+              <div class="border rounded p-2 h-100">
+                <div class="fw-semibold mb-2">Activo</div>
+                <ul class="list-group list-group-flush small">
+                  {% for row in activos_rows %}
+                  <li class="list-group-item d-flex justify-content-between"><span>{{ row.codigo }} {{ row.nombre }}</span><strong>{{ "%.2f"|format(row.monto) }}</strong></li>
+                  {% else %}
+                  <li class="list-group-item text-muted">Sin cuentas de activo.</li>
+                  {% endfor %}
+                </ul>
+                <div class="text-end mt-2 fw-semibold">Total Activo: {{ "%.2f"|format(total_activo) }}</div>
+              </div>
+            </div>
+            <div class="col-lg-4">
+              <div class="border rounded p-2 h-100">
+                <div class="fw-semibold mb-2">Pasivo</div>
+                <ul class="list-group list-group-flush small">
+                  {% for row in pasivos_rows %}
+                  <li class="list-group-item d-flex justify-content-between"><span>{{ row.codigo }} {{ row.nombre }}</span><strong>{{ "%.2f"|format(row.monto) }}</strong></li>
+                  {% else %}
+                  <li class="list-group-item text-muted">Sin cuentas de pasivo.</li>
+                  {% endfor %}
+                </ul>
+                <div class="text-end mt-2 fw-semibold">Total Pasivo: {{ "%.2f"|format(total_pasivo) }}</div>
+              </div>
+            </div>
+            <div class="col-lg-4">
+              <div class="border rounded p-2 h-100">
+                <div class="fw-semibold mb-2">Patrimonio</div>
+                <ul class="list-group list-group-flush small">
+                  {% for row in patrimonio_rows %}
+                  <li class="list-group-item d-flex justify-content-between"><span>{{ row.codigo }} {{ row.nombre }}</span><strong>{{ "%.2f"|format(row.monto) }}</strong></li>
+                  {% else %}
+                  <li class="list-group-item text-muted">Sin cuentas de patrimonio.</li>
+                  {% endfor %}
+                </ul>
+                <div class="text-end mt-2 fw-semibold">Total Patrimonio: {{ "%.2f"|format(total_patrimonio) }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="alert alert-info mt-3 mb-0">
+            Cuadre: Activo {{ "%.2f"|format(total_activo) }} vs Pasivo + Patrimonio {{ "%.2f"|format(total_pasivo + total_patrimonio) }}.
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-flujo">
+          <div class="row g-3">
+            <div class="col-lg-8">
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle">
+                  <thead class="table-light"><tr><th>Cuenta de efectivo</th><th class="text-end">Debe</th><th class="text-end">Haber</th><th class="text-end">Neto</th></tr></thead>
+                  <tbody>
+                    {% for row in cash_movements %}
+                    <tr>
+                      <td>{{ row.codigo }} - {{ row.nombre }}</td>
+                      <td class="text-end">{{ "%.2f"|format(row.debe) }}</td>
+                      <td class="text-end">{{ "%.2f"|format(row.haber) }}</td>
+                      <td class="text-end fw-semibold">{{ "%.2f"|format(row.neto) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-muted">Sin movimientos de caja/banco en el periodo.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="col-lg-4">
+              <div class="border rounded p-3 bg-light-subtle">
+                <div class="d-flex justify-content-between"><span>Entradas</span><strong>{{ "%.2f"|format(flujo_entradas) }}</strong></div>
+                <div class="d-flex justify-content-between"><span>Salidas</span><strong>{{ "%.2f"|format(flujo_salidas) }}</strong></div>
+                <hr />
+                <div class="d-flex justify-content-between"><span>Flujo neto</span><strong>{{ "%.2f"|format(flujo_neto) }}</strong></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-notas">
+          <ol class="mb-0 ps-3">
+            {% for note in notas_financieras %}
+            <li class="mb-2">{{ note }}</li>
+            {% else %}
+            <li>No hay notas generadas para este corte.</li>
+            {% endfor %}
+          </ol>
+        </div>
+      </div>
+
+      <div class="text-end text-slate text-sm mt-4">Version {{ version }}</div>
+    </div>
+  </main>
+</div>
+{% endblock %}

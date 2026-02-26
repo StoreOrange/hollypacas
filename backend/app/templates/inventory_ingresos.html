@@ -97,6 +97,51 @@
     flex-direction: column;
     justify-content: flex-start;
   }
+  .shoe-intake-panel {
+    font-size: 0.9rem;
+  }
+  .shoe-intake-panel .form-label {
+    font-size: 0.82rem;
+    margin-bottom: 0.28rem;
+    font-weight: 600;
+    color: #334155;
+  }
+  .shoe-intake-panel .form-control,
+  .shoe-intake-panel .form-select,
+  .shoe-intake-panel .btn,
+  .shoe-intake-panel .table {
+    font-size: 0.88rem;
+  }
+  .shoe-intake-panel .form-control,
+  .shoe-intake-panel .form-select {
+    min-height: 36px;
+    border-radius: 0.6rem;
+  }
+  .shoe-price-preview td,
+  .shoe-price-preview th {
+    padding: 0.24rem 0.48rem;
+    font-size: 0.8rem;
+  }
+  .shoe-intake-panel .shoe-total-panel {
+    border: 1px dashed #93c5fd;
+    border-radius: 0.8rem;
+    background: #eff6ff;
+    color: #1e3a8a;
+    text-align: center;
+    padding: 0.4rem 0.6rem;
+    font-weight: 700;
+  }
+  .shoe-matrix-table th.col-cantidad,
+  .shoe-matrix-table td.col-cantidad {
+    width: 118px;
+    min-width: 118px;
+    max-width: 118px;
+  }
+  .shoe-matrix-table td.col-cantidad .shoe-qty-input {
+    max-width: 92px;
+    margin: 0 auto;
+    text-align: center;
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -139,6 +184,9 @@
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/inventory/egresos">Egresos de inventario</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/inventory/traslados-rapidos">Traslados rapidos</a>
           </li>
         </ul>
       </div>
@@ -184,6 +232,237 @@
       {{ success }}
     </div>
     {% endif %}
+
+      {% if shoes_mode %}
+      <div class="card shadow-sm border-0 mt-3">
+        <div class="card-body p-3 p-lg-4 shoe-intake-panel">
+          <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
+            <h6 class="mb-0 fw-semibold">Ingreso especializado de zapatos</h6>
+            <span class="badge bg-primary-subtle text-primary-emphasis">BD Zapatos</span>
+          </div>
+          <div class="text-muted small mb-3">
+            Define codigo base + linea + marca, selecciona formato de tallas y colores. El sistema genera variantes por color/talla automaticamente.
+          </div>
+          <form method="post" action="/inventory/ingresos/zapatos" id="shoe-ingreso-form" class="row g-2">
+            <div class="col-md-2">
+              <label class="form-label">Tipo *</label>
+              <select name="tipo_id" class="form-select form-select-sm" required>
+                <option value="">Selecciona</option>
+                {% for tipo in tipos %}
+                <option value="{{ tipo.id }}">{{ tipo.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Fecha *</label>
+              <input type="date" name="fecha" class="form-control form-control-sm" required />
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Bodega *</label>
+              <select name="bodega_id" class="form-select form-select-sm" required>
+                <option value="">Selecciona</option>
+                {% for bodega in bodegas %}
+                <option value="{{ bodega.id }}" {% if user.default_bodega_id == bodega.id or (not user.default_bodega_id and bodega.code == "central") %}selected{% endif %}>{{ bodega.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Proveedor</label>
+              <select name="proveedor_id" class="form-select form-select-sm">
+                <option value="">Selecciona</option>
+                {% for proveedor in proveedores %}
+                <option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-1">
+              <label class="form-label">Moneda *</label>
+              <input type="text" class="form-control form-control-sm" value="C$" readonly />
+              <input type="hidden" name="moneda" value="CS" />
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Observacion</label>
+              <input type="text" name="observacion" class="form-control form-control-sm" />
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Codigo base *</label>
+              <input id="shoe-codigo-base" type="text" name="codigo_base" class="form-control form-control-sm text-uppercase" required />
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Linea *</label>
+              <input id="shoe-linea-text" list="shoe-linea-list" class="form-control form-control-sm" placeholder="Escribe y filtra linea..." required />
+              <input id="shoe-linea-id" type="hidden" name="linea_id" required />
+              <datalist id="shoe-linea-list">
+                {% for linea in lineas %}
+                <option value="{{ linea.linea }}" data-id="{{ linea.id }}"></option>
+                {% endfor %}
+              </datalist>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Marca *</label>
+              <input id="shoe-marca-nombre" name="marca_nombre" list="shoe-marca-list" class="form-control form-control-sm" placeholder="Escribe y filtra marca..." required />
+              <datalist id="shoe-marca-list">
+                {% for m in marcas %}
+                <option value="{{ m.nombre }}"></option>
+                {% endfor %}
+              </datalist>
+            </div>
+            <div class="col-md-1">
+              <label class="form-label">Costo</label>
+              <input id="shoe-costo-unitario" type="number" min="0" step="0.01" name="costo_unitario" class="form-control form-control-sm" value="0" />
+            </div>
+            <div class="col-md-1">
+              <label class="form-label">Precio</label>
+              <input id="shoe-precio-unitario" type="number" min="0" step="0.01" name="precio_unitario" class="form-control form-control-sm" value="0" />
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Escala de precios (7)</label>
+              <div class="table-responsive border rounded-2">
+                <table class="table table-sm mb-0 shoe-price-preview">
+                  <thead class="table-light">
+                    <tr>
+                      <th>#</th>
+                      <th class="text-end">Precio C$</th>
+                    </tr>
+                  </thead>
+                  <tbody id="shoe-price-scale-body">
+                    <tr><td>1</td><td class="text-end">0.00</td></tr>
+                    <tr><td>2</td><td class="text-end">0.00</td></tr>
+                    <tr><td>3</td><td class="text-end">0.00</td></tr>
+                    <tr><td>4</td><td class="text-end">0.00</td></tr>
+                    <tr><td>5</td><td class="text-end">0.00</td></tr>
+                    <tr><td>6</td><td class="text-end">0.00</td></tr>
+                    <tr><td>7</td><td class="text-end">0.00</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Nuevo color (catalogo)</label>
+              <div class="input-group input-group-sm">
+                <input id="shoe-new-color-name" type="text" class="form-control" placeholder="Nombre" />
+                <input id="shoe-new-color-abbr" type="text" class="form-control" placeholder="Abrev." />
+                <button id="shoe-create-color-btn" type="button" class="btn btn-outline-secondary">Agregar</button>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="border rounded-3 p-2 bg-light">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <strong class="small">Carga rapida (maximo 3 colores por bloque)</strong>
+                  <button id="shoe-add-3-selections" class="btn btn-sm btn-outline-primary" type="button">Agregar seleccionados</button>
+                </div>
+                <div class="row g-2">
+                  <datalist id="shoe-color-list">
+                    {% for color in shoe_colors %}
+                    <option value="{{ color.nombre }}" data-id="{{ color.id }}" data-abbr="{{ color.abreviatura }}"></option>
+                    {% endfor %}
+                  </datalist>
+                  {% for slot in [1, 2, 3] %}
+                  <div class="col-lg-4">
+                    <div class="border rounded-3 p-2 h-100 bg-white">
+                      <div class="fw-semibold small mb-1">Opcion {{ slot }}</div>
+                      <div class="mb-2">
+                        <label class="form-label">Color</label>
+                        <input id="shoe-color-text-{{ slot }}" list="shoe-color-list" class="form-control form-control-sm" placeholder="Escribe y filtra color..." />
+                        <input id="shoe-color-id-{{ slot }}" type="hidden" />
+                      </div>
+                      <div class="mb-2">
+                        <label class="form-label">Formato</label>
+                        <select id="shoe-formato-id-{{ slot }}" class="form-select form-select-sm shoe-smart-select">
+                          <option value="">Selecciona formato</option>
+                          {% for f in shoe_size_formats_payload %}
+                          <option value="{{ f.id }}" data-lines='{{ f.lineas | tojson }}'>{{ f.codigo }} - {{ f.nombre }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                      <div class="mb-2">
+                        <label class="form-label">Cajones</label>
+                        <input id="shoe-cajones-{{ slot }}" type="number" min="1" step="1" value="1" class="form-control form-control-sm" />
+                      </div>
+                      <div class="shoe-total-panel">
+                        Total del color: <span id="shoe-slot-total-{{ slot }}">0</span>
+                      </div>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="border rounded-3 p-2 bg-light">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <strong class="small">Formatos de tallas</strong>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#shoe-format-modal">
+                    Nuevo formato
+                  </button>
+                </div>
+                <div class="text-muted small">Crea formatos en un modal y luego selecciona el formato por color.</div>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-0 shoe-matrix-table">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Color</th>
+                      <th>Talla</th>
+                      <th class="col-cantidad text-center">Cantidad</th>
+                      <th>Descripcion auto</th>
+                      <th class="text-center">Quitar</th>
+                    </tr>
+                  </thead>
+                  <tbody id="shoe-matrix-body">
+                    <tr><td colspan="5" class="text-muted text-center">Sin matriz generada.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <input type="hidden" name="matrix_json" id="shoe-matrix-json" />
+            <div class="col-12 d-flex justify-content-between align-items-center">
+              <div class="small text-muted">Total unidades: <strong id="shoe-total-units">0</strong></div>
+              <div class="d-flex align-items-center gap-2">
+                <button id="shoe-clear-form-btn" type="button" class="btn btn-sm btn-outline-secondary">Limpiar vista</button>
+                <button type="submit" class="btn btn-sm btn-primary">Registrar ingreso de zapatos</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="modal fade" id="shoe-format-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Nuevo formato de tallas</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+              <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                  <label class="form-label">Codigo formato</label>
+                  <input id="shoe-new-format-code" type="text" class="form-control form-control-sm" placeholder="Ej: 24-1" />
+                </div>
+                <div class="col-md-8">
+                  <label class="form-label">Nombre</label>
+                  <input id="shoe-new-format-name" type="text" class="form-control form-control-sm" placeholder="Ej: Formato 24 pares" />
+                </div>
+              </div>
+              <div class="row g-2 mt-2" id="shoe-format-size-grid">
+                {% for talla in ["1","2","3","4","5.5","6","6.5","7","7.5","8","8.5","9","10","11","12","13","14"] %}
+                <div class="col-6 col-md-3 col-lg-2">
+                  <label class="form-label">Talla {{ talla }}</label>
+                  <input type="number" min="0" step="1" value="0" class="form-control form-control-sm shoe-new-format-size" data-size="{{ talla }}" />
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+              <button id="shoe-create-format-btn" type="button" class="btn btn-primary btn-sm">Guardar formato</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
 
       <div class="card shadow-sm border-0">
         <div class="card-body p-3 p-lg-4">
@@ -2662,4 +2941,396 @@
 
   window.addEventListener("beforeunload", saveDraft);
 </script>
+{% if shoes_mode %}
+<script>
+  (() => {
+    const form = document.getElementById("shoe-ingreso-form");
+    if (!form) return;
+    const lineaTextInput = document.getElementById("shoe-linea-text");
+    const lineaIdInput = document.getElementById("shoe-linea-id");
+    const lineaList = document.getElementById("shoe-linea-list");
+    const marcaSelect = document.getElementById("shoe-marca-nombre");
+    const slotConfig = [1, 2, 3].map((slot) => ({
+      slot,
+      colorTextInput: document.getElementById(`shoe-color-text-${slot}`),
+      colorIdInput: document.getElementById(`shoe-color-id-${slot}`),
+      formatSelect: document.getElementById(`shoe-formato-id-${slot}`),
+      cajonesInput: document.getElementById(`shoe-cajones-${slot}`),
+      totalEl: document.getElementById(`shoe-slot-total-${slot}`),
+    }));
+    const addThreeBtn = document.getElementById("shoe-add-3-selections");
+    const createFormatBtn = document.getElementById("shoe-create-format-btn");
+    const newFormatCodeInput = document.getElementById("shoe-new-format-code");
+    const newFormatNameInput = document.getElementById("shoe-new-format-name");
+    const codigoBaseInput = document.getElementById("shoe-codigo-base");
+    const precioInput = document.getElementById("shoe-precio-unitario");
+    const priceScaleBody = document.getElementById("shoe-price-scale-body");
+    const clearFormBtn = document.getElementById("shoe-clear-form-btn");
+    const matrixBody = document.getElementById("shoe-matrix-body");
+    const matrixJsonInput = document.getElementById("shoe-matrix-json");
+    const totalUnits = document.getElementById("shoe-total-units");
+    const createColorBtn = document.getElementById("shoe-create-color-btn");
+    const newColorName = document.getElementById("shoe-new-color-name");
+    const newColorAbbr = document.getElementById("shoe-new-color-abbr");
+    const matrixState = new Map();
+
+    function getDatalistOptionByValue(listEl, value) {
+      const target = String(value || "").trim().toLowerCase();
+      if (!listEl || !target) return null;
+      return Array.from(listEl.options || []).find((opt) => String(opt.value || "").trim().toLowerCase() === target) || null;
+    }
+    function resolveLineaIdFromInput() {
+      if (!lineaIdInput) return;
+      const opt = getDatalistOptionByValue(lineaList, lineaTextInput?.value || "");
+      lineaIdInput.value = opt ? String(opt.dataset.id || "") : "";
+    }
+
+    function sanitizeToken(v) {
+      return String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10) || "X";
+    }
+    function initials(v, limit = 3) {
+      const words = String(v || "").trim().split(/[^A-Za-z0-9]+/).filter(Boolean);
+      if (!words.length) return "X";
+      return words.map(w => w[0].toUpperCase()).join("").slice(0, limit) || "X";
+    }
+    function selectedFormatLines(selectEl) {
+      const opt = selectEl?.options[selectEl.selectedIndex];
+      if (!opt) return [];
+      try {
+        const lines = JSON.parse(opt.dataset.lines || "[]");
+        return Array.isArray(lines) ? lines : [];
+      } catch {
+        return [];
+      }
+    }
+    function selectedColor(slotObj) {
+      const colorList = document.getElementById("shoe-color-list");
+      const textValue = slotObj?.colorTextInput?.value || "";
+      const opt = getDatalistOptionByValue(colorList, textValue);
+      if (!opt) {
+        if (slotObj?.colorIdInput) slotObj.colorIdInput.value = "";
+        return null;
+      }
+      if (slotObj?.colorIdInput) slotObj.colorIdInput.value = String(opt.dataset.id || "");
+      return {
+        id: Number(opt.dataset.id || 0),
+        name: opt.value || "",
+        abbr: opt.dataset.abbr || "",
+      };
+    }
+    function toNumber(v) {
+      const n = Number(v || 0);
+      return Number.isFinite(n) ? n : 0;
+    }
+    function updatePriceScale() {
+      if (!priceScaleBody) return;
+      const base = Math.max(0, toNumber(precioInput?.value));
+      const rows = [];
+      for (let i = 0; i < 7; i += 1) {
+        const price = Math.max(0, base - i * 10);
+        rows.push(`<tr><td>${i + 1}</td><td class="text-end">${price.toFixed(2)}</td></tr>`);
+      }
+      priceScaleBody.innerHTML = rows.join("");
+    }
+    function updateSlotTotal(slotObj) {
+      if (!slotObj?.totalEl) return;
+      const color = selectedColor(slotObj);
+      if (!color || !color.id) {
+        slotObj.totalEl.textContent = "0";
+        return;
+      }
+      let total = 0;
+      matrixState.forEach((entry) => {
+        if (Number(entry.colorId) === Number(color.id)) {
+          total += Math.max(0, toNumber(entry.qty));
+        }
+      });
+      slotObj.totalEl.textContent = String(total);
+    }
+    function updateAllSlotTotals() {
+      slotConfig.forEach(updateSlotTotal);
+    }
+    function resetShoeFormView() {
+      matrixState.clear();
+      matrixBody.innerHTML = `<tr><td colspan="5" class="text-muted text-center">Sin matriz generada.</td></tr>`;
+      matrixJsonInput.value = "{}";
+      totalUnits.textContent = "0";
+      slotConfig.forEach((slotObj) => {
+        if (slotObj.totalEl) slotObj.totalEl.textContent = "0";
+        if (slotObj.cajonesInput) slotObj.cajonesInput.value = "1";
+        if (slotObj.colorTextInput) slotObj.colorTextInput.value = "";
+        if (slotObj.colorIdInput) slotObj.colorIdInput.value = "";
+        if (slotObj.formatSelect) {
+          slotObj.formatSelect.value = "";
+        }
+      });
+      if (newColorName) newColorName.value = "";
+      if (newColorAbbr) newColorAbbr.value = "";
+    }
+    function renderMatrixFromState() {
+      const entries = Array.from(matrixState.values()).sort((a, b) => {
+        if (a.colorName === b.colorName) {
+          return Number(a.talla) - Number(b.talla);
+        }
+        return a.colorName.localeCompare(b.colorName);
+      });
+      const base = sanitizeToken(codigoBaseInput?.value || "");
+      const lineName = lineaTextInput?.value || "";
+      const marcaName = marcaSelect?.value || "";
+      const lineIni = initials(lineName, 3);
+      const marcaIni = initials(marcaName, 3);
+      const payload = {};
+      let total = 0;
+      if (!entries.length) {
+        matrixBody.innerHTML = `<tr><td colspan="5" class="text-muted text-center">Sin matriz generada.</td></tr>`;
+        matrixJsonInput.value = "{}";
+        totalUnits.textContent = "0";
+        return;
+      }
+      const rows = entries.map((entry) => {
+        const colorId = String(entry.colorId);
+        const size = String(entry.talla || "");
+        if (!payload[colorId]) payload[colorId] = {};
+        payload[colorId][size] = toNumber(entry.qty);
+        total += toNumber(entry.qty);
+        const autoDesc = `${base}-${lineIni}${marcaIni}-${sanitizeToken(entry.colorAbbr || entry.colorName)}-${size}`;
+        return `
+          <tr>
+            <td>${entry.colorName} (${entry.colorAbbr || "-"})</td>
+            <td>${size}</td>
+            <td class="col-cantidad"><input type="number" min="0" step="1" class="form-control form-control-sm shoe-qty-input" data-key="${entry.key}" value="${toNumber(entry.qty)}" /></td>
+            <td class="small text-muted">${autoDesc}</td>
+            <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger shoe-remove-row" data-key="${entry.key}"><i class="bi bi-x-lg"></i></button></td>
+          </tr>
+        `;
+      });
+      matrixBody.innerHTML = rows.join("");
+      matrixJsonInput.value = JSON.stringify(payload);
+      totalUnits.textContent = String(total);
+      bindQtyInputs();
+      updateAllSlotTotals();
+    }
+    function bindQtyInputs() {
+      matrixBody.querySelectorAll(".shoe-qty-input").forEach((input) => {
+        input.addEventListener("input", () => {
+          const key = String(input.dataset.key || "");
+          const row = matrixState.get(key);
+          if (!row) return;
+          row.qty = Math.max(0, toNumber(input.value));
+          matrixState.set(key, row);
+          renderMatrixFromState();
+        });
+        input.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          const fields = Array.from(matrixBody.querySelectorAll(".shoe-qty-input"));
+          const idx = fields.indexOf(input);
+          const next = fields[idx + 1];
+          if (next) {
+            next.focus();
+            next.select();
+          } else {
+            input.blur();
+          }
+        });
+      });
+      matrixBody.querySelectorAll(".shoe-remove-row").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = String(btn.dataset.key || "");
+          matrixState.delete(key);
+          renderMatrixFromState();
+        });
+      });
+    }
+
+    function addSlotSelection(slotObj) {
+      const lines = selectedFormatLines(slotObj.formatSelect);
+      const color = selectedColor(slotObj);
+      const packs = Math.max(1, Math.trunc(toNumber(slotObj.cajonesInput?.value || 1)));
+      if (!lines.length || !color || !color.id) {
+        return false;
+      }
+      lines.forEach((line) => {
+        const talla = String(line.talla || "");
+        const key = `${color.id}|${talla}`;
+        const qtyToAdd = Math.max(0, toNumber(line.cantidad || 0) * packs);
+        const current = matrixState.get(key);
+        if (current) {
+          current.qty = Math.max(0, toNumber(current.qty) + qtyToAdd);
+          matrixState.set(key, current);
+        } else {
+          matrixState.set(key, {
+            key,
+            colorId: color.id,
+            colorName: color.name,
+            colorAbbr: color.abbr,
+            talla,
+            qty: qtyToAdd,
+          });
+        }
+      });
+      return true;
+    }
+
+    addThreeBtn?.addEventListener("click", () => {
+      let added = 0;
+      slotConfig.forEach((slotObj) => {
+        if (addSlotSelection(slotObj)) added += 1;
+      });
+      if (!added) {
+        alert("Debes elegir al menos una opcion con color + formato.");
+        return;
+      }
+      renderMatrixFromState();
+    });
+
+    slotConfig.forEach((slotObj) => {
+      slotObj.colorTextInput?.addEventListener("input", () => updateSlotTotal(slotObj));
+      slotObj.colorTextInput?.addEventListener("change", () => updateSlotTotal(slotObj));
+      slotObj.cajonesInput?.addEventListener("input", () => updateSlotTotal(slotObj));
+      slotObj.formatSelect?.addEventListener("change", () => updateSlotTotal(slotObj));
+    });
+
+    lineaTextInput?.addEventListener("input", () => {
+      resolveLineaIdFromInput();
+      renderMatrixFromState();
+    });
+    lineaTextInput?.addEventListener("change", () => {
+      resolveLineaIdFromInput();
+      renderMatrixFromState();
+    });
+    marcaSelect?.addEventListener("input", renderMatrixFromState);
+    marcaSelect?.addEventListener("change", renderMatrixFromState);
+    codigoBaseInput?.addEventListener("input", renderMatrixFromState);
+    precioInput?.addEventListener("input", updatePriceScale);
+    resolveLineaIdFromInput();
+    updatePriceScale();
+    updateAllSlotTotals();
+
+    createColorBtn?.addEventListener("click", async () => {
+      const nombre = (newColorName?.value || "").trim();
+      const abreviatura = (newColorAbbr?.value || "").trim().toUpperCase();
+      if (!nombre || !abreviatura) {
+        alert("Nombre y abreviatura son requeridos.");
+        return;
+      }
+      const body = new URLSearchParams();
+      body.append("nombre", nombre);
+      body.append("abreviatura", abreviatura);
+      body.append("redirect_to", "/inventory/ingresos");
+      const response = await fetch("/inventory/color", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Requested-With": "fetch",
+          "Accept": "application/json",
+        },
+        body: body.toString(),
+      });
+      if (!response.ok) {
+        alert("No se pudo crear el color.");
+        return;
+      }
+      const data = await response.json();
+      if (!data?.ok || !data?.color) {
+        alert(data?.message || "No se pudo crear el color.");
+        return;
+      }
+      const color = data.color;
+      const colorList = document.getElementById("shoe-color-list");
+      if (colorList) {
+        let option = Array.from(colorList.options || []).find((opt) => String(opt.dataset.id || "") === String(color.id));
+        if (!option) {
+          option = document.createElement("option");
+          option.value = color.nombre || "";
+          option.dataset.id = String(color.id);
+          option.dataset.abbr = color.abreviatura || "";
+          colorList.appendChild(option);
+        } else {
+          option.value = color.nombre || option.value || "";
+          option.dataset.abbr = color.abreviatura || option.dataset.abbr || "";
+        }
+      }
+      if (slotConfig[0]?.colorTextInput) {
+        slotConfig[0].colorTextInput.value = color.nombre || "";
+        if (slotConfig[0].colorIdInput) slotConfig[0].colorIdInput.value = String(color.id);
+      }
+      if (newColorName) newColorName.value = "";
+      if (newColorAbbr) newColorAbbr.value = "";
+      updateAllSlotTotals();
+    });
+    createFormatBtn?.addEventListener("click", async () => {
+      const codigo = (newFormatCodeInput?.value || "").trim().toUpperCase();
+      const nombre = (newFormatNameInput?.value || "").trim();
+      const lines = Array.from(document.querySelectorAll(".shoe-new-format-size"))
+        .map((el) => ({
+          talla: String(el.dataset.size || "").trim(),
+          cantidad: Math.max(0, Math.trunc(toNumber(el.value || 0))),
+        }))
+        .filter((item) => item.talla && item.cantidad > 0);
+      if (!codigo || !nombre || !lines.length) {
+        alert("Debes completar codigo, nombre y al menos una talla con cantidad.");
+        return;
+      }
+      const body = new URLSearchParams();
+      body.append("codigo", codigo);
+      body.append("nombre", nombre);
+      body.append("lineas_json", JSON.stringify(lines));
+      body.append("redirect_to", "/inventory/ingresos");
+      const response = await fetch("/inventory/shoe-format", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Requested-With": "fetch",
+          "Accept": "application/json",
+        },
+        body: body.toString(),
+      });
+      if (!response.ok) {
+        alert("No se pudo guardar el formato.");
+        return;
+      }
+      const data = await response.json();
+      if (!data?.ok || !data?.format) {
+        alert(data?.message || "No se pudo guardar el formato.");
+        return;
+      }
+      const fmt = data.format;
+      slotConfig.forEach((slotObj) => {
+        const select = slotObj.formatSelect;
+        if (!select) return;
+        let option = Array.from(select.options || []).find((opt) => String(opt.value) === String(fmt.id));
+        if (!option) {
+          option = document.createElement("option");
+          option.value = String(fmt.id);
+          option.dataset.lines = JSON.stringify(fmt.lineas || []);
+          option.textContent = `${fmt.codigo} - ${fmt.nombre}`;
+          select.appendChild(option);
+        } else {
+          option.dataset.lines = JSON.stringify(fmt.lineas || []);
+          option.textContent = `${fmt.codigo} - ${fmt.nombre}`;
+        }
+        if (!select.value) select.value = String(fmt.id);
+      });
+      if (newFormatCodeInput) newFormatCodeInput.value = "";
+      if (newFormatNameInput) newFormatNameInput.value = "";
+      document.querySelectorAll(".shoe-new-format-size").forEach((el) => {
+        el.value = "0";
+      });
+      const modalEl = document.getElementById("shoe-format-modal");
+      if (modalEl && window.bootstrap?.Modal) {
+        const instance = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+        instance.hide();
+      }
+    });
+    clearFormBtn?.addEventListener("click", resetShoeFormView);
+    form.addEventListener("submit", (event) => {
+      if (!matrixJsonInput.value || matrixJsonInput.value === "{}") {
+        event.preventDefault();
+        alert("Debes agregar al menos un color + formato.");
+      }
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}

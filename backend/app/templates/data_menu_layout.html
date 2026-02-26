@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+              <li class="breadcrumb-item">Datos</li>
+              <li class="breadcrumb-item active" aria-current="page">Orden de menu</li>
+            </ol>
+          </nav>
+          <h1 class="h5 mb-1">Orden del menu lateral</h1>
+          <p class="text-muted mb-0">Arrastra y suelta para definir el orden por defecto en este entorno empresarial.</p>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger py-2">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success py-2">{{ success }}</div>
+      {% endif %}
+
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <form id="menu-layout-form" method="post" action="/data/menu">
+            <input id="menu-order-json" type="hidden" name="menu_order_json" value="[]" />
+            <div id="menu-order-list" class="list-group">
+              {% for item in menu_items %}
+              <div class="list-group-item d-flex align-items-center justify-content-between gap-3 menu-sort-item" draggable="true" data-menu-id="{{ item.id }}">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi {{ item.icon }} text-primary"></i>
+                  <div>
+                    <div class="fw-semibold">{{ item.label }}</div>
+                    <div class="small text-muted">{{ item.href }}</div>
+                  </div>
+                </div>
+                <span class="text-muted"><i class="bi bi-grip-vertical"></i></span>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-3">
+              <a class="btn btn-outline-secondary btn-sm" href="/data">Cancelar</a>
+              <button class="btn btn-primary btn-sm" type="submit">Guardar orden</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+  const list = document.getElementById("menu-order-list");
+  const form = document.getElementById("menu-layout-form");
+  const orderInput = document.getElementById("menu-order-json");
+  if (!list || !form || !orderInput) return;
+
+  let dragEl = null;
+  const items = () => Array.from(list.querySelectorAll(".menu-sort-item"));
+
+  const saveOrder = () => {
+    const ids = items().map((el) => el.dataset.menuId).filter(Boolean);
+    orderInput.value = JSON.stringify(ids);
+  };
+
+  items().forEach((item) => {
+    item.addEventListener("dragstart", () => {
+      dragEl = item;
+      item.classList.add("opacity-50");
+    });
+    item.addEventListener("dragend", () => {
+      item.classList.remove("opacity-50");
+      dragEl = null;
+      saveOrder();
+    });
+    item.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (!dragEl || dragEl === item) return;
+      const rect = item.getBoundingClientRect();
+      const before = (e.clientY - rect.top) < rect.height / 2;
+      if (before) list.insertBefore(dragEl, item);
+      else list.insertBefore(dragEl, item.nextSibling);
+    });
+  });
+
+  saveOrder();
+  form.addEventListener("submit", () => saveOrder());
+})();
+</script>
+{% endblock %}

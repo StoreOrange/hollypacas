@@ -9,15 +9,29 @@
             <div class="fw-semibold">{{ item.descripcion }}</div>
           </div>
           {% if item.existencias is defined %}
-          <span class="badge text-bg-light text-primary fs-6">
+          <button
+            type="button"
+            class="badge text-bg-light text-primary fs-6 border-0 stock-detail-trigger"
+            data-product-id="{{ item.id }}"
+            data-product-code="{{ item.codigo }}"
+            data-product-name="{{ item.descripcion }}"
+            title="Ver detalle por talla y color"
+          >
             <i class="bi bi-box-seam"></i>
             {{ "%.2f"|format(item.existencia_total or 0) }}
-          </span>
+          </button>
           {% else %}
-          <span class="badge text-bg-light text-primary fs-6">
+          <button
+            type="button"
+            class="badge text-bg-light text-primary fs-6 border-0 stock-detail-trigger"
+            data-product-id="{{ item.id }}"
+            data-product-code="{{ item.codigo }}"
+            data-product-name="{{ item.descripcion }}"
+            title="Ver detalle por talla y color"
+          >
             <i class="bi bi-box-seam"></i>
             {{ "%.2f"|format(item.existencia) }}
-          </span>
+          </button>
           {% endif %}
         </div>
         <div class="mt-3 d-flex align-items-center justify-content-between">

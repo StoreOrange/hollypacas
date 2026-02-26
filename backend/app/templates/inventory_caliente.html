@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  .stock-detail-trigger { cursor: pointer; }
+  .stock-detail-trigger:hover { filter: brightness(0.96); }
+</style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
@@ -14,7 +18,7 @@
             </ol>
           </nav>
           <h1 class="h5 mb-1">Mi inventario en caliente</h1>
-          <p class="text-muted mb-0">Vista en vivo con existencias y precio en USD.</p>
+          <p class="text-muted mb-0">Vista en vivo con existencias y precio en C$ por defecto.</p>
         </div>
         <div class="d-flex align-items-center gap-2">
           <a class="btn btn-outline-secondary btn-sm d-inline-flex d-lg-none" href="/home">
@@ -47,42 +51,24 @@
               </div>
             </div>
             <div class="col-lg-4 d-flex flex-wrap gap-2 align-items-center">
-              {% if allowed_scopes|length > 1 %}
+              {% if scope_options|length > 1 %}
               <div class="btn-group btn-group-sm" role="group" aria-label="Alcance de bodega">
-                <input type="radio" class="btn-check" name="scope" id="scope-central" value="central" autocomplete="off" {% if scope_param == 'central' %}checked{% endif %}
+                {% for opt in scope_options %}
+                <input type="radio" class="btn-check" name="scope" id="scope-{{ loop.index }}" value="{{ opt.value }}" autocomplete="off" {% if scope_param == opt.value %}checked{% endif %}
                   hx-get="/inventory/caliente"
                   hx-target="#inventory-grid"
                   hx-push-url="true"
                   hx-trigger="change"
                   hx-include="[name='q']"
                 />
-                <label class="btn btn-outline-primary" for="scope-central">
-                  Central
+                <label class="btn btn-outline-primary" for="scope-{{ loop.index }}">
+                  {{ opt.label }}
                 </label>
-                <input type="radio" class="btn-check" name="scope" id="scope-esteli" value="esteli" autocomplete="off" {% if scope_param == 'esteli' %}checked{% endif %}
-                  hx-get="/inventory/caliente"
-                  hx-target="#inventory-grid"
-                  hx-push-url="true"
-                  hx-trigger="change"
-                  hx-include="[name='q']"
-                />
-                <label class="btn btn-outline-primary" for="scope-esteli">
-                  Esteli
-                </label>
-                <input type="radio" class="btn-check" name="scope" id="scope-ambas" value="ambas" autocomplete="off" {% if scope_param == 'ambas' %}checked{% endif %}
-                  hx-get="/inventory/caliente"
-                  hx-target="#inventory-grid"
-                  hx-push-url="true"
-                  hx-trigger="change"
-                  hx-include="[name='q']"
-                />
-                <label class="btn btn-outline-primary" for="scope-ambas">
-                  Ambas
-                </label>
+                {% endfor %}
               </div>
               {% else %}
               <span class="badge bg-light text-primary border border-primary-subtle">
-                {{ central_branch.name if scope == 'central' else esteli_branch.name if scope == 'esteli' else current_branch.name if current_branch else 'Bodega' }}
+                {{ current_scope_label }}
               </span>
               {% endif %}
             </div>
@@ -104,11 +90,47 @@
   </main>
 </div>
 
+<div class="modal fade" id="stock-detail-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="stock-detail-title">Detalle de variantes</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="stock-detail-meta" class="small text-muted mb-2"></div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Codigo variante</th>
+                <th>Color</th>
+                <th>Talla</th>
+                <th class="text-end">Existencia</th>
+                <th>Detalle bodega</th>
+              </tr>
+            </thead>
+            <tbody id="stock-detail-body">
+              <tr><td colspan="5" class="text-center text-muted py-2">Sin datos</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   (function () {
     const toggle = document.getElementById("toggle-currency");
-    if (!toggle) return;
-    let showCs = false;
+    const inventoryGrid = document.getElementById("inventory-grid");
+    const modalEl = document.getElementById("stock-detail-modal");
+    const modalTitle = document.getElementById("stock-detail-title");
+    const modalMeta = document.getElementById("stock-detail-meta");
+    const modalBody = document.getElementById("stock-detail-body");
+    const modal = (window.bootstrap && modalEl) ? window.bootstrap.Modal.getOrCreateInstance(modalEl) : null;
+    const defaultScope = "{{ scope_param }}";
+    let showCs = {{ default_show_cs|tojson }};
 
     const applyToggle = () => {
       document.querySelectorAll(".price-usd").forEach((el) => {
@@ -120,9 +142,78 @@
       toggle.textContent = showCs ? "Ver en USD" : "Ver en C$";
     };
 
-    toggle.addEventListener("click", () => {
-      showCs = !showCs;
-      applyToggle();
+    const currentScope = () => {
+      const checked = document.querySelector("input[name='scope']:checked");
+      return (checked && checked.value) ? checked.value : (defaultScope || "");
+    };
+
+    const openStockDetail = async (btn) => {
+      const productId = btn?.dataset?.productId;
+      if (!productId) return;
+      const code = btn.dataset.productCode || "";
+      const name = btn.dataset.productName || "";
+      if (modalTitle) modalTitle.textContent = `Detalle variantes: ${code}`;
+      if (modalMeta) modalMeta.textContent = name;
+      if (modalBody) modalBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-2">Cargando...</td></tr>`;
+      if (modal) modal.show();
+      try {
+        const resp = await fetch(`/inventory/caliente/${encodeURIComponent(productId)}/variantes?scope=${encodeURIComponent(currentScope())}`, {
+          headers: { "X-Requested-With": "fetch" },
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+        if (!items.length) {
+          if (modalBody) modalBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-2">Sin existencias por talla/color para el alcance seleccionado.</td></tr>`;
+          return;
+        }
+        if (modalBody) {
+          modalBody.innerHTML = "";
+          items.forEach((row) => {
+            const detail = Array.isArray(row.detalle_bodega) && row.detalle_bodega.length
+              ? row.detalle_bodega.map((d) => `${d.bodega}: ${Number(d.qty || 0).toFixed(2)}`).join(" | ")
+              : "-";
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${row.cod_variante || ""}</td>
+              <td>${row.color || ""}</td>
+              <td>${row.talla || ""}</td>
+              <td class="text-end">${Number(row.existencia || 0).toFixed(2)}</td>
+              <td>${detail}</td>
+            `;
+            modalBody.appendChild(tr);
+          });
+        }
+        if (modalMeta) {
+          modalMeta.textContent = `${name} | Total en variantes: ${Number(data.total || 0).toFixed(2)}`;
+        }
+      } catch (err) {
+        const msg = err && err.message ? err.message : "sin detalle";
+        if (modalBody) modalBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-2">Error al cargar detalle (${msg})</td></tr>`;
+      }
+    };
+
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        showCs = !showCs;
+        applyToggle();
+      });
+    }
+
+    const onTrigger = (event) => {
+      const trigger = event.target.closest(".stock-detail-trigger");
+      if (!trigger) return;
+      event.preventDefault();
+      openStockDetail(trigger);
+    };
+    inventoryGrid?.addEventListener("click", onTrigger);
+    document.addEventListener("click", onTrigger);
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      const trigger = event.target.closest(".stock-detail-trigger");
+      if (!trigger) return;
+      event.preventDefault();
+      openStockDetail(trigger);
     });
 
     document.body.addEventListener("htmx:afterSwap", (e) => {

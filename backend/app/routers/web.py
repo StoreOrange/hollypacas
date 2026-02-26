@@ -50,6 +50,7 @@ from decimal import InvalidOperation
 
 from ..models.inventory import (
     Bodega,
+    ColorCatalog,
     EgresoInventario,
     EgresoItem,
     EgresoTipo,
@@ -64,11 +65,16 @@ from ..models.inventory import (
     Proveedor,
     SaldoProducto,
     Segmento,
+    ShoeProductVariant,
+    ShoeSizeFormat,
+    ShoeSizeFormatLine,
+    ShoeVariantStock,
 )
 from ..models.sales import (
     AccountingPolicySetting,
     AccountingEntry,
     AccountingEntryLine,
+    AccountingSubrubroRule,
     AccountingVoucherType,
     Banco,
     CajaDiaria,
@@ -80,6 +86,7 @@ from ..models.sales import (
     CuentaContable,
     DepositoCliente,
     EmailConfig,
+    MenuLayoutSetting,
     FormaPago,
     NotificationRecipient,
     PosPrintSetting,
@@ -108,7 +115,69 @@ SALES_INTERFACE_OPTIONS = [
     {"code": "ferreteria", "label": "Interfaz Ferreteria"},
     {"code": "farmacia", "label": "Interfaz Farmacia"},
     {"code": "comestibles", "label": "Interfaz Tienda de Comestibles"},
+    {"code": "zapatos", "label": "Interfaz Tienda de Zapatos"},
 ]
+
+SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
+    {"id": "home", "label": "Panel", "href": "/home", "icon": "bi-grid-1x2-fill", "perm": "menu.home", "alt_perm": None},
+    {"id": "sales", "label": "Ventas", "href": "/sales", "icon": "bi-receipt-cutoff", "perm": "menu.sales", "alt_perm": None},
+    {"id": "sales_caliente", "label": "Ventas en Caliente", "href": "/sales/ventas-caliente", "icon": "bi-lightning-fill", "perm": "menu.sales.caliente", "alt_perm": None},
+    {"id": "reports", "label": "Informes", "href": "/reports", "icon": "bi-graph-up-arrow", "perm": "menu.reports", "alt_perm": None},
+    {"id": "sales_cobranza", "label": "Gestion de cobranza", "href": "/sales/cobranza", "icon": "bi-cash-coin", "perm": "menu.sales.cobranza", "alt_perm": None},
+    {"id": "sales_cierre", "label": "Cierre de caja", "href": "/sales/cierre", "icon": "bi-safe2", "perm": "menu.sales.cierre", "alt_perm": None},
+    {"id": "sales_utilitario", "label": "Utilitario Ventas", "href": "/sales/utilitario", "icon": "bi-tools", "perm": "menu.sales.utilitario", "alt_perm": None},
+    {"id": "sales_etiquetas", "label": "Impresion de etiquetas", "href": "/sales/etiquetas", "icon": "bi-printer-fill", "perm": "menu.sales.etiquetas", "alt_perm": None},
+    {"id": "sales_roc", "label": "Recibos de caja", "href": "/sales/roc", "icon": "bi-file-earmark-text", "perm": "menu.sales.roc", "alt_perm": None},
+    {"id": "sales_depositos", "label": "Registro de depositos", "href": "/sales/depositos", "icon": "bi-bank2", "perm": "menu.sales.depositos", "alt_perm": None},
+    {"id": "sales_comisiones", "label": "Registro de comisiones", "href": "/sales/comisiones", "icon": "bi-percent", "perm": "menu.sales.comisiones", "alt_perm": None},
+    {"id": "sales_preventas", "label": "Panel de preventas", "href": "/sales/preventas", "icon": "bi-journal-richtext", "perm": "menu.sales.preventas", "alt_perm": None},
+    {"id": "sales_preventas_mobile", "label": "Nueva preventa movil", "href": "/m/preventas", "icon": "bi-phone", "perm": "menu.sales.preventas.mobile", "alt_perm": "menu.sales.preventas"},
+    {"id": "inventory", "label": "Inventarios", "href": "/inventory", "icon": "bi-boxes", "perm": "menu.inventory", "alt_perm": None},
+    {"id": "inventory_caliente", "label": "Mi inventario en Caliente", "href": "/inventory/caliente", "icon": "bi-lightning-charge-fill", "perm": "menu.inventory.caliente", "alt_perm": None},
+    {"id": "inventory_ingresos", "label": "Ingresos Inventario", "href": "/inventory/ingresos", "icon": "bi-box-arrow-in-down", "perm": "menu.inventory.ingresos", "alt_perm": None},
+    {"id": "inventory_egresos", "label": "Egresos Inventario", "href": "/inventory/egresos", "icon": "bi-box-arrow-up", "perm": "menu.inventory.egresos", "alt_perm": None},
+    {"id": "inventory_traslados", "label": "Traslados Rapidos", "href": "/inventory/traslados-rapidos", "icon": "bi-arrow-left-right", "perm": "menu.inventory.egresos", "alt_perm": None},
+    {"id": "finance", "label": "Finanzas", "href": "/finance", "icon": "bi-currency-dollar", "perm": "menu.finance", "alt_perm": None},
+    {"id": "accounting", "label": "Contabilidad", "href": "/accounting", "icon": "bi-journal-check", "perm": "menu.accounting", "alt_perm": None},
+    {"id": "data", "label": "Datos", "href": "/data", "icon": "bi-database", "perm": "menu.data", "alt_perm": None},
+]
+
+
+def _default_sidebar_menu_order() -> list[str]:
+    return [str(item["id"]) for item in SIDEBAR_MENU_ITEMS]
+
+
+def _normalize_sidebar_menu_order(raw_ids: list[str]) -> list[str]:
+    valid_ids = {str(item["id"]) for item in SIDEBAR_MENU_ITEMS}
+    ordered: list[str] = []
+    for item_id in raw_ids:
+        key = str(item_id or "").strip()
+        if key and key in valid_ids and key not in ordered:
+            ordered.append(key)
+    for default_id in _default_sidebar_menu_order():
+        if default_id not in ordered:
+            ordered.append(default_id)
+    return ordered
+
+
+def get_sidebar_menu_layout(db: Session) -> list[dict[str, str | None]]:
+    company_key = (get_active_company_key() or "default").strip().lower() or "default"
+    row = (
+        db.query(MenuLayoutSetting)
+        .filter(func.lower(MenuLayoutSetting.company_key) == company_key)
+        .first()
+    )
+    order_ids: list[str] = []
+    if row and (row.menu_order_json or "").strip():
+        try:
+            payload = json.loads(row.menu_order_json)
+            if isinstance(payload, list):
+                order_ids = [str(item) for item in payload]
+        except json.JSONDecodeError:
+            order_ids = []
+    normalized_ids = _normalize_sidebar_menu_order(order_ids)
+    by_id = {str(item["id"]): item for item in SIDEBAR_MENU_ITEMS}
+    return [by_id[item_id] for item_id in normalized_ids if item_id in by_id]
 
 
 def to_decimal(value: Optional[float]) -> Decimal:
@@ -725,7 +794,27 @@ def _balances_by_bodega(
 
 
 def _default_company_profile_payload() -> dict[str, str]:
+    shoes_mode = _is_shoes_mode()
     multi_branch_enabled = get_active_company_key() != "comestibles"
+    if shoes_mode:
+        return {
+            "legal_name": "Miss Zapatos",
+            "trade_name": "Miss Zapatos",
+            "app_title": "ERP Miss Zapatos",
+            "sidebar_subtitle": "ERP Zapateria",
+            "website": "",
+            "ruc": "",
+            "phone": "",
+            "address": "",
+            "email": "",
+            "logo_url": "/static/logo_hollywood.png",
+            "pos_logo_url": "/static/logo_hollywood.png",
+            "favicon_url": "/static/favicon.ico",
+            "inventory_cs_only": False,
+            "multi_branch_enabled": multi_branch_enabled,
+            "price_auto_from_cost_enabled": False,
+            "price_margin_percent": 0,
+        }
     return {
         "legal_name": "Hollywood Pacas",
         "trade_name": "Hollywood Pacas",
@@ -797,7 +886,16 @@ def _price_margin_mode(db: Session) -> tuple[bool, int]:
 
 
 def _allowed_branch_codes(db: Session) -> set[str]:
-    return {"central", "esteli"} if _multi_branch_enabled_mode(db) else {"central"}
+    if not _multi_branch_enabled_mode(db):
+        return {"central"}
+    codes = {
+        (row[0] or "").strip().lower()
+        for row in db.query(Branch.code).filter(Branch.activo.is_(True)).all()
+        if (row[0] or "").strip()
+    }
+    if not codes:
+        return {"central"}
+    return codes
 
 
 def _allowed_branch_ids(db: Session) -> list[int]:
@@ -806,7 +904,11 @@ def _allowed_branch_ids(db: Session) -> list[int]:
 
 def _scoped_branches_query(db: Session):
     codes = _allowed_branch_codes(db)
-    return db.query(Branch).filter(func.lower(Branch.code).in_(codes))
+    return (
+        db.query(Branch)
+        .filter(Branch.activo.is_(True))
+        .filter(func.lower(Branch.code).in_(codes))
+    )
 
 
 def _scoped_bodegas_query(db: Session):
@@ -815,8 +917,88 @@ def _scoped_bodegas_query(db: Session):
         db.query(Bodega)
         .join(Branch, Branch.id == Bodega.branch_id)
         .filter(Bodega.activo.is_(True))
+        .filter(Branch.activo.is_(True))
         .filter(func.lower(Branch.code).in_(codes))
     )
+
+
+def _current_db_name() -> str:
+    url = get_current_database_url() or ""
+    try:
+        path = urlparse(url).path or ""
+        return path.rsplit("/", 1)[-1].strip().lower()
+    except Exception:
+        return ""
+
+
+def _is_shoes_mode() -> bool:
+    name = _current_db_name()
+    return name == "bdzapatos" or "zapato" in name
+
+
+def _ensure_shoe_size_formats_seed(db: Session) -> None:
+    required = {
+        "18-1": [
+            ("5.5", 1), ("6", 2), ("6.5", 2), ("7", 3), ("7.5", 3),
+            ("8", 2), ("8.5", 2), ("9", 2), ("10", 1),
+        ],
+        "12-1": [
+            ("5.5", 1), ("6", 1), ("6.5", 1), ("7", 2), ("7.5", 2),
+            ("8", 2), ("8.5", 1), ("9", 1), ("10", 1),
+        ],
+    }
+    changed = False
+    for code, rows in required.items():
+        formato = db.query(ShoeSizeFormat).filter(func.upper(ShoeSizeFormat.codigo) == code.upper()).first()
+        if not formato:
+            formato = ShoeSizeFormat(codigo=code, nombre=f"Formato {code}", activo=True)
+            db.add(formato)
+            db.flush()
+            for idx, (size, qty) in enumerate(rows, start=1):
+                db.add(ShoeSizeFormatLine(formato_id=formato.id, talla=size, cantidad=int(qty), orden=idx))
+            changed = True
+        elif not formato.lineas:
+            for idx, (size, qty) in enumerate(rows, start=1):
+                db.add(ShoeSizeFormatLine(formato_id=formato.id, talla=size, cantidad=int(qty), orden=idx))
+            changed = True
+    for name, abbr in [("Negro", "NEG"), ("Blanco", "BLA"), ("Cafe", "CAF"), ("Azul", "AZU")]:
+        exists = db.query(ColorCatalog).filter(func.lower(ColorCatalog.nombre) == name.lower()).first()
+        if not exists:
+            db.add(ColorCatalog(nombre=name, abreviatura=abbr, activo=True))
+            changed = True
+    if changed:
+        db.commit()
+
+
+def _text_initials(value: str, limit: int = 4) -> str:
+    words = [w for w in re.split(r"[^A-Za-z0-9]+", (value or "").strip()) if w]
+    if not words:
+        return "X"
+    initials = "".join(w[0].upper() for w in words)
+    if len(initials) >= limit:
+        return initials[:limit]
+    return (initials + words[0].upper())[:limit]
+
+
+def _sanitize_code_token(value: str, limit: int = 14) -> str:
+    clean = re.sub(r"[^A-Za-z0-9]+", "", (value or "").upper())
+    return clean[:limit] if clean else "X"
+
+
+def _normalize_price_tier(raw: Optional[str], default: int = 1) -> int:
+    try:
+        tier = int(str(raw or default).strip())
+    except (TypeError, ValueError):
+        tier = default
+    return max(1, min(7, tier))
+
+
+def _product_price_map(producto: Producto) -> dict[str, float]:
+    values: dict[str, float] = {}
+    for idx in range(1, 8):
+        values[f"precio_venta{idx}"] = float(getattr(producto, f"precio_venta{idx}", 0) or 0)
+        values[f"precio_venta{idx}_usd"] = float(getattr(producto, f"precio_venta{idx}_usd", 0) or 0)
+    return values
 
 
 def _user_scoped_branch_ids(db: Session, user: User) -> set[int]:
@@ -930,17 +1112,6 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     def format_amount(value: float) -> str:
         return f"{value:,.2f}"
 
-    def extract_weight_lbs(text: str) -> float:
-        if not text:
-            return 0.0
-        match = re.search(r"\b(\d+(?:\.\d+)?)\s*(lbs)\b", text.lower())
-        if not match:
-            return 0.0
-        try:
-            return float(match.group(1))
-        except ValueError:
-            return 0.0
-
     branch = factura.bodega.branch if factura.bodega else None
     company_profile = profile or _default_company_profile_payload()
     identity = _company_identity(branch, company_profile)
@@ -990,6 +1161,7 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     add_line(f"Sucursal: {sucursal}", "center", True, 9)
     add_line("-" * 32, "center")
     add_line(f"Factura: {factura.numero}", "left", True)
+    add_line(f"Tipo: {(factura.condicion_venta or 'CONTADO').upper()}", "left", True)
     add_line(f"Fecha: {fecha_str} {hora_str}".strip())
     add_line(f"Cliente: {cliente}")
     add_line(f"Identificacion R/C: {cliente_id}")
@@ -997,11 +1169,14 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     add_line("-" * 32, "center")
 
     max_desc = 32
-    total_bultos = 0.0
-    total_lbs = 0.0
+    total_unidades = 0.0
     for item in factura.items:
         codigo = item.producto.cod_producto if item.producto else "-"
         descripcion = item.producto.descripcion if item.producto else "-"
+        if item.variante:
+            color_name = item.variante.color.nombre if item.variante.color else "-"
+            talla_name = item.variante.talla or "-"
+            descripcion = f"{descripcion} [{color_name} / Talla {talla_name}]"
         combo_label = ""
         if item.combo_role == "gift":
             combo_label = " [REGALO]"
@@ -1018,29 +1193,19 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
             if moneda == "CS"
             else float(item.subtotal_usd or 0)
         )
-        total_bultos += qty
-        lbs_per_unit = extract_weight_lbs(descripcion)
-        if lbs_per_unit:
-            total_lbs += lbs_per_unit * qty
+        total_unidades += qty
         add_line(f"Codigo: {codigo}{combo_label}", "left", True, 9)
         for part in wrap_text(descripcion, max_desc):
             add_line(part, "left", False, 9)
         add_line(
-            f"Cant: {format_qty(qty)}  Precio: {currency_label} {format_amount(price)}",
-            "left",
-            False,
-            9,
-        )
-        add_line(
-            f"Desc: {currency_label} 0.00  Subtotal: {currency_label} {format_amount(subtotal)}",
+            f"Cant: {format_qty(qty)}  Precio: {currency_label} {format_amount(price)}  Subtotal: {currency_label} {format_amount(subtotal)}",
             "left",
             False,
             9,
         )
         add_line("-" * 32, "center")
 
-    add_line(f"Total bultos: {format_qty(total_bultos)}", "left", True, 9)
-    add_line(f"Total libras: {format_qty(total_lbs)}", "left", True, 9)
+    add_line(f"Total unds: {format_qty(total_unidades)}", "left", True, 9)
     add_line(f"Subtotal: {currency_label} {format_amount(subtotal_amount)}", "right", True, 9)
     add_line(f"Descuentos: {currency_label} 0.00", "right", False, 9)
     add_line(f"Total: {currency_label} {format_amount(total_amount)}", "right", True, 10)
@@ -2059,6 +2224,29 @@ def _find_account_by_terms(
     return None
 
 
+def _find_account_by_terms_excluding(
+    active_accounts: list[CuentaContable],
+    terms: list[str],
+    exclude_terms: list[str],
+    naturaleza: Optional[str] = None,
+) -> Optional[int]:
+    target_nat = (naturaleza or "").upper().strip()
+    excludes = [term.lower() for term in exclude_terms if term]
+    for term in terms:
+        term_lower = term.lower()
+        for account in active_accounts:
+            if target_nat and (account.naturaleza or "").upper() != target_nat:
+                continue
+            name = (account.nombre or "").lower()
+            code = (account.codigo or "").lower()
+            combined = f"{code} {name}"
+            if any(ex in combined for ex in excludes):
+                continue
+            if term_lower in name or term_lower in code:
+                return int(account.id)
+    return None
+
+
 def _terms_from_csv(value: Optional[str], fallback: list[str]) -> list[str]:
     raw = (value or "").strip()
     if not raw:
@@ -2086,6 +2274,1136 @@ def _get_accounting_policy(db: Session) -> dict:
         "ingreso_haber_terms": _terms_from_csv(row.ingreso_haber_terms, defaults["ingreso_haber_terms"]),
         "egreso_debe_terms": _terms_from_csv(row.egreso_debe_terms, defaults["egreso_debe_terms"]),
         "egreso_haber_terms": _terms_from_csv(row.egreso_haber_terms, defaults["egreso_haber_terms"]),
+    }
+
+
+def _accounting_subrubros_catalog() -> list[dict]:
+    # Catalogo guiado para usuarios no contadores: define intencion y neteo sugerido.
+    return [
+        {
+            "code": "AJUSTE_GENERAL",
+            "label": "Ajuste",
+            "intent_code": "DIARIO",
+            "debit_terms": ["ajuste", "regularizacion", "cuadre"],
+            "credit_terms": ["ajuste", "regularizacion", "cuadre"],
+            "default_concept": "Asiento de ajuste",
+        },
+        {
+            "code": "PROVISION_GENERAL",
+            "label": "Provision",
+            "intent_code": "DIARIO",
+            "debit_terms": ["gasto", "provision"],
+            "credit_terms": ["provision", "acumulado", "pagar"],
+            "default_concept": "Registro de provision",
+        },
+        {
+            "code": "NETEO_GENERAL",
+            "label": "Neteo",
+            "intent_code": "DIARIO",
+            "debit_terms": ["pagar", "cliente", "proveedor", "compensacion"],
+            "credit_terms": ["cobrar", "cliente", "proveedor", "compensacion"],
+            "default_concept": "Neteo de cuentas",
+        },
+        {
+            "code": "RECLASIFICACION_GENERAL",
+            "label": "Reclasificacion",
+            "intent_code": "DIARIO",
+            "debit_terms": ["reclasificacion", "traslado contable"],
+            "credit_terms": ["reclasificacion", "traslado contable"],
+            "default_concept": "Reclasificacion contable",
+        },
+        {
+            "code": "CORRECCION_GENERAL",
+            "label": "Correccion",
+            "intent_code": "DIARIO",
+            "debit_terms": ["correccion", "ajuste error"],
+            "credit_terms": ["correccion", "ajuste error"],
+            "default_concept": "Correccion contable",
+        },
+        {
+            "code": "DEPRECIACION",
+            "label": "Depreciacion",
+            "intent_code": "DIARIO",
+            "debit_terms": ["gasto depreciacion"],
+            "credit_terms": ["depreciacion acumulada"],
+            "default_concept": "Registro de depreciacion",
+        },
+        {
+            "code": "AMORTIZACION",
+            "label": "Amortizacion",
+            "intent_code": "DIARIO",
+            "debit_terms": ["gasto amortizacion"],
+            "credit_terms": ["amortizacion acumulada", "activo diferido"],
+            "default_concept": "Registro de amortizacion",
+        },
+        {
+            "code": "GASTO_OPERATIVO",
+            "label": "Gasto operativo general",
+            "intent_code": "EGRESO",
+            "debit_terms": ["gasto", "operacion", "administracion"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar", "cxp"],
+            "default_concept": "Registro de gasto operativo",
+        },
+        {
+            "code": "PAPELERIA",
+            "label": "Papeleria y utiles de oficina",
+            "intent_code": "EGRESO",
+            "debit_terms": ["papeleria", "utiles", "suministros", "material oficina", "gasto oficina"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar", "cxp"],
+            "default_concept": "Compra de papeleria y utiles",
+        },
+        {
+            "code": "LIMPIEZA",
+            "label": "Insumos de limpieza",
+            "intent_code": "EGRESO",
+            "debit_terms": [
+                "gasto operativo",
+                "suministros",
+                "insumos de limpieza",
+                "servicios exteriores",
+                "materiales de oficina",
+                "limpieza",
+                "aseo",
+                "insumo",
+                "consumibles",
+            ],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar", "cxp"],
+            "default_concept": "Compra de insumos de limpieza",
+        },
+        {
+            "code": "INSUMOS_TIENDA",
+            "label": "Insumos para tienda",
+            "intent_code": "EGRESO",
+            "debit_terms": ["insumos tienda", "consumibles tienda", "gasto operacion", "suministros"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar", "cxp"],
+            "default_concept": "Compra de insumos para tienda",
+        },
+        {
+            "code": "INSUMOS_PRODUCTOS",
+            "label": "Insumos para productos",
+            "intent_code": "EGRESO",
+            "debit_terms": ["insumos productos", "materia prima", "material produccion", "inventario"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar", "cxp"],
+            "default_concept": "Compra de insumos para productos",
+        },
+        {
+            "code": "ACTIVO_EQUIPO",
+            "label": "Compra de equipo / activo fijo",
+            "intent_code": "EGRESO",
+            "debit_terms": ["equipo", "mobiliario", "maquinaria", "activo fijo", "propiedad", "vehiculo"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar", "cxp"],
+            "default_concept": "Compra de equipo de uso empresarial",
+        },
+        {
+            "code": "INVENTARIO",
+            "label": "Compra para inventario",
+            "intent_code": "EGRESO",
+            "debit_terms": ["inventario", "mercaderia", "compra", "stock"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar", "cxp"],
+            "default_concept": "Compra de inventario",
+        },
+        {
+            "code": "PLANILLA",
+            "label": "Pago de planilla",
+            "intent_code": "EGRESO",
+            "debit_terms": ["planilla", "nomina", "salario"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["obligaciones laborales", "pagar"],
+            "default_concept": "Pago de planilla",
+        },
+        {
+            "code": "ALQUILER",
+            "label": "Pago de alquiler",
+            "intent_code": "EGRESO",
+            "debit_terms": ["alquiler", "renta", "gasto local"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["arrendador", "pagar"],
+            "default_concept": "Pago de alquiler del local",
+        },
+        {
+            "code": "SERVICIOS_BASICOS",
+            "label": "Servicios basicos (agua/luz/internet)",
+            "intent_code": "EGRESO",
+            "debit_terms": ["energia", "agua", "internet", "telefono", "servicios"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["servicios por pagar", "proveedor", "pagar"],
+            "default_concept": "Pago de servicios basicos",
+        },
+        {
+            "code": "TRANSPORTE_FLETE",
+            "label": "Transporte y flete",
+            "intent_code": "EGRESO",
+            "debit_terms": ["flete", "transporte", "logistica", "gasto distribucion"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Gasto de transporte/flete",
+        },
+        {
+            "code": "MANTENIMIENTO_REPARACION",
+            "label": "Mantenimiento y reparacion",
+            "intent_code": "EGRESO",
+            "debit_terms": ["mantenimiento", "reparacion", "taller", "servicio tecnico"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Mantenimiento/reparacion de activos",
+        },
+        {
+            "code": "GASTO_FINANCIERO",
+            "label": "Gasto financiero (interes/comision)",
+            "intent_code": "EGRESO",
+            "debit_terms": ["gastos financieros", "interes", "comision bancaria"],
+            "credit_cash_terms": ["banco", "caja", "efectivo"],
+            "credit_credit_terms": ["intereses por pagar", "pagar"],
+            "default_concept": "Registro de gasto financiero",
+        },
+        {
+            "code": "IMPUESTO_PAGO",
+            "label": "Pago de impuestos",
+            "intent_code": "EGRESO",
+            "debit_terms": ["impuestos por pagar", "tributos", "iva por pagar"],
+            "credit_cash_terms": ["banco", "caja", "efectivo"],
+            "credit_credit_terms": ["impuestos por pagar"],
+            "default_concept": "Pago de obligaciones tributarias",
+        },
+        {
+            "code": "PRESTAMO_CUOTA",
+            "label": "Pago de prestamo",
+            "intent_code": "EGRESO",
+            "debit_terms": ["prestamo por pagar", "deuda bancaria", "obligacion financiera"],
+            "credit_cash_terms": ["banco", "caja", "efectivo"],
+            "credit_credit_terms": ["prestamo por pagar"],
+            "default_concept": "Pago de cuota de prestamo",
+        },
+        {
+            "code": "ENERGIA_ELECTRICA",
+            "label": "Energia electrica",
+            "intent_code": "EGRESO",
+            "debit_terms": ["energia", "servicio electrico", "luz"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["servicios por pagar", "pagar"],
+            "default_concept": "Pago de energia electrica",
+        },
+        {
+            "code": "AGUA_POTABLE",
+            "label": "Agua potable",
+            "intent_code": "EGRESO",
+            "debit_terms": ["agua", "servicios"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["servicios por pagar", "pagar"],
+            "default_concept": "Pago de agua potable",
+        },
+        {
+            "code": "INTERNET",
+            "label": "Internet",
+            "intent_code": "EGRESO",
+            "debit_terms": ["internet", "telecomunicaciones"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["servicios por pagar", "pagar"],
+            "default_concept": "Pago de servicio de internet",
+        },
+        {
+            "code": "TELEFONIA_FIJA",
+            "label": "Telefonia fija",
+            "intent_code": "EGRESO",
+            "debit_terms": ["telefono", "telefonia", "telecomunicaciones"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["servicios por pagar", "pagar"],
+            "default_concept": "Pago de telefonia fija",
+        },
+        {
+            "code": "TELEFONIA_MOVIL",
+            "label": "Telefonia movil",
+            "intent_code": "EGRESO",
+            "debit_terms": ["celular", "telefonia movil", "telecomunicaciones"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["servicios por pagar", "pagar"],
+            "default_concept": "Pago de telefonia movil",
+        },
+        {
+            "code": "HONORARIOS_PROFESIONALES",
+            "label": "Honorarios profesionales",
+            "intent_code": "EGRESO",
+            "debit_terms": ["honorarios", "servicios profesionales"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["honorarios por pagar", "pagar"],
+            "default_concept": "Pago de honorarios profesionales",
+        },
+        {
+            "code": "ASESORIA_CONTABLE",
+            "label": "Asesoria contable",
+            "intent_code": "EGRESO",
+            "debit_terms": ["asesoria contable", "honorarios contables"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["honorarios por pagar", "pagar"],
+            "default_concept": "Pago de asesoria contable",
+        },
+        {
+            "code": "ASESORIA_LEGAL",
+            "label": "Asesoria legal",
+            "intent_code": "EGRESO",
+            "debit_terms": ["asesoria legal", "honorarios legales"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["honorarios por pagar", "pagar"],
+            "default_concept": "Pago de asesoria legal",
+        },
+        {
+            "code": "LICENCIA_SOFTWARE",
+            "label": "Licencias de software",
+            "intent_code": "EGRESO",
+            "debit_terms": ["licencia software", "software", "suscripcion software"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Compra de licencias de software",
+        },
+        {
+            "code": "SUSCRIPCION_DIGITAL",
+            "label": "Suscripciones digitales",
+            "intent_code": "EGRESO",
+            "debit_terms": ["suscripciones", "servicios digitales", "software"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Pago de suscripciones digitales",
+        },
+        {
+            "code": "PUBLICIDAD_DIGITAL",
+            "label": "Publicidad digital",
+            "intent_code": "EGRESO",
+            "debit_terms": ["publicidad digital", "marketing", "redes sociales"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Gasto de publicidad digital",
+        },
+        {
+            "code": "PUBLICIDAD_IMPRESA",
+            "label": "Publicidad impresa",
+            "intent_code": "EGRESO",
+            "debit_terms": ["publicidad impresa", "volantes", "impresion promocional"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Gasto de publicidad impresa",
+        },
+        {
+            "code": "MATERIAL_PROMOCIONAL",
+            "label": "Material promocional",
+            "intent_code": "EGRESO",
+            "debit_terms": ["material promocional", "merchandising", "promocion"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Compra de material promocional",
+        },
+        {
+            "code": "COMISION_VENTAS",
+            "label": "Comisiones por ventas",
+            "intent_code": "EGRESO",
+            "debit_terms": ["comisiones", "comision ventas"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["comisiones por pagar", "pagar"],
+            "default_concept": "Pago de comisiones de ventas",
+        },
+        {
+            "code": "FLETES_VENTAS",
+            "label": "Fletes por ventas",
+            "intent_code": "EGRESO",
+            "debit_terms": ["fletes", "distribucion", "entrega ventas"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Gasto de fletes por ventas",
+        },
+        {
+            "code": "COMBUSTIBLE_DISTRIBUCION",
+            "label": "Combustible distribucion",
+            "intent_code": "EGRESO",
+            "debit_terms": ["combustible", "distribucion", "transporte"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Compra de combustible para distribucion",
+        },
+        {
+            "code": "SEGURIDAD_VIGILANCIA",
+            "label": "Seguridad y vigilancia",
+            "intent_code": "EGRESO",
+            "debit_terms": ["seguridad", "vigilancia", "servicio seguridad"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Pago de seguridad y vigilancia",
+        },
+        {
+            "code": "TRANSPORTE_INTERNO",
+            "label": "Transporte interno",
+            "intent_code": "EGRESO",
+            "debit_terms": ["transporte interno", "movilidad", "gasto transporte"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Gasto de transporte interno",
+        },
+        {
+            "code": "SALARIOS",
+            "label": "Salarios",
+            "intent_code": "EGRESO",
+            "debit_terms": ["salarios", "sueldos", "planilla"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["salarios por pagar", "pagar"],
+            "default_concept": "Pago de salarios",
+        },
+        {
+            "code": "HORAS_EXTRAS",
+            "label": "Horas extras",
+            "intent_code": "EGRESO",
+            "debit_terms": ["horas extras", "planilla", "sueldos"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["salarios por pagar", "pagar"],
+            "default_concept": "Pago de horas extras",
+        },
+        {
+            "code": "BONIFICACIONES",
+            "label": "Bonificaciones",
+            "intent_code": "EGRESO",
+            "debit_terms": ["bonificaciones", "incentivos", "planilla"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["bonificaciones por pagar", "pagar"],
+            "default_concept": "Pago de bonificaciones",
+        },
+        {
+            "code": "AGUINALDO",
+            "label": "Aguinaldo",
+            "intent_code": "EGRESO",
+            "debit_terms": ["aguinaldo", "planilla"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["aguinaldo por pagar", "pagar"],
+            "default_concept": "Pago de aguinaldo",
+        },
+        {
+            "code": "VACACIONES",
+            "label": "Vacaciones",
+            "intent_code": "EGRESO",
+            "debit_terms": ["vacaciones", "prestaciones laborales"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["vacaciones por pagar", "pagar"],
+            "default_concept": "Pago de vacaciones",
+        },
+        {
+            "code": "INSS_PATRONAL",
+            "label": "INSS patronal",
+            "intent_code": "EGRESO",
+            "debit_terms": ["inss patronal", "cargas sociales", "seguridad social"],
+            "credit_cash_terms": ["banco", "caja", "efectivo"],
+            "credit_credit_terms": ["inss por pagar", "pagar"],
+            "default_concept": "Pago de INSS patronal",
+        },
+        {
+            "code": "INDEMNIZACION",
+            "label": "Indemnizacion",
+            "intent_code": "EGRESO",
+            "debit_terms": ["indemnizacion", "prestaciones laborales"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["indemnizacion por pagar", "pagar"],
+            "default_concept": "Pago de indemnizacion",
+        },
+        {
+            "code": "COMPRA_LAPTOP_PC",
+            "label": "Compra laptop / PC escritorio",
+            "intent_code": "EGRESO",
+            "debit_terms": ["equipo computo", "computadora", "laptop", "pc"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Compra de equipo de computo",
+        },
+        {
+            "code": "COMPRA_SERVIDOR",
+            "label": "Compra servidor",
+            "intent_code": "EGRESO",
+            "debit_terms": ["servidor", "equipo computo", "activo fijo"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Compra de servidor",
+        },
+        {
+            "code": "COMPRA_IMPRESORA",
+            "label": "Compra impresora",
+            "intent_code": "EGRESO",
+            "debit_terms": ["impresora", "equipo oficina", "activo fijo"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Compra de impresora",
+        },
+        {
+            "code": "COMPRA_CAMARAS_SEGURIDAD",
+            "label": "Compra camaras de seguridad",
+            "intent_code": "EGRESO",
+            "debit_terms": ["camaras", "seguridad", "equipo seguridad", "activo fijo"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Compra de camaras de seguridad",
+        },
+        {
+            "code": "MOBILIARIO_OFICINA",
+            "label": "Compra escritorios/sillas/estanteria/mostradores",
+            "intent_code": "EGRESO",
+            "debit_terms": ["mobiliario", "escritorio", "silla", "estanteria", "mostrador"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Compra de mobiliario de oficina",
+        },
+        {
+            "code": "COMPRA_VEHICULO",
+            "label": "Compra motocicleta/vehiculo/camion",
+            "intent_code": "EGRESO",
+            "debit_terms": ["vehiculo", "motocicleta", "camion", "activo fijo"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "prestamo por pagar", "pagar"],
+            "default_concept": "Compra de vehiculo",
+        },
+        {
+            "code": "REMODELACION_MEJORAS",
+            "label": "Remodelacion y mejoras en local",
+            "intent_code": "EGRESO",
+            "debit_terms": ["mejoras", "remodelacion", "construccion", "activo fijo"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Remodelacion/mejoras del local",
+        },
+        {
+            "code": "SOFTWARE_DESARROLLO",
+            "label": "Compra software / desarrollo sistema / licencia perpetua / registro marca",
+            "intent_code": "EGRESO",
+            "debit_terms": ["software", "desarrollo sistema", "licencia perpetua", "registro marca", "activo diferido"],
+            "credit_cash_terms": ["caja", "banco", "efectivo"],
+            "credit_credit_terms": ["proveedor", "pagar"],
+            "default_concept": "Inversion en software y activos intangibles",
+        },
+        {
+            "code": "PROVISION_SALARIOS",
+            "label": "Provision salarios",
+            "intent_code": "DIARIO",
+            "debit_terms": ["gasto salarios", "planilla"],
+            "credit_terms": ["salarios por pagar", "provision salarios"],
+            "default_concept": "Provision de salarios",
+        },
+        {
+            "code": "PROVISION_AGUINALDO",
+            "label": "Provision aguinaldo",
+            "intent_code": "DIARIO",
+            "debit_terms": ["gasto aguinaldo"],
+            "credit_terms": ["aguinaldo por pagar", "provision aguinaldo"],
+            "default_concept": "Provision de aguinaldo",
+        },
+        {
+            "code": "PROVISION_VACACIONES",
+            "label": "Provision vacaciones",
+            "intent_code": "DIARIO",
+            "debit_terms": ["gasto vacaciones"],
+            "credit_terms": ["vacaciones por pagar", "provision vacaciones"],
+            "default_concept": "Provision de vacaciones",
+        },
+        {
+            "code": "PROVISION_IMPUESTOS",
+            "label": "Provision impuestos",
+            "intent_code": "DIARIO",
+            "debit_terms": ["gasto impuestos"],
+            "credit_terms": ["impuestos por pagar", "provision impuestos"],
+            "default_concept": "Provision de impuestos",
+        },
+        {
+            "code": "PROVISION_SERVICIOS_ACUMULADOS",
+            "label": "Provision servicios acumulados",
+            "intent_code": "DIARIO",
+            "debit_terms": ["gasto servicios"],
+            "credit_terms": ["servicios acumulados por pagar", "provision"],
+            "default_concept": "Provision de servicios acumulados",
+        },
+        {
+            "code": "PROVISION_INCOBRABLES",
+            "label": "Provision cuentas incobrables",
+            "intent_code": "DIARIO",
+            "debit_terms": ["gasto incobrables", "provision incobrables"],
+            "credit_terms": ["provision cuentas incobrables"],
+            "default_concept": "Provision de cuentas incobrables",
+        },
+        {
+            "code": "AJUSTE_REDONDEO",
+            "label": "Ajuste por redondeo",
+            "intent_code": "DIARIO",
+            "debit_terms": ["ajuste redondeo"],
+            "credit_terms": ["ajuste redondeo"],
+            "default_concept": "Ajuste por redondeo",
+        },
+        {
+            "code": "AJUSTE_CONCILIACION_BANCARIA",
+            "label": "Ajuste conciliacion bancaria",
+            "intent_code": "DIARIO",
+            "debit_terms": ["ajuste bancario", "conciliacion bancaria"],
+            "credit_terms": ["ajuste bancario", "conciliacion bancaria"],
+            "default_concept": "Ajuste por conciliacion bancaria",
+        },
+        {
+            "code": "AJUSTE_INVENTARIO",
+            "label": "Ajuste inventario",
+            "intent_code": "DIARIO",
+            "debit_terms": ["costo", "ajuste inventario"],
+            "credit_terms": ["inventario", "ajuste inventario"],
+            "default_concept": "Ajuste de inventario",
+        },
+        {
+            "code": "AJUSTE_ERROR_CONTABLE",
+            "label": "Ajuste error contable",
+            "intent_code": "DIARIO",
+            "debit_terms": ["correccion", "ajuste error"],
+            "credit_terms": ["correccion", "ajuste error"],
+            "default_concept": "Ajuste por error contable",
+        },
+        {
+            "code": "AJUSTE_DIFERENCIA_CAMBIARIA",
+            "label": "Ajuste diferencia cambiaria",
+            "intent_code": "DIARIO",
+            "debit_terms": ["diferencia cambiaria", "perdida cambiaria", "ajuste cambiario"],
+            "credit_terms": ["diferencia cambiaria", "ganancia cambiaria", "ajuste cambiario"],
+            "default_concept": "Ajuste por diferencia cambiaria",
+        },
+        {
+            "code": "NETEO_CLIENTE_PROVEEDOR",
+            "label": "Neteo cliente vs proveedor",
+            "intent_code": "DIARIO",
+            "debit_terms": ["proveedor", "pagar"],
+            "credit_terms": ["cliente", "cobrar"],
+            "default_concept": "Neteo cliente vs proveedor",
+        },
+        {
+            "code": "NETEO_CXC",
+            "label": "Neteo cuentas por cobrar",
+            "intent_code": "DIARIO",
+            "debit_terms": ["ajuste", "compensacion", "cliente"],
+            "credit_terms": ["cuentas por cobrar", "cliente"],
+            "default_concept": "Neteo de cuentas por cobrar",
+        },
+        {
+            "code": "NETEO_CXP",
+            "label": "Neteo cuentas por pagar",
+            "intent_code": "DIARIO",
+            "debit_terms": ["cuentas por pagar", "proveedor"],
+            "credit_terms": ["ajuste", "compensacion", "proveedor"],
+            "default_concept": "Neteo de cuentas por pagar",
+        },
+        {
+            "code": "NETEO_ANTICIPO_FACTURA",
+            "label": "Neteo anticipo vs factura",
+            "intent_code": "DIARIO",
+            "debit_terms": ["anticipo", "pagar", "cliente"],
+            "credit_terms": ["factura", "cobrar", "cliente"],
+            "default_concept": "Neteo de anticipo contra factura",
+        },
+        {
+            "code": "NETEO_NOTA_CREDITO_FACTURA",
+            "label": "Neteo nota credito vs factura",
+            "intent_code": "DIARIO",
+            "debit_terms": ["nota credito", "devolucion"],
+            "credit_terms": ["factura", "cobrar", "pagar"],
+            "default_concept": "Neteo de nota de credito contra factura",
+        },
+        {
+            "code": "COMPENSACION_INTERNA",
+            "label": "Compensacion interna",
+            "intent_code": "DIARIO",
+            "debit_terms": ["compensacion", "cuenta puente"],
+            "credit_terms": ["compensacion", "cuenta puente"],
+            "default_concept": "Compensacion interna de cuentas",
+        },
+        {
+            "code": "RECLAS_GASTO",
+            "label": "Reclasificacion gasto",
+            "intent_code": "DIARIO",
+            "debit_terms": ["gasto", "reclasificacion"],
+            "credit_terms": ["gasto", "reclasificacion"],
+            "default_concept": "Reclasificacion de gasto",
+        },
+        {
+            "code": "RECLAS_INGRESO",
+            "label": "Reclasificacion ingreso",
+            "intent_code": "DIARIO",
+            "debit_terms": ["ingreso", "reclasificacion"],
+            "credit_terms": ["ingreso", "reclasificacion"],
+            "default_concept": "Reclasificacion de ingreso",
+        },
+        {
+            "code": "RECLAS_PASIVO_CLP_LP",
+            "label": "Reclasificacion pasivo corto a largo plazo",
+            "intent_code": "DIARIO",
+            "debit_terms": ["pasivo corto plazo", "prestamo corto plazo"],
+            "credit_terms": ["pasivo largo plazo", "prestamo largo plazo"],
+            "default_concept": "Reclasificacion de pasivo de corto a largo plazo",
+        },
+        {
+            "code": "RECLAS_ANTICIPO",
+            "label": "Reclasificacion anticipo",
+            "intent_code": "DIARIO",
+            "debit_terms": ["anticipo", "reclasificacion"],
+            "credit_terms": ["anticipo", "reclasificacion"],
+            "default_concept": "Reclasificacion de anticipo",
+        },
+        {
+            "code": "CORRECCION_ASIENTO_DUPLICADO",
+            "label": "Correccion asiento duplicado",
+            "intent_code": "DIARIO",
+            "debit_terms": ["reversion", "correccion", "asiento duplicado"],
+            "credit_terms": ["reversion", "correccion", "asiento duplicado"],
+            "default_concept": "Correccion por asiento duplicado",
+        },
+        {
+            "code": "CORRECCION_CUENTA_MAL_APLICADA",
+            "label": "Correccion cuenta mal aplicada",
+            "intent_code": "DIARIO",
+            "debit_terms": ["correccion cuenta", "reclasificacion"],
+            "credit_terms": ["correccion cuenta", "reclasificacion"],
+            "default_concept": "Correccion por cuenta mal aplicada",
+        },
+        {
+            "code": "CORRECCION_IMPUESTO",
+            "label": "Correccion impuesto",
+            "intent_code": "DIARIO",
+            "debit_terms": ["impuesto", "correccion tributaria"],
+            "credit_terms": ["impuesto", "correccion tributaria"],
+            "default_concept": "Correccion de impuesto",
+        },
+        {
+            "code": "ANULACION_CONTABLE",
+            "label": "Anulacion contable",
+            "intent_code": "DIARIO",
+            "debit_terms": ["anulacion", "reversion", "correccion"],
+            "credit_terms": ["anulacion", "reversion", "correccion"],
+            "default_concept": "Anulacion contable",
+        },
+        {
+            "code": "VENTA_CONTADO",
+            "label": "Venta de contado",
+            "intent_code": "INGRESO",
+            "debit_terms": ["caja", "banco", "efectivo"],
+            "credit_terms": ["venta", "ingreso", "ingresos por venta"],
+            "default_concept": "Venta de contado",
+        },
+        {
+            "code": "VENTA_CREDITO",
+            "label": "Venta al credito",
+            "intent_code": "INGRESO",
+            "debit_terms": ["cliente", "cuentas por cobrar", "cobrar"],
+            "credit_terms": ["venta", "ingreso", "ingresos por venta"],
+            "default_concept": "Venta al credito",
+        },
+        {
+            "code": "COBRO_CLIENTE",
+            "label": "Cobro de cliente",
+            "intent_code": "INGRESO",
+            "debit_terms": ["caja", "banco", "efectivo"],
+            "credit_terms": ["cliente", "cuentas por cobrar", "cobrar"],
+            "default_concept": "Cobro de cuentas por cobrar",
+        },
+        {
+            "code": "INGRESO_FINANCIERO",
+            "label": "Ingreso financiero",
+            "intent_code": "INGRESO",
+            "debit_terms": ["banco", "caja", "efectivo"],
+            "credit_terms": ["ingresos financieros", "intereses bancarios"],
+            "default_concept": "Registro de ingreso financiero",
+        },
+        {
+            "code": "APORTE_CAPITAL",
+            "label": "Aporte de capital de socios",
+            "intent_code": "INGRESO",
+            "debit_terms": ["caja", "banco", "efectivo"],
+            "credit_terms": ["capital social", "aportacion de capital", "patrimonio"],
+            "default_concept": "Registro de aporte de capital",
+        },
+        {
+            "code": "OTROS_INGRESOS",
+            "label": "Otros ingresos",
+            "intent_code": "INGRESO",
+            "debit_terms": ["caja", "banco", "efectivo"],
+            "credit_terms": ["otros ingresos"],
+            "default_concept": "Registro de otros ingresos",
+        },
+    ]
+
+
+def _csv_from_terms(items: list[str]) -> str:
+    seen: set[str] = set()
+    clean: list[str] = []
+    for item in items:
+        value = (item or "").strip().lower()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        clean.append(value)
+    return ",".join(clean)
+
+
+def _load_accounting_subrubros(db: Session) -> list[dict]:
+    base = [dict(item) for item in _accounting_subrubros_catalog()]
+    custom_rows = (
+        db.query(AccountingSubrubroRule)
+        .filter(AccountingSubrubroRule.activo.is_(True))
+        .order_by(AccountingSubrubroRule.sort_order.asc(), AccountingSubrubroRule.label.asc())
+        .all()
+    )
+    if not custom_rows:
+        return base
+
+    index_by_code = {str(item.get("code") or "").upper(): idx for idx, item in enumerate(base)}
+    for row in custom_rows:
+        payload = {
+            "code": (row.code or "").strip().upper(),
+            "label": (row.label or "").strip(),
+            "intent_code": ((row.intent_code or "EGRESO").strip().upper() or "EGRESO"),
+            "debit_terms": _terms_from_csv(row.debit_terms, []),
+            "credit_terms": _terms_from_csv(row.credit_terms, []),
+            "credit_cash_terms": _terms_from_csv(row.credit_cash_terms, []),
+            "credit_credit_terms": _terms_from_csv(row.credit_credit_terms, []),
+            "default_concept": (row.default_concept or "").strip(),
+            "source": "custom",
+            "custom_id": int(row.id),
+            "sort_order": int(row.sort_order or 1000),
+        }
+        code = payload["code"]
+        if code in index_by_code:
+            base[index_by_code[code]] = payload
+        else:
+            index_by_code[code] = len(base)
+            base.append(payload)
+    return base
+
+
+def _parse_accounting_report_dates(
+    month_value: str,
+    start_value: str,
+    end_value: str,
+    cutoff_value: str,
+) -> tuple[str, date, date, date]:
+    today = local_today()
+    month_norm = (month_value or "").strip()
+    if not month_norm:
+        month_norm = today.strftime("%Y-%m")
+    try:
+        month_start = datetime.strptime(f"{month_norm}-01", "%Y-%m-%d").date()
+    except ValueError:
+        month_start = date(today.year, today.month, 1)
+        month_norm = month_start.strftime("%Y-%m")
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    month_end = next_month - timedelta(days=1)
+
+    start_date = month_start
+    end_date = month_end
+    cutoff_date = month_end
+    try:
+        if (start_value or "").strip():
+            start_date = datetime.strptime(start_value, "%Y-%m-%d").date()
+    except ValueError:
+        start_date = month_start
+    try:
+        if (end_value or "").strip():
+            end_date = datetime.strptime(end_value, "%Y-%m-%d").date()
+    except ValueError:
+        end_date = month_end
+    try:
+        if (cutoff_value or "").strip():
+            cutoff_date = datetime.strptime(cutoff_value, "%Y-%m-%d").date()
+    except ValueError:
+        cutoff_date = end_date
+
+    if end_date < start_date:
+        end_date = start_date
+    if cutoff_date < start_date:
+        cutoff_date = start_date
+    if cutoff_date > end_date:
+        cutoff_date = end_date
+    return month_norm, start_date, end_date, cutoff_date
+
+
+def _scope_accounting_entries_query(db: Session, branch_ids: list[int]):
+    return db.query(AccountingEntry).filter(
+        AccountingEntry.estado != "ANULADO",
+        or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
+    )
+
+
+def _build_accounting_reports_payload(
+    db: Session,
+    branch_ids: list[int],
+    selected_branch_id: Optional[int],
+    month_value: str,
+    start_value: str,
+    end_value: str,
+    cutoff_value: str,
+) -> dict:
+    month_norm, start_date, end_date, cutoff_date = _parse_accounting_report_dates(
+        month_value,
+        start_value,
+        end_value,
+        cutoff_value,
+    )
+
+    entries_q = _scope_accounting_entries_query(db, branch_ids)
+    if selected_branch_id:
+        entries_q = entries_q.filter(AccountingEntry.branch_id == selected_branch_id)
+    entries_period = (
+        entries_q.filter(AccountingEntry.fecha >= start_date, AccountingEntry.fecha <= end_date)
+        .order_by(AccountingEntry.fecha.asc(), AccountingEntry.id.asc())
+        .all()
+    )
+    entry_ids = [int(item.id) for item in entries_period]
+
+    line_rows = []
+    if entry_ids:
+        line_rows = (
+            db.query(AccountingEntryLine, AccountingEntry, CuentaContable)
+            .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
+            .join(CuentaContable, CuentaContable.id == AccountingEntryLine.cuenta_id)
+            .filter(AccountingEntryLine.entry_id.in_(entry_ids))
+            .order_by(
+                AccountingEntry.fecha.asc(),
+                AccountingEntry.id.asc(),
+                AccountingEntryLine.id.asc(),
+            )
+            .all()
+        )
+
+    opening_rows_q = (
+        db.query(
+            AccountingEntryLine.cuenta_id.label("cuenta_id"),
+            func.coalesce(func.sum(AccountingEntryLine.debe), 0).label("debe"),
+            func.coalesce(func.sum(AccountingEntryLine.haber), 0).label("haber"),
+        )
+        .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
+        .filter(
+            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.fecha < start_date,
+            or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
+        )
+    )
+    period_rows_q = (
+        db.query(
+            AccountingEntryLine.cuenta_id.label("cuenta_id"),
+            func.coalesce(func.sum(AccountingEntryLine.debe), 0).label("debe"),
+            func.coalesce(func.sum(AccountingEntryLine.haber), 0).label("haber"),
+        )
+        .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
+        .filter(
+            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.fecha >= start_date,
+            AccountingEntry.fecha <= end_date,
+            or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
+        )
+    )
+    cutoff_rows_q = (
+        db.query(
+            AccountingEntryLine.cuenta_id.label("cuenta_id"),
+            func.coalesce(func.sum(AccountingEntryLine.debe), 0).label("debe"),
+            func.coalesce(func.sum(AccountingEntryLine.haber), 0).label("haber"),
+        )
+        .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
+        .filter(
+            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.fecha <= cutoff_date,
+            or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
+        )
+    )
+    if selected_branch_id:
+        opening_rows_q = opening_rows_q.filter(AccountingEntry.branch_id == selected_branch_id)
+        period_rows_q = period_rows_q.filter(AccountingEntry.branch_id == selected_branch_id)
+        cutoff_rows_q = cutoff_rows_q.filter(AccountingEntry.branch_id == selected_branch_id)
+    opening_rows = opening_rows_q.group_by(AccountingEntryLine.cuenta_id).all()
+    period_rows = period_rows_q.group_by(AccountingEntryLine.cuenta_id).all()
+    cutoff_rows = cutoff_rows_q.group_by(AccountingEntryLine.cuenta_id).all()
+
+    accounts = (
+        db.query(CuentaContable)
+        .filter(CuentaContable.activo.is_(True))
+        .order_by(CuentaContable.codigo.asc())
+        .all()
+    )
+    account_by_id = {int(a.id): a for a in accounts}
+    opening_map = {int(r.cuenta_id): {"debe": Decimal(str(r.debe or 0)), "haber": Decimal(str(r.haber or 0))} for r in opening_rows}
+    period_map = {int(r.cuenta_id): {"debe": Decimal(str(r.debe or 0)), "haber": Decimal(str(r.haber or 0))} for r in period_rows}
+    cutoff_map = {int(r.cuenta_id): {"debe": Decimal(str(r.debe or 0)), "haber": Decimal(str(r.haber or 0))} for r in cutoff_rows}
+
+    ledger_rows: list[dict] = []
+    for account_id, period_totals in period_map.items():
+        acc = account_by_id.get(account_id)
+        if not acc:
+            continue
+        open_totals = opening_map.get(account_id, {"debe": Decimal("0"), "haber": Decimal("0")})
+        open_balance = (open_totals["debe"] - open_totals["haber"]) if (acc.naturaleza or "").upper() == "DEBE" else (open_totals["haber"] - open_totals["debe"])
+        period_balance = (period_totals["debe"] - period_totals["haber"]) if (acc.naturaleza or "").upper() == "DEBE" else (period_totals["haber"] - period_totals["debe"])
+        ledger_rows.append(
+            {
+                "account_id": account_id,
+                "codigo": acc.codigo,
+                "nombre": acc.nombre,
+                "naturaleza": acc.naturaleza,
+                "saldo_inicial": open_balance,
+                "debe": period_totals["debe"],
+                "haber": period_totals["haber"],
+                "saldo_final": open_balance + period_balance,
+            }
+        )
+    ledger_rows.sort(key=lambda item: item["codigo"])
+
+    balanza_rows: list[dict] = []
+    balanza_debe = Decimal("0")
+    balanza_haber = Decimal("0")
+    balanza_saldo_deudor = Decimal("0")
+    balanza_saldo_acreedor = Decimal("0")
+    account_ids_for_balanza = sorted(set(opening_map.keys()) | set(period_map.keys()))
+    for account_id in account_ids_for_balanza:
+        acc = account_by_id.get(int(account_id))
+        if not acc:
+            continue
+        open_totals = opening_map.get(account_id, {"debe": Decimal("0"), "haber": Decimal("0")})
+        mov_totals = period_map.get(account_id, {"debe": Decimal("0"), "haber": Decimal("0")})
+        saldo_inicial_signed = open_totals["debe"] - open_totals["haber"]
+        saldo_final_signed = saldo_inicial_signed + mov_totals["debe"] - mov_totals["haber"]
+        if (
+            saldo_inicial_signed == 0
+            and mov_totals["debe"] == 0
+            and mov_totals["haber"] == 0
+            and saldo_final_signed == 0
+        ):
+            continue
+        saldo_deudor = saldo_final_signed if saldo_final_signed > 0 else Decimal("0")
+        saldo_acreedor = abs(saldo_final_signed) if saldo_final_signed < 0 else Decimal("0")
+        balanza_debe += mov_totals["debe"]
+        balanza_haber += mov_totals["haber"]
+        balanza_saldo_deudor += saldo_deudor
+        balanza_saldo_acreedor += saldo_acreedor
+        balanza_rows.append(
+            {
+                "codigo": acc.codigo,
+                "nombre": acc.nombre,
+                "tipo": acc.tipo,
+                "naturaleza": acc.naturaleza,
+                "saldo_inicial_deudor": saldo_inicial_signed if saldo_inicial_signed > 0 else Decimal("0"),
+                "saldo_inicial_acreedor": abs(saldo_inicial_signed) if saldo_inicial_signed < 0 else Decimal("0"),
+                "mov_debe": mov_totals["debe"],
+                "mov_haber": mov_totals["haber"],
+                "saldo_final_deudor": saldo_deudor,
+                "saldo_final_acreedor": saldo_acreedor,
+            }
+        )
+    balanza_rows.sort(key=lambda item: item["codigo"])
+
+    result_rows = []
+    total_ingresos = Decimal("0")
+    total_gastos = Decimal("0")
+    for account_id, totals in period_map.items():
+        acc = account_by_id.get(account_id)
+        if not acc or (acc.tipo or "").upper() != "RESULTADO":
+            continue
+        nat = (acc.naturaleza or "").upper()
+        amount = (totals["haber"] - totals["debe"]) if nat == "HABER" else (totals["debe"] - totals["haber"])
+        if amount == 0:
+            continue
+        classification = "INGRESO" if nat == "HABER" else "GASTO"
+        if classification == "INGRESO":
+            total_ingresos += amount
+        else:
+            total_gastos += amount
+        result_rows.append({"codigo": acc.codigo, "nombre": acc.nombre, "clasificacion": classification, "monto": amount})
+    result_rows.sort(key=lambda item: (item["clasificacion"], item["codigo"]))
+    utilidad_neta = total_ingresos - total_gastos
+
+    activos_rows = []
+    pasivos_rows = []
+    patrimonio_rows = []
+    total_activo = Decimal("0")
+    total_pasivo = Decimal("0")
+    total_patrimonio = Decimal("0")
+    for account_id, totals in cutoff_map.items():
+        acc = account_by_id.get(account_id)
+        if not acc or (acc.tipo or "").upper() != "BALANCE":
+            continue
+        nat = (acc.naturaleza or "").upper()
+        amount = (totals["debe"] - totals["haber"]) if nat == "DEBE" else (totals["haber"] - totals["debe"])
+        if amount == 0:
+            continue
+        row = {"codigo": acc.codigo, "nombre": acc.nombre, "monto": amount}
+        if nat == "DEBE":
+            activos_rows.append(row)
+            total_activo += amount
+        else:
+            name_key = f"{(acc.codigo or '').lower()} {(acc.nombre or '').lower()}"
+            if any(k in name_key for k in ["capital", "patrimonio", "reserva", "utilidad", "perdida", "pérdida"]):
+                patrimonio_rows.append(row)
+                total_patrimonio += amount
+            else:
+                pasivos_rows.append(row)
+                total_pasivo += amount
+    activos_rows.sort(key=lambda item: item["codigo"])
+    pasivos_rows.sort(key=lambda item: item["codigo"])
+    patrimonio_rows.sort(key=lambda item: item["codigo"])
+
+    cash_movements = []
+    flujo_entradas = Decimal("0")
+    flujo_salidas = Decimal("0")
+    for account_id, totals in period_map.items():
+        acc = account_by_id.get(account_id)
+        if not acc:
+            continue
+        key = f"{(acc.codigo or '').lower()} {(acc.nombre or '').lower()}"
+        if not any(k in key for k in ["caja", "banco", "efectivo"]):
+            continue
+        delta = totals["debe"] - totals["haber"]
+        if delta > 0:
+            flujo_entradas += delta
+        elif delta < 0:
+            flujo_salidas += abs(delta)
+        cash_movements.append({"codigo": acc.codigo, "nombre": acc.nombre, "debe": totals["debe"], "haber": totals["haber"], "neto": delta})
+    cash_movements.sort(key=lambda item: item["codigo"])
+    flujo_neto = flujo_entradas - flujo_salidas
+
+    total_entries = len(entries_period)
+    total_lines = len(line_rows)
+    total_debe_periodo = sum((Decimal(str(r[0].debe or 0)) for r in line_rows), Decimal("0"))
+    total_haber_periodo = sum((Decimal(str(r[0].haber or 0)) for r in line_rows), Decimal("0"))
+    notas_financieras = [
+        f"Periodo analizado del {start_date.isoformat()} al {end_date.isoformat()} con corte al {cutoff_date.isoformat()}.",
+        f"Se registraron {total_entries} comprobantes posteados con {total_lines} lineas contables.",
+        f"El estado de resultados muestra ingresos por {total_ingresos:.2f} y gastos por {total_gastos:.2f}, con resultado neto de {utilidad_neta:.2f}.",
+        f"El balance general presenta Activo {total_activo:.2f} versus Pasivo+Patrimonio {(total_pasivo + total_patrimonio):.2f}.",
+        f"Flujo de caja del periodo: entradas {flujo_entradas:.2f}, salidas {flujo_salidas:.2f}, neto {flujo_neto:.2f}.",
+        f"Cuadre del libro diario en periodo: Debe {total_debe_periodo:.2f} / Haber {total_haber_periodo:.2f}.",
+    ]
+
+    return {
+        "month": month_norm,
+        "start": start_date.isoformat(),
+        "end": end_date.isoformat(),
+        "cutoff": cutoff_date.isoformat(),
+        "entries_period": entries_period,
+        "line_rows": line_rows,
+        "ledger_rows": ledger_rows,
+        "balanza_rows": balanza_rows,
+        "balanza_debe": balanza_debe,
+        "balanza_haber": balanza_haber,
+        "balanza_saldo_deudor": balanza_saldo_deudor,
+        "balanza_saldo_acreedor": balanza_saldo_acreedor,
+        "result_rows": result_rows,
+        "total_ingresos": total_ingresos,
+        "total_gastos": total_gastos,
+        "utilidad_neta": utilidad_neta,
+        "activos_rows": activos_rows,
+        "pasivos_rows": pasivos_rows,
+        "patrimonio_rows": patrimonio_rows,
+        "total_activo": total_activo,
+        "total_pasivo": total_pasivo,
+        "total_patrimonio": total_patrimonio,
+        "cash_movements": cash_movements,
+        "flujo_entradas": flujo_entradas,
+        "flujo_salidas": flujo_salidas,
+        "flujo_neto": flujo_neto,
+        "notas_financieras": notas_financieras,
     }
 
 
@@ -2128,19 +3446,160 @@ def _build_voucher_template(
     }
 
 
-def _smart_entry_terms(voucher_type: AccountingVoucherType, description: str, policy: dict) -> dict:
+def _smart_entry_terms(
+    voucher_type: AccountingVoucherType,
+    description: str,
+    policy: dict,
+    subrubro_code: str = "",
+    subrubros_catalog: Optional[list[dict]] = None,
+) -> dict:
     text = (description or "").strip().lower()
     code = (voucher_type.code or "").upper().strip()
     ingreso_debe = list(policy.get("ingreso_debe_terms") or ["caja", "banco", "cliente", "cobrar"])
     ingreso_haber = list(policy.get("ingreso_haber_terms") or ["venta", "ingreso"])
     egreso_debe = list(policy.get("egreso_debe_terms") or ["gasto", "costo", "compra", "inventario"])
     egreso_haber = list(policy.get("egreso_haber_terms") or ["caja", "banco", "proveedor", "pagar"])
+    egreso_haber_clean = [t for t in egreso_haber if "ingreso" not in t and "venta" not in t]
+    if not egreso_haber_clean:
+        egreso_haber_clean = ["caja", "banco", "proveedor", "pagar", "efectivo"]
 
     debit_terms: list[str] = []
     credit_terms: list[str] = []
     concept = (description or "").strip()
+    expense_intent = any(
+        k in text
+        for k in [
+            "compra",
+            "gasto",
+            "pago",
+            "egreso",
+            "insumo",
+            "pintura",
+            "alquiler",
+            "servicio",
+            "planilla",
+            "nomina",
+            "salario",
+        ]
+    )
+    income_intent = any(k in text for k in ["venta", "ingreso", "cobro", "factura emitida"])
+    immediate_payment = any(
+        k in text
+        for k in [
+            "contado",
+            "pagado",
+            "de contado",
+            "efectivo",
+            "transferencia",
+            "cheque",
+            "tarjeta",
+            "debito",
+            "débito",
+        ]
+    )
+    credit_purchase = any(k in text for k in ["credito", "crédito", "cxp", "por pagar", "a plazo", "proveedor"])
+    fixed_asset_intent = any(
+        k in text
+        for k in [
+            "impresora",
+            "computadora",
+            "laptop",
+            "equipo",
+            "mobiliario",
+            "escritorio",
+            "silla",
+            "estante",
+            "vehiculo",
+            "vehículo",
+            "maquinaria",
+            "activo fijo",
+            "propiedad",
+        ]
+    )
+    office_supply_intent = any(
+        k in text
+        for k in [
+            "papeleria",
+            "papelería",
+            "utiles",
+            "útiles",
+            "oficina",
+            "fotocopia",
+            "fotocopias",
+            "toner",
+            "tóner",
+            "tinta",
+            "resma",
+            "cartulina",
+            "lapiz",
+            "lápiz",
+            "boligrafo",
+            "bolígrafo",
+            "folder",
+            "cuaderno",
+        ]
+    )
+    cleaning_supply_intent = any(
+        k in text
+        for k in [
+            "limpieza",
+            "aseo",
+            "escoba",
+            "escobas",
+            "detergente",
+            "cloro",
+            "desinfectante",
+            "jabon",
+            "jabón",
+            "bolsa de basura",
+            "guantes",
+        ]
+    )
+    inferred_code = "EGRESO" if expense_intent and not income_intent else "INGRESO" if income_intent and not expense_intent else code
+    subrubros = subrubros_catalog or _accounting_subrubros_catalog()
+    selected_subrubro = next(
+        (item for item in subrubros if item["code"] == (subrubro_code or "").strip().upper()),
+        None,
+    )
 
-    if code == "INGRESO":
+    # Si el usuario selecciona subrubro, manda esa intencion como prioridad.
+    if selected_subrubro:
+        sub_intent = (selected_subrubro.get("intent_code") or "").upper().strip()
+        if sub_intent:
+            inferred_code = sub_intent
+        debit_terms = list(selected_subrubro.get("debit_terms") or [])
+        explicit_credit_terms = list(selected_subrubro.get("credit_terms") or [])
+        if explicit_credit_terms:
+            credit_terms = explicit_credit_terms
+        elif inferred_code == "INGRESO":
+            credit_terms = ["venta", "ingreso"]
+        elif inferred_code == "EGRESO":
+            if immediate_payment:
+                credit_terms = list(selected_subrubro.get("credit_cash_terms") or ["caja", "banco", "efectivo"])
+            elif credit_purchase:
+                credit_terms = list(selected_subrubro.get("credit_credit_terms") or ["proveedor", "pagar", "cxp"])
+            else:
+                credit_terms = list(
+                    selected_subrubro.get("credit_cash_terms")
+                    or selected_subrubro.get("credit_credit_terms")
+                    or ["caja", "banco", "efectivo"]
+                )
+        else:
+            credit_terms = list(selected_subrubro.get("credit_cash_terms") or selected_subrubro.get("credit_credit_terms") or ["ajuste"])
+        concept = concept or str(selected_subrubro.get("default_concept") or "").strip() or "Registro contable por subrubro"
+        return {
+            "debit_terms": debit_terms,
+            "credit_terms": credit_terms,
+            "concept": concept,
+            "intent_code": inferred_code,
+            "immediate_payment": immediate_payment,
+            "fixed_asset_intent": selected_subrubro.get("code") == "ACTIVO_EQUIPO",
+            "office_supply_intent": selected_subrubro.get("code") == "PAPELERIA",
+            "cleaning_supply_intent": selected_subrubro.get("code") == "LIMPIEZA",
+            "subrubro_code": (selected_subrubro.get("code") or ""),
+        }
+
+    if inferred_code == "INGRESO":
         if any(k in text for k in ["credito", "cxc", "por cobrar", "cliente"]):
             debit_terms = ["cliente", "cobrar", *ingreso_debe]
             concept = concept or "Ingreso a credito"
@@ -2148,21 +3607,79 @@ def _smart_entry_terms(voucher_type: AccountingVoucherType, description: str, po
             debit_terms = ["caja", "banco", *ingreso_debe]
             concept = concept or "Ingreso de contado"
         credit_terms = [*ingreso_haber, "venta", "ingreso"]
-    elif code == "EGRESO":
-        if any(k in text for k in ["inventario", "compra", "mercaderia", "proveedor"]):
+    elif inferred_code == "EGRESO":
+        is_inventory_purchase = any(k in text for k in ["inventario", "mercaderia", "mercadería", "reventa", "stock"])
+        if immediate_payment:
+            payment_terms = ["caja", "banco", "efectivo", "transferencia", "cheque", "tarjeta"]
+        elif credit_purchase:
+            payment_terms = ["proveedor", "pagar", "cxp"]
+        else:
+            payment_terms = ["caja", "banco", "efectivo", *egreso_haber_clean]
+        if any(k in text for k in ["compra", "mercaderia", "mercadería", "proveedor"]) and is_inventory_purchase:
             debit_terms = ["inventario", "compra", *egreso_debe]
-            if any(k in text for k in ["credito", "cxp", "por pagar", "proveedor"]):
-                credit_terms = ["proveedor", "pagar", *egreso_haber]
-            else:
-                credit_terms = ["caja", "banco", *egreso_haber]
+            credit_terms = payment_terms
             concept = concept or "Compra / egreso de inventario"
+        elif fixed_asset_intent:
+            debit_terms = [
+                "activo fijo",
+                "propiedad",
+                "equipo",
+                "mobiliario",
+                "vehiculo",
+                "maquinaria",
+                "activo",
+            ]
+            credit_terms = payment_terms
+            concept = concept or "Compra de activo fijo"
+        elif office_supply_intent:
+            debit_terms = [
+                "papeleria",
+                "útiles",
+                "utiles",
+                "suministros",
+                "material oficina",
+                "gasto oficina",
+                "insumo",
+                "consumibles",
+                *egreso_debe,
+            ]
+            credit_terms = payment_terms
+            concept = concept or "Compra de papeleria y utiles de oficina"
+        elif cleaning_supply_intent:
+            debit_terms = [
+                "gasto operativo",
+                "suministros",
+                "servicios exteriores",
+                "materiales de oficina",
+                "limpieza",
+                "aseo",
+                "insumo",
+                *egreso_debe,
+            ]
+            credit_terms = payment_terms
+            concept = concept or "Compra de insumos de limpieza"
+        elif "insumo" in text:
+            debit_terms = [
+                "insumos",
+                "suministros",
+                "consumibles",
+                "gasto",
+                "operacion",
+                *egreso_debe,
+            ]
+            credit_terms = payment_terms
+            concept = concept or "Compra de insumos operativos"
+        elif any(k in text for k in ["compra", "insumo", "pintura", "mantenimiento", "reparacion", "reparación"]):
+            debit_terms = ["gasto", "mantenimiento", "operacion", "compra", "insumo", *egreso_debe]
+            credit_terms = payment_terms
+            concept = concept or "Compra/gasto operativo"
         elif any(k in text for k in ["planilla", "nomina", "salario"]):
             debit_terms = ["gasto", "planilla", "administracion", *egreso_debe]
-            credit_terms = ["caja", "banco", *egreso_haber]
+            credit_terms = ["caja", "banco", "efectivo", *egreso_haber_clean]
             concept = concept or "Pago de planilla"
         else:
             debit_terms = ["gasto", "administracion", "operacion", *egreso_debe]
-            credit_terms = ["caja", "banco", *egreso_haber]
+            credit_terms = ["caja", "banco", "efectivo", *egreso_haber_clean]
             concept = concept or "Egreso operativo"
     else:
         if any(k in text for k in ["depreciacion", "amortizacion"]):
@@ -2182,6 +3699,12 @@ def _smart_entry_terms(voucher_type: AccountingVoucherType, description: str, po
         "debit_terms": debit_terms,
         "credit_terms": credit_terms,
         "concept": concept,
+        "intent_code": inferred_code,
+        "immediate_payment": immediate_payment,
+        "fixed_asset_intent": fixed_asset_intent,
+        "office_supply_intent": office_supply_intent,
+        "cleaning_supply_intent": cleaning_supply_intent,
+        "subrubro_code": (selected_subrubro.get("code") if selected_subrubro else ""),
     }
 
 
@@ -2360,6 +3883,755 @@ def accounting_home(
     )
 
 
+@router.get("/accounting/reports")
+def accounting_reports(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    branch_ids = _user_scoped_branch_ids(db, user)
+    selected_branch_id_raw = (request.query_params.get("branch_id") or "").strip()
+    selected_branch_id: Optional[int] = None
+    if selected_branch_id_raw:
+        try:
+            branch_candidate = int(selected_branch_id_raw)
+            if branch_candidate in branch_ids:
+                selected_branch_id = branch_candidate
+        except ValueError:
+            selected_branch_id = None
+
+    month_value = request.query_params.get("month") or ""
+    start_value = request.query_params.get("start") or ""
+    end_value = request.query_params.get("end") or ""
+    cutoff_value = request.query_params.get("cutoff") or ""
+    month_norm, start_date, end_date, cutoff_date = _parse_accounting_report_dates(
+        month_value,
+        start_value,
+        end_value,
+        cutoff_value,
+    )
+
+    entries_q = _scope_accounting_entries_query(db, branch_ids)
+    if selected_branch_id:
+        entries_q = entries_q.filter(AccountingEntry.branch_id == selected_branch_id)
+    entries_period = (
+        entries_q.filter(AccountingEntry.fecha >= start_date, AccountingEntry.fecha <= end_date)
+        .order_by(AccountingEntry.fecha.asc(), AccountingEntry.id.asc())
+        .all()
+    )
+    entry_ids = [int(item.id) for item in entries_period]
+
+    line_rows = []
+    if entry_ids:
+        line_rows = (
+            db.query(AccountingEntryLine, AccountingEntry, CuentaContable)
+            .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
+            .join(CuentaContable, CuentaContable.id == AccountingEntryLine.cuenta_id)
+            .filter(AccountingEntryLine.entry_id.in_(entry_ids))
+            .order_by(
+                AccountingEntry.fecha.asc(),
+                AccountingEntry.id.asc(),
+                AccountingEntryLine.id.asc(),
+            )
+            .all()
+        )
+
+    # Libro mayor: saldos por cuenta en periodo, con saldo inicial.
+    opening_rows_q = (
+        db.query(
+            AccountingEntryLine.cuenta_id.label("cuenta_id"),
+            func.coalesce(func.sum(AccountingEntryLine.debe), 0).label("debe"),
+            func.coalesce(func.sum(AccountingEntryLine.haber), 0).label("haber"),
+        )
+        .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
+        .filter(
+            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.fecha < start_date,
+            or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
+        )
+    )
+    period_rows_q = (
+        db.query(
+            AccountingEntryLine.cuenta_id.label("cuenta_id"),
+            func.coalesce(func.sum(AccountingEntryLine.debe), 0).label("debe"),
+            func.coalesce(func.sum(AccountingEntryLine.haber), 0).label("haber"),
+        )
+        .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
+        .filter(
+            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.fecha >= start_date,
+            AccountingEntry.fecha <= end_date,
+            or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
+        )
+    )
+    cutoff_rows_q = (
+        db.query(
+            AccountingEntryLine.cuenta_id.label("cuenta_id"),
+            func.coalesce(func.sum(AccountingEntryLine.debe), 0).label("debe"),
+            func.coalesce(func.sum(AccountingEntryLine.haber), 0).label("haber"),
+        )
+        .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
+        .filter(
+            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.fecha <= cutoff_date,
+            or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
+        )
+    )
+    if selected_branch_id:
+        opening_rows_q = opening_rows_q.filter(AccountingEntry.branch_id == selected_branch_id)
+        period_rows_q = period_rows_q.filter(AccountingEntry.branch_id == selected_branch_id)
+        cutoff_rows_q = cutoff_rows_q.filter(AccountingEntry.branch_id == selected_branch_id)
+    opening_rows = opening_rows_q.group_by(AccountingEntryLine.cuenta_id).all()
+    period_rows = period_rows_q.group_by(AccountingEntryLine.cuenta_id).all()
+    cutoff_rows = cutoff_rows_q.group_by(AccountingEntryLine.cuenta_id).all()
+
+    accounts = (
+        db.query(CuentaContable)
+        .filter(CuentaContable.activo.is_(True))
+        .order_by(CuentaContable.codigo.asc())
+        .all()
+    )
+    account_by_id = {int(a.id): a for a in accounts}
+    opening_map = {int(r.cuenta_id): {"debe": Decimal(str(r.debe or 0)), "haber": Decimal(str(r.haber or 0))} for r in opening_rows}
+    period_map = {int(r.cuenta_id): {"debe": Decimal(str(r.debe or 0)), "haber": Decimal(str(r.haber or 0))} for r in period_rows}
+    cutoff_map = {int(r.cuenta_id): {"debe": Decimal(str(r.debe or 0)), "haber": Decimal(str(r.haber or 0))} for r in cutoff_rows}
+
+    ledger_rows: list[dict] = []
+    for account_id, period_totals in period_map.items():
+        acc = account_by_id.get(account_id)
+        if not acc:
+            continue
+        open_totals = opening_map.get(account_id, {"debe": Decimal("0"), "haber": Decimal("0")})
+        open_balance = (open_totals["debe"] - open_totals["haber"]) if (acc.naturaleza or "").upper() == "DEBE" else (open_totals["haber"] - open_totals["debe"])
+        period_balance = (period_totals["debe"] - period_totals["haber"]) if (acc.naturaleza or "").upper() == "DEBE" else (period_totals["haber"] - period_totals["debe"])
+        ledger_rows.append(
+            {
+                "account_id": account_id,
+                "codigo": acc.codigo,
+                "nombre": acc.nombre,
+                "naturaleza": acc.naturaleza,
+                "saldo_inicial": open_balance,
+                "debe": period_totals["debe"],
+                "haber": period_totals["haber"],
+                "saldo_final": open_balance + period_balance,
+            }
+        )
+    ledger_rows.sort(key=lambda item: item["codigo"])
+
+    # Balanza de comprobacion (mensual / periodo filtrado).
+    balanza_rows: list[dict] = []
+    balanza_debe = Decimal("0")
+    balanza_haber = Decimal("0")
+    balanza_saldo_deudor = Decimal("0")
+    balanza_saldo_acreedor = Decimal("0")
+    account_ids_for_balanza = sorted(set(opening_map.keys()) | set(period_map.keys()))
+    for account_id in account_ids_for_balanza:
+        acc = account_by_id.get(int(account_id))
+        if not acc:
+            continue
+        open_totals = opening_map.get(account_id, {"debe": Decimal("0"), "haber": Decimal("0")})
+        mov_totals = period_map.get(account_id, {"debe": Decimal("0"), "haber": Decimal("0")})
+        saldo_inicial_signed = open_totals["debe"] - open_totals["haber"]
+        saldo_final_signed = saldo_inicial_signed + mov_totals["debe"] - mov_totals["haber"]
+        if (
+            saldo_inicial_signed == 0
+            and mov_totals["debe"] == 0
+            and mov_totals["haber"] == 0
+            and saldo_final_signed == 0
+        ):
+            continue
+        saldo_deudor = saldo_final_signed if saldo_final_signed > 0 else Decimal("0")
+        saldo_acreedor = abs(saldo_final_signed) if saldo_final_signed < 0 else Decimal("0")
+        balanza_debe += mov_totals["debe"]
+        balanza_haber += mov_totals["haber"]
+        balanza_saldo_deudor += saldo_deudor
+        balanza_saldo_acreedor += saldo_acreedor
+        balanza_rows.append(
+            {
+                "codigo": acc.codigo,
+                "nombre": acc.nombre,
+                "tipo": acc.tipo,
+                "naturaleza": acc.naturaleza,
+                "saldo_inicial_deudor": saldo_inicial_signed if saldo_inicial_signed > 0 else Decimal("0"),
+                "saldo_inicial_acreedor": abs(saldo_inicial_signed) if saldo_inicial_signed < 0 else Decimal("0"),
+                "mov_debe": mov_totals["debe"],
+                "mov_haber": mov_totals["haber"],
+                "saldo_final_deudor": saldo_deudor,
+                "saldo_final_acreedor": saldo_acreedor,
+            }
+        )
+    balanza_rows.sort(key=lambda item: item["codigo"])
+
+    # Estado de resultados (periodo).
+    result_rows = []
+    total_ingresos = Decimal("0")
+    total_gastos = Decimal("0")
+    for account_id, totals in period_map.items():
+        acc = account_by_id.get(account_id)
+        if not acc or (acc.tipo or "").upper() != "RESULTADO":
+            continue
+        nat = (acc.naturaleza or "").upper()
+        amount = (totals["haber"] - totals["debe"]) if nat == "HABER" else (totals["debe"] - totals["haber"])
+        if amount == 0:
+            continue
+        classification = "INGRESO" if nat == "HABER" else "GASTO"
+        if classification == "INGRESO":
+            total_ingresos += amount
+        else:
+            total_gastos += amount
+        result_rows.append(
+            {
+                "codigo": acc.codigo,
+                "nombre": acc.nombre,
+                "clasificacion": classification,
+                "monto": amount,
+            }
+        )
+    result_rows.sort(key=lambda item: (item["clasificacion"], item["codigo"]))
+    utilidad_neta = total_ingresos - total_gastos
+
+    # Balance general (al corte).
+    activos_rows = []
+    pasivos_rows = []
+    patrimonio_rows = []
+    total_activo = Decimal("0")
+    total_pasivo = Decimal("0")
+    total_patrimonio = Decimal("0")
+    for account_id, totals in cutoff_map.items():
+        acc = account_by_id.get(account_id)
+        if not acc or (acc.tipo or "").upper() != "BALANCE":
+            continue
+        nat = (acc.naturaleza or "").upper()
+        amount = (totals["debe"] - totals["haber"]) if nat == "DEBE" else (totals["haber"] - totals["debe"])
+        if amount == 0:
+            continue
+        row = {"codigo": acc.codigo, "nombre": acc.nombre, "monto": amount}
+        if nat == "DEBE":
+            activos_rows.append(row)
+            total_activo += amount
+        else:
+            name_key = f"{(acc.codigo or '').lower()} {(acc.nombre or '').lower()}"
+            if any(k in name_key for k in ["capital", "patrimonio", "reserva", "utilidad", "perdida", "pérdida"]):
+                patrimonio_rows.append(row)
+                total_patrimonio += amount
+            else:
+                pasivos_rows.append(row)
+                total_pasivo += amount
+    activos_rows.sort(key=lambda item: item["codigo"])
+    pasivos_rows.sort(key=lambda item: item["codigo"])
+    patrimonio_rows.sort(key=lambda item: item["codigo"])
+
+    # Flujo de caja (periodo, metodo directo simplificado por cuentas de efectivo).
+    cash_movements = []
+    flujo_entradas = Decimal("0")
+    flujo_salidas = Decimal("0")
+    for account_id, totals in period_map.items():
+        acc = account_by_id.get(account_id)
+        if not acc:
+            continue
+        key = f"{(acc.codigo or '').lower()} {(acc.nombre or '').lower()}"
+        if not any(k in key for k in ["caja", "banco", "efectivo"]):
+            continue
+        delta = totals["debe"] - totals["haber"]
+        if delta > 0:
+            flujo_entradas += delta
+        elif delta < 0:
+            flujo_salidas += abs(delta)
+        cash_movements.append(
+            {
+                "codigo": acc.codigo,
+                "nombre": acc.nombre,
+                "debe": totals["debe"],
+                "haber": totals["haber"],
+                "neto": delta,
+            }
+        )
+    cash_movements.sort(key=lambda item: item["codigo"])
+    flujo_neto = flujo_entradas - flujo_salidas
+
+    # Notas financieras resumidas.
+    total_entries = len(entries_period)
+    total_lines = len(line_rows)
+    total_debe_periodo = sum((Decimal(str(r[0].debe or 0)) for r in line_rows), Decimal("0"))
+    total_haber_periodo = sum((Decimal(str(r[0].haber or 0)) for r in line_rows), Decimal("0"))
+    notas_financieras = [
+        f"Periodo analizado del {start_date.isoformat()} al {end_date.isoformat()} con corte al {cutoff_date.isoformat()}.",
+        f"Se registraron {total_entries} comprobantes posteados con {total_lines} lineas contables.",
+        f"El estado de resultados muestra ingresos por {total_ingresos:.2f} y gastos por {total_gastos:.2f}, con resultado neto de {utilidad_neta:.2f}.",
+        f"El balance general presenta Activo {total_activo:.2f} versus Pasivo+Patrimonio {(total_pasivo + total_patrimonio):.2f}.",
+        f"Flujo de caja del periodo: entradas {flujo_entradas:.2f}, salidas {flujo_salidas:.2f}, neto {flujo_neto:.2f}.",
+        f"Cuadre del libro diario en periodo: Debe {total_debe_periodo:.2f} / Haber {total_haber_periodo:.2f}.",
+    ]
+
+    branches = (
+        db.query(Branch)
+        .filter(Branch.id.in_(branch_ids))
+        .order_by(Branch.name.asc())
+        .all()
+    )
+    return request.app.state.templates.TemplateResponse(
+        "accounting_reports.html",
+        {
+            "request": request,
+            "user": user,
+            "version": settings.UI_VERSION,
+            "error": request.query_params.get("error"),
+            "success": request.query_params.get("success"),
+            "branches": branches,
+            "selected_branch_id": selected_branch_id,
+            "month": month_norm,
+            "start": start_date.isoformat(),
+            "end": end_date.isoformat(),
+            "cutoff": cutoff_date.isoformat(),
+            "entries_period": entries_period,
+            "line_rows": line_rows,
+            "ledger_rows": ledger_rows,
+            "balanza_rows": balanza_rows,
+            "balanza_debe": balanza_debe,
+            "balanza_haber": balanza_haber,
+            "balanza_saldo_deudor": balanza_saldo_deudor,
+            "balanza_saldo_acreedor": balanza_saldo_acreedor,
+            "result_rows": result_rows,
+            "total_ingresos": total_ingresos,
+            "total_gastos": total_gastos,
+            "utilidad_neta": utilidad_neta,
+            "activos_rows": activos_rows,
+            "pasivos_rows": pasivos_rows,
+            "patrimonio_rows": patrimonio_rows,
+            "total_activo": total_activo,
+            "total_pasivo": total_pasivo,
+            "total_patrimonio": total_patrimonio,
+            "cash_movements": cash_movements,
+            "flujo_entradas": flujo_entradas,
+            "flujo_salidas": flujo_salidas,
+            "flujo_neto": flujo_neto,
+            "notas_financieras": notas_financieras,
+        },
+    )
+
+
+@router.get("/accounting/reports/export.xlsx")
+def accounting_reports_export_xlsx(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    branch_ids = _user_scoped_branch_ids(db, user)
+    selected_branch_id_raw = (request.query_params.get("branch_id") or "").strip()
+    selected_branch_id: Optional[int] = None
+    if selected_branch_id_raw:
+        try:
+            branch_candidate = int(selected_branch_id_raw)
+            if branch_candidate in branch_ids:
+                selected_branch_id = branch_candidate
+        except ValueError:
+            selected_branch_id = None
+    payload = _build_accounting_reports_payload(
+        db=db,
+        branch_ids=branch_ids,
+        selected_branch_id=selected_branch_id,
+        month_value=request.query_params.get("month") or "",
+        start_value=request.query_params.get("start") or "",
+        end_value=request.query_params.get("end") or "",
+        cutoff_value=request.query_params.get("cutoff") or "",
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Resumen"
+    ws.append(["Informe", "Valor"])
+    ws.append(["Periodo", f"{payload['start']} a {payload['end']}"])
+    ws.append(["Corte balance", payload["cutoff"]])
+    ws.append(["Ingresos", float(payload["total_ingresos"])])
+    ws.append(["Gastos", float(payload["total_gastos"])])
+    ws.append(["Utilidad / Perdida", float(payload["utilidad_neta"])])
+    ws.append(["Total Activo", float(payload["total_activo"])])
+    ws.append(["Total Pasivo", float(payload["total_pasivo"])])
+    ws.append(["Total Patrimonio", float(payload["total_patrimonio"])])
+    ws.append(["Flujo Entradas", float(payload["flujo_entradas"])])
+    ws.append(["Flujo Salidas", float(payload["flujo_salidas"])])
+    ws.append(["Flujo Neto", float(payload["flujo_neto"])])
+
+    diario = wb.create_sheet("LibroDiario")
+    diario.append(["Fecha", "Comprobante", "Cuenta", "Detalle", "Debe", "Haber"])
+    for line, entry, account in payload["line_rows"]:
+        diario.append(
+            [
+                entry.fecha.isoformat() if entry.fecha else "",
+                entry.numero,
+                f"{account.codigo} - {account.nombre}",
+                line.descripcion or entry.descripcion or "",
+                float(line.debe or 0),
+                float(line.haber or 0),
+            ]
+        )
+
+    mayor = wb.create_sheet("LibroMayor")
+    mayor.append(["Codigo", "Cuenta", "Naturaleza", "Saldo inicial", "Debe", "Haber", "Saldo final"])
+    for row in payload["ledger_rows"]:
+        mayor.append(
+            [
+                row["codigo"],
+                row["nombre"],
+                row["naturaleza"],
+                float(row["saldo_inicial"]),
+                float(row["debe"]),
+                float(row["haber"]),
+                float(row["saldo_final"]),
+            ]
+        )
+
+    balanza = wb.create_sheet("Balanza")
+    balanza.append(
+        [
+            "Codigo",
+            "Cuenta",
+            "SI Deudor",
+            "SI Acreedor",
+            "Mov Debe",
+            "Mov Haber",
+            "SF Deudor",
+            "SF Acreedor",
+        ]
+    )
+    for row in payload["balanza_rows"]:
+        balanza.append(
+            [
+                row["codigo"],
+                row["nombre"],
+                float(row["saldo_inicial_deudor"]),
+                float(row["saldo_inicial_acreedor"]),
+                float(row["mov_debe"]),
+                float(row["mov_haber"]),
+                float(row["saldo_final_deudor"]),
+                float(row["saldo_final_acreedor"]),
+            ]
+        )
+
+    resultados = wb.create_sheet("Resultados")
+    resultados.append(["Codigo", "Cuenta", "Clasificacion", "Monto"])
+    for row in payload["result_rows"]:
+        resultados.append([row["codigo"], row["nombre"], row["clasificacion"], float(row["monto"])])
+
+    balance = wb.create_sheet("BalanceGeneral")
+    balance.append(["Seccion", "Codigo", "Cuenta", "Monto"])
+    for row in payload["activos_rows"]:
+        balance.append(["ACTIVO", row["codigo"], row["nombre"], float(row["monto"])])
+    for row in payload["pasivos_rows"]:
+        balance.append(["PASIVO", row["codigo"], row["nombre"], float(row["monto"])])
+    for row in payload["patrimonio_rows"]:
+        balance.append(["PATRIMONIO", row["codigo"], row["nombre"], float(row["monto"])])
+
+    flujo = wb.create_sheet("FlujoCaja")
+    flujo.append(["Codigo", "Cuenta", "Debe", "Haber", "Neto"])
+    for row in payload["cash_movements"]:
+        flujo.append([row["codigo"], row["nombre"], float(row["debe"]), float(row["haber"]), float(row["neto"])])
+
+    notas = wb.create_sheet("Notas")
+    notas.append(["Notas financieras"])
+    for line in payload["notas_financieras"]:
+        notas.append([line])
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"informes_financieros_{payload['start']}_a_{payload['end']}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/accounting/reports/export.pdf")
+def accounting_reports_export_pdf(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    _enforce_permission(request, user, "access.accounting.entries")
+    branch_ids = _user_scoped_branch_ids(db, user)
+    selected_branch_id_raw = (request.query_params.get("branch_id") or "").strip()
+    selected_branch_id: Optional[int] = None
+    if selected_branch_id_raw:
+        try:
+            branch_candidate = int(selected_branch_id_raw)
+            if branch_candidate in branch_ids:
+                selected_branch_id = branch_candidate
+        except ValueError:
+            selected_branch_id = None
+    payload = _build_accounting_reports_payload(
+        db=db,
+        branch_ids=branch_ids,
+        selected_branch_id=selected_branch_id,
+        month_value=request.query_params.get("month") or "",
+        start_value=request.query_params.get("start") or "",
+        end_value=request.query_params.get("end") or "",
+        cutoff_value=request.query_params.get("cutoff") or "",
+    )
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    margin = 36
+    y = height - 40
+
+    def new_page():
+        nonlocal y
+        pdf.showPage()
+        y = height - 40
+
+    def draw_line(text: str, bold: bool = False):
+        nonlocal y
+        if y < 48:
+            new_page()
+        pdf.setFont("Helvetica-Bold" if bold else "Helvetica", 9)
+        pdf.drawString(margin, y, text[:150])
+        y -= 13
+
+    draw_line("Informes Financieros", bold=True)
+    draw_line(f"Periodo: {payload['start']} a {payload['end']} | Corte: {payload['cutoff']}")
+    draw_line(
+        f"Ingresos: {float(payload['total_ingresos']):,.2f} | Gastos: {float(payload['total_gastos']):,.2f} | Utilidad: {float(payload['utilidad_neta']):,.2f}"
+    )
+    draw_line(
+        f"Activo: {float(payload['total_activo']):,.2f} | Pasivo+Patrimonio: {float(payload['total_pasivo'] + payload['total_patrimonio']):,.2f}"
+    )
+    y -= 4
+
+    draw_line("Balanza de Comprobacion (primeras 80 filas)", bold=True)
+    for row in payload["balanza_rows"][:80]:
+        draw_line(
+            f"{row['codigo']} {row['nombre']} | Debe:{float(row['mov_debe']):,.2f} Haber:{float(row['mov_haber']):,.2f} SF D:{float(row['saldo_final_deudor']):,.2f} A:{float(row['saldo_final_acreedor']):,.2f}"
+        )
+    y -= 4
+
+    draw_line("Estado de Resultados", bold=True)
+    for row in payload["result_rows"][:120]:
+        draw_line(f"{row['codigo']} {row['nombre']} [{row['clasificacion']}] {float(row['monto']):,.2f}")
+    y -= 4
+
+    draw_line("Flujo de Caja", bold=True)
+    for row in payload["cash_movements"][:80]:
+        draw_line(f"{row['codigo']} {row['nombre']} | Neto: {float(row['neto']):,.2f}")
+    y -= 4
+
+    draw_line("Notas Financieras", bold=True)
+    for note in payload["notas_financieras"]:
+        draw_line(f"- {note}")
+
+    pdf.save()
+    buffer.seek(0)
+    filename = f"informes_financieros_{payload['start']}_a_{payload['end']}.pdf"
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'})
+
+
+@router.get("/accounting/opening-balance/template")
+def accounting_opening_balance_template(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    cuentas = (
+        db.query(CuentaContable)
+        .filter(CuentaContable.activo.is_(True))
+        .order_by(CuentaContable.codigo.asc())
+        .all()
+    )
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "SaldosIniciales"
+    headers = [
+        "codigo_cuenta",
+        "nombre_cuenta",
+        "tipo",
+        "naturaleza",
+        "saldo_deudor",
+        "saldo_acreedor",
+        "detalle",
+    ]
+    ws.append(headers)
+    for col in ws[1]:
+        col.font = Font(bold=True)
+    for row in cuentas:
+        ws.append(
+            [
+                row.codigo,
+                row.nombre,
+                row.tipo,
+                row.naturaleza,
+                0,
+                0,
+                "Saldo inicial",
+            ]
+        )
+    ws.freeze_panes = "A2"
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"plantilla_saldos_iniciales_{local_today().isoformat()}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/accounting/opening-balance/upload")
+async def accounting_opening_balance_upload(
+    request: Request,
+    fecha: str = Form(...),
+    branch_id: Optional[int] = Form(None),
+    referencia: str = Form(""),
+    descripcion: str = Form("Registro de saldos iniciales"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    try:
+        entry_date = datetime.strptime((fecha or "").strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return RedirectResponse("/accounting/reports?error=Fecha+invalida", status_code=303)
+
+    branch_scope = _user_scoped_branch_ids(db, user)
+    scoped_branch_id: Optional[int] = None
+    if branch_id:
+        if int(branch_id) not in branch_scope:
+            return RedirectResponse("/accounting/reports?error=Sucursal+no+permitida", status_code=303)
+        scoped_branch_id = int(branch_id)
+
+    voucher_type = _find_voucher_type_for_code(db, "DIARIO")
+    if not voucher_type:
+        voucher_type = (
+            db.query(AccountingVoucherType)
+            .filter(AccountingVoucherType.activo.is_(True))
+            .order_by(AccountingVoucherType.id.asc())
+            .first()
+        )
+    if not voucher_type:
+        return RedirectResponse("/accounting/reports?error=No+hay+tipo+de+comprobante+activo", status_code=303)
+
+    content = await file.read()
+    if not content:
+        return RedirectResponse("/accounting/reports?error=Archivo+vacio", status_code=303)
+    try:
+        wb = load_workbook(io.BytesIO(content), data_only=True)
+    except Exception:
+        return RedirectResponse("/accounting/reports?error=Archivo+Excel+invalido", status_code=303)
+    ws = wb.active
+
+    cuentas = (
+        db.query(CuentaContable)
+        .filter(CuentaContable.activo.is_(True))
+        .order_by(CuentaContable.codigo.asc())
+        .all()
+    )
+    cuenta_by_code = {str(c.codigo or "").strip().upper(): c for c in cuentas}
+
+    def _to_amount(value) -> Decimal:
+        if value is None:
+            return Decimal("0")
+        if isinstance(value, Decimal):
+            return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if isinstance(value, (int, float)):
+            return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        raw = str(value).strip().replace(",", "")
+        if not raw:
+            return Decimal("0")
+        return Decimal(raw).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    line_payloads: list[dict] = []
+    issues: list[str] = []
+    for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        code = str(row[0] or "").strip().upper()
+        if not code:
+            continue
+        cuenta = cuenta_by_code.get(code)
+        if not cuenta:
+            issues.append(f"Fila {idx}: cuenta {code} no existe.")
+            continue
+        try:
+            debe = _to_amount(row[4] if len(row) > 4 else 0)
+            haber = _to_amount(row[5] if len(row) > 5 else 0)
+        except (InvalidOperation, ValueError):
+            issues.append(f"Fila {idx}: monto invalido.")
+            continue
+        detalle = str(row[6] or "").strip() if len(row) > 6 else ""
+        if debe < 0 or haber < 0:
+            issues.append(f"Fila {idx}: no se permiten montos negativos.")
+            continue
+        if debe > 0 and haber > 0:
+            issues.append(f"Fila {idx}: solo Debe o Haber, no ambos.")
+            continue
+        if debe == 0 and haber == 0:
+            continue
+        line_payloads.append(
+            {
+                "account": cuenta,
+                "debe": debe,
+                "haber": haber,
+                "descripcion": detalle or "Saldo inicial",
+            }
+        )
+
+    if issues:
+        return RedirectResponse(f"/accounting/reports?error={quote_plus(' '.join(issues[:5]))}", status_code=303)
+    if len(line_payloads) < 2:
+        return RedirectResponse(
+            "/accounting/reports?error=La+plantilla+debe+tener+al+menos+2+lineas+con+monto",
+            status_code=303,
+        )
+
+    total_debe = sum((item["debe"] for item in line_payloads), Decimal("0"))
+    total_haber = sum((item["haber"] for item in line_payloads), Decimal("0"))
+    if total_debe <= 0 or total_haber <= 0:
+        return RedirectResponse("/accounting/reports?error=Debe+y+Haber+deben+ser+mayores+a+0", status_code=303)
+    if total_debe != total_haber:
+        return RedirectResponse("/accounting/reports?error=Plantilla+descuadrada+(Debe+!=+Haber)", status_code=303)
+
+    period = _accounting_period(entry_date)
+    seq = _next_accounting_sequence(db, voucher_type.id, scoped_branch_id, period)
+    number = _build_accounting_entry_number(voucher_type, period, seq)
+    entry = AccountingEntry(
+        tipo_id=voucher_type.id,
+        branch_id=scoped_branch_id,
+        fecha=entry_date,
+        periodo=period,
+        secuencia=seq,
+        numero=number,
+        referencia=(referencia or "").strip() or "Carga Excel saldos iniciales",
+        descripcion=(descripcion or "").strip() or "Registro de saldos iniciales",
+        estado="POSTEADO",
+        total_debe=total_debe,
+        total_haber=total_haber,
+        creado_por=user.email,
+    )
+    db.add(entry)
+    db.flush()
+    for item in line_payloads:
+        db.add(
+            AccountingEntryLine(
+                entry_id=entry.id,
+                cuenta_id=item["account"].id,
+                descripcion=item["descripcion"],
+                debe=item["debe"],
+                haber=item["haber"],
+            )
+        )
+    db.commit()
+    return RedirectResponse(
+        f"/accounting/reports?success={quote_plus(f'Comprobante {number} creado desde Excel')}",
+        status_code=303,
+    )
+
+
 @router.get("/accounting/financial-data")
 def accounting_financial_data(
     request: Request,
@@ -2512,6 +4784,23 @@ def accounting_entries_page(
         .all()
     )
     policy = _get_accounting_policy(db)
+    subrubros = _load_accounting_subrubros(db)
+    custom_subrubros = (
+        db.query(AccountingSubrubroRule)
+        .order_by(AccountingSubrubroRule.sort_order.asc(), AccountingSubrubroRule.label.asc())
+        .all()
+    )
+    subrubro_edit_id_raw = request.query_params.get("subrubro_edit_id")
+    subrubro_edit_item = None
+    if subrubro_edit_id_raw:
+        try:
+            subrubro_edit_item = (
+                db.query(AccountingSubrubroRule)
+                .filter(AccountingSubrubroRule.id == int(subrubro_edit_id_raw))
+                .first()
+            )
+        except ValueError:
+            subrubro_edit_item = None
     cuentas = (
         db.query(CuentaContable)
         .filter(CuentaContable.activo.is_(True))
@@ -2553,6 +4842,9 @@ def accounting_entries_page(
             "counter_suggestions": counter_suggestions,
             "voucher_templates": voucher_templates,
             "policy": policy,
+            "subrubros": subrubros,
+            "custom_subrubros": custom_subrubros,
+            "subrubro_edit_item": subrubro_edit_item,
             "branches": branches,
             "version": settings.UI_VERSION,
             "error": request.query_params.get("error"),
@@ -2560,6 +4852,87 @@ def accounting_entries_page(
             "today": local_today().isoformat(),
         },
     )
+
+
+@router.post("/accounting/subrubros/save")
+def accounting_subrubro_save(
+    request: Request,
+    subrubro_id: Optional[int] = Form(None),
+    code: str = Form(...),
+    label: str = Form(...),
+    intent_code: str = Form("EGRESO"),
+    debit_terms: str = Form(""),
+    credit_terms: str = Form(""),
+    credit_cash_terms: str = Form(""),
+    credit_credit_terms: str = Form(""),
+    default_concept: str = Form(""),
+    sort_order: int = Form(1000),
+    activo: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    code_norm = re.sub(r"[^A-Z0-9_]+", "_", (code or "").strip().upper()).strip("_")
+    if not code_norm:
+        return RedirectResponse("/accounting/entries?error=Codigo+de+subrubro+invalido", status_code=303)
+    label_norm = (label or "").strip()
+    if not label_norm:
+        return RedirectResponse("/accounting/entries?error=Nombre+de+subrubro+requerido", status_code=303)
+    intent = (intent_code or "EGRESO").strip().upper()
+    if intent not in {"INGRESO", "EGRESO", "DIARIO", "AJUSTE"}:
+        intent = "EGRESO"
+
+    row: Optional[AccountingSubrubroRule] = None
+    if subrubro_id:
+        row = db.query(AccountingSubrubroRule).filter(AccountingSubrubroRule.id == subrubro_id).first()
+        if not row:
+            return RedirectResponse("/accounting/entries?error=Subrubro+no+encontrado", status_code=303)
+
+    exists = (
+        db.query(AccountingSubrubroRule)
+        .filter(func.upper(AccountingSubrubroRule.code) == code_norm)
+        .first()
+    )
+    if exists and (not row or int(exists.id) != int(row.id)):
+        return RedirectResponse("/accounting/entries?error=El+codigo+ya+existe", status_code=303)
+
+    if not row:
+        row = AccountingSubrubroRule(code=code_norm)
+        db.add(row)
+
+    row.code = code_norm
+    row.label = label_norm
+    row.intent_code = intent
+    row.debit_terms = _csv_from_terms(_terms_from_csv(debit_terms, []))
+    row.credit_terms = _csv_from_terms(_terms_from_csv(credit_terms, []))
+    row.credit_cash_terms = _csv_from_terms(_terms_from_csv(credit_cash_terms, []))
+    row.credit_credit_terms = _csv_from_terms(_terms_from_csv(credit_credit_terms, []))
+    row.default_concept = (default_concept or "").strip() or None
+    row.sort_order = max(0, int(sort_order or 0))
+    if activo is None:
+        row.activo = row.activo if subrubro_id else True
+    else:
+        row.activo = activo == "on"
+    row.updated_by = user.email
+    db.commit()
+    return RedirectResponse("/accounting/entries?success=Subrubro+guardado", status_code=303)
+
+
+@router.post("/accounting/subrubros/{subrubro_id}/deactivate")
+def accounting_subrubro_deactivate(
+    request: Request,
+    subrubro_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    row = db.query(AccountingSubrubroRule).filter(AccountingSubrubroRule.id == subrubro_id).first()
+    if not row:
+        return RedirectResponse("/accounting/entries?error=Subrubro+no+encontrado", status_code=303)
+    row.activo = False
+    row.updated_by = user.email
+    db.commit()
+    return RedirectResponse("/accounting/entries?success=Subrubro+desactivado", status_code=303)
 
 
 @router.get("/accounting/accounts/search")
@@ -2616,6 +4989,7 @@ def accounting_entries_assist(
     tipo_id: int,
     descripcion: str = "",
     monto: str = "",
+    subrubro_code: str = "",
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -2636,7 +5010,14 @@ def accounting_entries_assist(
         .all()
     )
     template = _build_voucher_template(voucher_type, active_accounts, policy)
-    smart = _smart_entry_terms(voucher_type, descripcion, policy)
+    subrubros = _load_accounting_subrubros(db)
+    smart = _smart_entry_terms(
+        voucher_type,
+        descripcion,
+        policy,
+        subrubro_code=subrubro_code,
+        subrubros_catalog=subrubros,
+    )
 
     debit_id = _find_account_by_terms(active_accounts, smart["debit_terms"], "DEBE")
     if not debit_id:
@@ -2644,6 +5025,172 @@ def accounting_entries_assist(
     credit_id = _find_account_by_terms(active_accounts, smart["credit_terms"], "HABER")
     if not credit_id:
         credit_id = _find_account_by_terms(active_accounts, smart["credit_terms"])
+
+    # Guard-rail: en EGRESO no debe quedar "Ingresos/Ventas" en el Haber por heuristica.
+    if smart.get("intent_code") == "EGRESO" and credit_id:
+        selected_credit = next((acc for acc in active_accounts if int(acc.id) == int(credit_id)), None)
+        selected_credit_text = (
+            f"{(selected_credit.codigo or '').lower()} {(selected_credit.nombre or '').lower()}"
+            if selected_credit
+            else ""
+        )
+        if smart.get("immediate_payment") and any(
+            term in selected_credit_text for term in ["proveedor", "pagar", "cxp"]
+        ):
+            cash_terms = ["caja", "banco", "efectivo", "transferencia", "cheque", "tarjeta"]
+            credit_id = (
+                _find_account_by_terms_excluding(
+                    active_accounts,
+                    cash_terms,
+                    ["proveedor", "pagar", "cxp", "ingreso", "venta"],
+                    "HABER",
+                )
+                or _find_account_by_terms_excluding(
+                    active_accounts,
+                    cash_terms,
+                    ["proveedor", "pagar", "cxp", "ingreso", "venta"],
+                )
+                or credit_id
+            )
+            selected_credit = next((acc for acc in active_accounts if int(acc.id) == int(credit_id)), None)
+            selected_credit_text = (
+                f"{(selected_credit.codigo or '').lower()} {(selected_credit.nombre or '').lower()}"
+                if selected_credit
+                else ""
+            )
+        if "ingreso" in selected_credit_text or "venta" in selected_credit_text:
+            prefer_credit_terms = ["caja", "banco", "efectivo", "proveedor", "pagar"]
+            credit_id = (
+                _find_account_by_terms_excluding(
+                    active_accounts,
+                    prefer_credit_terms,
+                    ["ingreso", "venta"],
+                    "HABER",
+                )
+                or _find_account_by_terms_excluding(
+                    active_accounts,
+                    prefer_credit_terms,
+                    ["ingreso", "venta"],
+                )
+                or credit_id
+            )
+
+    # Guard-rail: para compras/gastos operativos evita "diferido" en Debe cuando no aplica.
+    if smart.get("intent_code") == "EGRESO" and debit_id:
+        desc_text = (descripcion or "").lower()
+        selected_debit = next((acc for acc in active_accounts if int(acc.id) == int(debit_id)), None)
+        selected_debit_text = (
+            f"{(selected_debit.codigo or '').lower()} {(selected_debit.nombre or '').lower()}"
+            if selected_debit
+            else ""
+        )
+        if (
+            any(k in desc_text for k in ["compra", "gasto", "insumo", "pintura", "mantenimiento"])
+            and "inventario" not in desc_text
+            and "diferido" in selected_debit_text
+        ):
+            prefer_debit_terms = ["gasto", "mantenimiento", "operacion", "compra", "insumo"]
+            debit_id = (
+                _find_account_by_terms_excluding(
+                    active_accounts,
+                    prefer_debit_terms,
+                    ["diferido"],
+                    "DEBE",
+                )
+                or _find_account_by_terms_excluding(
+                    active_accounts,
+                    prefer_debit_terms,
+                    ["diferido"],
+                )
+                or debit_id
+            )
+
+    # Guard-rail: "insumos" operativos no debe mapear a "Mantenimiento de valor".
+    if smart.get("intent_code") == "EGRESO" and debit_id:
+        desc_text = (descripcion or "").lower()
+        selected_debit = next((acc for acc in active_accounts if int(acc.id) == int(debit_id)), None)
+        selected_debit_text = (
+            f"{(selected_debit.codigo or '').lower()} {(selected_debit.nombre or '').lower()}"
+            if selected_debit
+            else ""
+        )
+        is_operational_supply = any(k in desc_text for k in ["insumo", "suministro", "consumible", "tienda", "producto"])
+        looks_financial_value = any(
+            k in desc_text for k in ["mantenimiento de valor", "devaluacion", "revaluacion", "diferencia cambiaria"]
+        )
+        if is_operational_supply and not looks_financial_value and "mantenimiento de valor" in selected_debit_text:
+            supply_terms = ["insumo", "suministro", "consumible", "gasto", "operacion", "inventario"]
+            debit_id = (
+                _find_account_by_terms_excluding(
+                    active_accounts,
+                    supply_terms,
+                    ["mantenimiento de valor", "diferencia cambiaria"],
+                    "DEBE",
+                )
+                or _find_account_by_terms_excluding(
+                    active_accounts,
+                    supply_terms,
+                    ["mantenimiento de valor", "diferencia cambiaria"],
+                )
+                or debit_id
+            )
+
+    # Guard-rail: compra de activo fijo no debe caer en gasto operativo ni diferido.
+    if smart.get("intent_code") == "EGRESO" and smart.get("fixed_asset_intent") and debit_id:
+        selected_debit = next((acc for acc in active_accounts if int(acc.id) == int(debit_id)), None)
+        selected_debit_text = (
+            f"{(selected_debit.codigo or '').lower()} {(selected_debit.nombre or '').lower()}"
+            if selected_debit
+            else ""
+        )
+        if any(k in selected_debit_text for k in ["gasto", "diferido"]):
+            fixed_terms = ["equipo", "mobiliario", "vehiculo", "maquinaria", "activo fijo", "propiedad"]
+            debit_id = (
+                _find_account_by_terms_excluding(
+                    active_accounts,
+                    fixed_terms,
+                    ["gasto", "diferido"],
+                    "DEBE",
+                )
+                or _find_account_by_terms_excluding(
+                    active_accounts,
+                    fixed_terms,
+                    ["gasto", "diferido"],
+                )
+                or debit_id
+            )
+
+    # Guard-rail: papeleria/limpieza debe priorizar cuentas especificas de suministros.
+    if smart.get("intent_code") == "EGRESO" and debit_id and (
+        smart.get("office_supply_intent") or smart.get("cleaning_supply_intent")
+    ):
+        selected_debit = next((acc for acc in active_accounts if int(acc.id) == int(debit_id)), None)
+        selected_debit_text = (
+            f"{(selected_debit.codigo or '').lower()} {(selected_debit.nombre or '').lower()}"
+            if selected_debit
+            else ""
+        )
+        is_too_generic = any(k in selected_debit_text for k in ["operacion", "operación", "gasto operativo"])
+        if is_too_generic:
+            supply_terms = (
+                ["papeleria", "papelería", "útiles", "utiles", "suministros", "material oficina"]
+                if smart.get("office_supply_intent")
+                else ["limpieza", "aseo", "suministros", "insumo", "mantenimiento"]
+            )
+            debit_id = (
+                _find_account_by_terms_excluding(
+                    active_accounts,
+                    supply_terms,
+                    ["diferido"],
+                    "DEBE",
+                )
+                or _find_account_by_terms_excluding(
+                    active_accounts,
+                    supply_terms,
+                    ["diferido"],
+                )
+                or debit_id
+            )
 
     if not debit_id:
         debit_id = int(template.get("debit_account_id") or 0) or None
@@ -2686,6 +5233,7 @@ def accounting_entries_assist(
             "amount": float(amount),
             "debit_terms": smart["debit_terms"],
             "credit_terms": smart["credit_terms"],
+            "subrubro_code": smart.get("subrubro_code") or "",
             "debit_account": {
                 "id": int(debit_acc.id),
                 "codigo": debit_acc.codigo,
@@ -2804,7 +5352,6 @@ def accounting_entries_create(
     policy_error = _validate_accounting_entry_policy(voucher_type, line_payloads, policy)
     if policy_error:
         return RedirectResponse(f"/accounting/entries?error={quote_plus(policy_error)}", status_code=303)
-
     period = _accounting_period(entry_date)
     seq = _next_accounting_sequence(db, tipo_id, selected_branch_id, period)
     number = _build_accounting_entry_number(voucher_type, period, seq)
@@ -2973,8 +5520,7 @@ def inventory_caliente(
 ):
     _enforce_permission(request, user, "access.inventory.caliente")
     q = (request.query_params.get("q") or "").strip()
-    scope_param = (request.query_params.get("scope") or "central").strip().lower()
-    scope = scope_param
+    scope_param = (request.query_params.get("scope") or "").strip().lower()
     rate_today = (
         db.query(ExchangeRate)
         .filter(ExchangeRate.effective_date <= local_today())
@@ -2998,37 +5544,8 @@ def inventory_caliente(
         )
     productos = productos_query.order_by(Producto.descripcion).all()
 
-    branches = _scoped_branches_query(db).all()
-    branch_map = {b.code.lower(): b for b in branches if b.code}
-    central_branch = branch_map.get("central")
-    esteli_branch = branch_map.get("esteli")
-    bodegas_query = db.query(Bodega).filter(Bodega.activo.is_(True))
-    if branches:
-        bodegas_query = bodegas_query.filter(Bodega.branch_id.in_([b.id for b in branches]))
-    bodegas = bodegas_query.all()
-    bodega_map = {b.branch_id: b for b in bodegas}
-
+    shoes_mode = _is_shoes_mode()
     branch, user_bodega = _resolve_branch_bodega(db, user)
-    user_branches = list(user.branches or [])
-    allowed_scopes: list[str] = []
-    if user_branches:
-        allowed_scopes = [b.code.lower() for b in user_branches if b.code and b.code.lower() in _allowed_branch_codes(db)]
-    if not allowed_scopes and branch and branch.code:
-        if branch.code.lower() in _allowed_branch_codes(db):
-            allowed_scopes = [branch.code.lower()]
-    if not allowed_scopes:
-        allowed_scopes = ["central"]
-
-    if len(allowed_scopes) == 1:
-        scope = allowed_scopes[0]
-    else:
-        allowed_scope_values = set(allowed_scopes + ["ambas"])
-        if scope not in allowed_scope_values:
-            scope = "central"
-        if scope != "ambas" and scope not in allowed_scopes:
-            scope = allowed_scopes[0]
-        if scope == "ambas" and not all(code in allowed_scopes for code in _allowed_branch_codes(db)):
-            scope = allowed_scopes[0]
 
     def _balances_by_bodega(bodega_ids: list[int], product_ids: list[int]) -> dict[tuple[int, int], Decimal]:
         if not bodega_ids or not product_ids:
@@ -3067,17 +5584,105 @@ def inventory_caliente(
             balances[(producto_id, bodega_id)] = balances.get((producto_id, bodega_id), Decimal("0")) - Decimal(str(qty or 0))
         return balances
 
-    product_ids = [p.id for p in productos]
-    if scope == "ambas":
-        bodega_ids = [b.id for b in bodegas]
+    scope_options: list[dict[str, str]] = []
+    selected_scope = scope_param
+    current_scope_label = "Bodega"
+    scope = "all"
+    bodega_ids: list[int] = []
+    display_bodegas: list[Bodega] = []
+    selected_bodega_obj: Optional[Bodega] = None
+    bodega_rows_for_all: list[tuple[str, int]] = []
+
+    if shoes_mode:
+        scoped_bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
+        display_bodegas = [b for b in scoped_bodegas if (b.code or "").strip().lower() != "esteli"]
+        if not display_bodegas:
+            display_bodegas = scoped_bodegas
+        if display_bodegas:
+            central_bodega = next((b for b in display_bodegas if (b.code or "").strip().lower() == "central"), None)
+            default_scope = f"bodega:{(central_bodega.id if central_bodega else display_bodegas[0].id)}"
+            scope_options = [{"value": default_scope, "label": "Central" if central_bodega else display_bodegas[0].name}]
+            scope_options.extend(
+                {"value": f"bodega:{b.id}", "label": b.name}
+                for b in display_bodegas
+                if f"bodega:{b.id}" != default_scope
+            )
+            scope_options.append({"value": "all", "label": "Todas"})
+            valid_values = {opt["value"] for opt in scope_options}
+            if not selected_scope or selected_scope not in valid_values:
+                selected_scope = default_scope
+            if selected_scope == "all":
+                scope = "all"
+                bodega_ids = [b.id for b in display_bodegas]
+                current_scope_label = "Todas las bodegas"
+                bodega_rows_for_all = [(b.name, int(b.id)) for b in display_bodegas]
+            else:
+                scope = "single"
+                selected_bodega_id = int(selected_scope.split(":", 1)[1])
+                selected_bodega = next((b for b in display_bodegas if int(b.id) == selected_bodega_id), None)
+                if selected_bodega:
+                    bodega_ids = [selected_bodega.id]
+                    selected_bodega_obj = selected_bodega
+                    current_scope_label = selected_bodega.name
     else:
-        selected_branch = central_branch if scope == "central" else esteli_branch if scope == "esteli" else branch
-        selected_bodega = None
-        if selected_branch:
-            selected_bodega = bodega_map.get(selected_branch.id)
-        if scope not in {"central", "esteli"} and user_bodega:
-            selected_bodega = user_bodega
-        bodega_ids = [selected_bodega.id] if selected_bodega else []
+        branches = _scoped_branches_query(db).all()
+        branch_map = {b.code.lower(): b for b in branches if b.code}
+        central_branch = branch_map.get("central")
+        esteli_branch = branch_map.get("esteli")
+        bodegas_query = db.query(Bodega).filter(Bodega.activo.is_(True))
+        if branches:
+            bodegas_query = bodegas_query.filter(Bodega.branch_id.in_([b.id for b in branches]))
+        bodegas = bodegas_query.all()
+        bodega_map = {b.branch_id: b for b in bodegas}
+        user_branches = list(user.branches or [])
+        allowed_scopes: list[str] = []
+        if user_branches:
+            allowed_scopes = [b.code.lower() for b in user_branches if b.code and b.code.lower() in _allowed_branch_codes(db)]
+        if not allowed_scopes and branch and branch.code:
+            if branch.code.lower() in _allowed_branch_codes(db):
+                allowed_scopes = [branch.code.lower()]
+        if not allowed_scopes:
+            allowed_scopes = ["central"]
+        if len(allowed_scopes) > 1 and all(code in allowed_scopes for code in _allowed_branch_codes(db)):
+            scope_options.append({"value": "ambas", "label": "Ambas"})
+        for code in allowed_scopes:
+            if code == "central":
+                scope_options.append({"value": "central", "label": central_branch.name if central_branch else "Central"})
+            elif code == "esteli":
+                scope_options.append({"value": "esteli", "label": esteli_branch.name if esteli_branch else "Esteli"})
+            else:
+                branch_item = next((b for b in branches if (b.code or "").lower() == code), None)
+                if branch_item:
+                    scope_options.append({"value": code, "label": branch_item.name})
+        if not scope_options:
+            scope_options = [{"value": "central", "label": "Central"}]
+        valid_values = {opt["value"] for opt in scope_options}
+        if not selected_scope or selected_scope not in valid_values:
+            selected_scope = scope_options[0]["value"]
+        scope = "all" if selected_scope == "ambas" else "single"
+        if scope == "all":
+            bodega_ids = [b.id for b in bodegas]
+            current_scope_label = "Ambas"
+            if central_branch:
+                central_bodega = bodega_map.get(central_branch.id)
+                if central_bodega:
+                    bodega_rows_for_all.append((central_branch.name, int(central_bodega.id)))
+            if esteli_branch:
+                esteli_bodega = bodega_map.get(esteli_branch.id)
+                if esteli_bodega:
+                    bodega_rows_for_all.append((esteli_branch.name, int(esteli_bodega.id)))
+        else:
+            selected_branch = central_branch if selected_scope == "central" else esteli_branch if selected_scope == "esteli" else branch
+            selected_bodega = None
+            if selected_branch:
+                selected_bodega = bodega_map.get(selected_branch.id)
+            if selected_scope not in {"central", "esteli"} and user_bodega:
+                selected_bodega = user_bodega
+            bodega_ids = [selected_bodega.id] if selected_bodega else []
+            selected_bodega_obj = selected_bodega
+            current_scope_label = selected_branch.name if selected_branch else "Bodega"
+
+    product_ids = [p.id for p in productos]
     balances = _balances_by_bodega(bodega_ids, product_ids)
 
     productos_view = []
@@ -3095,32 +5700,22 @@ def inventory_caliente(
             "precio_usd": float(price_usd or 0),
             "precio_cs": float(price_cs or 0),
         }
-        if scope == "ambas":
+        if scope == "all":
             rows = []
-            if central_branch:
-                central_bodega = bodega_map.get(central_branch.id)
-                qty = balances.get((producto.id, central_bodega.id), Decimal("0")) if central_bodega else Decimal("0")
-                rows.append({"label": central_branch.name, "existencia": float(qty or 0)})
-            if esteli_branch:
-                esteli_bodega = bodega_map.get(esteli_branch.id)
-                qty = balances.get((producto.id, esteli_bodega.id), Decimal("0")) if esteli_bodega else Decimal("0")
-                rows.append({"label": esteli_branch.name, "existencia": float(qty or 0)})
+            for label, bodega_id in bodega_rows_for_all:
+                qty = balances.get((producto.id, bodega_id), Decimal("0"))
+                rows.append({"label": label, "existencia": float(qty or 0)})
             total_qty = sum(Decimal(str(row["existencia"])) for row in rows)
             item["existencias"] = rows
             item["existencia_total"] = float(total_qty or 0)
         else:
-            selected_branch = central_branch if scope == "central" else esteli_branch if scope == "esteli" else branch
-            selected_bodega = None
-            if selected_branch:
-                selected_bodega = bodega_map.get(selected_branch.id)
-            if scope not in {"central", "esteli"} and user_bodega:
-                selected_bodega = user_bodega
-            qty = balances.get((producto.id, selected_bodega.id), Decimal("0")) if selected_bodega else Decimal("0")
+            qty = balances.get((producto.id, selected_bodega_obj.id), Decimal("0")) if selected_bodega_obj else Decimal("0")
             item["existencia"] = float(qty or 0)
-            item["scope_label"] = selected_branch.name if selected_branch else "Bodega"
+            item["scope_label"] = current_scope_label
         productos_view.append(item)
 
     template_name = "inventory_caliente_grid.html" if request.headers.get("HX-Request") else "inventory_caliente.html"
+    default_show_cs = bool(shoes_mode or _inventory_cs_only_mode(db))
     return request.app.state.templates.TemplateResponse(
         template_name,
         {
@@ -3130,13 +5725,119 @@ def inventory_caliente(
             "productos": productos_view,
             "rate_today": rate_today,
             "scope": scope,
-            "scope_param": scope_param,
-            "allowed_scopes": allowed_scopes,
-            "current_branch": branch,
-            "central_branch": central_branch,
-            "esteli_branch": esteli_branch,
+            "scope_param": selected_scope,
+            "scope_options": scope_options,
+            "current_scope_label": current_scope_label,
+            "default_show_cs": default_show_cs,
             "version": settings.UI_VERSION,
         },
+    )
+
+
+@router.get("/inventory/caliente/{producto_id}/variantes")
+def inventory_caliente_variants(
+    request: Request,
+    producto_id: int,
+    scope: Optional[str] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.inventory.caliente")
+    producto = (
+        db.query(Producto)
+        .filter(Producto.id == producto_id, Producto.activo.is_(True))
+        .first()
+    )
+    if not producto:
+        return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
+
+    if not _is_shoes_mode():
+        return JSONResponse({"ok": False, "message": "Detalle por talla/color disponible solo en modo zapatos"}, status_code=400)
+
+    scoped_bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
+    display_bodegas = [b for b in scoped_bodegas if (b.code or "").strip().lower() != "esteli"]
+    if not display_bodegas:
+        display_bodegas = scoped_bodegas
+    if not display_bodegas:
+        return JSONResponse({"ok": True, "items": [], "total": 0.0})
+
+    requested_scope = (scope or "").strip().lower()
+    selected_bodega_ids: list[int] = []
+    if requested_scope == "all":
+        selected_bodega_ids = [int(b.id) for b in display_bodegas]
+    elif requested_scope.startswith("bodega:"):
+        raw_id = requested_scope.split(":", 1)[1].strip()
+        if raw_id.isdigit():
+            bodega_id = int(raw_id)
+            if any(int(b.id) == bodega_id for b in display_bodegas):
+                selected_bodega_ids = [bodega_id]
+    if not selected_bodega_ids:
+        central = next((b for b in display_bodegas if (b.code or "").strip().lower() == "central"), None)
+        selected_bodega_ids = [int(central.id if central else display_bodegas[0].id)]
+
+    bodega_names = {int(b.id): (b.name or f"Bodega {b.id}") for b in display_bodegas}
+    variants = (
+        db.query(ShoeProductVariant, ColorCatalog)
+        .join(ColorCatalog, ColorCatalog.id == ShoeProductVariant.color_id)
+        .filter(
+            ShoeProductVariant.producto_id == producto.id,
+            ShoeProductVariant.activo.is_(True),
+            ColorCatalog.activo.is_(True),
+        )
+        .order_by(ColorCatalog.nombre.asc(), ShoeProductVariant.talla.asc())
+        .all()
+    )
+    if not variants:
+        return JSONResponse({"ok": True, "items": [], "total": 0.0})
+
+    variant_ids = [int(v.id) for v, _ in variants]
+    stock_rows = (
+        db.query(ShoeVariantStock)
+        .filter(
+            ShoeVariantStock.variante_id.in_(variant_ids),
+            ShoeVariantStock.bodega_id.in_(selected_bodega_ids),
+        )
+        .all()
+    )
+    stock_map: dict[tuple[int, int], Decimal] = {}
+    for row in stock_rows:
+        stock_map[(int(row.variante_id), int(row.bodega_id))] = Decimal(str(row.existencia or 0))
+
+    items: list[dict[str, object]] = []
+    total = Decimal("0")
+    for variant, color in variants:
+        per_bodega: list[dict[str, object]] = []
+        qty = Decimal("0")
+        for bodega_id in selected_bodega_ids:
+            b_qty = stock_map.get((int(variant.id), int(bodega_id)), Decimal("0"))
+            if b_qty > 0:
+                per_bodega.append({"bodega": bodega_names.get(bodega_id, str(bodega_id)), "qty": float(b_qty)})
+            qty += b_qty
+        if qty <= 0:
+            continue
+        total += qty
+        items.append(
+            {
+                "variant_id": int(variant.id),
+                "cod_variante": variant.cod_variante,
+                "color": color.nombre,
+                "talla": variant.talla,
+                "existencia": float(qty),
+                "detalle_bodega": per_bodega,
+            }
+        )
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "producto": {
+                "id": int(producto.id),
+                "codigo": producto.cod_producto,
+                "descripcion": producto.descripcion,
+            },
+            "items": items,
+            "total": float(total),
+        }
     )
 
 
@@ -3147,6 +5848,9 @@ def inventory_ingresos_page(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.inventory.ingresos")
+    shoes_mode = _is_shoes_mode()
+    if shoes_mode:
+        _ensure_shoe_size_formats_seed(db)
     def _parse_date(value: Optional[str]) -> Optional[date]:
         if not value:
             return None
@@ -3216,6 +5920,31 @@ def inventory_ingresos_page(
     lineas = db.query(Linea).order_by(Linea.linea).all()
     segmentos = db.query(Segmento).order_by(Segmento.segmento).all()
     marcas = db.query(Marca).filter(Marca.activo.is_(True)).order_by(Marca.nombre).all()
+    shoe_colors = db.query(ColorCatalog).filter(ColorCatalog.activo.is_(True)).order_by(ColorCatalog.nombre).all() if shoes_mode else []
+    shoe_size_formats = (
+        db.query(ShoeSizeFormat).filter(ShoeSizeFormat.activo.is_(True)).order_by(ShoeSizeFormat.codigo).all()
+        if shoes_mode
+        else []
+    )
+    shoe_size_formats_payload = []
+    if shoes_mode:
+        for formato in shoe_size_formats:
+            lineas_payload = [
+                {
+                    "talla": str(linea.talla or ""),
+                    "cantidad": int(linea.cantidad or 0),
+                    "orden": int(linea.orden or 0),
+                }
+                for linea in sorted(formato.lineas or [], key=lambda item: (item.orden or 0, item.id or 0))
+            ]
+            shoe_size_formats_payload.append(
+                {
+                    "id": formato.id,
+                    "codigo": formato.codigo,
+                    "nombre": formato.nombre,
+                    "lineas": lineas_payload,
+                }
+            )
     error = request.query_params.get("error")
     success = request.query_params.get("success")
     print_id = request.query_params.get("print_id")
@@ -3241,6 +5970,10 @@ def inventory_ingresos_page(
             "lineas": lineas,
             "segmentos": segmentos,
             "marcas": marcas,
+            "shoes_mode": shoes_mode,
+            "shoe_colors": shoe_colors,
+            "shoe_size_formats": shoe_size_formats,
+            "shoe_size_formats_payload": shoe_size_formats_payload,
             "rate_today": rate_today,
             "error": error,
             "start_date": start_date.isoformat() if start_date else "",
@@ -3305,7 +6038,10 @@ def inventory_egresos_page(
         egresos_query.order_by(EgresoInventario.fecha.desc(), EgresoInventario.id.desc())
         .all()
     )
-    tipos = db.query(EgresoTipo).order_by(EgresoTipo.nombre).all()
+    tipos_query = db.query(EgresoTipo)
+    if _is_shoes_mode():
+        tipos_query = tipos_query.filter(func.lower(EgresoTipo.nombre) != "traslado entre bodegas")
+    tipos = tipos_query.order_by(EgresoTipo.nombre).all()
     bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     productos = (
         db.query(Producto)
@@ -3326,6 +6062,7 @@ def inventory_egresos_page(
     error = request.query_params.get("error")
     success = request.query_params.get("success")
     print_id = request.query_params.get("print_id")
+    print_mode = (request.query_params.get("print_mode") or "").strip().lower()
     rate_today = (
         db.query(ExchangeRate)
         .filter(ExchangeRate.effective_date <= local_today())
@@ -3351,10 +6088,197 @@ def inventory_egresos_page(
             "selected_product_query": selected_product_query,
             "success": success,
             "print_id": print_id,
+            "print_mode": print_mode,
             "inventory_cs_only": inventory_cs_only,
             "version": settings.UI_VERSION,
         },
     )
+
+
+@router.get("/inventory/traslados-rapidos")
+def inventory_quick_transfers_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.egresos")
+    if not _is_shoes_mode():
+        return RedirectResponse("/inventory/egresos?error=Vista+rapida+disponible+solo+en+modo+zapatos", status_code=303)
+
+    traslado_tipo = (
+        db.query(EgresoTipo)
+        .filter(func.lower(EgresoTipo.nombre) == "traslado entre bodegas")
+        .first()
+    )
+    if not traslado_tipo:
+        traslado_tipo = (
+            db.query(EgresoTipo)
+            .filter(func.lower(EgresoTipo.nombre).like("%traslado%"))
+            .order_by(EgresoTipo.id.asc())
+            .first()
+        )
+    if not traslado_tipo:
+        traslado_tipo = EgresoTipo(nombre="Traslado entre bodegas")
+        db.add(traslado_tipo)
+        db.commit()
+        db.refresh(traslado_tipo)
+
+    bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
+    if not bodegas:
+        return RedirectResponse("/inventory/egresos?error=No+hay+bodegas+activas", status_code=303)
+
+    def _find_bodega_by_code(code: str) -> Optional[Bodega]:
+        for item in bodegas:
+            if (item.code or "").strip().lower() == code:
+                return item
+        return None
+
+    bodega_origen = _find_bodega_by_code("central") or bodegas[0]
+    preferred_dest = _find_bodega_by_code("kg") or _find_bodega_by_code("kgf")
+    if preferred_dest and preferred_dest.id != bodega_origen.id:
+        bodega_destino = preferred_dest
+    else:
+        bodega_destino = next((b for b in bodegas if b.id != bodega_origen.id), bodega_origen)
+
+    transfers = (
+        db.query(EgresoInventario)
+        .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id, isouter=True)
+        .filter(
+            or_(
+                EgresoInventario.bodega_destino_id.is_not(None),
+                func.lower(EgresoTipo.nombre).like("%traslado%"),
+            )
+        )
+        .order_by(EgresoInventario.fecha.desc(), EgresoInventario.id.desc())
+        .limit(80)
+        .all()
+    )
+
+    error = request.query_params.get("error")
+    success = request.query_params.get("success")
+    print_id = request.query_params.get("print_id")
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    return request.app.state.templates.TemplateResponse(
+        "inventory_transfers_quick.html",
+        {
+            "request": request,
+            "user": user,
+            "bodegas": bodegas,
+            "traslado_tipo_id": traslado_tipo.id,
+            "default_origen_id": bodega_origen.id if bodega_origen else None,
+            "default_destino_id": bodega_destino.id if bodega_destino else None,
+            "transfers": transfers,
+            "error": error,
+            "success": success,
+            "print_id": print_id,
+            "rate_today": rate_today,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/inventory/traslados-rapidos/search")
+def inventory_quick_transfers_search(
+    request: Request,
+    q: str = "",
+    bodega_id: Optional[str] = None,
+    color: Optional[str] = None,
+    talla: Optional[str] = None,
+    limit: int = 120,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.egresos")
+    if not _is_shoes_mode():
+        return JSONResponse({"ok": True, "items": []})
+
+    query = (q or "").strip()
+    color_filter = (color or "").strip()
+    talla_filter = (talla or "").strip()
+    if len(query) < 1 and not color_filter and not talla_filter:
+        return JSONResponse({"ok": True, "items": []})
+
+    scoped_bodegas = _scoped_bodegas_query(db).all()
+    scoped_ids = {int(item.id) for item in scoped_bodegas}
+    selected_bodega: Optional[Bodega] = None
+    bodega_id_int: Optional[int] = None
+    if bodega_id is not None and str(bodega_id).strip() != "":
+        try:
+            bodega_id_int = int(str(bodega_id).strip())
+        except ValueError:
+            bodega_id_int = None
+    if bodega_id_int and bodega_id_int in scoped_ids:
+        selected_bodega = next((b for b in scoped_bodegas if int(b.id) == bodega_id_int), None)
+    if not selected_bodega:
+        selected_bodega = scoped_bodegas[0] if scoped_bodegas else None
+    if not selected_bodega:
+        return JSONResponse({"ok": True, "items": []})
+
+    query_rows = (
+        db.query(ShoeProductVariant, Producto, ColorCatalog, ShoeVariantStock)
+        .join(Producto, Producto.id == ShoeProductVariant.producto_id)
+        .join(ColorCatalog, ColorCatalog.id == ShoeProductVariant.color_id)
+        .outerjoin(
+            ShoeVariantStock,
+            and_(
+                ShoeVariantStock.variante_id == ShoeProductVariant.id,
+                ShoeVariantStock.bodega_id == selected_bodega.id,
+            ),
+        )
+        .filter(ShoeProductVariant.activo.is_(True), Producto.activo.is_(True))
+    )
+    if query:
+        like = f"%{query.lower()}%"
+        query_rows = query_rows.filter(
+            or_(
+                func.lower(ShoeProductVariant.cod_variante).like(like),
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+                func.lower(ColorCatalog.nombre).like(like),
+                func.lower(ShoeProductVariant.talla).like(like),
+            )
+        )
+    if color_filter:
+        color_like = f"%{color_filter.lower()}%"
+        query_rows = query_rows.filter(func.lower(ColorCatalog.nombre).like(color_like))
+    if talla_filter:
+        talla_like = f"%{talla_filter.lower()}%"
+        query_rows = query_rows.filter(func.lower(ShoeProductVariant.talla).like(talla_like))
+
+    rows = (
+        query_rows
+        .order_by(Producto.descripcion.asc(), ColorCatalog.nombre.asc(), ShoeProductVariant.talla.asc())
+        .limit(max(10, min(int(limit or 120), 500)))
+        .all()
+    )
+    items: list[dict[str, object]] = []
+    for variant, producto, color_row, stock_row in rows:
+        existencia = float(stock_row.existencia or 0) if stock_row else 0.0
+        prices = _product_price_map(producto)
+        costo_cs = float(producto.costo_producto or 0)
+        costo_usd = float((Decimal(str(costo_cs)) / Decimal(str(producto.tasa_cambio))).quantize(Decimal("0.01"))) if producto.tasa_cambio else 0.0
+        items.append(
+            {
+                "variant_id": int(variant.id),
+                "producto_id": int(producto.id),
+                "cod_variante": variant.cod_variante,
+                "cod_producto": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "color": color_row.nombre,
+                "talla": variant.talla,
+                "existencia": existencia,
+                "costo_cs": costo_cs,
+                "costo_usd": costo_usd,
+                "selected_price_cs": float(prices.get("precio_venta1", 0) or 0),
+                "selected_price_usd": float(prices.get("precio_venta1_usd", 0) or 0),
+            }
+        )
+    return JSONResponse({"ok": True, "items": items, "bodega_id": selected_bodega.id})
 
 
 @router.get("/sales")
@@ -3466,7 +6390,14 @@ def sales_page(
 
     sales_interface = _get_sales_interface_setting(db)
     interface_code = (sales_interface.interface_code or "ropa").strip().lower()
-    template_name = "sales_comestibles.html" if interface_code == "comestibles" else "sales.html"
+    if _is_shoes_mode() and interface_code == "ropa":
+        interface_code = "zapatos"
+    if interface_code == "comestibles":
+        template_name = "sales_comestibles.html"
+    elif interface_code == "zapatos":
+        template_name = "sales_zapatos.html"
+    else:
+        template_name = "sales.html"
 
     return request.app.state.templates.TemplateResponse(
         template_name,
@@ -3893,6 +6824,7 @@ async def mobile_preventas_create(
         moneda = "USD"
     observacion = (form.get("observacion") or "").strip() or None
     item_ids = form.getlist("item_producto_id")
+    item_variant_ids = form.getlist("item_variante_id")
     item_qtys = form.getlist("item_cantidad")
     item_prices = form.getlist("item_precio")
     item_price_usds = form.getlist("item_precio_usd")
@@ -10614,6 +13546,7 @@ def sales_detail(
             "factura": {
                 "id": factura.id,
                 "numero": factura.numero,
+                "condicion_venta": (factura.condicion_venta or "CONTADO").upper(),
                 "fecha": factura.fecha.isoformat() if factura.fecha else "",
                 "hora": factura.created_at.strftime("%H:%M") if factura.created_at else "",
                 "cliente": factura.cliente.nombre if factura.cliente else "Consumidor final",
@@ -10646,6 +13579,7 @@ def sales_reprint(
         {
             "ok": True,
             "print_url": f"/sales/{factura.id}/ticket/print?copies=2",
+            "letter_print_url": f"/sales/{factura.id}/pdf",
         }
     )
 
@@ -10847,6 +13781,7 @@ async def sales_reversion_confirm(
 @router.get("/data")
 def data_home(
     request: Request,
+    db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.data")
@@ -10855,9 +13790,61 @@ def data_home(
         {
             "request": request,
             "user": user,
+            "menu_items": get_sidebar_menu_layout(db),
             "version": settings.UI_VERSION,
         },
     )
+
+
+@router.get("/data/menu")
+def data_menu_layout(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    current_order = get_sidebar_menu_layout(db)
+    return request.app.state.templates.TemplateResponse(
+        "data_menu_layout.html",
+        {
+            "request": request,
+            "user": user,
+            "menu_items": current_order,
+            "error": request.query_params.get("error"),
+            "success": request.query_params.get("success"),
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/data/menu")
+def data_menu_layout_save(
+    request: Request,
+    menu_order_json: str = Form("[]"),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    try:
+        payload = json.loads(menu_order_json or "[]")
+        if not isinstance(payload, list):
+            payload = []
+    except json.JSONDecodeError:
+        payload = []
+    normalized_ids = _normalize_sidebar_menu_order([str(item) for item in payload])
+    company_key = (get_active_company_key() or "default").strip().lower() or "default"
+    row = (
+        db.query(MenuLayoutSetting)
+        .filter(func.lower(MenuLayoutSetting.company_key) == company_key)
+        .first()
+    )
+    if not row:
+        row = MenuLayoutSetting(company_key=company_key)
+        db.add(row)
+    row.menu_order_json = json.dumps(normalized_ids, ensure_ascii=False)
+    row.updated_by = user.full_name
+    db.commit()
+    return RedirectResponse("/data/menu?success=Orden+de+menu+actualizado", status_code=303)
 
 
 @router.get("/data/entornos")
@@ -11570,6 +14557,7 @@ def data_create_sucursal(
     ruc: str = Form(...),
     telefono: str = Form(...),
     direccion: str = Form(...),
+    activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -11593,6 +14581,7 @@ def data_create_sucursal(
         Branch(
             code=code,
             name=name,
+            activo=activo == "on",
             company_name=company_name,
             ruc=ruc,
             telefono=telefono,
@@ -11613,6 +14602,7 @@ def data_update_sucursal(
     ruc: str = Form(...),
     telefono: str = Form(...),
     direccion: str = Form(...),
+    activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -11638,6 +14628,7 @@ def data_update_sucursal(
         return RedirectResponse("/data/sucursales?error=Sucursal+ya+existe", status_code=303)
     branch.code = code
     branch.name = name
+    branch.activo = activo == "on"
     branch.company_name = company_name
     branch.ruc = ruc
     branch.telefono = telefono
@@ -11659,8 +14650,8 @@ def data_bodegas(
     edit_item = None
     if edit_id:
         edit_item = db.query(Bodega).filter(Bodega.id == int(edit_id)).first()
-    items = _scoped_bodegas_query(db).order_by(Bodega.name).all()
-    branches = _scoped_branches_query(db).order_by(Branch.name).all()
+    items = db.query(Bodega).order_by(Bodega.name).all()
+    branches = db.query(Branch).order_by(Branch.name).all()
     return request.app.state.templates.TemplateResponse(
         "data_bodegas.html",
         {
@@ -11694,6 +14685,8 @@ def data_create_bodega(
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
     if not branch:
         return RedirectResponse("/data/bodegas?error=Sucursal+no+valida", status_code=303)
+    if not bool(branch.activo):
+        return RedirectResponse("/data/bodegas?error=La+sucursal+seleccionada+esta+inactiva", status_code=303)
     exists = (
         db.query(Bodega)
         .filter(func.lower(Bodega.code) == code)
@@ -11728,6 +14721,8 @@ def data_update_bodega(
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
     if not branch:
         return RedirectResponse("/data/bodegas?error=Sucursal+no+valida", status_code=303)
+    if not bool(branch.activo) and int(branch.id) != int(bodega.branch_id):
+        return RedirectResponse("/data/bodegas?error=La+sucursal+seleccionada+esta+inactiva", status_code=303)
     exists = (
         db.query(Bodega)
         .filter(Bodega.id != item_id)
@@ -12427,9 +15422,11 @@ def sales_products_search(
     q: str = "",
     bodega_id: Optional[int] = None,
     vendedor_id: Optional[int] = None,
+    price_list: Optional[int] = None,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    price_tier = _normalize_price_tier(price_list, default=1)
     query = q.strip()
     if len(query) < 2:
         return JSONResponse({"ok": True, "items": []})
@@ -12480,13 +15477,18 @@ def sales_products_search(
             existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0)
         reserved_qty = float(reserved_totals.get(producto.id, Decimal("0")) or 0)
         free_qty = max(0.0, existencia - reserved_qty)
+        prices = _product_price_map(producto)
+        selected_cs = prices.get(f"precio_venta{price_tier}", 0.0)
+        selected_usd = prices.get(f"precio_venta{price_tier}_usd", 0.0)
         items.append(
             {
                 "id": producto.id,
                 "cod_producto": producto.cod_producto,
                 "descripcion": producto.descripcion,
-                "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
-                "precio_venta1": float(producto.precio_venta1 or 0),
+                **prices,
+                "selected_price_tier": price_tier,
+                "selected_price_usd": float(selected_usd or 0),
+                "selected_price_cs": float(selected_cs or 0),
                 "existencia": existencia,
                 "reserved_qty": reserved_qty,
                 "free_qty": free_qty,
@@ -12497,16 +15499,120 @@ def sales_products_search(
     return JSONResponse({"ok": True, "items": items})
 
 
+@router.get("/sales/shoes/variants/search")
+def sales_shoes_variants_search(
+    q: str = "",
+    bodega_id: Optional[int] = None,
+    color: Optional[str] = None,
+    talla: Optional[str] = None,
+    price_list: Optional[int] = None,
+    limit: int = 120,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    if not _is_shoes_mode():
+        return JSONResponse({"ok": True, "items": []})
+    price_tier = _normalize_price_tier(price_list, default=1)
+    query = (q or "").strip()
+    color_filter = (color or "").strip()
+    talla_filter = (talla or "").strip()
+    if len(query) < 1 and not color_filter and not talla_filter:
+        return JSONResponse({"ok": True, "items": []})
+    _, resolved_bodega = _resolve_branch_bodega(db, user)
+    bodega = resolved_bodega
+    if bodega_id:
+        allowed_branch_ids = {b.id for b in (user.branches or [])}
+        requested = (
+            db.query(Bodega)
+            .filter(Bodega.id == bodega_id, Bodega.activo.is_(True))
+            .first()
+        )
+        if requested and (not allowed_branch_ids or requested.branch_id in allowed_branch_ids):
+            bodega = requested
+    if not bodega:
+        return JSONResponse({"ok": True, "items": []})
+
+    q_variants = (
+        db.query(ShoeProductVariant, Producto, ColorCatalog, ShoeVariantStock)
+        .join(Producto, Producto.id == ShoeProductVariant.producto_id)
+        .join(ColorCatalog, ColorCatalog.id == ShoeProductVariant.color_id)
+        .outerjoin(
+            ShoeVariantStock,
+            and_(
+                ShoeVariantStock.variante_id == ShoeProductVariant.id,
+                ShoeVariantStock.bodega_id == bodega.id,
+            ),
+        )
+        .filter(
+            ShoeProductVariant.activo.is_(True),
+            Producto.activo.is_(True),
+        )
+    )
+    if query:
+        like = f"%{query.lower()}%"
+        q_variants = q_variants.filter(
+            or_(
+                func.lower(ShoeProductVariant.cod_variante).like(like),
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+                func.lower(ColorCatalog.nombre).like(like),
+                func.lower(ShoeProductVariant.talla).like(like),
+            )
+        )
+    if color_filter:
+        color_like = f"%{color_filter.lower()}%"
+        q_variants = q_variants.filter(func.lower(ColorCatalog.nombre).like(color_like))
+    if talla_filter:
+        talla_like = f"%{talla_filter.lower()}%"
+        q_variants = q_variants.filter(func.lower(ShoeProductVariant.talla).like(talla_like))
+    rows = (
+        q_variants.order_by(
+            Producto.descripcion.asc(),
+            ColorCatalog.nombre.asc(),
+            ShoeProductVariant.talla.asc(),
+        )
+        .limit(max(10, min(limit, 500)))
+        .all()
+    )
+    items: list[dict[str, object]] = []
+    for variant, producto, color_row, stock_row in rows:
+        existencia = float(stock_row.existencia or 0) if stock_row else 0.0
+        prices = _product_price_map(producto)
+        costo_cs = float(producto.costo_producto or 0)
+        costo_usd = float((Decimal(str(costo_cs)) / Decimal(str(producto.tasa_cambio))).quantize(Decimal("0.01"))) if producto.tasa_cambio else 0.0
+        items.append(
+            {
+                "variant_id": int(variant.id),
+                "producto_id": int(producto.id),
+                "cod_variante": variant.cod_variante,
+                "cod_producto": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "color": color_row.nombre,
+                "talla": variant.talla,
+                "existencia": existencia,
+                "costo_cs": costo_cs,
+                "costo_usd": costo_usd,
+                **prices,
+                "selected_price_tier": price_tier,
+                "selected_price_usd": float(prices.get(f"precio_venta{price_tier}_usd", 0) or 0),
+                "selected_price_cs": float(prices.get(f"precio_venta{price_tier}", 0) or 0),
+            }
+        )
+    return JSONResponse({"ok": True, "items": items, "bodega_id": bodega.id})
+
+
 @router.get("/sales/combo/{parent_id}/items")
 def sales_combo_items(
     request: Request,
     parent_id: int,
     bodega_id: Optional[int] = None,
     vendedor_id: Optional[int] = None,
+    price_list: Optional[int] = None,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.registrar")
+    price_tier = _normalize_price_tier(price_list, default=1)
     parent = db.query(Producto).filter(Producto.id == parent_id, Producto.activo.is_(True)).first()
     if not parent:
         return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
@@ -12547,6 +15653,7 @@ def sales_combo_items(
         existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0) if bodega else 0.0
         reserved_qty = float(reserved_totals.get(producto.id, Decimal("0")) or 0)
         free_qty = max(0.0, existencia - reserved_qty)
+        prices = _product_price_map(producto)
         items.append(
             {
                 "id": int(combo.id),
@@ -12554,8 +15661,10 @@ def sales_combo_items(
                 "cod_producto": producto.cod_producto,
                 "descripcion": producto.descripcion,
                 "cantidad": float(combo.cantidad or 1),
-                "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
-                "precio_venta1": float(producto.precio_venta1 or 0),
+                **prices,
+                "selected_price_tier": price_tier,
+                "selected_price_usd": float(prices.get(f"precio_venta{price_tier}_usd", 0) or 0),
+                "selected_price_cs": float(prices.get(f"precio_venta{price_tier}", 0) or 0),
                 "existencia": existencia,
                 "reserved_qty": reserved_qty,
                 "free_qty": free_qty,
@@ -12907,6 +16016,86 @@ def inventory_egreso_pdf(
     return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
 
 
+@router.get("/inventory/egresos/{egreso_id}/ticket/print")
+def inventory_egreso_ticket_print(
+    request: Request,
+    egreso_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.egresos")
+    copies_value = request.query_params.get("copies", "1")
+    try:
+        copies = max(int(copies_value), 1)
+    except ValueError:
+        copies = 1
+    return_to = request.query_params.get("return_to") or "/inventory/traslados-rapidos"
+    if not str(return_to).startswith("/"):
+        return_to = "/inventory/traslados-rapidos"
+
+    egreso = db.query(EgresoInventario).filter(EgresoInventario.id == egreso_id).first()
+    if not egreso:
+        raise HTTPException(status_code=404, detail="Egreso no encontrado")
+
+    profile = _company_profile_payload(db)
+    branch = egreso.bodega.branch if egreso.bodega else None
+    identity = _company_identity(branch, profile)
+
+    fecha_value = egreso.created_at or egreso.fecha
+    fecha_str = ""
+    hora_str = ""
+    if fecha_value:
+        try:
+            fecha_str = fecha_value.strftime("%d/%m/%Y")
+            hora_str = fecha_value.strftime("%H:%M")
+        except AttributeError:
+            fecha_str = str(fecha_value)
+
+    def format_amount(value: float) -> str:
+        return f"{value:,.2f}"
+
+    items = []
+    total_bultos = 0.0
+    for item in egreso.items or []:
+        qty = float(item.cantidad or 0)
+        total_bultos += qty
+        color_name = item.variante.color.nombre if item.variante and item.variante.color else "-"
+        talla_name = item.variante.talla if item.variante and item.variante.talla else "-"
+        items.append(
+            {
+                "codigo": (item.variante.cod_variante if item.variante else (item.producto.cod_producto if item.producto else "-")),
+                "descripcion": item.producto.descripcion if item.producto else "-",
+                "color": color_name,
+                "talla": talla_name,
+                "cantidad": qty,
+            }
+        )
+
+    return request.app.state.templates.TemplateResponse(
+        "inventory_transfer_ticket_print.html",
+        {
+            "request": request,
+            "egreso": egreso,
+            "company_name": identity["company_name"],
+            "ruc": identity["ruc"],
+            "telefono": identity["telefono"],
+            "direccion": identity["direccion"],
+            "sucursal": identity["sucursal"],
+            "fecha_str": fecha_str,
+            "hora_str": hora_str,
+            "origen": egreso.bodega.name if egreso.bodega else "-",
+            "destino": egreso.bodega_destino.name if egreso.bodega_destino else "-",
+            "usuario_creador": egreso.usuario_registro or "-",
+            "items": items,
+            "total_bultos": total_bultos,
+            "format_amount": format_amount,
+            "copies": copies,
+            "return_to": return_to,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
 @router.get("/sales/{venta_id}/pdf")
 def sales_invoice_pdf(
     venta_id: int,
@@ -12915,6 +16104,7 @@ def sales_invoice_pdf(
 ):
     try:
         from reportlab.lib.pagesizes import letter
+        from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfgen import canvas
     except ImportError as exc:
         raise HTTPException(status_code=500, detail="ReportLab no esta instalado") from exc
@@ -12975,6 +16165,11 @@ def sales_invoice_pdf(
         f"Vendedor: {factura.vendedor.nombre if factura.vendedor else '-'}",
     )
     pdf.drawString(
+        margin + 380,
+        height - 160,
+        f"Tipo: {(factura.condicion_venta or 'CONTADO').upper()}",
+    )
+    pdf.drawString(
         margin,
         height - 174,
         f"Cliente: {factura.cliente.nombre if factura.cliente else 'Consumidor final'}",
@@ -12995,53 +16190,109 @@ def sales_invoice_pdf(
         f"Tasa: {('C$ %.4f' % float(factura.tasa_cambio)) if factura.tasa_cambio else '-'}",
     )
 
-    y = height - 210
-    pdf.setFont("Helvetica-Bold", 9)
-    pdf.drawString(margin, y, "Codigo")
-    pdf.drawString(margin + 80, y, "Descripcion")
-    pdf.drawRightString(margin + 340, y, "Cant.")
-    pdf.drawRightString(margin + 420, y, "Precio USD")
-    pdf.drawRightString(margin + 500, y, "Subtotal USD")
-    y -= 12
+    moneda = (factura.moneda or "USD").upper()
+    currency_suffix = "C$" if moneda == "CS" else "USD"
+    x_code = margin
+    x_desc = margin + 84
+    x_qty = margin + 344
+    x_price = margin + 426
+    x_subtotal = width - margin
+    desc_max_width = x_qty - x_desc - 10
+    min_y = margin + 68
 
+    def _fmt_num(value: float) -> str:
+        return f"{value:,.2f}"
+
+    def _wrap_by_width(text: str, font_name: str, font_size: int, max_width: float) -> list[str]:
+        raw = (text or "").strip() or "-"
+        parts = raw.split()
+        if not parts:
+            return ["-"]
+        out: list[str] = []
+        current = ""
+        for part in parts:
+            candidate = f"{current} {part}".strip()
+            if pdfmetrics.stringWidth(candidate, font_name, font_size) <= max_width:
+                current = candidate
+                continue
+            if current:
+                out.append(current)
+                current = part
+                continue
+            chunk = part
+            while pdfmetrics.stringWidth(chunk, font_name, font_size) > max_width and len(chunk) > 1:
+                cut = len(chunk) - 1
+                while cut > 1 and pdfmetrics.stringWidth(chunk[:cut], font_name, font_size) > max_width:
+                    cut -= 1
+                out.append(chunk[:cut])
+                chunk = chunk[cut:]
+            current = chunk
+        if current:
+            out.append(current)
+        return out or ["-"]
+
+    def _draw_table_header(start_y: float) -> float:
+        pdf.setFont("Helvetica-Bold", 9)
+        pdf.drawString(x_code, start_y, "Codigo")
+        pdf.drawString(x_desc, start_y, "Descripcion")
+        pdf.drawRightString(x_qty, start_y, "Cant.")
+        pdf.drawRightString(x_price, start_y, f"Precio {currency_suffix}")
+        pdf.drawRightString(x_subtotal, start_y, f"Subtotal {currency_suffix}")
+        pdf.setStrokeColorRGB(0.82, 0.82, 0.82)
+        pdf.setLineWidth(0.4)
+        pdf.line(margin, start_y - 3, width - margin, start_y - 3)
+        return start_y - 14
+
+    y = _draw_table_header(height - 210)
     pdf.setFont("Helvetica", 8)
+    line_height = 10
+    total_unidades = 0.0
     for item in factura.items:
-        if y < margin + 60:
+        codigo = item.producto.cod_producto if item.producto else "-"
+        descripcion = item.producto.descripcion if item.producto else "-"
+        if item.variante:
+            color_name = item.variante.color.nombre if item.variante.color else "-"
+            talla_name = item.variante.talla or "-"
+            descripcion = f"{descripcion} [{color_name} / Talla {talla_name}]"
+        desc_lines = _wrap_by_width(descripcion, "Helvetica", 8, desc_max_width)
+        row_height = max(1, len(desc_lines)) * line_height + 2
+
+        if y - row_height < min_y:
             pdf.setFont("Helvetica", 8)
-            pdf.drawRightString(
-                width - margin,
-                margin - 18,
-                f"Pagina {pdf.getPageNumber()}",
-            )
+            pdf.drawRightString(width - margin, margin - 18, f"Pagina {pdf.getPageNumber()}")
             pdf.showPage()
-            y = height - margin
-            pdf.setFont("Helvetica-Bold", 9)
-            pdf.drawString(margin, y, "Codigo")
-            pdf.drawString(margin + 80, y, "Descripcion")
-            pdf.drawRightString(margin + 340, y, "Cant.")
-            pdf.drawRightString(margin + 420, y, "Precio USD")
-            pdf.drawRightString(margin + 500, y, "Subtotal USD")
-            y -= 12
+            y = _draw_table_header(height - margin - 16)
             pdf.setFont("Helvetica", 8)
 
-        codigo = item.producto.cod_producto if item.producto else ""
-        descripcion = item.producto.descripcion if item.producto else ""
-        if len(descripcion) > 48:
-            descripcion = f"{descripcion[:45]}..."
-        pdf.drawString(margin, y, codigo)
-        pdf.drawString(margin + 80, y, descripcion)
-        pdf.drawRightString(margin + 340, y, f"{float(item.cantidad or 0):.2f}")
-        pdf.drawRightString(margin + 420, y, f"{float(item.precio_unitario_usd or 0):.2f}")
-        pdf.drawRightString(margin + 500, y, f"{float(item.subtotal_usd or 0):.2f}")
-        y -= 12
+        cantidad = float(item.cantidad or 0)
+        total_unidades += cantidad
+        precio = float(item.precio_unitario_cs or 0) if moneda == "CS" else float(item.precio_unitario_usd or 0)
+        subtotal = float(item.subtotal_cs or 0) if moneda == "CS" else float(item.subtotal_usd or 0)
 
-    y -= 8
+        pdf.drawString(x_code, y, codigo[:18])
+        for idx, line in enumerate(desc_lines):
+            pdf.drawString(x_desc, y - (idx * line_height), line)
+        pdf.drawRightString(x_qty, y, _fmt_num(cantidad))
+        pdf.drawRightString(x_price, y, _fmt_num(precio))
+        pdf.drawRightString(x_subtotal, y, _fmt_num(subtotal))
+        y -= row_height
+
+    y -= 4
+    if y < min_y:
+        pdf.drawRightString(width - margin, margin - 18, f"Pagina {pdf.getPageNumber()}")
+        pdf.showPage()
+        y = height - margin - 16
+    pdf.setStrokeColorRGB(0.82, 0.82, 0.82)
+    pdf.setLineWidth(0.4)
+    pdf.line(margin, y, width - margin, y)
+    y -= 14
     pdf.setFont("Helvetica-Bold", 10)
-    pdf.drawRightString(margin + 420, y, "Total USD:")
-    pdf.drawRightString(margin + 500, y, f"{float(factura.total_usd or 0):.2f}")
+    pdf.drawRightString(x_price, y, "Total unds:")
+    pdf.drawRightString(x_subtotal, y, _fmt_num(total_unidades))
     y -= 12
-    pdf.drawRightString(margin + 420, y, "Total C$:")
-    pdf.drawRightString(margin + 500, y, f"{float(factura.total_cs or 0):.2f}")
+    pdf.drawRightString(x_price, y, f"Total {currency_suffix}:")
+    total_factura = float(factura.total_cs or 0) if moneda == "CS" else float(factura.total_usd or 0)
+    pdf.drawRightString(x_subtotal, y, _fmt_num(total_factura))
 
     pago = factura.pagos[0] if factura.pagos else None
     if pago:
@@ -13136,17 +16387,6 @@ def sales_ticket_print(
             lines.append(current)
         return lines or [text]
 
-    def extract_weight_lbs(text: str) -> float:
-        if not text:
-            return 0.0
-        match = re.search(r"\b(\d+(?:\.\d+)?)\s*(lbs)\b", text.lower())
-        if not match:
-            return 0.0
-        try:
-            return float(match.group(1))
-        except ValueError:
-            return 0.0
-
     profile = _company_profile_payload(db)
     branch = factura.bodega.branch if factura.bodega else None
     identity = _company_identity(branch, profile)
@@ -13187,8 +16427,7 @@ def sales_ticket_print(
         return f"{value:,.2f}"
 
     items = []
-    total_bultos = 0.0
-    total_lbs = 0.0
+    total_unidades = 0.0
     line_count = 0
     line_count += 1  # company
     line_count += 1  # ruc
@@ -13196,20 +16435,21 @@ def sales_ticket_print(
     line_count += len(direccion_lines)
     line_count += 1  # sucursal
     line_count += 1  # divider
-    line_count += 5  # factura/fecha/cliente/id/vendedor
+    line_count += 6  # factura/tipo/fecha/cliente/id/vendedor
     line_count += 1  # divider
     for item in factura.items:
-        desc_lines = wrap_text(item.producto.descripcion if item.producto else "-", 32)
+        qty = float(item.cantidad or 0)
+        total_unidades += qty
+        descripcion = item.producto.descripcion if item.producto else "-"
+        if item.variante:
+            color_name = item.variante.color.nombre if item.variante.color else "-"
+            talla_name = item.variante.talla or "-"
+            descripcion = f"{descripcion} [{color_name} / Talla {talla_name}]"
+        desc_lines = wrap_text(descripcion, 32)
         line_count += 1  # codigo
         line_count += len(desc_lines)
-        line_count += 2  # qty/price + desc/subtotal
+        line_count += 1  # qty/price/subtotal
         line_count += 1  # divider
-        qty = float(item.cantidad or 0)
-        total_bultos += qty
-        desc_text = item.producto.descripcion if item.producto else ""
-        lbs_per_unit = extract_weight_lbs(desc_text)
-        if lbs_per_unit:
-            total_lbs += lbs_per_unit * qty
         price = (
             float(item.precio_unitario_cs or 0)
             if moneda == "CS"
@@ -13223,7 +16463,7 @@ def sales_ticket_print(
         items.append(
             {
                 "codigo": item.producto.cod_producto if item.producto else "-",
-                "descripcion": item.producto.descripcion if item.producto else "-",
+                "descripcion": descripcion,
                 "cantidad": qty,
                 "precio": price,
                 "subtotal": subtotal,
@@ -13231,7 +16471,7 @@ def sales_ticket_print(
         )
 
     pagos_render = []
-    line_count += 5  # total bultos/lbs + subtotal/desc/total
+    line_count += 3  # total unds + subtotal + total
     for pago in pagos:
         forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
         banco = pago.banco.nombre if pago.banco else ""
@@ -13257,6 +16497,7 @@ def sales_ticket_print(
         {
             "request": request,
             "factura": factura,
+            "condicion_venta": (factura.condicion_venta or "CONTADO").upper(),
             "company_name": company_name,
             "ruc": ruc,
             "telefono": telefono,
@@ -13273,13 +16514,13 @@ def sales_ticket_print(
             "total_amount": total_amount,
             "subtotal_amount": subtotal_amount,
             "saldo": saldo,
-            "total_bultos": total_bultos,
-            "total_lbs": total_lbs,
+            "total_unidades": total_unidades,
             "items": items,
             "pagos": pagos_render,
             "format_amount": format_amount,
             "copies": copies,
             "page_height_mm": page_height_mm,
+            "compact_ticket": _is_shoes_mode(),
             "version": settings.UI_VERSION,
         },
     )
@@ -13910,6 +17151,386 @@ def inventory_update_proveedor(
     return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
 
 
+@router.post("/inventory/color")
+def inventory_create_color(
+    request: Request,
+    nombre: str = Form(...),
+    abreviatura: str = Form(...),
+    redirect_to: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(_require_admin_web),
+):
+    is_fetch = request.headers.get("x-requested-with") == "fetch" or "application/json" in (
+        request.headers.get("accept", "")
+    )
+    nombre_norm = (nombre or "").strip()
+    abbr_norm = (abreviatura or "").strip().upper()
+    if not nombre_norm or not abbr_norm:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Color y abreviatura requeridos"}, status_code=400)
+        return RedirectResponse((redirect_to or "/inventory/ingresos") + "?error=Color+y+abreviatura+requeridos", status_code=303)
+    exists = db.query(ColorCatalog).filter(func.lower(ColorCatalog.nombre) == nombre_norm.lower()).first()
+    if exists:
+        if is_fetch:
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "message": "Color ya existe",
+                    "color": {
+                        "id": exists.id,
+                        "nombre": exists.nombre,
+                        "abreviatura": exists.abreviatura,
+                    },
+                }
+            )
+        return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
+    new_color = ColorCatalog(nombre=nombre_norm, abreviatura=abbr_norm[:20], activo=True)
+    db.add(new_color)
+    db.flush()
+    color_payload = {
+        "id": new_color.id,
+        "nombre": new_color.nombre,
+        "abreviatura": new_color.abreviatura,
+    }
+    db.commit()
+    if is_fetch:
+        return JSONResponse({"ok": True, "message": "Color creado", "color": color_payload})
+    return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
+
+
+@router.post("/inventory/shoe-format")
+async def inventory_create_shoe_format(
+    request: Request,
+    codigo: str = Form(...),
+    nombre: str = Form(...),
+    lineas_json: str = Form(...),
+    redirect_to: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(_require_admin_web),
+):
+    is_fetch = request.headers.get("x-requested-with") == "fetch" or "application/json" in (
+        request.headers.get("accept", "")
+    )
+    if not _is_shoes_mode():
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Modo zapatos no habilitado"}, status_code=400)
+        return RedirectResponse((redirect_to or "/inventory/ingresos") + "?error=Modo+zapatos+no+habilitado", status_code=303)
+
+    code_norm = (codigo or "").strip().upper()
+    name_norm = (nombre or "").strip()
+    if not code_norm or not name_norm:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Codigo y nombre requeridos"}, status_code=400)
+        return RedirectResponse((redirect_to or "/inventory/ingresos") + "?error=Codigo+y+nombre+requeridos", status_code=303)
+    try:
+        parsed = json.loads(lineas_json or "[]")
+    except Exception:
+        parsed = []
+    if not isinstance(parsed, list):
+        parsed = []
+
+    cleaned_lines = []
+    for row in parsed:
+        if not isinstance(row, dict):
+            continue
+        talla = str(row.get("talla") or "").strip()
+        try:
+            cantidad = int(row.get("cantidad") or 0)
+        except Exception:
+            cantidad = 0
+        if talla and cantidad > 0:
+            cleaned_lines.append({"talla": talla, "cantidad": cantidad})
+    if not cleaned_lines:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Define al menos una talla con cantidad"}, status_code=400)
+        return RedirectResponse((redirect_to or "/inventory/ingresos") + "?error=Define+al+menos+una+talla", status_code=303)
+
+    exists = db.query(ShoeSizeFormat).filter(func.lower(ShoeSizeFormat.codigo) == code_norm.lower()).first()
+    if exists:
+        if is_fetch:
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "message": "Formato ya existe",
+                    "format": {
+                        "id": exists.id,
+                        "codigo": exists.codigo,
+                        "nombre": exists.nombre,
+                        "lineas": [
+                            {"talla": str(ln.talla or ""), "cantidad": int(ln.cantidad or 0), "orden": int(ln.orden or 0)}
+                            for ln in sorted(exists.lineas or [], key=lambda item: (item.orden or 0, item.id or 0))
+                        ],
+                    },
+                }
+            )
+        return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
+
+    formato = ShoeSizeFormat(codigo=code_norm[:30], nombre=name_norm[:80], activo=True)
+    db.add(formato)
+    db.flush()
+    for idx, row in enumerate(cleaned_lines, start=1):
+        db.add(
+            ShoeSizeFormatLine(
+                formato_id=formato.id,
+                talla=row["talla"][:20],
+                cantidad=int(row["cantidad"]),
+                orden=idx,
+            )
+        )
+    db.flush()
+    payload = {
+        "id": formato.id,
+        "codigo": formato.codigo,
+        "nombre": formato.nombre,
+        "lineas": [
+            {"talla": str(ln.talla or ""), "cantidad": int(ln.cantidad or 0), "orden": int(ln.orden or 0)}
+            for ln in sorted(formato.lineas or [], key=lambda item: (item.orden or 0, item.id or 0))
+        ],
+    }
+    db.commit()
+    if is_fetch:
+        return JSONResponse({"ok": True, "message": "Formato creado", "format": payload})
+    return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
+
+
+@router.post("/inventory/ingresos/zapatos")
+async def inventory_create_ingreso_zapatos(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.ingresos")
+    if not _is_shoes_mode():
+        return RedirectResponse("/inventory/ingresos?error=Modo+zapatos+no+habilitado+en+esta+BD", status_code=303)
+    form = await request.form()
+    tipo_id = (form.get("tipo_id") or "").strip()
+    bodega_id = (form.get("bodega_id") or "").strip()
+    proveedor_id = (form.get("proveedor_id") or "").strip() or None
+    fecha = (form.get("fecha") or "").strip()
+    # En modo zapatos el costo/precio de captura siempre se interpreta en C$.
+    # Ignoramos cualquier moneda enviada por el cliente para evitar conversiones accidentales.
+    moneda = "CS"
+    observacion = (form.get("observacion") or "").strip() or None
+    codigo_base = (form.get("codigo_base") or "").strip()
+    linea_id_raw = (form.get("linea_id") or "").strip()
+    marca_nombre = (form.get("marca_nombre") or "").strip() or "Sin Marca"
+    try:
+        costo_unitario = Decimal(str(form.get("costo_unitario") or "0"))
+    except (InvalidOperation, ValueError):
+        costo_unitario = Decimal("0")
+    try:
+        precio_unitario = Decimal(str(form.get("precio_unitario") or "0"))
+    except (InvalidOperation, ValueError):
+        precio_unitario = Decimal("0")
+    matrix_json = (form.get("matrix_json") or "").strip()
+    if not tipo_id or not bodega_id or not fecha or not codigo_base or not linea_id_raw:
+        return RedirectResponse("/inventory/ingresos?error=Faltan+datos+obligatorios+en+ingreso+de+zapatos", status_code=303)
+    try:
+        fecha_value = date.fromisoformat(str(fecha).split("T")[0])
+    except ValueError:
+        return RedirectResponse("/inventory/ingresos?error=Fecha+invalida", status_code=303)
+    tipo = db.query(IngresoTipo).filter(IngresoTipo.id == int(tipo_id)).first()
+    if not tipo:
+        return RedirectResponse("/inventory/ingresos?error=Tipo+de+ingreso+invalido", status_code=303)
+    if tipo.requiere_proveedor and not proveedor_id:
+        return RedirectResponse("/inventory/ingresos?error=Proveedor+requerido", status_code=303)
+    linea = db.query(Linea).filter(Linea.id == int(linea_id_raw)).first()
+    if not linea:
+        return RedirectResponse("/inventory/ingresos?error=Linea+invalida", status_code=303)
+    try:
+        matrix = json.loads(matrix_json or "{}")
+    except Exception:
+        matrix = {}
+    if not isinstance(matrix, dict) or not matrix:
+        return RedirectResponse("/inventory/ingresos?error=No+se+definieron+cantidades+por+color+y+talla", status_code=303)
+
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    tasa = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
+    ingreso = IngresoInventario(
+        tipo_id=int(tipo_id),
+        bodega_id=int(bodega_id),
+        proveedor_id=int(proveedor_id) if proveedor_id else None,
+        fecha=fecha_value,
+        moneda="CS",
+        tasa_cambio=None,
+        observacion=observacion or f"Ingreso zapatos {codigo_base}",
+        usuario_registro=user.full_name,
+    )
+    db.add(ingreso)
+    db.flush()
+
+    line_ini = _text_initials(linea.linea, 3)
+    marca_ini = _text_initials(marca_nombre, 3)
+    base_token = _sanitize_code_token(codigo_base, 14)
+    parent_description = f"{linea.linea} {marca_nombre}".strip()
+    parent_product = db.query(Producto).filter(func.lower(Producto.cod_producto) == base_token.lower()).first()
+    if not parent_product:
+        parent_product = Producto(
+            cod_producto=base_token,
+            descripcion=parent_description,
+            linea_id=linea.id,
+            marca=marca_nombre,
+            precio_venta1=0,
+            costo_producto=0,
+            activo=True,
+            usuario_registro=user.full_name,
+        )
+        db.add(parent_product)
+        db.flush()
+    else:
+        parent_product.descripcion = parent_description
+        parent_product.linea_id = linea.id
+        parent_product.marca = marca_nombre
+
+    total_usd = Decimal("0")
+    total_cs = Decimal("0")
+    created_items = 0
+    parent_saldo = db.query(SaldoProducto).filter(SaldoProducto.producto_id == parent_product.id).first()
+
+    for color_id_raw, sizes_map in matrix.items():
+        try:
+            color_id = int(color_id_raw)
+        except (TypeError, ValueError):
+            continue
+        color = db.query(ColorCatalog).filter(ColorCatalog.id == color_id, ColorCatalog.activo.is_(True)).first()
+        if not color:
+            continue
+        color_token = _sanitize_code_token(color.abreviatura or color.nombre, 6)
+        if not isinstance(sizes_map, dict):
+            continue
+        for talla, qty_raw in sizes_map.items():
+            try:
+                qty = Decimal(str(qty_raw or "0"))
+            except (InvalidOperation, ValueError):
+                qty = Decimal("0")
+            if qty <= 0:
+                continue
+            size_token = _sanitize_code_token(str(talla).replace(".", ""), 6)
+            cod_variante = f"{base_token}-{line_ini}{marca_ini}-{color_token}-{size_token}"
+            talla_text = str(talla).strip()
+            variant = (
+                db.query(ShoeProductVariant)
+                .filter(
+                    ShoeProductVariant.producto_id == parent_product.id,
+                    ShoeProductVariant.color_id == color.id,
+                    ShoeProductVariant.talla == talla_text,
+                )
+                .first()
+            )
+            if not variant:
+                variant = ShoeProductVariant(
+                    producto_id=parent_product.id,
+                    color_id=color.id,
+                    talla=talla_text,
+                    cod_variante=cod_variante,
+                    activo=True,
+                )
+                db.add(variant)
+                db.flush()
+            else:
+                variant.activo = True
+                if not (variant.cod_variante or "").strip():
+                    variant.cod_variante = cod_variante
+            costo_cs = Decimal(str(costo_unitario))
+            costo_usd = (costo_cs / tasa) if tasa > 0 else Decimal("0")
+            precio_cs = Decimal(str(precio_unitario))
+            precio_usd = (precio_cs / tasa) if tasa > 0 else Decimal("0")
+            descuento_escalonado_cs = Decimal("10")
+            precios_cs: list[Decimal] = []
+            precios_usd: list[Decimal] = []
+            for idx in range(1, 8):
+                tier_price_cs = max(Decimal("0"), precio_cs - ((idx - 1) * descuento_escalonado_cs))
+                precios_cs.append(tier_price_cs)
+                if tasa > 0:
+                    precios_usd.append((tier_price_cs / tasa).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+                else:
+                    precios_usd.append(Decimal("0"))
+            subtotal_usd = (costo_usd * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            subtotal_cs = (costo_cs * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            total_usd += subtotal_usd
+            total_cs += subtotal_cs
+            db.add(
+                IngresoItem(
+                    ingreso_id=ingreso.id,
+                    producto_id=parent_product.id,
+                    cantidad=float(qty),
+                    costo_unitario_usd=float(costo_usd),
+                    costo_unitario_cs=float(costo_cs),
+                    subtotal_usd=float(subtotal_usd),
+                    subtotal_cs=float(subtotal_cs),
+                )
+            )
+            variant_stock = (
+                db.query(ShoeVariantStock)
+                .filter(
+                    ShoeVariantStock.variante_id == variant.id,
+                    ShoeVariantStock.bodega_id == int(bodega_id),
+                )
+                .first()
+            )
+            if variant_stock:
+                variant_stock.existencia = Decimal(str(variant_stock.existencia or 0)) + qty
+            else:
+                db.add(
+                    ShoeVariantStock(
+                        variante_id=variant.id,
+                        bodega_id=int(bodega_id),
+                        existencia=qty,
+                    )
+                )
+            if parent_saldo:
+                parent_saldo.existencia = Decimal(str(parent_saldo.existencia or 0)) + qty
+            else:
+                parent_saldo = SaldoProducto(producto_id=parent_product.id, existencia=qty)
+                db.add(parent_saldo)
+            if costo_cs > 0:
+                parent_product.costo_producto = float(costo_cs)
+            if precio_cs > 0:
+                parent_product.precio_venta1 = float(precios_cs[0])
+                parent_product.precio_venta2 = float(precios_cs[1])
+                parent_product.precio_venta3 = float(precios_cs[2])
+                parent_product.precio_venta4 = float(precios_cs[3])
+                parent_product.precio_venta5 = float(precios_cs[4])
+                parent_product.precio_venta6 = float(precios_cs[5])
+                parent_product.precio_venta7 = float(precios_cs[6])
+            if precio_usd > 0:
+                parent_product.precio_venta1_usd = float(precios_usd[0])
+                parent_product.precio_venta2_usd = float(precios_usd[1])
+                parent_product.precio_venta3_usd = float(precios_usd[2])
+                parent_product.precio_venta4_usd = float(precios_usd[3])
+                parent_product.precio_venta5_usd = float(precios_usd[4])
+                parent_product.precio_venta6_usd = float(precios_usd[5])
+                parent_product.precio_venta7_usd = float(precios_usd[6])
+            created_items += 1
+
+    if created_items == 0:
+        db.rollback()
+        return RedirectResponse("/inventory/ingresos?error=No+se+generaron+items+de+zapatos", status_code=303)
+
+    ingreso.total_usd = float(total_usd)
+    ingreso.total_cs = float(total_cs)
+    bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
+    auto_amount = total_cs
+    auto_entry = _build_auto_accounting_entry(
+        db,
+        event_code="INV_IN",
+        branch_id=bodega_obj.branch_id if bodega_obj else None,
+        entry_date=fecha_value,
+        amount=auto_amount,
+        reference=f"AUTO-ING-ZAP-{ingreso.id}",
+        description=f"Asiento automatico por ingreso de zapatos #{ingreso.id}",
+    )
+    if auto_entry:
+        db.add(auto_entry)
+    db.commit()
+    return RedirectResponse(f"/inventory/ingresos?success=Ingreso+zapatos+registrado&print_id={ingreso.id}", status_code=303)
+
+
 @router.post("/inventory/ingresos")
 async def inventory_create_ingreso(
     request: Request,
@@ -13923,6 +17544,7 @@ async def inventory_create_ingreso(
     proveedor_id = form.get("proveedor_id") or None
     fecha = form.get("fecha")
     moneda = form.get("moneda")
+    condicion_venta = (form.get("condicion_venta") or "CONTADO").strip().upper()
     observacion = form.get("observacion") or None
     item_ids = form.getlist("item_producto_id")
     item_qtys = form.getlist("item_cantidad")
@@ -14064,6 +17686,9 @@ async def inventory_create_egreso(
 ):
     _enforce_permission(request, user, "access.inventory.egresos")
     form = await request.form()
+    redirect_to = (form.get("redirect_to") or "/inventory/egresos").strip()
+    if not redirect_to.startswith("/"):
+        redirect_to = "/inventory/egresos"
     tipo_id = form.get("tipo_id")
     bodega_id = form.get("bodega_id")
     bodega_destino_id = form.get("bodega_destino_id") or None
@@ -14071,6 +17696,7 @@ async def inventory_create_egreso(
     moneda = form.get("moneda")
     observacion = form.get("observacion") or None
     item_ids = form.getlist("item_producto_id")
+    item_variant_ids = form.getlist("item_variante_id")
     item_qtys = form.getlist("item_cantidad")
     item_costs = form.getlist("item_costo")
     item_prices = form.getlist("item_precio")
@@ -14079,27 +17705,28 @@ async def inventory_create_egreso(
     if inventory_cs_only:
         moneda = "CS"
     if not tipo_id or not bodega_id or not fecha or not moneda:
-        return RedirectResponse("/inventory/egresos?error=Faltan+datos+obligatorios", status_code=303)
+        return RedirectResponse(f"{redirect_to}?error=Faltan+datos+obligatorios", status_code=303)
     if not item_ids:
-        return RedirectResponse("/inventory/egresos?error=Agrega+productos+al+egreso", status_code=303)
+        return RedirectResponse(f"{redirect_to}?error=Agrega+productos+al+egreso", status_code=303)
 
     tipo = db.query(EgresoTipo).filter(EgresoTipo.id == int(tipo_id)).first()
     if not tipo:
-        return RedirectResponse("/inventory/egresos?error=Tipo+no+valido", status_code=303)
+        return RedirectResponse(f"{redirect_to}?error=Tipo+no+valido", status_code=303)
     es_traslado = "traslado" in (tipo.nombre or "").lower()
     bodega_destino_obj = None
     if es_traslado:
+        moneda = "CS"
         if not bodega_destino_id:
-            return RedirectResponse("/inventory/egresos?error=Selecciona+bodega+destino+para+traslado", status_code=303)
+            return RedirectResponse(f"{redirect_to}?error=Selecciona+bodega+destino+para+traslado", status_code=303)
         if int(bodega_destino_id) == int(bodega_id):
-            return RedirectResponse("/inventory/egresos?error=La+bodega+destino+debe+ser+distinta+al+origen", status_code=303)
+            return RedirectResponse(f"{redirect_to}?error=La+bodega+destino+debe+ser+distinta+al+origen", status_code=303)
         bodega_destino_obj = (
             db.query(Bodega)
             .filter(Bodega.id == int(bodega_destino_id), Bodega.activo.is_(True))
             .first()
         )
         if not bodega_destino_obj:
-            return RedirectResponse("/inventory/egresos?error=Bodega+destino+no+valida", status_code=303)
+            return RedirectResponse(f"{redirect_to}?error=Bodega+destino+no+valida", status_code=303)
 
     rate_today = (
         db.query(ExchangeRate)
@@ -14108,7 +17735,7 @@ async def inventory_create_egreso(
         .first()
     )
     if moneda == "USD" and not rate_today:
-        return RedirectResponse("/inventory/egresos?error=Tasa+de+cambio+no+configurada", status_code=303)
+        return RedirectResponse(f"{redirect_to}?error=Tasa+de+cambio+no+configurada", status_code=303)
 
     def to_float(value: Optional[str]) -> float:
         if not value:
@@ -14118,15 +17745,15 @@ async def inventory_create_egreso(
         except ValueError:
             return 0.0
 
-    tasa = float(rate_today.rate) if rate_today else 0
+    tasa = 0.0 if es_traslado else (float(rate_today.rate) if rate_today else 0.0)
     fecha_value = date.fromisoformat(str(fecha).split("T")[0])
     egreso = EgresoInventario(
         tipo_id=int(tipo_id),
         bodega_id=int(bodega_id),
         bodega_destino_id=int(bodega_destino_id) if bodega_destino_id else None,
         fecha=fecha_value,
-        moneda=moneda,
-        tasa_cambio=tasa if moneda == "USD" else None,
+        moneda="CS" if es_traslado else moneda,
+        tasa_cambio=None if es_traslado else (tasa if moneda == "USD" else None),
         observacion=observacion,
         usuario_registro=user.full_name,
     )
@@ -14139,6 +17766,8 @@ async def inventory_create_egreso(
     product_ids = [int(pid) for pid in item_ids if str(pid).isdigit()]
     balances = _balances_by_bodega(db, [int(bodega_id)], list(set(product_ids))) if product_ids else {}
     for index, product_id in enumerate(item_ids):
+        variant_id_raw = item_variant_ids[index] if index < len(item_variant_ids) else None
+        variant_id = int(variant_id_raw) if str(variant_id_raw or "").isdigit() else None
         qty = to_float(item_qtys[index] if index < len(item_qtys) else 0)
         cost = to_float(item_costs[index] if index < len(item_costs) else 0)
         if qty <= 0:
@@ -14146,23 +17775,56 @@ async def inventory_create_egreso(
         producto = db.query(Producto).filter(Producto.id == int(product_id)).first()
         if not producto:
             db.rollback()
-            return RedirectResponse("/inventory/egresos?error=Producto+no+encontrado", status_code=303)
+            return RedirectResponse(f"{redirect_to}?error=Producto+no+encontrado", status_code=303)
+
+        variant = None
+        if variant_id:
+            variant = (
+                db.query(ShoeProductVariant)
+                .filter(
+                    ShoeProductVariant.id == int(variant_id),
+                    ShoeProductVariant.producto_id == int(producto.id),
+                    ShoeProductVariant.activo.is_(True),
+                )
+                .first()
+            )
+            if not variant:
+                db.rollback()
+                return RedirectResponse(f"{redirect_to}?error=Variante+invalida", status_code=303)
+            variant_stock = (
+                db.query(ShoeVariantStock)
+                .filter(
+                    ShoeVariantStock.variante_id == int(variant.id),
+                    ShoeVariantStock.bodega_id == int(bodega_id),
+                )
+                .first()
+            )
+            variant_available = float(variant_stock.existencia or 0) if variant_stock else 0.0
+            if variant_available < qty:
+                db.rollback()
+                mensaje = f"Stock+insuficiente+para+variante+{variant.cod_variante}"
+                return RedirectResponse(f"{redirect_to}?error={mensaje}", status_code=303)
+            if variant_stock:
+                variant_stock.existencia = Decimal(str(variant_available)) - to_decimal(qty)
 
         existencia = float(balances.get((producto.id, int(bodega_id)), Decimal("0")) or 0)
         if existencia < qty:
             db.rollback()
             mensaje = f"Stock+insuficiente+para+{producto.cod_producto}"
-            return RedirectResponse(f"/inventory/egresos?error={mensaje}", status_code=303)
+            return RedirectResponse(f"{redirect_to}?error={mensaje}", status_code=303)
         balances[(producto.id, int(bodega_id))] = Decimal(str(existencia)) - to_decimal(qty)
 
-        if moneda == "USD":
+        if es_traslado:
+            costo_cs = cost
+            costo_usd = 0.0
+        elif moneda == "USD":
             costo_usd = cost
             costo_cs = cost * tasa
         else:
             costo_cs = cost
             costo_usd = cost / tasa if tasa else 0
 
-        subtotal_usd = costo_usd * qty
+        subtotal_usd = 0.0 if es_traslado else (costo_usd * qty)
         subtotal_cs = costo_cs * qty
         total_usd += subtotal_usd
         total_cs += subtotal_cs
@@ -14170,6 +17832,7 @@ async def inventory_create_egreso(
         item = EgresoItem(
             egreso_id=egreso.id,
             producto_id=int(product_id),
+            variante_id=int(variant.id) if variant else None,
             cantidad=qty,
             costo_unitario_usd=costo_usd,
             costo_unitario_cs=costo_cs,
@@ -14184,6 +17847,7 @@ async def inventory_create_egreso(
         traslado_items.append(
             {
                 "producto_id": int(product_id),
+                "variant_id": int(variant.id) if variant else None,
                 "cantidad": qty,
                 "costo_unitario_usd": costo_usd,
                 "costo_unitario_cs": costo_cs,
@@ -14191,6 +17855,10 @@ async def inventory_create_egreso(
                 "subtotal_cs": subtotal_cs,
             }
         )
+
+    if not traslado_items:
+        db.rollback()
+        return RedirectResponse(f"{redirect_to}?error=Agrega+items+validos+con+saldo", status_code=303)
 
     if es_traslado and bodega_destino_obj and traslado_items:
         ingreso_tipo = (
@@ -14214,9 +17882,9 @@ async def inventory_create_egreso(
             bodega_id=bodega_destino_obj.id,
             proveedor_id=None,
             fecha=fecha_value,
-            moneda=moneda,
-            tasa_cambio=tasa if moneda == "USD" else None,
-            total_usd=total_usd,
+            moneda="CS",
+            tasa_cambio=None,
+            total_usd=0,
             total_cs=total_cs,
             observacion=traslado_obs[:300],
             usuario_registro=user.full_name,
@@ -14229,9 +17897,9 @@ async def inventory_create_egreso(
                     ingreso_id=ingreso.id,
                     producto_id=int(row["producto_id"]),
                     cantidad=float(row["cantidad"]),
-                    costo_unitario_usd=float(row["costo_unitario_usd"]),
+                    costo_unitario_usd=0,
                     costo_unitario_cs=float(row["costo_unitario_cs"]),
-                    subtotal_usd=float(row["subtotal_usd"]),
+                    subtotal_usd=0,
                     subtotal_cs=float(row["subtotal_cs"]),
                 )
             )
@@ -14240,11 +17908,30 @@ async def inventory_create_egreso(
                 producto.saldo.existencia = to_decimal(producto.saldo.existencia) + to_decimal(float(row["cantidad"]))
             elif producto:
                 db.add(SaldoProducto(producto_id=producto.id, existencia=to_decimal(float(row["cantidad"]))))
+            if row.get("variant_id"):
+                variant_dest = (
+                    db.query(ShoeVariantStock)
+                    .filter(
+                        ShoeVariantStock.variante_id == int(row["variant_id"]),
+                        ShoeVariantStock.bodega_id == int(bodega_destino_obj.id),
+                    )
+                    .first()
+                )
+                if variant_dest:
+                    variant_dest.existencia = to_decimal(variant_dest.existencia) + to_decimal(float(row["cantidad"]))
+                else:
+                    db.add(
+                        ShoeVariantStock(
+                            variante_id=int(row["variant_id"]),
+                            bodega_id=int(bodega_destino_obj.id),
+                            existencia=to_decimal(float(row["cantidad"])),
+                        )
+                    )
 
-    egreso.total_usd = total_usd
+    egreso.total_usd = 0 if es_traslado else total_usd
     egreso.total_cs = total_cs
     bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
-    auto_amount = to_decimal(total_usd if moneda == "USD" else total_cs)
+    auto_amount = to_decimal(total_cs if es_traslado else (total_usd if moneda == "USD" else total_cs))
     auto_entry = _build_auto_accounting_entry(
         db,
         event_code="INV_OUT",
@@ -14258,7 +17945,7 @@ async def inventory_create_egreso(
         db.add(auto_entry)
     db.commit()
     return RedirectResponse(
-        f"/inventory/egresos?success=Egreso+registrado&print_id={egreso.id}",
+        f"{redirect_to}?success=Egreso+registrado&print_id={egreso.id}&print_mode={'ticket' if es_traslado else 'pdf'}",
         status_code=303,
     )
 
@@ -14400,11 +18087,15 @@ async def sales_create_invoice(
     pago_banco_ids = form.getlist("pago_banco_id")
     pago_cuenta_ids = form.getlist("pago_cuenta_id")
     item_ids = form.getlist("item_producto_id")
+    item_variant_ids = form.getlist("item_variante_id")
     item_qtys = form.getlist("item_cantidad")
     item_prices = form.getlist("item_precio")
     item_roles = form.getlist("item_role")
     item_combo_groups = form.getlist("item_combo_group")
     preventa_id_raw = str(form.get("preventa_id") or "").strip()
+    condicion_venta = (form.get("condicion_venta") or "CONTADO").strip().upper()
+    if condicion_venta not in {"CONTADO", "CREDITO"}:
+        condicion_venta = "CONTADO"
 
     if not fecha:
         fecha = local_today().isoformat()
@@ -14418,6 +18109,13 @@ async def sales_create_invoice(
         return RedirectResponse("/sales?error=Faltan+datos+obligatorios", status_code=303)
     if not item_ids and not preventa_id_raw:
         return RedirectResponse("/sales?error=Agrega+productos+a+la+venta", status_code=303)
+    if condicion_venta == "CREDITO":
+        if not str(cliente_id or "").isdigit():
+            return RedirectResponse("/sales?error=Venta+credito+requiere+cliente+valido", status_code=303)
+        cliente_credito = db.query(Cliente).filter(Cliente.id == int(cliente_id)).first()
+        nombre_cliente = (cliente_credito.nombre or "").strip().lower() if cliente_credito else ""
+        if not cliente_credito or nombre_cliente == "consumidor final":
+            return RedirectResponse("/sales?error=Credito+no+permite+consumidor+final", status_code=303)
 
     rate_today = (
         db.query(ExchangeRate)
@@ -14471,6 +18169,7 @@ async def sales_create_invoice(
         vendedor_id=int(vendedor_id) if vendedor_id else None,
         fecha=fecha_dt,
         moneda=moneda,
+        condicion_venta=condicion_venta,
         tasa_cambio=tasa if moneda == "USD" else None,
         usuario_registro=user.full_name,
         created_at=local_now_naive(),
@@ -14521,9 +18220,12 @@ async def sales_create_invoice(
         for index, product_id in enumerate(item_ids):
             if not str(product_id).isdigit():
                 continue
+            variant_id_raw = item_variant_ids[index] if index < len(item_variant_ids) else None
+            variant_id = int(variant_id_raw) if str(variant_id_raw or "").isdigit() else None
             source_items.append(
                 {
                     "product_id": int(product_id),
+                    "variant_id": variant_id,
                     "qty": to_float(item_qtys[index] if index < len(item_qtys) else 0),
                     "price_usd": None,
                     "price_cs": None,
@@ -14543,6 +18245,7 @@ async def sales_create_invoice(
     balances = _balances_by_bodega(db, [bodega.id], list(set(product_ids))) if product_ids else {}
     for src in source_items:
         product_id = int(src["product_id"])
+        variant_id = int(src.get("variant_id") or 0) or None
         qty = to_float(str(src.get("qty") or 0))
         if qty <= 0:
             continue
@@ -14558,6 +18261,33 @@ async def sales_create_invoice(
             mensaje = f"Stock+insuficiente+para+{producto.cod_producto}"
             return RedirectResponse(f"/sales?error={mensaje}", status_code=303)
         balances[(producto.id, bodega.id)] = Decimal(str(existencia)) - to_decimal(qty)
+        if variant_id:
+            variant = (
+                db.query(ShoeProductVariant)
+                .filter(
+                    ShoeProductVariant.id == int(variant_id),
+                    ShoeProductVariant.producto_id == int(product_id),
+                    ShoeProductVariant.activo.is_(True),
+                )
+                .first()
+            )
+            if not variant:
+                db.rollback()
+                return RedirectResponse("/sales?error=Variante+de+producto+invalida", status_code=303)
+            variant_stock = (
+                db.query(ShoeVariantStock)
+                .filter(
+                    ShoeVariantStock.variante_id == variant.id,
+                    ShoeVariantStock.bodega_id == bodega.id,
+                )
+                .first()
+            )
+            variant_available = float(variant_stock.existencia or 0) if variant_stock else 0.0
+            if variant_available < qty:
+                db.rollback()
+                mensaje = f"Stock+insuficiente+para+variante+{variant.cod_variante}"
+                return RedirectResponse(f"/sales?error={mensaje}", status_code=303)
+            variant_stock.existencia = Decimal(str(variant_available)) - to_decimal(qty)
 
         if preventa:
             precio_usd = to_float(str(src.get("price_usd") or 0))
@@ -14584,6 +18314,7 @@ async def sales_create_invoice(
         item = VentaItem(
             factura_id=factura.id,
             producto_id=int(product_id),
+            variante_id=int(variant_id) if variant_id else None,
             cantidad=qty,
             precio_unitario_usd=precio_usd,
             precio_unitario_cs=precio_cs,
@@ -14601,55 +18332,57 @@ async def sales_create_invoice(
     factura.total_items = total_items
 
     pagos = []
-    if pago_forma_ids:
-        for index, forma_id in enumerate(pago_forma_ids):
-            moneda_pago = pago_monedas[index] if index < len(pago_monedas) else moneda
-            monto_pago = to_float(pago_montos[index] if index < len(pago_montos) else 0)
-            banco_pago = pago_banco_ids[index] if index < len(pago_banco_ids) else None
-            cuenta_pago = pago_cuenta_ids[index] if index < len(pago_cuenta_ids) else None
-            if monto_pago <= 0:
-                continue
-            if moneda_pago != moneda and not tasa:
-                db.rollback()
-                return RedirectResponse("/sales?error=Tasa+de+cambio+no+configurada", status_code=303)
-            pago_usd = monto_pago if moneda_pago == "USD" else monto_pago / tasa if tasa else 0
-            pago_cs = monto_pago if moneda_pago == "CS" else monto_pago * tasa
+    if condicion_venta != "CREDITO":
+        if pago_forma_ids:
+            for index, forma_id in enumerate(pago_forma_ids):
+                moneda_pago = pago_monedas[index] if index < len(pago_monedas) else moneda
+                monto_pago = to_float(pago_montos[index] if index < len(pago_montos) else 0)
+                banco_pago = pago_banco_ids[index] if index < len(pago_banco_ids) else None
+                cuenta_pago = pago_cuenta_ids[index] if index < len(pago_cuenta_ids) else None
+                if monto_pago <= 0:
+                    continue
+                if moneda_pago != moneda and not tasa:
+                    db.rollback()
+                    return RedirectResponse("/sales?error=Tasa+de+cambio+no+configurada", status_code=303)
+                pago_usd = monto_pago if moneda_pago == "USD" else monto_pago / tasa if tasa else 0
+                pago_cs = monto_pago if moneda_pago == "CS" else monto_pago * tasa
+                pagos.append(
+                    VentaPago(
+                        factura_id=factura.id,
+                        forma_pago_id=int(forma_id),
+                        banco_id=int(banco_pago) if banco_pago else None,
+                        cuenta_id=int(cuenta_pago) if cuenta_pago else None,
+                        monto_usd=pago_usd,
+                        monto_cs=pago_cs,
+                    )
+                )
+        elif forma_pago_id:
+            monto_pago = to_float(pago_monto) if pago_monto is not None else (total_usd if moneda == "USD" else total_cs)
+            pago_usd = monto_pago if moneda == "USD" else monto_pago / tasa if tasa else 0
+            pago_cs = monto_pago if moneda == "CS" else monto_pago * tasa
             pagos.append(
                 VentaPago(
                     factura_id=factura.id,
-                    forma_pago_id=int(forma_id),
-                    banco_id=int(banco_pago) if banco_pago else None,
-                    cuenta_id=int(cuenta_pago) if cuenta_pago else None,
+                    forma_pago_id=int(forma_pago_id),
+                    banco_id=int(banco_id) if banco_id else None,
+                    cuenta_id=int(cuenta_id) if cuenta_id else None,
                     monto_usd=pago_usd,
                     monto_cs=pago_cs,
                 )
             )
-    elif forma_pago_id:
-        monto_pago = to_float(pago_monto) if pago_monto is not None else (total_usd if moneda == "USD" else total_cs)
-        pago_usd = monto_pago if moneda == "USD" else monto_pago / tasa if tasa else 0
-        pago_cs = monto_pago if moneda == "CS" else monto_pago * tasa
-        pagos.append(
-            VentaPago(
-                factura_id=factura.id,
-                forma_pago_id=int(forma_pago_id),
-                banco_id=int(banco_id) if banco_id else None,
-                cuenta_id=int(cuenta_id) if cuenta_id else None,
-                monto_usd=pago_usd,
-                monto_cs=pago_cs,
-            )
-        )
 
-    if not pagos:
-        db.rollback()
-        return RedirectResponse("/sales?error=Agrega+pagos+para+registrar", status_code=303)
-
-    total_paid = sum(pago.monto_usd for pago in pagos) if moneda == "USD" else sum(pago.monto_cs for pago in pagos)
-    due_total = total_usd if moneda == "USD" else total_cs
-    if float(total_paid) < float(due_total):
-        db.rollback()
-        return RedirectResponse("/sales?error=Pago+incompleto", status_code=303)
-
-    factura.estado_cobranza = "PAGADA"
+    if condicion_venta == "CREDITO":
+        factura.estado_cobranza = "PENDIENTE"
+    else:
+        if not pagos:
+            db.rollback()
+            return RedirectResponse("/sales?error=Agrega+pagos+para+registrar", status_code=303)
+        total_paid = sum(pago.monto_usd for pago in pagos) if moneda == "USD" else sum(pago.monto_cs for pago in pagos)
+        due_total = total_usd if moneda == "USD" else total_cs
+        if float(total_paid) < float(due_total):
+            db.rollback()
+            return RedirectResponse("/sales?error=Pago+incompleto", status_code=303)
+        factura.estado_cobranza = "PAGADA"
     if preventa:
         preventa.estado = "FACTURADA"
         preventa.facturada_at = local_now_naive()
@@ -14706,29 +18439,43 @@ def sales_cobranza(
     end_raw = request.query_params.get("end_date")
     producto_q = (request.query_params.get("producto") or "").strip()
     vendedor_q = (request.query_params.get("vendedor_id") or "").strip()
-    today_value = local_today()
-    start_date = today_value
-    end_date = today_value
-    if start_raw or end_raw:
+    cliente_q = (request.query_params.get("cliente") or "").strip()
+    estado_q = (request.query_params.get("estado") or "PENDIENTE").strip().upper()
+    if estado_q not in {"PENDIENTE", "PAGADA", "TODAS"}:
+        estado_q = "PENDIENTE"
+
+    start_date = None
+    end_date = None
+    if start_raw:
         try:
-            if start_raw:
-                start_date = date.fromisoformat(start_raw)
-            if end_raw:
-                end_date = date.fromisoformat(end_raw)
+            start_date = date.fromisoformat(start_raw)
         except ValueError:
-            start_date = today_value
-            end_date = today_value
+            start_date = None
+    if end_raw:
+        try:
+            end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            end_date = None
 
     _, bodega = _resolve_branch_bodega(db, user)
-    ventas_query = db.query(VentaFactura)
+    ventas_query = db.query(VentaFactura).filter(VentaFactura.condicion_venta == "CREDITO")
     if bodega:
         ventas_query = ventas_query.filter(VentaFactura.bodega_id == bodega.id)
-    ventas_query = ventas_query.filter(VentaFactura.fecha >= start_date, VentaFactura.fecha <= end_date)
+    if start_date:
+        ventas_query = ventas_query.filter(VentaFactura.fecha >= start_date)
+    if end_date:
+        ventas_query = ventas_query.filter(VentaFactura.fecha <= end_date)
+    if estado_q != "TODAS":
+        ventas_query = ventas_query.filter(VentaFactura.estado_cobranza == estado_q)
     if vendedor_q:
         try:
             ventas_query = ventas_query.filter(VentaFactura.vendedor_id == int(vendedor_q))
         except ValueError:
             pass
+    if cliente_q:
+        ventas_query = ventas_query.join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True).filter(
+            func.lower(func.coalesce(Cliente.nombre, "consumidor final")).like(f"%{cliente_q.lower()}%")
+        )
     if producto_q:
         ventas_query = ventas_query.join(VentaItem).join(Producto).filter(
             or_(
@@ -14743,6 +18490,18 @@ def sales_cobranza(
     total_saldo_usd = Decimal("0")
     total_pacas = Decimal("0")
     total_vendido_cs = Decimal("0")
+    def _abono_factor(tipo_mov: Optional[str]) -> Decimal:
+        return Decimal("-1") if (tipo_mov or "").strip().upper() == "NOTA_DEBITO" else Decimal("1")
+
+    def _abonos_signed_totals(abonos: list[CobranzaAbono]) -> tuple[Decimal, Decimal]:
+        total_usd = Decimal("0")
+        total_cs = Decimal("0")
+        for a in abonos:
+            factor = _abono_factor(getattr(a, "tipo_mov", "ABONO"))
+            total_usd += Decimal(str(a.monto_usd or 0)) * factor
+            total_cs += Decimal(str(a.monto_cs or 0)) * factor
+        return total_usd, total_cs
+
     for factura in ventas:
         if factura.estado == "ANULADA":
             total_abono_usd = Decimal("0")
@@ -14752,8 +18511,7 @@ def sales_cobranza(
         else:
             total_pacas += Decimal(str(factura.total_items or 0))
             total_vendido_cs += Decimal(str(factura.total_cs or 0))
-            total_abono_usd = sum(Decimal(str(a.monto_usd or 0)) for a in factura.abonos)
-            total_abono_cs = sum(Decimal(str(a.monto_cs or 0)) for a in factura.abonos)
+            total_abono_usd, total_abono_cs = _abonos_signed_totals(list(factura.abonos or []))
             total_due_usd = Decimal(str(factura.total_usd or 0))
             total_due_cs = Decimal(str(factura.total_cs or 0))
 
@@ -14784,8 +18542,75 @@ def sales_cobranza(
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
-    tasa = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
     vendedores = _vendedores_for_bodega(db, bodega)
+    clientes = (
+        db.query(Cliente)
+        .filter(Cliente.activo.is_(True))
+        .order_by(Cliente.nombre.asc())
+        .all()
+    )
+
+    selected_cliente = None
+    cliente_estado_rows = []
+    cliente_totals = {
+        "facturado_cs": Decimal("0"),
+        "abonado_cs": Decimal("0"),
+        "saldo_cs": Decimal("0"),
+        "facturado_usd": Decimal("0"),
+        "abonado_usd": Decimal("0"),
+        "saldo_usd": Decimal("0"),
+    }
+    if cliente_q:
+        selected_cliente = (
+            db.query(Cliente)
+            .filter(func.lower(Cliente.nombre) == cliente_q.lower())
+            .first()
+        )
+        if not selected_cliente:
+            selected_cliente = (
+                db.query(Cliente)
+                .filter(func.lower(Cliente.nombre).like(f"%{cliente_q.lower()}%"))
+                .order_by(Cliente.nombre.asc())
+                .first()
+            )
+    if selected_cliente:
+        estado_query = db.query(VentaFactura).filter(
+            VentaFactura.condicion_venta == "CREDITO",
+            VentaFactura.cliente_id == selected_cliente.id,
+        )
+        if bodega:
+            estado_query = estado_query.filter(VentaFactura.bodega_id == bodega.id)
+        estado_facturas = estado_query.order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc()).all()
+        for factura in estado_facturas:
+            total_due_usd = Decimal(str(factura.total_usd or 0))
+            total_due_cs = Decimal(str(factura.total_cs or 0))
+            total_abono_usd, total_abono_cs = _abonos_signed_totals(list(factura.abonos or []))
+            total_pago_usd = sum(Decimal(str(p.monto_usd or 0)) for p in factura.pagos)
+            total_pago_cs = sum(Decimal(str(p.monto_cs or 0)) for p in factura.pagos)
+            paid_usd = total_abono_usd + total_pago_usd
+            paid_cs = total_abono_cs + total_pago_cs
+            saldo_usd = max(total_due_usd - paid_usd, Decimal("0"))
+            saldo_cs = max(total_due_cs - paid_cs, Decimal("0"))
+            cliente_totals["facturado_cs"] += total_due_cs
+            cliente_totals["abonado_cs"] += paid_cs
+            cliente_totals["saldo_cs"] += saldo_cs
+            cliente_totals["facturado_usd"] += total_due_usd
+            cliente_totals["abonado_usd"] += paid_usd
+            cliente_totals["saldo_usd"] += saldo_usd
+            cliente_estado_rows.append(
+                {
+                    "numero": factura.numero,
+                    "fecha": factura.fecha.date().isoformat() if factura.fecha else "",
+                    "estado": factura.estado_cobranza,
+                    "moneda": factura.moneda,
+                    "total_cs": float(total_due_cs),
+                    "total_usd": float(total_due_usd),
+                    "abonado_cs": float(paid_cs),
+                    "abonado_usd": float(paid_usd),
+                    "saldo_cs": float(saldo_cs),
+                    "saldo_usd": float(saldo_usd),
+                }
+            )
 
     return request.app.state.templates.TemplateResponse(
         "sales_cobranza.html",
@@ -14793,11 +18618,24 @@ def sales_cobranza(
             "request": request,
             "user": user,
             "ventas": results,
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
+            "start_date": start_date.isoformat() if start_date else "",
+            "end_date": end_date.isoformat() if end_date else "",
             "producto_q": producto_q,
             "vendedor_q": vendedor_q,
+            "cliente_q": cliente_q,
+            "estado_q": estado_q,
             "vendedores": vendedores,
+            "clientes": clientes,
+            "selected_cliente": selected_cliente,
+            "cliente_estado_rows": cliente_estado_rows,
+            "cliente_totals": {
+                "facturado_cs": float(cliente_totals["facturado_cs"]),
+                "abonado_cs": float(cliente_totals["abonado_cs"]),
+                "saldo_cs": float(cliente_totals["saldo_cs"]),
+                "facturado_usd": float(cliente_totals["facturado_usd"]),
+                "abonado_usd": float(cliente_totals["abonado_usd"]),
+                "saldo_usd": float(cliente_totals["saldo_usd"]),
+            },
             "default_vendedor_id": _default_vendedor_id(db, bodega),
             "total_saldo_cs": float(total_saldo_cs),
             "total_saldo_usd": float(total_saldo_usd),
@@ -14821,29 +18659,42 @@ def sales_cobranza_export(
     end_raw = request.query_params.get("end_date")
     producto_q = (request.query_params.get("producto") or "").strip()
     vendedor_q = (request.query_params.get("vendedor_id") or "").strip()
-    today_value = local_today()
-    start_date = today_value
-    end_date = today_value
-    if start_raw or end_raw:
+    cliente_q = (request.query_params.get("cliente") or "").strip()
+    estado_q = (request.query_params.get("estado") or "PENDIENTE").strip().upper()
+    if estado_q not in {"PENDIENTE", "PAGADA", "TODAS"}:
+        estado_q = "PENDIENTE"
+    start_date = None
+    end_date = None
+    if start_raw:
         try:
-            if start_raw:
-                start_date = date.fromisoformat(start_raw)
-            if end_raw:
-                end_date = date.fromisoformat(end_raw)
+            start_date = date.fromisoformat(start_raw)
         except ValueError:
-            start_date = today_value
-            end_date = today_value
+            start_date = None
+    if end_raw:
+        try:
+            end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            end_date = None
 
     _, bodega = _resolve_branch_bodega(db, user)
-    ventas_query = db.query(VentaFactura)
+    ventas_query = db.query(VentaFactura).filter(VentaFactura.condicion_venta == "CREDITO")
     if bodega:
         ventas_query = ventas_query.filter(VentaFactura.bodega_id == bodega.id)
-    ventas_query = ventas_query.filter(VentaFactura.fecha >= start_date, VentaFactura.fecha <= end_date)
+    if start_date:
+        ventas_query = ventas_query.filter(VentaFactura.fecha >= start_date)
+    if end_date:
+        ventas_query = ventas_query.filter(VentaFactura.fecha <= end_date)
+    if estado_q != "TODAS":
+        ventas_query = ventas_query.filter(VentaFactura.estado_cobranza == estado_q)
     if vendedor_q:
         try:
             ventas_query = ventas_query.filter(VentaFactura.vendedor_id == int(vendedor_q))
         except ValueError:
             pass
+    if cliente_q:
+        ventas_query = ventas_query.join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True).filter(
+            func.lower(func.coalesce(Cliente.nombre, "consumidor final")).like(f"%{cliente_q.lower()}%")
+        )
     if producto_q:
         ventas_query = ventas_query.join(VentaItem).join(Producto).filter(
             or_(
@@ -14861,6 +18712,18 @@ def sales_cobranza_export(
     )
     tasa = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
 
+    def _abono_factor(tipo_mov: Optional[str]) -> Decimal:
+        return Decimal("-1") if (tipo_mov or "").strip().upper() == "NOTA_DEBITO" else Decimal("1")
+
+    def _abonos_signed_totals(abonos: list[CobranzaAbono]) -> tuple[Decimal, Decimal]:
+        total_usd = Decimal("0")
+        total_cs = Decimal("0")
+        for a in abonos:
+            factor = _abono_factor(getattr(a, "tipo_mov", "ABONO"))
+            total_usd += Decimal(str(a.monto_usd or 0)) * factor
+            total_cs += Decimal(str(a.monto_cs or 0)) * factor
+        return total_usd, total_cs
+
     rows = []
     resumen = {}
     total_saldo_cs = Decimal("0")
@@ -14872,8 +18735,7 @@ def sales_cobranza_export(
             saldo_usd = Decimal("0")
             saldo_cs = Decimal("0")
         else:
-            total_abono_usd = sum(Decimal(str(a.monto_usd or 0)) for a in factura.abonos)
-            total_abono_cs = sum(Decimal(str(a.monto_cs or 0)) for a in factura.abonos)
+            total_abono_usd, total_abono_cs = _abonos_signed_totals(list(factura.abonos or []))
             total_due_usd = Decimal(str(factura.total_usd or 0))
             total_due_cs = Decimal(str(factura.total_cs or 0))
             if factura.estado_cobranza == "PENDIENTE":
@@ -14924,7 +18786,9 @@ def sales_cobranza_export(
         branch_name = bodega.branch.name
     c.drawString(40, y, f"Sucursal: {branch_name}")
     y -= 14
-    c.drawString(40, y, f"Rango: {start_date} a {end_date}")
+    start_label = start_date.isoformat() if start_date else "Todo"
+    end_label = end_date.isoformat() if end_date else "Todo"
+    c.drawString(40, y, f"Rango: {start_label} a {end_label}")
     y -= 14
     if vendedor_q:
         vendedor_name = next((v.nombre for v in db.query(Vendedor).all() if str(v.id) == vendedor_q), "")
@@ -15030,6 +18894,20 @@ def sales_cobranza_export(
     )
 
 
+def _cobranza_abono_factor(tipo_mov: Optional[str]) -> Decimal:
+    return Decimal("-1") if (tipo_mov or "").strip().upper() == "NOTA_DEBITO" else Decimal("1")
+
+
+def _cobranza_abonos_totals(abonos: list[CobranzaAbono]) -> tuple[Decimal, Decimal]:
+    total_usd = Decimal("0")
+    total_cs = Decimal("0")
+    for abono in abonos:
+        factor = _cobranza_abono_factor(getattr(abono, "tipo_mov", "ABONO"))
+        total_usd += Decimal(str(abono.monto_usd or 0)) * factor
+        total_cs += Decimal(str(abono.monto_cs or 0)) * factor
+    return total_usd, total_cs
+
+
 @router.get("/sales/cobranza/{venta_id}/abonos")
 def sales_cobranza_abonos(
     request: Request,
@@ -15052,13 +18930,18 @@ def sales_cobranza_abonos(
     )
     items = []
     for abono in abonos:
+        tipo_mov = (getattr(abono, "tipo_mov", "ABONO") or "ABONO").upper()
+        factor = _cobranza_abono_factor(tipo_mov)
+        base = Decimal(str(abono.monto_usd if abono.moneda == "USD" else abono.monto_cs))
         items.append(
             {
                 "id": abono.id,
                 "numero": abono.numero,
                 "fecha": abono.fecha.isoformat() if abono.fecha else "",
+                "tipo_mov": tipo_mov,
+                "naturaleza": "AUMENTA" if tipo_mov == "NOTA_DEBITO" else "DISMINUYE",
                 "moneda": abono.moneda,
-                "monto": float(abono.monto_usd if abono.moneda == "USD" else abono.monto_cs),
+                "monto": float(base * factor),
                 "observacion": abono.observacion or "",
             }
         )
@@ -15074,6 +18957,7 @@ async def sales_cobranza_abono(
 ):
     _enforce_permission(request, user, "access.sales.pagos")
     form = await request.form()
+    tipo_mov = (form.get("tipo_mov") or "ABONO").strip().upper()
     moneda = (form.get("moneda") or "CS").upper()
     monto_raw = form.get("monto")
     observacion = (form.get("observacion") or "").strip()
@@ -15081,6 +18965,8 @@ async def sales_cobranza_abono(
         return JSONResponse({"ok": False, "message": "Monto requerido"}, status_code=400)
     if moneda not in {"CS", "USD"}:
         return JSONResponse({"ok": False, "message": "Moneda invalida"}, status_code=400)
+    if tipo_mov not in {"ABONO", "NOTA_CREDITO", "NOTA_DEBITO"}:
+        return JSONResponse({"ok": False, "message": "Tipo de movimiento invalido"}, status_code=400)
 
     def parse_decimal(value: str) -> Decimal:
         raw = re.sub(r"[^0-9.,-]", "", str(value or "0"))
@@ -15097,9 +18983,7 @@ async def sales_cobranza_abono(
                 raw = raw.replace(",", "")
         elif "." in raw and "," not in raw:
             parts = raw.split(".")
-            if len(parts) == 2 and len(parts[1]) == 2:
-                raw = raw
-            else:
+            if not (len(parts) == 2 and len(parts[1]) == 2):
                 raw = raw.replace(".", "")
         try:
             return Decimal(raw)
@@ -15136,7 +19020,7 @@ async def sales_cobranza_abono(
         monto_cs = monto
         monto_usd = monto / tasa if tasa else Decimal("0")
 
-    if factura.estado_cobranza == "PAGADA":
+    if factura.estado_cobranza == "PAGADA" and tipo_mov != "NOTA_DEBITO":
         return JSONResponse({"ok": False, "message": "Factura ya pagada"}, status_code=400)
 
     last_abono = (
@@ -15157,6 +19041,7 @@ async def sales_cobranza_abono(
         secuencia=next_seq,
         numero=numero,
         fecha=local_today(),
+        tipo_mov=tipo_mov,
         moneda=moneda,
         tasa_cambio=tasa if tasa else None,
         monto_usd=monto_usd,
@@ -15166,8 +19051,10 @@ async def sales_cobranza_abono(
     )
     db.add(abono)
 
-    total_paid_usd = sum(Decimal(str(a.monto_usd or 0)) for a in factura.abonos) + monto_usd
-    total_paid_cs = sum(Decimal(str(a.monto_cs or 0)) for a in factura.abonos) + monto_cs
+    existing_paid_usd, existing_paid_cs = _cobranza_abonos_totals(list(factura.abonos or []))
+    factor = _cobranza_abono_factor(tipo_mov)
+    total_paid_usd = existing_paid_usd + (monto_usd * factor)
+    total_paid_cs = existing_paid_cs + (monto_cs * factor)
     due_usd = Decimal(str(factura.total_usd or 0))
     due_cs = Decimal(str(factura.total_cs or 0))
     if (factura.moneda or "CS") == "USD":
@@ -15176,7 +19063,21 @@ async def sales_cobranza_abono(
         factura.estado_cobranza = "PAGADA" if total_paid_cs >= due_cs else "PENDIENTE"
 
     db.commit()
-    return JSONResponse({"ok": True, "message": "Abono registrado"})
+    copies = 1
+    if factura.bodega and factura.bodega.branch_id:
+        pos_print = (
+            db.query(PosPrintSetting)
+            .filter(PosPrintSetting.branch_id == factura.bodega.branch_id)
+            .first()
+        )
+        if pos_print:
+            configured = pos_print.roc_copies or pos_print.copies or 1
+            try:
+                copies = max(int(configured), 1)
+            except Exception:
+                copies = 1
+    print_url = f"/sales/cobranza/abono/{abono.id}/ticket/print?copies={copies}&return_to=/sales/cobranza"
+    return JSONResponse({"ok": True, "message": "Movimiento aplicado", "print_url": print_url})
 
 
 @router.post("/sales/cobranza/{venta_id}/abono/{abono_id}")
@@ -15189,6 +19090,7 @@ async def sales_cobranza_abono_update(
 ):
     _enforce_permission(request, user, "access.sales.pagos")
     form = await request.form()
+    tipo_mov = (form.get("tipo_mov") or "ABONO").strip().upper()
     moneda = (form.get("moneda") or "CS").upper()
     monto_raw = form.get("monto")
     observacion = (form.get("observacion") or "").strip()
@@ -15196,6 +19098,8 @@ async def sales_cobranza_abono_update(
         return JSONResponse({"ok": False, "message": "Monto requerido"}, status_code=400)
     if moneda not in {"CS", "USD"}:
         return JSONResponse({"ok": False, "message": "Moneda invalida"}, status_code=400)
+    if tipo_mov not in {"ABONO", "NOTA_CREDITO", "NOTA_DEBITO"}:
+        return JSONResponse({"ok": False, "message": "Tipo de movimiento invalido"}, status_code=400)
 
     def parse_decimal(value: str) -> Decimal:
         raw = re.sub(r"[^0-9.,-]", "", str(value or "0"))
@@ -15212,9 +19116,7 @@ async def sales_cobranza_abono_update(
                 raw = raw.replace(",", "")
         elif "." in raw and "," not in raw:
             parts = raw.split(".")
-            if len(parts) == 2 and len(parts[1]) == 2:
-                raw = raw
-            else:
+            if not (len(parts) == 2 and len(parts[1]) == 2):
                 raw = raw.replace(".", "")
         try:
             return Decimal(raw)
@@ -15253,6 +19155,7 @@ async def sales_cobranza_abono_update(
         monto_cs = monto
         monto_usd = monto / tasa if tasa else Decimal("0")
 
+    abono.tipo_mov = tipo_mov
     abono.moneda = moneda
     abono.tasa_cambio = tasa if tasa else None
     abono.monto_usd = monto_usd
@@ -15260,8 +19163,7 @@ async def sales_cobranza_abono_update(
     abono.observacion = observacion
     db.commit()
 
-    total_abono_usd = sum(Decimal(str(a.monto_usd or 0)) for a in factura.abonos)
-    total_abono_cs = sum(Decimal(str(a.monto_cs or 0)) for a in factura.abonos)
+    total_abono_usd, total_abono_cs = _cobranza_abonos_totals(list(factura.abonos or []))
     due_usd = Decimal(str(factura.total_usd or 0))
     due_cs = Decimal(str(factura.total_cs or 0))
     if (factura.moneda or "CS") == "USD":
@@ -15270,7 +19172,7 @@ async def sales_cobranza_abono_update(
         factura.estado_cobranza = "PAGADA" if total_abono_cs >= due_cs else "PENDIENTE"
     db.commit()
 
-    return JSONResponse({"ok": True, "message": "Abono actualizado"})
+    return JSONResponse({"ok": True, "message": "Movimiento actualizado"})
 
 
 @router.post("/sales/cobranza/{venta_id}/abono/{abono_id}/delete")
@@ -15301,8 +19203,7 @@ def sales_cobranza_abono_delete(
 
     db.delete(abono)
 
-    total_abono_usd = sum(Decimal(str(a.monto_usd or 0)) for a in factura.abonos if a.id != abono_id)
-    total_abono_cs = sum(Decimal(str(a.monto_cs or 0)) for a in factura.abonos if a.id != abono_id)
+    total_abono_usd, total_abono_cs = _cobranza_abonos_totals([a for a in factura.abonos if a.id != abono_id])
     due_usd = Decimal(str(factura.total_usd or 0))
     due_cs = Decimal(str(factura.total_cs or 0))
     if (factura.moneda or "CS") == "USD":
@@ -15311,7 +19212,143 @@ def sales_cobranza_abono_delete(
         factura.estado_cobranza = "PAGADA" if total_abono_cs >= due_cs else "PENDIENTE"
     db.commit()
 
-    return JSONResponse({"ok": True, "message": "Abono eliminado"})
+    return JSONResponse({"ok": True, "message": "Movimiento eliminado"})
+
+
+@router.get("/sales/cobranza/abono/{abono_id}/ticket/print")
+def sales_cobranza_abono_ticket_print(
+    request: Request,
+    abono_id: int,
+    copies: int = 1,
+    return_to: Optional[str] = "/sales/cobranza",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.cobranza")
+    abono = db.query(CobranzaAbono).filter(CobranzaAbono.id == abono_id).first()
+    if not abono:
+        raise HTTPException(status_code=404, detail="Abono no encontrado")
+    factura = db.query(VentaFactura).filter(VentaFactura.id == abono.factura_id).first()
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    _, bodega = _resolve_branch_bodega(db, user)
+    if bodega and factura.bodega_id != bodega.id:
+        raise HTTPException(status_code=403, detail="Factura fuera de tu bodega")
+
+    def _factor(tipo_mov: Optional[str]) -> Decimal:
+        return Decimal("-1") if (tipo_mov or "").strip().upper() == "NOTA_DEBITO" else Decimal("1")
+
+    def _signed_totals(abonos_rows: list[CobranzaAbono]) -> tuple[Decimal, Decimal]:
+        total_usd_local = Decimal("0")
+        total_cs_local = Decimal("0")
+        for row in abonos_rows:
+            factor = _factor(getattr(row, "tipo_mov", "ABONO"))
+            total_usd_local += Decimal(str(row.monto_usd or 0)) * factor
+            total_cs_local += Decimal(str(row.monto_cs or 0)) * factor
+        return total_usd_local, total_cs_local
+
+    abonos_factura = (
+        db.query(CobranzaAbono)
+        .filter(CobranzaAbono.factura_id == factura.id)
+        .order_by(CobranzaAbono.fecha.asc(), CobranzaAbono.id.asc())
+        .all()
+    )
+    paid_usd, paid_cs = _signed_totals(abonos_factura)
+    due_usd = Decimal(str(factura.total_usd or 0))
+    due_cs = Decimal(str(factura.total_cs or 0))
+    saldo_usd = max(due_usd - paid_usd, Decimal("0"))
+    saldo_cs = max(due_cs - paid_cs, Decimal("0"))
+
+    movement_rows = []
+    for row in abonos_factura:
+        tipo = (getattr(row, "tipo_mov", "ABONO") or "ABONO").upper()
+        sign = _factor(tipo)
+        amount = Decimal(str(row.monto_usd if row.moneda == "USD" else row.monto_cs)) * sign
+        movement_rows.append(
+            {
+                "numero": row.numero,
+                "fecha": row.fecha.isoformat() if row.fecha else "",
+                "tipo": tipo,
+                "moneda": row.moneda,
+                "monto": float(amount),
+                "observacion": row.observacion or "",
+            }
+        )
+
+    pending_rows = []
+    total_pending_cs = Decimal("0")
+    total_pending_usd = Decimal("0")
+    if factura.cliente_id:
+        client_invoices = (
+            db.query(VentaFactura)
+            .filter(
+                VentaFactura.cliente_id == factura.cliente_id,
+                VentaFactura.condicion_venta == "CREDITO",
+                VentaFactura.estado != "ANULADA",
+            )
+            .order_by(VentaFactura.fecha.asc(), VentaFactura.id.asc())
+            .all()
+        )
+        for inv in client_invoices:
+            inv_abonos = (
+                db.query(CobranzaAbono)
+                .filter(CobranzaAbono.factura_id == inv.id)
+                .all()
+            )
+            inv_paid_usd, inv_paid_cs = _signed_totals(inv_abonos)
+            inv_due_usd = Decimal(str(inv.total_usd or 0))
+            inv_due_cs = Decimal(str(inv.total_cs or 0))
+            inv_saldo_usd = max(inv_due_usd - inv_paid_usd, Decimal("0"))
+            inv_saldo_cs = max(inv_due_cs - inv_paid_cs, Decimal("0"))
+            if inv_saldo_usd > 0 or inv_saldo_cs > 0:
+                total_pending_usd += inv_saldo_usd
+                total_pending_cs += inv_saldo_cs
+                pending_rows.append(
+                    {
+                        "numero": inv.numero,
+                        "fecha": inv.fecha.date().isoformat() if inv.fecha else "",
+                        "saldo_usd": float(inv_saldo_usd),
+                        "saldo_cs": float(inv_saldo_cs),
+                        "moneda": inv.moneda,
+                    }
+                )
+
+    company_profile = _company_profile_payload(db)
+    branch = factura.bodega.branch if factura.bodega else None
+    copies_to_print = copies if copies and copies > 0 else 1
+    return_to_clean = return_to if return_to and return_to.startswith("/") else "/sales/cobranza"
+    return request.app.state.templates.TemplateResponse(
+        "sales_cobranza_abono_ticket_print.html",
+        {
+            "request": request,
+            "abono": abono,
+            "factura": factura,
+            "cliente": factura.cliente.nombre if factura.cliente else "Consumidor final",
+            "fecha_abono": abono.fecha.isoformat() if abono.fecha else "",
+            "sucursal": branch.name if branch else "-",
+            "bodega": factura.bodega.name if factura.bodega else "-",
+            "tipo_mov": (getattr(abono, "tipo_mov", "ABONO") or "ABONO").upper(),
+            "monto_mov": float((Decimal(str(abono.monto_usd if abono.moneda == "USD" else abono.monto_cs)) * _factor(getattr(abono, "tipo_mov", "ABONO")))),
+            "saldo_factura_cs": float(saldo_cs),
+            "saldo_factura_usd": float(saldo_usd),
+            "due_cs": float(due_cs),
+            "due_usd": float(due_usd),
+            "paid_cs": float(paid_cs),
+            "paid_usd": float(paid_usd),
+            "movement_rows": movement_rows,
+            "pending_rows": pending_rows,
+            "total_pending_cs": float(total_pending_cs),
+            "total_pending_usd": float(total_pending_usd),
+            "company_name": (company_profile.get("trade_name") or company_profile.get("legal_name") or "Empresa").strip(),
+            "ruc": company_profile.get("ruc", ""),
+            "telefono": company_profile.get("phone", ""),
+            "direccion": company_profile.get("address", ""),
+            "copies": copies_to_print,
+            "return_to": return_to_clean,
+            "format_amount": lambda value: f"{float(value or 0):,.2f}",
+            "version": settings.UI_VERSION,
+        },
+    )
 
 
 @router.post("/sales/cobranza/{venta_id}/estado")

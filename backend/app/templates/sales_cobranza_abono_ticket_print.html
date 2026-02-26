@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ abono.numero }} - Recibo Abono</title>
+    <style>
+      @page { size: 80mm auto; margin: 2mm; }
+      html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; color: #111; }
+      body { line-height: 1.35; }
+      .ticket { width: 75mm; margin: 0 auto; font-size: 12px; }
+      .center { text-align: center; }
+      .bold { font-weight: 700; }
+      .line { border-top: 1px dashed #444; margin: 6px 0; }
+      .row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+      .small { font-size: 11px; }
+      .tiny { font-size: 10px; }
+      .title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+      .section-title { font-size: 11px; font-weight: 700; margin-top: 8px; }
+      .mov { margin-bottom: 4px; }
+    </style>
+  </head>
+  <body>
+    <div class="ticket">
+      <div class="center title">RECIBO DE ABONO A CUENTA DE CLIENTES</div>
+      <div class="center bold">{{ company_name.upper() }}</div>
+      <div class="center small">RUC: {{ ruc }}</div>
+      <div class="center small">Tel: {{ telefono }}</div>
+      <div class="center small">{{ direccion }}</div>
+      <div class="line"></div>
+
+      <div class="row"><span class="bold">Recibo:</span><span>{{ abono.numero }}</span></div>
+      <div class="row"><span>Fecha:</span><span>{{ fecha_abono }}</span></div>
+      <div class="row"><span>Sucursal:</span><span>{{ sucursal }}</span></div>
+      <div class="row"><span>Bodega:</span><span>{{ bodega }}</span></div>
+      <div class="row"><span>Cliente:</span><span>{{ cliente }}</span></div>
+      <div class="line"></div>
+
+      <div class="row"><span>Factura aplicada:</span><span>{{ factura.numero }}</span></div>
+      <div class="row"><span>Tipo mov.:</span><span>{{ tipo_mov }}</span></div>
+      <div class="row bold"><span>Monto movimiento:</span><span>{{ "C$" if abono.moneda != "USD" else "$" }} {{ format_amount(monto_mov) }}</span></div>
+      <div class="row"><span>Total factura:</span><span>{{ "C$" if factura.moneda != "USD" else "$" }} {{ format_amount(due_cs if factura.moneda != "USD" else due_usd) }}</span></div>
+      <div class="row"><span>Abonado acumulado:</span><span>{{ "C$" if factura.moneda != "USD" else "$" }} {{ format_amount(paid_cs if factura.moneda != "USD" else paid_usd) }}</span></div>
+      <div class="row bold"><span>Saldo factura:</span><span>{{ "C$" if factura.moneda != "USD" else "$" }} {{ format_amount(saldo_factura_cs if factura.moneda != "USD" else saldo_factura_usd) }}</span></div>
+      <div class="line"></div>
+
+      <div class="section-title">Detalle movimientos factura</div>
+      {% for row in movement_rows %}
+      <div class="mov tiny">
+        <div class="row"><span>{{ row.fecha }} | {{ row.tipo }}</span><span>{{ row.numero }}</span></div>
+        <div class="row"><span>{{ row.observacion or "-" }}</span><span>{{ "C$" if row.moneda != "USD" else "$" }} {{ format_amount(row.monto) }}</span></div>
+      </div>
+      {% else %}
+      <div class="tiny">Sin movimientos.</div>
+      {% endfor %}
+      <div class="line"></div>
+
+      <div class="section-title">Estado de cuenta pendiente</div>
+      {% for row in pending_rows %}
+      <div class="tiny">
+        <div class="row"><span>{{ row.numero }} | {{ row.fecha }}</span><span>{{ "C$" if row.moneda != "USD" else "$" }} {{ format_amount(row.saldo_cs if row.moneda != "USD" else row.saldo_usd) }}</span></div>
+      </div>
+      {% else %}
+      <div class="tiny">Sin facturas pendientes.</div>
+      {% endfor %}
+      <div class="line"></div>
+      <div class="row bold"><span>Total pendiente C$:</span><span>{{ format_amount(total_pending_cs) }}</span></div>
+      <div class="row bold"><span>Total pendiente USD:</span><span>{{ format_amount(total_pending_usd) }}</span></div>
+
+      <div class="line"></div>
+      <div class="center tiny">Documento de cobranza - control interno</div>
+    </div>
+
+    <script>
+      window.addEventListener("load", () => {
+        const returnTo = {{ return_to|tojson }};
+        let copies = parseInt({{ copies|tojson }}, 10);
+        if (!Number.isFinite(copies) || copies < 1) copies = 1;
+        let printed = 0;
+        let printing = false;
+        let exited = false;
+
+        const triggerPrint = () => {
+          if (printing || exited || printed >= copies) return;
+          printing = true;
+          window.print();
+        };
+
+        const finishFlow = () => {
+          if (exited) return;
+          exited = true;
+          if (window.opener && !window.opener.closed) {
+            try { window.opener.location.href = returnTo; } catch (_) {}
+          }
+          window.close();
+          setTimeout(() => {
+            if (!window.closed) window.location.replace(returnTo);
+          }, 180);
+        };
+
+        window.addEventListener("afterprint", () => {
+          if (!printing || exited) return;
+          printing = false;
+          printed += 1;
+          if (printed < copies) {
+            setTimeout(() => triggerPrint(), 250);
+          } else {
+            finishFlow();
+          }
+        });
+
+        setTimeout(() => triggerPrint(), 380);
+        setTimeout(() => {
+          if (!exited && printed >= copies) finishFlow();
+        }, 30000);
+      });
+    </script>
+  </body>
+</html>

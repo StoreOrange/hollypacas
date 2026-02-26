@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Traslado {{ egreso.id }} - Ticket</title>
+    <style>
+      @page { size: 80mm auto; margin: 2mm; }
+      html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; color: #111; }
+      body { line-height: 1.35; }
+      .ticket { width: 75mm; margin: 0 auto; font-size: 12px; }
+      .center { text-align: center; }
+      .bold { font-weight: 700; }
+      .line { border-top: 1px dashed #444; margin: 6px 0; }
+      .row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+      .small { font-size: 11px; }
+      .item { margin-bottom: 6px; }
+      .item-code { font-weight: 700; }
+      .item-meta { font-size: 11px; color: #222; }
+    </style>
+  </head>
+  <body>
+    <div class="ticket">
+      <div class="center bold">REMISION DE TRASLADO</div>
+      <div class="center bold">{{ company_name.upper() }}</div>
+      <div class="center small">RUC: {{ ruc }}</div>
+      <div class="center small">Tel: {{ telefono }}</div>
+      <div class="center small">{{ direccion }}</div>
+      <div class="center small">Sucursal: {{ sucursal }}</div>
+      <div class="line"></div>
+
+      <div class="row"><span class="bold">No:</span><span>TR-{{ egreso.id }}</span></div>
+      <div class="row"><span>Fecha:</span><span>{{ fecha_str }} {{ hora_str }}</span></div>
+      <div class="row"><span>Usuario:</span><span>{{ usuario_creador }}</span></div>
+      <div class="row"><span>Origen:</span><span>{{ origen }}</span></div>
+      <div class="row"><span>Destino:</span><span>{{ destino }}</span></div>
+      <div class="row"><span>Tipo:</span><span>{{ egreso.tipo.nombre if egreso.tipo else "-" }}</span></div>
+      <div class="line"></div>
+
+      {% for item in items %}
+      <div class="item">
+        <div class="item-code">{{ item.codigo }}</div>
+        <div>{{ item.descripcion }}</div>
+        <div class="item-meta">Color: {{ item.color }} | Talla: {{ item.talla }} | Cant: {{ format_amount(item.cantidad) }}</div>
+      </div>
+      {% endfor %}
+
+      <div class="line"></div>
+      <div class="row bold"><span>Total bultos</span><span>{{ format_amount(total_bultos) }}</span></div>
+      <div class="line"></div>
+      <div class="center small">Documento interno de traslado entre bodegas</div>
+      <div class="center small">Revise cantidades y variantes antes de despachar</div>
+    </div>
+
+    <script>
+      window.addEventListener("load", () => {
+        const returnTo = {{ return_to|tojson }};
+        let copies = parseInt({{ copies|tojson }}, 10);
+        if (!Number.isFinite(copies) || copies < 1) copies = 1;
+        let printed = 0;
+        let printing = false;
+        let exited = false;
+
+        const triggerPrint = () => {
+          if (printing || exited || printed >= copies) return;
+          printing = true;
+          window.print();
+        };
+
+        const finishFlow = () => {
+          if (exited) return;
+          exited = true;
+          if (window.opener && !window.opener.closed) {
+            try { window.opener.location.href = returnTo; } catch (_) {}
+          }
+          window.close();
+          setTimeout(() => {
+            if (!window.closed) window.location.replace(returnTo);
+          }, 180);
+        };
+
+        window.addEventListener("afterprint", () => {
+          if (!printing || exited) return;
+          printing = false;
+          printed += 1;
+          if (printed < copies) {
+            setTimeout(() => triggerPrint(), 250);
+          } else {
+            finishFlow();
+          }
+        });
+
+        setTimeout(() => triggerPrint(), 360);
+        setTimeout(() => {
+          if (!exited && printed >= copies) finishFlow();
+        }, 30000);
+      });
+    </script>
+  </body>
+</html>

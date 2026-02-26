@@ -733,17 +733,32 @@ def _seed_email_recipients(db: Session) -> None:
 
 
 def _seed_sales_interface_settings(db: Session) -> None:
+    interface_default = "zapatos" if get_active_company_key() in {"bdzapatos", "zapatos", "miss_zapatos"} else "ropa"
     existing = db.query(SalesInterfaceSetting).first()
     if not existing:
-        db.add(SalesInterfaceSetting(interface_code="ropa"))
+        db.add(SalesInterfaceSetting(interface_code=interface_default))
         db.commit()
 
 
 def _seed_company_profile_settings(db: Session) -> None:
+    is_shoes = get_active_company_key() in {"bdzapatos", "zapatos", "miss_zapatos"}
     multi_branch_enabled = get_active_company_key() != "comestibles"
     existing = db.query(CompanyProfileSetting).first()
     if existing:
         changed = False
+        if is_shoes:
+            if not (existing.legal_name or "").strip():
+                existing.legal_name = "Miss Zapatos"
+                changed = True
+            if not (existing.trade_name or "").strip():
+                existing.trade_name = "Miss Zapatos"
+                changed = True
+            if not (existing.app_title or "").strip():
+                existing.app_title = "ERP Miss Zapatos"
+                changed = True
+            if not (existing.sidebar_subtitle or "").strip():
+                existing.sidebar_subtitle = "ERP Zapateria"
+                changed = True
         if existing.multi_branch_enabled is None:
             existing.multi_branch_enabled = multi_branch_enabled
             changed = True
@@ -756,27 +771,50 @@ def _seed_company_profile_settings(db: Session) -> None:
         if changed:
             db.commit()
         return
-    db.add(
-        CompanyProfileSetting(
-            legal_name="Hollywood Pacas",
-            trade_name="Hollywood Pacas",
-            app_title="ERP Hollywood Pacas",
-            sidebar_subtitle="ERP Central",
-            website="http://hollywoodpacas.com.ni",
-            ruc="",
-            phone="8900-0300",
-            address="Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
-            email="admin@hollywoodpacas.com",
-            logo_url="/static/logo_hollywood.png",
-            pos_logo_url="/static/logo_hollywood.png",
-            favicon_url="/static/favicon.ico",
-            inventory_cs_only=False,
-            multi_branch_enabled=multi_branch_enabled,
-            price_auto_from_cost_enabled=False,
-            price_margin_percent=0,
-            updated_by="system-bootstrap",
+    if is_shoes:
+        db.add(
+            CompanyProfileSetting(
+                legal_name="Miss Zapatos",
+                trade_name="Miss Zapatos",
+                app_title="ERP Miss Zapatos",
+                sidebar_subtitle="ERP Zapateria",
+                website="",
+                ruc="",
+                phone="",
+                address="",
+                email="",
+                logo_url="/static/logo_hollywood.png",
+                pos_logo_url="/static/logo_hollywood.png",
+                favicon_url="/static/favicon.ico",
+                inventory_cs_only=False,
+                multi_branch_enabled=multi_branch_enabled,
+                price_auto_from_cost_enabled=False,
+                price_margin_percent=0,
+                updated_by="system-bootstrap",
+            )
         )
-    )
+    else:
+        db.add(
+            CompanyProfileSetting(
+                legal_name="Hollywood Pacas",
+                trade_name="Hollywood Pacas",
+                app_title="ERP Hollywood Pacas",
+                sidebar_subtitle="ERP Central",
+                website="http://hollywoodpacas.com.ni",
+                ruc="",
+                phone="8900-0300",
+                address="Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
+                email="admin@hollywoodpacas.com",
+                logo_url="/static/logo_hollywood.png",
+                pos_logo_url="/static/logo_hollywood.png",
+                favicon_url="/static/favicon.ico",
+                inventory_cs_only=False,
+                multi_branch_enabled=multi_branch_enabled,
+                price_auto_from_cost_enabled=False,
+                price_margin_percent=0,
+                updated_by="system-bootstrap",
+            )
+        )
     db.commit()
 
 
@@ -794,6 +832,10 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE users ADD COLUMN default_bodega_id INTEGER"))
     if "branches" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("branches")}
+        if "activo" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE branches ADD COLUMN activo BOOLEAN DEFAULT TRUE"))
+                conn.execute(text("UPDATE branches SET activo = TRUE WHERE activo IS NULL"))
         if "company_name" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE branches ADD COLUMN company_name VARCHAR(120)"))
@@ -831,11 +873,20 @@ def init_db() -> None:
         if "estado_cobranza" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN estado_cobranza VARCHAR(20) DEFAULT 'PENDIENTE'"))
+        if "condicion_venta" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN condicion_venta VARCHAR(20) DEFAULT 'CONTADO'"))
+                conn.execute(text("UPDATE ventas_facturas SET condicion_venta = 'CONTADO' WHERE condicion_venta IS NULL"))
     if "egresos_inventario" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("egresos_inventario")}
         if "bodega_destino_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE egresos_inventario ADD COLUMN bodega_destino_id INTEGER"))
+    if "egreso_items" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("egreso_items")}
+        if "variante_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE egreso_items ADD COLUMN variante_id INTEGER"))
     if "ventas_items" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("ventas_items")}
         if "combo_role" not in columns:
@@ -844,6 +895,9 @@ def init_db() -> None:
         if "combo_group" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_items ADD COLUMN combo_group VARCHAR(60)"))
+        if "variante_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_items ADD COLUMN variante_id INTEGER"))
     if "ventas_preventas_items" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("ventas_preventas_items")}
         if "combo_role" not in columns:
@@ -870,6 +924,25 @@ def init_db() -> None:
         if "tipo" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE cuentas_contables ADD COLUMN tipo VARCHAR(20)"))
+    if "marcas" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("marcas")}
+        if "abreviatura" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE marcas ADD COLUMN abreviatura VARCHAR(20)"))
+                conn.execute(text("UPDATE marcas SET abreviatura = '' WHERE abreviatura IS NULL"))
+    if "productos" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("productos")}
+        for idx in (4, 5, 6, 7):
+            cs_col = f"precio_venta{idx}"
+            usd_col = f"precio_venta{idx}_usd"
+            if cs_col not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE productos ADD COLUMN {cs_col} NUMERIC(12,2) DEFAULT 0"))
+                    conn.execute(text(f"UPDATE productos SET {cs_col} = 0 WHERE {cs_col} IS NULL"))
+            if usd_col not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE productos ADD COLUMN {usd_col} NUMERIC(12,2)"))
+                    conn.execute(text(f"UPDATE productos SET {usd_col} = 0 WHERE {usd_col} IS NULL"))
     if "pos_print_settings" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("pos_print_settings")}
         if "sumatra_path" not in columns:

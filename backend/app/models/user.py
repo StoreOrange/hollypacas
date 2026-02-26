@@ -54,6 +54,7 @@ class Branch(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(40), unique=True, nullable=False)
     name = Column(String(80), unique=True, nullable=False)
+    activo = Column(Boolean, default=True)
     company_name = Column(String(120), nullable=True)
     ruc = Column(String(40), nullable=True)
     telefono = Column(String(40), nullable=True)

@@ -114,6 +114,17 @@ class SalesInterfaceSetting(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class MenuLayoutSetting(Base):
+    __tablename__ = "menu_layout_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_key = Column(String(80), nullable=False, unique=True)
+    menu_order_json = Column(Text, nullable=True, default="[]")
+    updated_by = Column(String(160), nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class CompanyProfileSetting(Base):
     __tablename__ = "company_profile_settings"
 
@@ -175,6 +186,7 @@ class VentaFactura(Base):
     vendedor_id = Column(Integer, ForeignKey("vendedores.id"), nullable=True)
     fecha = Column(DateTime, server_default=func.now())
     moneda = Column(String(10), nullable=False)
+    condicion_venta = Column(String(20), nullable=False, default="CONTADO")
     tasa_cambio = Column(Numeric(12, 4), nullable=True)
     total_usd = Column(Numeric(14, 2), default=0)
     total_cs = Column(Numeric(14, 2), default=0)
@@ -201,6 +213,7 @@ class VentaItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     factura_id = Column(Integer, ForeignKey("ventas_facturas.id"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    variante_id = Column(Integer, ForeignKey("shoe_product_variants.id"), nullable=True)
     cantidad = Column(Numeric(14, 2), default=0)
     precio_unitario_usd = Column(Numeric(14, 2), default=0)
     precio_unitario_cs = Column(Numeric(14, 2), default=0)
@@ -211,6 +224,7 @@ class VentaItem(Base):
 
     factura = relationship("VentaFactura", back_populates="items")
     producto = relationship("Producto")
+    variante = relationship("ShoeProductVariant")
 
 
 class ProductoComision(Base):
@@ -372,6 +386,7 @@ class CobranzaAbono(Base):
     secuencia = Column(Integer, nullable=False, default=1)
     numero = Column(String(20), nullable=False)
     fecha = Column(Date, nullable=False)
+    tipo_mov = Column(String(20), nullable=False, default="ABONO")
     moneda = Column(String(10), nullable=False)
     tasa_cambio = Column(Numeric(12, 4), nullable=True)
     monto_usd = Column(Numeric(14, 2), default=0)
@@ -584,6 +599,25 @@ class AccountingPolicySetting(Base):
     ingreso_haber_terms = Column(String(260), nullable=False, default="venta,ingreso")
     egreso_debe_terms = Column(String(260), nullable=False, default="gasto,costo,compra,inventario")
     egreso_haber_terms = Column(String(260), nullable=False, default="caja,banco,proveedor,pagar")
+    updated_by = Column(String(160), nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class AccountingSubrubroRule(Base):
+    __tablename__ = "accounting_subrubro_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(60), nullable=False, unique=True)
+    label = Column(String(160), nullable=False)
+    intent_code = Column(String(20), nullable=False, default="EGRESO")
+    debit_terms = Column(String(500), nullable=False, default="")
+    credit_terms = Column(String(500), nullable=False, default="")
+    credit_cash_terms = Column(String(500), nullable=False, default="")
+    credit_credit_terms = Column(String(500), nullable=False, default="")
+    default_concept = Column(String(220), nullable=True)
+    sort_order = Column(Integer, nullable=False, default=1000)
+    activo = Column(Boolean, nullable=False, default=True)
     updated_by = Column(String(160), nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created_at = Column(DateTime, server_default=func.now())
