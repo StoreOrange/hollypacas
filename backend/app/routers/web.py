@@ -6523,6 +6523,11 @@ def sales_preventas_notifications_poll(
         query = query.filter(Preventa.branch_id == branch.id)
     query = query.order_by(Preventa.id.asc()).limit(20)
 
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    is_amajo_mode = "amajo" in active_company_key
+    show_item_code = not is_amajo_mode
+    show_item_subtotal = is_amajo_mode
+
     items = []
     for row in query.all():
         items.append(
@@ -16446,7 +16451,8 @@ def sales_ticket_print(
             talla_name = item.variante.talla or "-"
             descripcion = f"{descripcion} [{color_name} / Talla {talla_name}]"
         desc_lines = wrap_text(descripcion, 32)
-        line_count += 1  # codigo
+        if show_item_code:
+            line_count += 1  # codigo
         line_count += len(desc_lines)
         line_count += 1  # qty/price/subtotal
         line_count += 1  # divider
@@ -16521,6 +16527,8 @@ def sales_ticket_print(
             "copies": copies,
             "page_height_mm": page_height_mm,
             "compact_ticket": _is_shoes_mode(),
+            "show_item_code": show_item_code,
+            "show_item_subtotal": show_item_subtotal,
             "version": settings.UI_VERSION,
         },
     )

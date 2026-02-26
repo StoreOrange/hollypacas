@@ -72,11 +72,17 @@
       <div class="items">
         {% for item in items %}
         <div class="item-block">
+          {% if show_item_code %}
           <div class="bold">Codigo: {{ item.codigo }}</div>
+          {% endif %}
           <div class="item-desc">{{ item.descripcion }}</div>
           <div class="row small">
             <span>Cant: {{ "%.2f"|format(item.cantidad) }}</span>
+            {% if show_item_subtotal %}
+            <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }} | Subtotal: {{ currency_label }} {{ format_amount(item.subtotal) }}</span>
+            {% else %}
             <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }}</span>
+            {% endif %}
           </div>
           <div class="line"></div>
         </div>
