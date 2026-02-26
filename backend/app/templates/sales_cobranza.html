@@ -425,6 +425,7 @@
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {
+    const disableAbonoPrintPreview = {{ (disable_abono_print_preview or False)|tojson }};
     const cobranzaTable = document.querySelector(".cobranza-table");
     if (cobranzaTable) {
       const rows = Array.from(cobranzaTable.querySelectorAll("tbody tr"));
@@ -758,7 +759,7 @@
         alert(payload?.message || "No se pudo registrar el abono");
         return;
       }
-      if (!abonoId && payload.print_url) {
+      if (!abonoId && payload.print_url && !disableAbonoPrintPreview) {
         if (window.erpOpenPrintable) {
           window.erpOpenPrintable(payload.print_url, { fallbackSameTab: true });
         } else {

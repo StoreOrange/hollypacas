@@ -31,17 +31,21 @@
       .top-meta .left { white-space: nowrap; }
       .top-meta .right { font-weight: 600; font-size: 9.5px; }
       .ticket.compact {
-        font-size: 11px;
+        font-size: 9.5px;
       }
       .ticket.compact .small {
-        font-size: 9.5px;
+        font-size: 8.5px;
       }
       .ticket.compact .logo {
         height: 20mm;
         margin-bottom: 6px;
       }
       .ticket.compact .item-block {
-        margin-bottom: 5px;
+        margin-bottom: 4px;
+      }
+      .ticket.compact .row {
+        gap: 6px;
+        padding: 1px 0;
       }
     </style>
   </head>
@@ -79,7 +83,7 @@
           <div class="row small">
             <span>Cant: {{ "%.2f"|format(item.cantidad) }}</span>
             {% if show_item_subtotal or (show_item_subtotal_if_multi_qty and item.cantidad >= 2) %}
-            <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }} | Subtotal: {{ currency_label }} {{ format_amount(item.subtotal) }}</span>
+            <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }} | Subt: {{ currency_label }} {{ format_amount(item.subtotal) }}</span>
             {% else %}
             <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }}</span>
             {% endif %}

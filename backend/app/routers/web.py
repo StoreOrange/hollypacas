@@ -18678,6 +18678,7 @@ def sales_cobranza(
             "total_saldo_usd": float(total_saldo_usd),
             "total_pacas": float(total_pacas),
             "total_vendido_cs": float(total_vendido_cs),
+            "disable_abono_print_preview": include_all_facturas,
             "version": settings.UI_VERSION,
         },
     )
@@ -19123,7 +19124,11 @@ async def sales_cobranza_abono(
 
     db.commit()
     active_company_key = (get_active_company_key() or "").strip().lower()
-    is_hollpacas_mode = ("hollpacas" in active_company_key) or ("hollywoodpacas" in active_company_key)
+    db_name = _current_db_name().lower()
+    is_hollpacas_mode = (
+        ("holl" in db_name) or ("pacas" in db_name)
+        or ("holl" in active_company_key) or ("pacas" in active_company_key)
+    )
     if is_hollpacas_mode:
         return JSONResponse({"ok": True, "message": "Movimiento aplicado", "refresh_url": return_to})
 
