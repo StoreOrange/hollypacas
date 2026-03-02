@@ -110,6 +110,45 @@ from ..models.user import Branch, Permission, Role, User
 
 router = APIRouter()
 
+
+def _branding_upload_dir(company_key: str) -> Path:
+    safe_key = re.sub(r"[^a-zA-Z0-9_-]", "-", (company_key or "default").strip().lower()) or "default"
+    return Path(__file__).resolve().parents[1] / "static" / "uploads" / "branding" / safe_key
+
+
+async def _save_branding_asset(
+    upload: Optional[UploadFile],
+    *,
+    company_key: str,
+    slot: str,
+) -> Optional[str]:
+    if not upload:
+        return None
+    filename = (upload.filename or "").strip()
+    if not filename:
+        return None
+    ext = Path(filename).suffix.lower()
+    allowed_ext = {
+        "logo": {".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"},
+        "pos_logo": {".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"},
+        "favicon": {".ico", ".png", ".svg"},
+    }.get(slot, {".png"})
+    if ext not in allowed_ext:
+        raise ValueError(f"Formato no permitido para {slot}")
+
+    content = await upload.read()
+    if not content:
+        raise ValueError("Archivo vacio")
+    if len(content) > 5 * 1024 * 1024:
+        raise ValueError("Archivo demasiado grande (max 5MB)")
+
+    out_dir = _branding_upload_dir(company_key)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_name = f"{slot}{ext}"
+    out_path = out_dir / out_name
+    out_path.write_bytes(content)
+    return f"/static/uploads/branding/{out_dir.name}/{out_name}"
+
 SALES_INTERFACE_OPTIONS = [
     {"code": "ropa", "label": "Interfaz Ventas Ropa"},
     {"code": "ferreteria", "label": "Interfaz Ferreteria"},
@@ -117,6 +156,37 @@ SALES_INTERFACE_OPTIONS = [
     {"code": "comestibles", "label": "Interfaz Tienda de Comestibles"},
     {"code": "zapatos", "label": "Interfaz Tienda de Zapatos"},
 ]
+
+THEME_OPTIONS = [
+    {"code": "default", "label": "Default Azul"},
+    {"code": "rose_elegant", "label": "Rosa Oscuro Elegante"},
+    {"code": "cerulean", "label": "Cerulean"},
+    {"code": "cosmo", "label": "Cosmo"},
+    {"code": "flatly", "label": "Flatly"},
+    {"code": "journal", "label": "Journal"},
+    {"code": "litera", "label": "Litera"},
+    {"code": "lumen", "label": "Lumen"},
+    {"code": "lux", "label": "Lux"},
+    {"code": "materia", "label": "Materia"},
+    {"code": "minty", "label": "Minty"},
+    {"code": "morph", "label": "Morph"},
+    {"code": "pulse", "label": "Pulse"},
+    {"code": "quartz", "label": "Quartz"},
+    {"code": "sandstone", "label": "Sandstone"},
+    {"code": "simplex", "label": "Simplex"},
+    {"code": "sketchy", "label": "Sketchy"},
+    {"code": "solar", "label": "Solar"},
+    {"code": "spacelab", "label": "Spacelab"},
+    {"code": "superhero", "label": "Superhero"},
+    {"code": "united", "label": "United"},
+    {"code": "vapor", "label": "Vapor"},
+    {"code": "yeti", "label": "Yeti"},
+    {"code": "zephyr", "label": "Zephyr"},
+]
+
+
+def _allowed_theme_codes() -> set[str]:
+    return {item["code"] for item in THEME_OPTIONS}
 
 SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "home", "label": "Panel", "href": "/home", "icon": "bi-grid-1x2-fill", "perm": "menu.home", "alt_perm": None},
@@ -814,6 +884,7 @@ def _default_company_profile_payload() -> dict[str, str]:
             "multi_branch_enabled": multi_branch_enabled,
             "price_auto_from_cost_enabled": False,
             "price_margin_percent": 0,
+            "theme_code": "default",
         }
     return {
         "legal_name": "Hollywood Pacas",
@@ -832,6 +903,7 @@ def _default_company_profile_payload() -> dict[str, str]:
         "multi_branch_enabled": multi_branch_enabled,
         "price_auto_from_cost_enabled": False,
         "price_margin_percent": 0,
+        "theme_code": "default",
     }
 
 
@@ -858,12 +930,15 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
             "multi_branch_enabled": bool(row.multi_branch_enabled),
             "price_auto_from_cost_enabled": bool(row.price_auto_from_cost_enabled),
             "price_margin_percent": int(row.price_margin_percent or 0),
+            "theme_code": (row.theme_code or payload["theme_code"]).strip().lower() or "default",
         }
     )
     return payload
 
 
 def _inventory_cs_only_mode(db: Session) -> bool:
+    if _is_shoes_mode():
+        return True
     profile = _company_profile_payload(db)
     return bool(profile.get("inventory_cs_only"))
 
@@ -6274,7 +6349,10 @@ def inventory_quick_transfers_search(
         existencia = float(stock_row.existencia or 0) if stock_row else 0.0
         prices = _product_price_map(producto)
         costo_cs = float(producto.costo_producto or 0)
-        costo_usd = float((Decimal(str(costo_cs)) / Decimal(str(producto.tasa_cambio))).quantize(Decimal("0.01"))) if producto.tasa_cambio else 0.0
+        costo_usd = costo_cs if _is_shoes_mode() else (
+            float((Decimal(str(costo_cs)) / Decimal(str(producto.tasa_cambio))).quantize(Decimal("0.01")))
+            if producto.tasa_cambio else 0.0
+        )
         items.append(
             {
                 "variant_id": int(variant.id),
@@ -6288,7 +6366,7 @@ def inventory_quick_transfers_search(
                 "costo_cs": costo_cs,
                 "costo_usd": costo_usd,
                 "selected_price_cs": float(prices.get("precio_venta1", 0) or 0),
-                "selected_price_usd": float(prices.get("precio_venta1_usd", 0) or 0),
+                "selected_price_usd": float(prices.get("precio_venta1", 0) or 0) if _is_shoes_mode() else float(prices.get("precio_venta1_usd", 0) or 0),
             }
         )
     return JSONResponse({"ok": True, "items": items, "bodega_id": selected_bodega.id})
@@ -10406,6 +10484,547 @@ def _sales_products_report_filters(request: Request):
     return start_date, end_date, branch_id, vendedor_id, producto_id, producto_q
 
 
+def _sales_special_report_filters(request: Request):
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    branch_id = request.query_params.get("branch_id") or "all"
+    currency = (request.query_params.get("currency") or "CS").strip().upper()
+    year_raw = request.query_params.get("year")
+    top_n_raw = request.query_params.get("top_n")
+
+    today = local_today()
+    start_date = today - timedelta(days=30)
+    end_date = today
+    if start_raw:
+        try:
+            start_date = date.fromisoformat(start_raw)
+        except ValueError:
+            pass
+    if end_raw:
+        try:
+            end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            pass
+    if end_date < start_date:
+        end_date = start_date
+
+    if currency not in {"CS", "USD"}:
+        currency = "CS"
+
+    try:
+        selected_year = int(str(year_raw or start_date.year))
+    except ValueError:
+        selected_year = start_date.year
+    selected_year = max(2000, min(2100, selected_year))
+
+    try:
+        top_n = int(str(top_n_raw or 20))
+    except ValueError:
+        top_n = 20
+    top_n = max(5, min(100, top_n))
+
+    return start_date, end_date, branch_id, currency, selected_year, top_n
+
+
+@router.get("/reports/ventas-especial")
+def report_sales_special(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, currency, selected_year, top_n = _sales_special_report_filters(request)
+    payload = _build_sales_special_report_data(
+        db=db,
+        user=user,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+        currency=currency,
+        selected_year=selected_year,
+        top_n=top_n,
+    )
+
+    return request.app.state.templates.TemplateResponse(
+        "report_sales_special.html",
+        {
+            "request": request,
+            "user": user,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "selected_branch": branch_id,
+            "selected_currency": currency,
+            "selected_year": selected_year,
+            "top_n": top_n,
+            "version": settings.UI_VERSION,
+            **payload,
+        },
+    )
+
+
+def _build_sales_special_report_data(
+    db: Session,
+    user: User,
+    start_date: date,
+    end_date: date,
+    branch_id: str,
+    currency: str,
+    selected_year: int,
+    top_n: int,
+):
+    allowed_codes = _allowed_branch_codes(db)
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
+    selected_branch_id: Optional[int] = None
+    if branch_id != "all":
+        try:
+            selected_branch_id = int(branch_id)
+        except ValueError:
+            selected_branch_id = None
+
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+
+    def _apply_sales_scope(query):
+        query = (
+            query.join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+            .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+            .filter(VentaFactura.estado != "ANULADA")
+            .filter(func.lower(Branch.code).in_(allowed_codes))
+            .filter(Branch.id.in_(scoped_branch_ids))
+        )
+        if selected_branch_id:
+            if selected_branch_id not in scoped_branch_ids:
+                return query.filter(Branch.id == -1)
+            query = query.filter(Branch.id == selected_branch_id)
+        return query
+
+    # Reporte diario (tipo pivote por fecha)
+    daily_sales_rows = (
+        _apply_sales_scope(
+            db.query(
+                func.date(VentaFactura.fecha).label("day"),
+                func.count(VentaFactura.id).label("facturas"),
+                func.sum(VentaFactura.total_cs).label("total_cs"),
+                func.sum(VentaFactura.total_usd).label("total_usd"),
+            )
+            .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+            .group_by(func.date(VentaFactura.fecha))
+            .order_by(func.date(VentaFactura.fecha).asc())
+        )
+        .all()
+    )
+    daily_items_rows = (
+        _apply_sales_scope(
+            db.query(
+                func.date(VentaFactura.fecha).label("day"),
+                func.sum(VentaItem.cantidad).label("items"),
+            )
+            .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+            .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+            .group_by(func.date(VentaFactura.fecha))
+        )
+        .all()
+    )
+    items_by_day: dict[date, Decimal] = {}
+    for day, items in daily_items_rows:
+        day_key = day.date() if isinstance(day, datetime) else day
+        items_by_day[day_key] = Decimal(str(items or 0))
+
+    daily_rows: list[dict[str, object]] = []
+    period_total_cs = Decimal("0")
+    period_total_usd = Decimal("0")
+    period_total_items = Decimal("0")
+    period_total_facturas = 0
+    for day, facturas, total_cs, total_usd in daily_sales_rows:
+        day_key = day.date() if isinstance(day, datetime) else day
+        total_cs_dec = Decimal(str(total_cs or 0))
+        total_usd_dec = Decimal(str(total_usd or 0))
+        items_dec = Decimal(str(items_by_day.get(day_key, Decimal("0"))))
+        period_total_cs += total_cs_dec
+        period_total_usd += total_usd_dec
+        period_total_items += items_dec
+        period_total_facturas += int(facturas or 0)
+        daily_rows.append(
+            {
+                "day": day_key,
+                "facturas": int(facturas or 0),
+                "items": float(items_dec),
+                "total_cs": float(total_cs_dec),
+                "total_usd": float(total_usd_dec),
+            }
+        )
+
+    # Acumulado anual por mes
+    year_start = date(selected_year, 1, 1)
+    year_end = date(selected_year, 12, 31)
+    year_start_dt = datetime.combine(year_start, datetime.min.time())
+    year_end_dt = datetime.combine(year_end + timedelta(days=1), datetime.min.time())
+
+    year_month_sales = (
+        _apply_sales_scope(
+            db.query(
+                func.extract("month", VentaFactura.fecha).label("month_num"),
+                func.count(VentaFactura.id).label("facturas"),
+                func.sum(VentaFactura.total_cs).label("total_cs"),
+                func.sum(VentaFactura.total_usd).label("total_usd"),
+            )
+            .filter(VentaFactura.fecha >= year_start_dt, VentaFactura.fecha < year_end_dt)
+            .group_by(func.extract("month", VentaFactura.fecha))
+        )
+        .all()
+    )
+    year_month_items = (
+        _apply_sales_scope(
+            db.query(
+                func.extract("month", VentaFactura.fecha).label("month_num"),
+                func.sum(VentaItem.cantidad).label("items"),
+            )
+            .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+            .filter(VentaFactura.fecha >= year_start_dt, VentaFactura.fecha < year_end_dt)
+            .group_by(func.extract("month", VentaFactura.fecha))
+        )
+        .all()
+    )
+    month_name = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+        7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+    }
+    year_sales_map: dict[int, dict[str, Decimal | int]] = {}
+    for month_num, facturas, total_cs, total_usd in year_month_sales:
+        m = int(month_num or 0)
+        if m < 1 or m > 12:
+            continue
+        year_sales_map[m] = {
+            "facturas": int(facturas or 0),
+            "total_cs": Decimal(str(total_cs or 0)),
+            "total_usd": Decimal(str(total_usd or 0)),
+            "items": Decimal("0"),
+        }
+    for month_num, items in year_month_items:
+        m = int(month_num or 0)
+        if m < 1 or m > 12:
+            continue
+        if m not in year_sales_map:
+            year_sales_map[m] = {
+                "facturas": 0,
+                "total_cs": Decimal("0"),
+                "total_usd": Decimal("0"),
+                "items": Decimal("0"),
+            }
+        year_sales_map[m]["items"] = Decimal(str(items or 0))
+
+    year_rows: list[dict[str, object]] = []
+    year_total_cs = Decimal("0")
+    year_total_usd = Decimal("0")
+    year_total_items = Decimal("0")
+    year_total_facturas = 0
+    for m in range(1, 13):
+        rec = year_sales_map.get(
+            m,
+            {"facturas": 0, "total_cs": Decimal("0"), "total_usd": Decimal("0"), "items": Decimal("0")},
+        )
+        year_total_cs += Decimal(str(rec["total_cs"]))
+        year_total_usd += Decimal(str(rec["total_usd"]))
+        year_total_items += Decimal(str(rec["items"]))
+        year_total_facturas += int(rec["facturas"])
+        year_rows.append(
+            {
+                "month_num": m,
+                "month_name": month_name[m],
+                "facturas": int(rec["facturas"]),
+                "items": float(Decimal(str(rec["items"]))),
+                "total_cs": float(Decimal(str(rec["total_cs"]))),
+                "total_usd": float(Decimal(str(rec["total_usd"]))),
+            }
+        )
+
+    # Top articulos por sucursal (sobre el rango de fecha seleccionado)
+    top_rows = (
+        _apply_sales_scope(
+            db.query(
+                Branch.name.label("sucursal"),
+                Producto.cod_producto.label("codigo"),
+                Producto.descripcion.label("producto"),
+                func.sum(VentaItem.cantidad).label("cantidad"),
+                func.sum(VentaItem.subtotal_cs).label("total_cs"),
+                func.sum(VentaItem.subtotal_usd).label("total_usd"),
+                func.count(func.distinct(VentaFactura.id)).label("facturas"),
+            )
+            .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+            .join(Producto, Producto.id == VentaItem.producto_id)
+            .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+            .group_by(Branch.name, Producto.cod_producto, Producto.descripcion)
+            .order_by(func.sum(VentaItem.cantidad).desc(), func.sum(VentaItem.subtotal_cs).desc())
+            .limit(top_n)
+        )
+        .all()
+    )
+    top_items = [
+        {
+            "sucursal": sucursal or "-",
+            "codigo": codigo or "",
+            "producto": producto or "",
+            "cantidad": float(Decimal(str(cantidad or 0))),
+            "total_cs": float(Decimal(str(total_cs or 0))),
+            "total_usd": float(Decimal(str(total_usd or 0))),
+            "facturas": int(facturas or 0),
+        }
+        for sucursal, codigo, producto, cantidad, total_cs, total_usd, facturas in top_rows
+    ]
+
+    currency_label = "C$" if currency == "CS" else "USD"
+    period_total_selected = float(period_total_cs if currency == "CS" else period_total_usd)
+    year_total_selected = float(year_total_cs if currency == "CS" else year_total_usd)
+    return {
+        "branches": branches,
+        "daily_rows": daily_rows,
+        "period_total_cs": float(period_total_cs),
+        "period_total_usd": float(period_total_usd),
+        "period_total_items": float(period_total_items),
+        "period_total_facturas": period_total_facturas,
+        "period_total_selected": period_total_selected,
+        "year_rows": year_rows,
+        "year_total_cs": float(year_total_cs),
+        "year_total_usd": float(year_total_usd),
+        "year_total_items": float(year_total_items),
+        "year_total_facturas": year_total_facturas,
+        "year_total_selected": year_total_selected,
+        "top_items": top_items,
+        "currency_label": currency_label,
+    }
+
+
+@router.get("/reports/ventas-especial/export")
+def report_sales_special_export(
+    request: Request,
+    format: str = "xlsx",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, currency, selected_year, top_n = _sales_special_report_filters(request)
+    payload = _build_sales_special_report_data(
+        db=db,
+        user=user,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+        currency=currency,
+        selected_year=selected_year,
+        top_n=top_n,
+    )
+
+    safe_branch = quote_plus(branch_id or "all")
+    file_base = f"ventas_especial_{start_date.isoformat()}_{end_date.isoformat()}_{safe_branch}"
+    if format.lower() == "pdf":
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4, landscape
+
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=landscape(A4))
+        width, height = landscape(A4)
+        margin = 24
+        y = height - margin
+
+        def _new_page():
+            nonlocal y
+            c.showPage()
+            y = height - margin
+
+        def _draw_header(title: str, subtitle: str):
+            nonlocal y
+            c.setFont("Times-Bold", 12)
+            c.drawString(margin, y, title)
+            y -= 14
+            c.setFont("Times-Roman", 9)
+            c.setFillColor(colors.HexColor("#334155"))
+            c.drawString(margin, y, subtitle)
+            c.setFillColor(colors.black)
+            y -= 16
+
+        _draw_header(
+            "Reporte Especial de Ventas",
+            f"Rango: {start_date.isoformat()} a {end_date.isoformat()} | Moneda: {payload['currency_label']} | Anio: {selected_year}",
+        )
+
+        c.setFont("Times-Bold", 9)
+        c.drawString(margin, y, f"Total periodo: {payload['currency_label']} {payload['period_total_selected']:,.2f}")
+        c.drawString(margin + 250, y, f"Facturas: {payload['period_total_facturas']}")
+        c.drawString(margin + 360, y, f"Items: {payload['period_total_items']:,.2f}")
+        y -= 16
+        c.drawString(margin, y, f"Acumulado {selected_year}: {payload['currency_label']} {payload['year_total_selected']:,.2f}")
+        y -= 18
+
+        # Diario
+        c.setFont("Times-Bold", 10)
+        c.drawString(margin, y, "Ventas por dia")
+        y -= 12
+        c.setFont("Times-Bold", 8)
+        c.drawString(margin, y, "Fecha")
+        c.drawRightString(margin + 120, y, "Facturas")
+        c.drawRightString(margin + 210, y, "Items")
+        c.drawRightString(margin + 340, y, "Total C$")
+        c.drawRightString(margin + 470, y, "Total USD")
+        c.drawRightString(margin + 620, y, f"Total {payload['currency_label']}")
+        y -= 10
+        c.line(margin, y, width - margin, y)
+        y -= 10
+        c.setFont("Times-Roman", 8)
+        for row in payload["daily_rows"]:
+            if y < 70:
+                _new_page()
+            c.drawString(margin, y, row["day"].strftime("%d/%m/%Y") if row["day"] else "-")
+            c.drawRightString(margin + 120, y, f"{row['facturas']}")
+            c.drawRightString(margin + 210, y, f"{row['items']:,.2f}")
+            c.drawRightString(margin + 340, y, f"{row['total_cs']:,.2f}")
+            c.drawRightString(margin + 470, y, f"{row['total_usd']:,.2f}")
+            selected_value = row["total_cs"] if currency == "CS" else row["total_usd"]
+            c.drawRightString(margin + 620, y, f"{selected_value:,.2f}")
+            y -= 10
+
+        y -= 8
+        c.line(margin, y, width - margin, y)
+        y -= 14
+
+        # Anual
+        if y < 180:
+            _new_page()
+        c.setFont("Times-Bold", 10)
+        c.drawString(margin, y, f"Acumulado anual {selected_year}")
+        y -= 12
+        c.setFont("Times-Bold", 8)
+        c.drawString(margin, y, "Mes")
+        c.drawRightString(margin + 140, y, "Facturas")
+        c.drawRightString(margin + 230, y, "Items")
+        c.drawRightString(margin + 360, y, "Total C$")
+        c.drawRightString(margin + 490, y, "Total USD")
+        c.drawRightString(margin + 620, y, f"Total {payload['currency_label']}")
+        y -= 10
+        c.line(margin, y, width - margin, y)
+        y -= 10
+        c.setFont("Times-Roman", 8)
+        for row in payload["year_rows"]:
+            if y < 70:
+                _new_page()
+            c.drawString(margin, y, row["month_name"])
+            c.drawRightString(margin + 140, y, f"{row['facturas']}")
+            c.drawRightString(margin + 230, y, f"{row['items']:,.2f}")
+            c.drawRightString(margin + 360, y, f"{row['total_cs']:,.2f}")
+            c.drawRightString(margin + 490, y, f"{row['total_usd']:,.2f}")
+            selected_value = row["total_cs"] if currency == "CS" else row["total_usd"]
+            c.drawRightString(margin + 620, y, f"{selected_value:,.2f}")
+            y -= 10
+
+        # Top items
+        _new_page()
+        c.setFont("Times-Bold", 10)
+        c.drawString(margin, y, f"Top articulos ({top_n})")
+        y -= 12
+        c.setFont("Times-Bold", 8)
+        c.drawString(margin, y, "Sucursal")
+        c.drawString(margin + 80, y, "Codigo")
+        c.drawString(margin + 150, y, "Producto")
+        c.drawRightString(margin + 470, y, "Cantidad")
+        c.drawRightString(margin + 550, y, "Facturas")
+        c.drawRightString(margin + 670, y, f"Venta {payload['currency_label']}")
+        y -= 10
+        c.line(margin, y, width - margin, y)
+        y -= 10
+        c.setFont("Times-Roman", 8)
+        for row in payload["top_items"]:
+            if y < 70:
+                _new_page()
+            c.drawString(margin, y, str(row["sucursal"])[:12])
+            c.drawString(margin + 80, y, str(row["codigo"])[:12])
+            c.drawString(margin + 150, y, str(row["producto"])[:42])
+            c.drawRightString(margin + 470, y, f"{row['cantidad']:,.2f}")
+            c.drawRightString(margin + 550, y, f"{row['facturas']}")
+            selected_value = row["total_cs"] if currency == "CS" else row["total_usd"]
+            c.drawRightString(margin + 670, y, f"{selected_value:,.2f}")
+            y -= 10
+
+        c.save()
+        buffer.seek(0)
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename={file_base}.pdf"},
+        )
+
+    # Excel
+    wb = Workbook()
+    ws_daily = wb.active
+    ws_daily.title = "Ventas Diario"
+    ws_daily.append(["Fecha", "Facturas", "Items", "Total C$", "Total USD", f"Total {payload['currency_label']}"])
+    for row in payload["daily_rows"]:
+        selected_value = row["total_cs"] if currency == "CS" else row["total_usd"]
+        ws_daily.append(
+            [
+                row["day"].strftime("%Y-%m-%d") if row["day"] else "",
+                row["facturas"],
+                row["items"],
+                row["total_cs"],
+                row["total_usd"],
+                selected_value,
+            ]
+        )
+    ws_daily.append(
+        [
+            "TOTAL",
+            payload["period_total_facturas"],
+            payload["period_total_items"],
+            payload["period_total_cs"],
+            payload["period_total_usd"],
+            payload["period_total_selected"],
+        ]
+    )
+
+    ws_year = wb.create_sheet("Acumulado Anual")
+    ws_year.append(["Mes", "Facturas", "Items", "Total C$", "Total USD", f"Total {payload['currency_label']}"])
+    for row in payload["year_rows"]:
+        selected_value = row["total_cs"] if currency == "CS" else row["total_usd"]
+        ws_year.append([row["month_name"], row["facturas"], row["items"], row["total_cs"], row["total_usd"], selected_value])
+    ws_year.append(
+        [
+            "TOTAL",
+            payload["year_total_facturas"],
+            payload["year_total_items"],
+            payload["year_total_cs"],
+            payload["year_total_usd"],
+            payload["year_total_selected"],
+        ]
+    )
+
+    ws_top = wb.create_sheet("Top Articulos")
+    ws_top.append(["Sucursal", "Codigo", "Producto", "Cantidad", "Facturas", "Venta C$", "Venta USD", f"Venta {payload['currency_label']}"])
+    for row in payload["top_items"]:
+        selected_value = row["total_cs"] if currency == "CS" else row["total_usd"]
+        ws_top.append([row["sucursal"], row["codigo"], row["producto"], row["cantidad"], row["facturas"], row["total_cs"], row["total_usd"], selected_value])
+
+    for ws in (ws_daily, ws_year, ws_top):
+        for col in ws.columns:
+            max_len = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                max_len = max(max_len, len(str(cell.value or "")))
+            ws.column_dimensions[col_letter].width = min(max(12, max_len + 2), 44)
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={file_base}.xlsx"},
+    )
+
+
 def _build_sales_products_report(
     db: Session,
     user: User,
@@ -14054,6 +14673,7 @@ def data_empresa(
             "request": request,
             "user": user,
             "profile": profile,
+            "theme_options": THEME_OPTIONS,
             "error": error,
             "success": success,
             "version": settings.UI_VERSION,
@@ -14062,7 +14682,7 @@ def data_empresa(
 
 
 @router.post("/data/empresa")
-def data_empresa_update(
+async def data_empresa_update(
     request: Request,
     legal_name: str = Form(...),
     trade_name: str = Form(...),
@@ -14076,10 +14696,14 @@ def data_empresa_update(
     logo_url: Optional[str] = Form(None),
     pos_logo_url: Optional[str] = Form(None),
     favicon_url: Optional[str] = Form(None),
+    logo_file: Optional[UploadFile] = File(None),
+    pos_logo_file: Optional[UploadFile] = File(None),
+    favicon_file: Optional[UploadFile] = File(None),
     inventory_cs_only: Optional[str] = Form(None),
     multi_branch_enabled: Optional[str] = Form(None),
     price_auto_from_cost_enabled: Optional[str] = Form(None),
     price_margin_percent: Optional[str] = Form(None),
+    theme_code: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -14097,6 +14721,20 @@ def data_empresa_update(
     profile.logo_url = (logo_url or "").strip() or "/static/logo_hollywood.png"
     profile.pos_logo_url = (pos_logo_url or "").strip() or profile.logo_url
     profile.favicon_url = (favicon_url or "").strip() or "/static/favicon.ico"
+    company_key = get_active_company_key() or "default"
+    try:
+        uploaded_logo = await _save_branding_asset(logo_file, company_key=company_key, slot="logo")
+        uploaded_pos_logo = await _save_branding_asset(pos_logo_file, company_key=company_key, slot="pos_logo")
+        uploaded_favicon = await _save_branding_asset(favicon_file, company_key=company_key, slot="favicon")
+    except ValueError as exc:
+        return RedirectResponse(f"/data/empresa?error={quote_plus(str(exc))}", status_code=303)
+
+    if uploaded_logo:
+        profile.logo_url = uploaded_logo
+    if uploaded_pos_logo:
+        profile.pos_logo_url = uploaded_pos_logo
+    if uploaded_favicon:
+        profile.favicon_url = uploaded_favicon
     profile.inventory_cs_only = inventory_cs_only == "on"
     profile.multi_branch_enabled = multi_branch_enabled == "on"
     raw_margin = (price_margin_percent or "").strip()
@@ -14108,6 +14746,10 @@ def data_empresa_update(
     auto_margin_enabled = price_auto_from_cost_enabled == "on"
     profile.price_auto_from_cost_enabled = auto_margin_enabled
     profile.price_margin_percent = margin_value
+    selected_theme = (theme_code or "default").strip().lower()
+    if selected_theme not in _allowed_theme_codes():
+        selected_theme = "default"
+    profile.theme_code = selected_theme
     profile.updated_by = user.full_name
     db.commit()
     return RedirectResponse("/data/empresa?success=Perfil+empresarial+actualizado", status_code=303)
@@ -15447,6 +16089,7 @@ def sales_products_search(
     user: User = Depends(_require_admin_web),
 ):
     price_tier = _normalize_price_tier(price_list, default=1)
+    shoes_mode = _is_shoes_mode()
     query = q.strip()
     if len(query) < 2:
         return JSONResponse({"ok": True, "items": []})
@@ -15499,7 +16142,9 @@ def sales_products_search(
         free_qty = max(0.0, existencia - reserved_qty)
         prices = _product_price_map(producto)
         selected_cs = prices.get(f"precio_venta{price_tier}", 0.0)
-        selected_usd = prices.get(f"precio_venta{price_tier}_usd", 0.0)
+        selected_usd = (
+            selected_cs if shoes_mode else prices.get(f"precio_venta{price_tier}_usd", 0.0)
+        )
         items.append(
             {
                 "id": producto.id,
@@ -15599,7 +16244,10 @@ def sales_shoes_variants_search(
         existencia = float(stock_row.existencia or 0) if stock_row else 0.0
         prices = _product_price_map(producto)
         costo_cs = float(producto.costo_producto or 0)
-        costo_usd = float((Decimal(str(costo_cs)) / Decimal(str(producto.tasa_cambio))).quantize(Decimal("0.01"))) if producto.tasa_cambio else 0.0
+        costo_usd = costo_cs if _is_shoes_mode() else (
+            float((Decimal(str(costo_cs)) / Decimal(str(producto.tasa_cambio))).quantize(Decimal("0.01")))
+            if producto.tasa_cambio else 0.0
+        )
         items.append(
             {
                 "variant_id": int(variant.id),
@@ -15614,7 +16262,7 @@ def sales_shoes_variants_search(
                 "costo_usd": costo_usd,
                 **prices,
                 "selected_price_tier": price_tier,
-                "selected_price_usd": float(prices.get(f"precio_venta{price_tier}_usd", 0) or 0),
+                "selected_price_usd": float(prices.get(f"precio_venta{price_tier}", 0) or 0) if _is_shoes_mode() else float(prices.get(f"precio_venta{price_tier}_usd", 0) or 0),
                 "selected_price_cs": float(prices.get(f"precio_venta{price_tier}", 0) or 0),
             }
         )
@@ -15683,7 +16331,7 @@ def sales_combo_items(
                 "cantidad": float(combo.cantidad or 1),
                 **prices,
                 "selected_price_tier": price_tier,
-                "selected_price_usd": float(prices.get(f"precio_venta{price_tier}_usd", 0) or 0),
+                "selected_price_usd": float(prices.get(f"precio_venta{price_tier}", 0) or 0) if _is_shoes_mode() else float(prices.get(f"precio_venta{price_tier}_usd", 0) or 0),
                 "selected_price_cs": float(prices.get(f"precio_venta{price_tier}", 0) or 0),
                 "existencia": existencia,
                 "reserved_qty": reserved_qty,
@@ -16058,6 +16706,9 @@ def inventory_egreso_ticket_print(
         raise HTTPException(status_code=404, detail="Egreso no encontrado")
 
     profile = _company_profile_payload(db)
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    db_name = _current_db_name().strip().lower()
+    is_zapatos_mode = ("zapatos" in active_company_key) or ("zapatos" in db_name)
     branch = egreso.bodega.branch if egreso.bodega else None
     identity = _company_identity(branch, profile)
 
@@ -16091,11 +16742,15 @@ def inventory_egreso_ticket_print(
             }
         )
 
+    numero_requisa = f"RQ-{egreso.id:08d}"
+
     return request.app.state.templates.TemplateResponse(
         "inventory_transfer_ticket_print.html",
         {
             "request": request,
             "egreso": egreso,
+            "is_zapatos_mode": is_zapatos_mode,
+            "numero_requisa": numero_requisa,
             "company_name": identity["company_name"],
             "ruc": identity["ruc"],
             "telefono": identity["telefono"],
@@ -16106,8 +16761,10 @@ def inventory_egreso_ticket_print(
             "origen": egreso.bodega.name if egreso.bodega else "-",
             "destino": egreso.bodega_destino.name if egreso.bodega_destino else "-",
             "usuario_creador": egreso.usuario_registro or "-",
+            "observacion": (egreso.observacion or "").strip(),
             "items": items,
             "total_bultos": total_bultos,
+            "total_unidades": total_bultos,
             "format_amount": format_amount,
             "copies": copies,
             "return_to": return_to,
@@ -17384,13 +18041,6 @@ async def inventory_create_ingreso_zapatos(
     if not isinstance(matrix, dict) or not matrix:
         return RedirectResponse("/inventory/ingresos?error=No+se+definieron+cantidades+por+color+y+talla", status_code=303)
 
-    rate_today = (
-        db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= local_today())
-        .order_by(ExchangeRate.effective_date.desc())
-        .first()
-    )
-    tasa = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
     ingreso = IngresoInventario(
         tipo_id=int(tipo_id),
         bodega_id=int(bodega_id),
@@ -17477,19 +18127,16 @@ async def inventory_create_ingreso_zapatos(
                 if not (variant.cod_variante or "").strip():
                     variant.cod_variante = cod_variante
             costo_cs = Decimal(str(costo_unitario))
-            costo_usd = (costo_cs / tasa) if tasa > 0 else Decimal("0")
+            costo_usd = costo_cs
             precio_cs = Decimal(str(precio_unitario))
-            precio_usd = (precio_cs / tasa) if tasa > 0 else Decimal("0")
+            precio_usd = precio_cs
             descuento_escalonado_cs = Decimal("10")
             precios_cs: list[Decimal] = []
             precios_usd: list[Decimal] = []
             for idx in range(1, 8):
                 tier_price_cs = max(Decimal("0"), precio_cs - ((idx - 1) * descuento_escalonado_cs))
                 precios_cs.append(tier_price_cs)
-                if tasa > 0:
-                    precios_usd.append((tier_price_cs / tasa).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
-                else:
-                    precios_usd.append(Decimal("0"))
+                precios_usd.append(tier_price_cs)
             subtotal_usd = (costo_usd * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             subtotal_cs = (costo_cs * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             total_usd += subtotal_usd
@@ -17552,7 +18199,7 @@ async def inventory_create_ingreso_zapatos(
         db.rollback()
         return RedirectResponse("/inventory/ingresos?error=No+se+generaron+items+de+zapatos", status_code=303)
 
-    ingreso.total_usd = float(total_usd)
+    ingreso.total_usd = float(total_cs)
     ingreso.total_cs = float(total_cs)
     bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
     auto_amount = total_cs
