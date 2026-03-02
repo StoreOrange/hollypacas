@@ -2,23 +2,23 @@
 {% block content %}
 <style>
   :root {
-    --com-blue-50: #eef5ff;
-    --com-blue-100: #dbeafe;
-    --com-blue-600: #2563eb;
-    --com-blue-700: #1d4ed8;
+    --com-blue-50: color-mix(in srgb, var(--hp-primary) 8%, #ffffff);
+    --com-blue-100: var(--hp-primary-100);
+    --com-blue-600: var(--hp-primary);
+    --com-blue-700: var(--hp-primary-600);
   }
   .text-brand {
-    color: var(--com-blue-700) !important;
+    color: var(--hp-primary) !important;
   }
   .bg-\[\#efe7f0\] {
-    background: var(--com-blue-100) !important;
+    background: var(--hp-primary-100) !important;
   }
   .text-\[\#5a2f6b\] {
-    color: #1e3a8a !important;
+    color: var(--hp-primary) !important;
   }
   [style*="#efe4f3"] {
-    background: #dbeafe !important;
-    color: #1e3a8a !important;
+    background: var(--hp-primary-100) !important;
+    color: var(--hp-primary) !important;
   }
   #layout main section.sticky {
     padding: 0.45rem 1rem !important;
@@ -41,7 +41,7 @@
     max-height: 520px !important;
   }
   .barcode-ready {
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--hp-primary) 22%, transparent);
     border-radius: 14px;
   }
   .scanner-badge {
@@ -49,18 +49,18 @@
     align-items: center;
     gap: 0.35rem;
     border-radius: 999px;
-    border: 1px solid #bfdbfe;
-    background: #eff6ff;
-    color: #1d4ed8;
+    border: 1px solid color-mix(in srgb, var(--hp-primary) 24%, #ffffff);
+    background: color-mix(in srgb, var(--hp-primary-100) 70%, #ffffff);
+    color: var(--hp-primary);
     padding: 0.22rem 0.62rem;
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.02em;
   }
   .scanner-badge.working {
-    border-color: #93c5fd;
-    background: #dbeafe;
-    color: #1e40af;
+    border-color: color-mix(in srgb, var(--hp-primary) 32%, #ffffff);
+    background: var(--hp-primary-100);
+    color: var(--hp-primary-600);
   }
   .scanner-badge.error {
     border-color: #fecaca;
@@ -73,15 +73,15 @@
     font-weight: 600;
   }
   .combo-parent-badge {
-    background: #e0f2fe;
-    color: #1d4ed8;
+    background: var(--hp-primary-100);
+    color: var(--hp-primary);
   }
   .combo-gift-badge {
     background: #dcfce7;
     color: #15803d;
   }
   .combo-parent .text-brand {
-    color: #1d4ed8;
+    color: var(--hp-primary);
   }
   .combo-gift .text-brand {
     color: #16a34a;

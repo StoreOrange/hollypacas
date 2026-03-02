@@ -29,7 +29,7 @@
         <div class="col-lg-8">
           <div class="odoo-card">
             <div class="odoo-section-title mb-3">Configuracion</div>
-            <form class="row g-3" method="post" action="/data/empresa">
+            <form class="row g-3" method="post" action="/data/empresa" enctype="multipart/form-data">
               <div class="col-md-6">
                 <label class="odoo-field-label">Razon social *</label>
                 <input class="form-control odoo-input" name="legal_name" value="{{ profile.legal_name }}" required />
@@ -67,19 +67,54 @@
                 <input class="form-control odoo-input" name="website" value="{{ profile.website or '' }}" placeholder="https://miempresa.com" />
               </div>
               <div class="col-md-6">
+                <label class="odoo-field-label">Tema visual del entorno *</label>
+                <select class="form-select odoo-input" name="theme_code" required>
+                  {% set current_theme = (profile.theme_code or 'default') %}
+                  {% for theme in theme_options %}
+                  <option value="{{ theme.code }}" {% if current_theme == theme.code %}selected{% endif %}>{{ theme.label }}</option>
+                  {% endfor %}
+                </select>
+                <div class="text-muted small mt-1">Temas Bootstrap/Bootswatch por entorno: colores, componentes y estructura visual completa.</div>
+              </div>
+              <div class="col-md-6">
                 <label class="odoo-field-label">Logo URL / ruta *</label>
                 <input class="form-control odoo-input" name="logo_url" value="{{ profile.logo_url }}" required />
                 <div class="text-muted small mt-1">Ejemplo: <code>/static/logo_hollywood.png</code></div>
+                <div class="mt-2">
+                  <label class="odoo-field-label">Subir logo desde archivo</label>
+                  <input class="form-control odoo-input" type="file" name="logo_file" accept=".png,.jpg,.jpeg,.webp,.svg,.ico" />
+                </div>
+                <div class="mt-2 p-2 border rounded bg-light">
+                  <div class="text-muted small mb-1">Vista actual</div>
+                  <img src="{{ profile.logo_url }}?v={{ version }}" alt="Logo actual" style="max-height:72px; max-width:100%; object-fit:contain;">
+                </div>
               </div>
               <div class="col-md-6">
                 <label class="odoo-field-label">Logo POS URL / ruta *</label>
                 <input class="form-control odoo-input" name="pos_logo_url" value="{{ profile.pos_logo_url or profile.logo_url }}" required />
                 <div class="text-muted small mt-1">Logo exclusivo para ticket/facturas POS.</div>
+                <div class="mt-2">
+                  <label class="odoo-field-label">Subir logo POS desde archivo</label>
+                  <input class="form-control odoo-input" type="file" name="pos_logo_file" accept=".png,.jpg,.jpeg,.webp,.svg,.ico" />
+                </div>
+                <div class="mt-2 p-2 border rounded bg-light">
+                  <div class="text-muted small mb-1">Vista actual POS</div>
+                  <img src="{{ (profile.pos_logo_url or profile.logo_url) }}?v={{ version }}" alt="Logo POS actual" style="max-height:72px; max-width:100%; object-fit:contain;">
+                </div>
               </div>
               <div class="col-md-6">
                 <label class="odoo-field-label">Favicon URL / ruta *</label>
                 <input class="form-control odoo-input" name="favicon_url" value="{{ profile.favicon_url }}" required />
                 <div class="text-muted small mt-1">Ejemplo: <code>/static/favicon.ico</code></div>
+                <div class="mt-2">
+                  <label class="odoo-field-label">Subir favicon desde archivo</label>
+                  <input class="form-control odoo-input" type="file" name="favicon_file" accept=".ico,.png,.svg" />
+                </div>
+                <div class="mt-2 p-2 border rounded bg-light d-flex align-items-center gap-2">
+                  <div class="text-muted small">Actual:</div>
+                  <img src="{{ profile.favicon_url }}?v={{ version }}" alt="Favicon actual" style="height:20px; width:20px; object-fit:contain;">
+                  <code class="small">{{ profile.favicon_url }}</code>
+                </div>
               </div>
               <div class="col-12">
                 <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">

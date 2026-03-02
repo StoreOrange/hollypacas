@@ -29,12 +29,19 @@
       <div class="center small">Sucursal: {{ sucursal }}</div>
       <div class="line"></div>
 
+      {% if is_zapatos_mode %}
+      <div class="row"><span class="bold">Requisa:</span><span>{{ numero_requisa }}</span></div>
+      {% else %}
       <div class="row"><span class="bold">No:</span><span>TR-{{ egreso.id }}</span></div>
+      {% endif %}
       <div class="row"><span>Fecha:</span><span>{{ fecha_str }} {{ hora_str }}</span></div>
       <div class="row"><span>Usuario:</span><span>{{ usuario_creador }}</span></div>
       <div class="row"><span>Origen:</span><span>{{ origen }}</span></div>
       <div class="row"><span>Destino:</span><span>{{ destino }}</span></div>
       <div class="row"><span>Tipo:</span><span>{{ egreso.tipo.nombre if egreso.tipo else "-" }}</span></div>
+      {% if is_zapatos_mode and observacion %}
+      <div class="row"><span>Obs:</span><span style="text-align:right; max-width:42mm;">{{ observacion }}</span></div>
+      {% endif %}
       <div class="line"></div>
 
       {% for item in items %}
@@ -46,7 +53,12 @@
       {% endfor %}
 
       <div class="line"></div>
+      {% if is_zapatos_mode %}
+      <div class="row bold"><span>Total unds</span><span>{{ format_amount(total_unidades) }}</span></div>
+      <div class="row"><span>Total bultos</span><span>{{ format_amount(total_bultos) }}</span></div>
+      {% else %}
       <div class="row bold"><span>Total bultos</span><span>{{ format_amount(total_bultos) }}</span></div>
+      {% endif %}
       <div class="line"></div>
       <div class="center small">Documento interno de traslado entre bodegas</div>
       <div class="center small">Revise cantidades y variantes antes de despachar</div>

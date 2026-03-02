@@ -2,23 +2,23 @@
 {% block content %}
 <style>
   :root {
-    --wine-50: #fcf2f4;
-    --wine-100: #f9e5ea;
-    --wine-600: #8f1d3f;
-    --wine-700: #6f1630;
+    --wine-50: color-mix(in srgb, var(--hp-primary) 10%, #ffffff);
+    --wine-100: var(--hp-primary-100);
+    --wine-600: var(--hp-primary);
+    --wine-700: var(--hp-primary-600);
   }
   .text-brand {
-    color: var(--wine-700) !important;
+    color: var(--hp-primary) !important;
   }
   .bg-\[\#efe7f0\] {
-    background: var(--wine-100) !important;
+    background: var(--hp-primary-100) !important;
   }
   .text-\[\#5a2f6b\] {
-    color: var(--wine-700) !important;
+    color: var(--hp-primary) !important;
   }
   [style*="#efe4f3"] {
-    background: var(--wine-100) !important;
-    color: var(--wine-700) !important;
+    background: var(--hp-primary-100) !important;
+    color: var(--hp-primary) !important;
   }
   #layout main section.sticky {
     padding: 0.45rem 1rem !important;
@@ -41,7 +41,7 @@
     max-height: 520px !important;
   }
   .barcode-ready {
-    box-shadow: 0 0 0 3px rgba(143, 29, 63, 0.18);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--hp-primary) 22%, transparent);
     border-radius: 14px;
   }
   .scanner-badge {
@@ -49,18 +49,18 @@
     align-items: center;
     gap: 0.35rem;
     border-radius: 999px;
-    border: 1px solid #e7c9d2;
-    background: #fdf3f6;
-    color: var(--wine-700);
+    border: 1px solid color-mix(in srgb, var(--hp-primary) 24%, #ffffff);
+    background: color-mix(in srgb, var(--hp-primary-100) 70%, #ffffff);
+    color: var(--hp-primary);
     padding: 0.22rem 0.62rem;
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.02em;
   }
   .scanner-badge.working {
-    border-color: #dca8b8;
-    background: #f9e5ea;
-    color: #7f1d39;
+    border-color: color-mix(in srgb, var(--hp-primary) 32%, #ffffff);
+    background: var(--hp-primary-100);
+    color: var(--hp-primary-600);
   }
   .scanner-badge.error {
     border-color: #fecaca;
@@ -73,15 +73,15 @@
     font-weight: 600;
   }
   .combo-parent-badge {
-    background: #f8e1e8;
-    color: #7f1d39;
+    background: var(--hp-primary-100);
+    color: var(--hp-primary);
   }
   .combo-gift-badge {
     background: #dcfce7;
     color: #15803d;
   }
   .combo-parent .text-brand {
-    color: #7f1d39;
+    color: var(--hp-primary);
   }
   .combo-gift .text-brand {
     color: #16a34a;

@@ -118,6 +118,37 @@ SALES_INTERFACE_OPTIONS = [
     {"code": "zapatos", "label": "Interfaz Tienda de Zapatos"},
 ]
 
+THEME_OPTIONS = [
+    {"code": "default", "label": "Default Azul"},
+    {"code": "rose_elegant", "label": "Rosa Oscuro Elegante"},
+    {"code": "cerulean", "label": "Cerulean"},
+    {"code": "cosmo", "label": "Cosmo"},
+    {"code": "flatly", "label": "Flatly"},
+    {"code": "journal", "label": "Journal"},
+    {"code": "litera", "label": "Litera"},
+    {"code": "lumen", "label": "Lumen"},
+    {"code": "lux", "label": "Lux"},
+    {"code": "materia", "label": "Materia"},
+    {"code": "minty", "label": "Minty"},
+    {"code": "morph", "label": "Morph"},
+    {"code": "pulse", "label": "Pulse"},
+    {"code": "quartz", "label": "Quartz"},
+    {"code": "sandstone", "label": "Sandstone"},
+    {"code": "simplex", "label": "Simplex"},
+    {"code": "sketchy", "label": "Sketchy"},
+    {"code": "solar", "label": "Solar"},
+    {"code": "spacelab", "label": "Spacelab"},
+    {"code": "superhero", "label": "Superhero"},
+    {"code": "united", "label": "United"},
+    {"code": "vapor", "label": "Vapor"},
+    {"code": "yeti", "label": "Yeti"},
+    {"code": "zephyr", "label": "Zephyr"},
+]
+
+
+def _allowed_theme_codes() -> set[str]:
+    return {item["code"] for item in THEME_OPTIONS}
+
 SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "home", "label": "Panel", "href": "/home", "icon": "bi-grid-1x2-fill", "perm": "menu.home", "alt_perm": None},
     {"id": "sales", "label": "Ventas", "href": "/sales", "icon": "bi-receipt-cutoff", "perm": "menu.sales", "alt_perm": None},
@@ -814,6 +845,7 @@ def _default_company_profile_payload() -> dict[str, str]:
             "multi_branch_enabled": multi_branch_enabled,
             "price_auto_from_cost_enabled": False,
             "price_margin_percent": 0,
+            "theme_code": "default",
         }
     return {
         "legal_name": "Hollywood Pacas",
@@ -832,6 +864,7 @@ def _default_company_profile_payload() -> dict[str, str]:
         "multi_branch_enabled": multi_branch_enabled,
         "price_auto_from_cost_enabled": False,
         "price_margin_percent": 0,
+        "theme_code": "default",
     }
 
 
@@ -858,6 +891,7 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
             "multi_branch_enabled": bool(row.multi_branch_enabled),
             "price_auto_from_cost_enabled": bool(row.price_auto_from_cost_enabled),
             "price_margin_percent": int(row.price_margin_percent or 0),
+            "theme_code": (getattr(row, "theme_code", "") or payload["theme_code"]).strip().lower() or "default",
         }
     )
     return payload
@@ -14054,6 +14088,7 @@ def data_empresa(
             "request": request,
             "user": user,
             "profile": profile,
+            "theme_options": THEME_OPTIONS,
             "error": error,
             "success": success,
             "version": settings.UI_VERSION,
@@ -14080,6 +14115,7 @@ def data_empresa_update(
     multi_branch_enabled: Optional[str] = Form(None),
     price_auto_from_cost_enabled: Optional[str] = Form(None),
     price_margin_percent: Optional[str] = Form(None),
+    theme_code: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -14108,6 +14144,10 @@ def data_empresa_update(
     auto_margin_enabled = price_auto_from_cost_enabled == "on"
     profile.price_auto_from_cost_enabled = auto_margin_enabled
     profile.price_margin_percent = margin_value
+    selected_theme = (theme_code or "default").strip().lower()
+    if selected_theme not in _allowed_theme_codes():
+        selected_theme = "default"
+    profile.theme_code = selected_theme
     profile.updated_by = user.full_name
     db.commit()
     return RedirectResponse("/data/empresa?success=Perfil+empresarial+actualizado", status_code=303)

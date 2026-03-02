@@ -145,6 +145,7 @@ class CompanyProfileSetting(Base):
     multi_branch_enabled = Column(Boolean, nullable=False, default=True)
     price_auto_from_cost_enabled = Column(Boolean, nullable=False, default=False)
     price_margin_percent = Column(Integer, nullable=False, default=0)
+    theme_code = Column(String(40), nullable=False, default="default")
     updated_by = Column(String(160), nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created_at = Column(DateTime, server_default=func.now())

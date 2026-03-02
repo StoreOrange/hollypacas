@@ -2,6 +2,102 @@
 <html lang="es">
   <head>
     {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
+    {% set theme_code = (branding.get("theme_code", "default") or "default")|lower %}
+    {% set bootswatch_codes = ['cerulean','cosmo','flatly','journal','litera','lumen','lux','materia','minty','morph','pulse','quartz','sandstone','simplex','sketchy','solar','spacelab','superhero','united','vapor','yeti','zephyr'] %}
+    {% set theme_bootswatch_url = '/static/vendor/bootswatch/' ~ theme_code ~ '.min.css' if theme_code in bootswatch_codes else '' %}
+    {% set theme_primary = "#0b3b6f" %}
+    {% set theme_primary_600 = "#0a3564" %}
+    {% set theme_primary_100 = "#e6f0fb" %}
+    {% set ui_body_bg = "#f7f5f9" %}
+    {% set ui_card_radius = "12px" %}
+    {% set ui_header_radius = "12px" %}
+    {% set ui_btn_radius = "10px" %}
+    {% set ui_tab_radius = "10px" %}
+    {% set ui_card_padding = "1.25rem" %}
+    {% set ui_header_padding = "1.1rem 1.5rem" %}
+    {% set ui_table_py = "0.5rem" %}
+    {% set ui_table_px = "0.75rem" %}
+    {% set ui_card_shadow = "0 8px 18px rgba(15, 23, 42, 0.06)" %}
+    {% set ui_header_shadow = "0 6px 18px rgba(15, 23, 42, 0.06)" %}
+    {% if theme_code == "cerulean" %}
+      {% set theme_primary = "#2fa4e7" %}
+      {% set theme_primary_600 = "#2689c2" %}
+      {% set theme_primary_100 = "#e8f6fd" %}
+      {% set ui_body_bg = "#f4f9fd" %}
+      {% set ui_card_radius = "14px" %}
+      {% set ui_header_radius = "14px" %}
+      {% set ui_card_shadow = "0 10px 22px rgba(24, 106, 147, 0.14)" %}
+    {% elif theme_code == "flatly" %}
+      {% set theme_primary = "#18bc9c" %}
+      {% set theme_primary_600 = "#149f84" %}
+      {% set theme_primary_100 = "#e7faf6" %}
+      {% set ui_body_bg = "#f3f7f6" %}
+      {% set ui_card_radius = "10px" %}
+      {% set ui_header_radius = "10px" %}
+      {% set ui_btn_radius = "8px" %}
+      {% set ui_tab_radius = "8px" %}
+      {% set ui_table_py = "0.42rem" %}
+      {% set ui_table_px = "0.65rem" %}
+    {% elif theme_code == "minty" %}
+      {% set theme_primary = "#78c2ad" %}
+      {% set theme_primary_600 = "#5ea895" %}
+      {% set theme_primary_100 = "#eef8f5" %}
+      {% set ui_body_bg = "#f4f8f6" %}
+      {% set ui_card_radius = "16px" %}
+      {% set ui_header_radius = "16px" %}
+      {% set ui_btn_radius = "12px" %}
+      {% set ui_header_padding = "1.2rem 1.6rem" %}
+    {% elif theme_code == "pulse" %}
+      {% set theme_primary = "#593196" %}
+      {% set theme_primary_600 = "#4a287f" %}
+      {% set theme_primary_100 = "#efe9f8" %}
+      {% set ui_body_bg = "#f6f3fb" %}
+      {% set ui_card_radius = "18px" %}
+      {% set ui_header_radius = "18px" %}
+      {% set ui_btn_radius = "14px" %}
+      {% set ui_tab_radius = "14px" %}
+      {% set ui_card_shadow = "0 14px 30px rgba(89, 49, 150, 0.16)" %}
+    {% elif theme_code == "sandstone" %}
+      {% set theme_primary = "#325d88" %}
+      {% set theme_primary_600 = "#2a4f74" %}
+      {% set theme_primary_100 = "#e9eff6" %}
+      {% set ui_body_bg = "#f5f2ed" %}
+      {% set ui_card_radius = "8px" %}
+      {% set ui_header_radius = "8px" %}
+      {% set ui_btn_radius = "6px" %}
+      {% set ui_tab_radius = "6px" %}
+      {% set ui_card_shadow = "0 6px 14px rgba(60, 50, 38, 0.10)" %}
+    {% elif theme_code == "solar" %}
+      {% set theme_primary = "#b58900" %}
+      {% set theme_primary_600 = "#9d7600" %}
+      {% set theme_primary_100 = "#fff8dd" %}
+      {% set ui_body_bg = "#fdf8e7" %}
+      {% set ui_card_radius = "10px" %}
+      {% set ui_header_radius = "10px" %}
+      {% set ui_btn_radius = "10px" %}
+      {% set ui_card_padding = "1.15rem" %}
+      {% set ui_table_py = "0.46rem" %}
+    {% elif theme_code == "superhero" %}
+      {% set theme_primary = "#df691a" %}
+      {% set theme_primary_600 = "#c65b16" %}
+      {% set theme_primary_100 = "#fff0e5" %}
+      {% set ui_body_bg = "#f7f1ec" %}
+      {% set ui_card_radius = "14px" %}
+      {% set ui_header_radius = "14px" %}
+      {% set ui_btn_radius = "11px" %}
+      {% set ui_card_shadow = "0 12px 26px rgba(139, 66, 18, 0.14)" %}
+    {% elif theme_code == "rose_elegant" %}
+      {% set theme_primary = "#8e2a6a" %}
+      {% set theme_primary_600 = "#742255" %}
+      {% set theme_primary_100 = "#f8eaf2" %}
+      {% set ui_body_bg = "#f8f2f7" %}
+      {% set ui_card_radius = "16px" %}
+      {% set ui_header_radius = "16px" %}
+      {% set ui_btn_radius = "12px" %}
+      {% set ui_tab_radius = "12px" %}
+      {% set ui_card_shadow = "0 16px 32px rgba(142, 42, 106, 0.18)" %}
+      {% set ui_header_shadow = "0 14px 30px rgba(142, 42, 106, 0.16)" %}
+    {% endif %}
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ title or branding.get("app_title", "ERP System") }}</title>
@@ -19,8 +115,8 @@
             colors: {
               ink: "#0f172a",
               slate: "#5b6b88",
-              brand: "#2563eb",
-              brandDeep: "#1e40af",
+              brand: "{{ theme_primary }}",
+              brandDeep: "{{ theme_primary_600 }}",
               lilac: "#c4b5fd",
               surface: "#f8fafc",
               night: "#0b0b10",
@@ -29,7 +125,11 @@
         },
       };
     </script>
+    {% if theme_bootswatch_url %}
+    <link rel="stylesheet" href="{{ theme_bootswatch_url }}?v={{ version }}" />
+    {% else %}
     <link rel="stylesheet" href="/static/vendor/bootstrap.min.css?v={{ version }}" />
+    {% endif %}
     <link rel="stylesheet" href="/static/vendor/bootstrap-icons.css?v={{ version }}" />
     <link rel="stylesheet" href="/static/vendor/bootstrap-datepicker3.min.css?v={{ version }}" />
     <link rel="stylesheet" href="/static/vendor/dataTables.bootstrap5.min.css?v={{ version }}" />
@@ -37,6 +137,206 @@
     <link rel="stylesheet" href="/static/vendor/select2.min.css?v={{ version }}" />
     <link rel="stylesheet" href="/static/vendor/sweetalert2.min.css?v={{ version }}" />
     <link rel="stylesheet" href="/static/css/app.css?v={{ version }}" />
+    <style>
+      :root {
+        --hp-primary: {{ theme_primary }};
+        --hp-primary-600: {{ theme_primary_600 }};
+        --hp-primary-100: {{ theme_primary_100 }};
+        --ui-body-bg: {{ ui_body_bg }};
+        --ui-card-radius: {{ ui_card_radius }};
+        --ui-header-radius: {{ ui_header_radius }};
+        --ui-btn-radius: {{ ui_btn_radius }};
+        --ui-tab-radius: {{ ui_tab_radius }};
+        --ui-card-padding: {{ ui_card_padding }};
+        --ui-header-padding: {{ ui_header_padding }};
+        --ui-table-py: {{ ui_table_py }};
+        --ui-table-px: {{ ui_table_px }};
+        --ui-card-shadow: {{ ui_card_shadow }};
+        --ui-header-shadow: {{ ui_header_shadow }};
+      }
+
+      body {
+        background: var(--ui-body-bg) !important;
+      }
+
+      .odoo-header {
+        border-radius: var(--ui-header-radius) !important;
+        padding: var(--ui-header-padding) !important;
+        box-shadow: var(--ui-header-shadow) !important;
+      }
+
+      .odoo-card {
+        border-radius: var(--ui-card-radius) !important;
+        padding: var(--ui-card-padding) !important;
+        box-shadow: var(--ui-card-shadow) !important;
+      }
+
+      .odoo-table > :not(caption) > * > * {
+        padding: var(--ui-table-py) var(--ui-table-px) !important;
+      }
+
+      .odoo-pill.primary {
+        border-color: var(--hp-primary-100) !important;
+        background: color-mix(in srgb, var(--hp-primary) 12%, white) !important;
+        color: var(--hp-primary) !important;
+      }
+
+      {% if theme_code == "rose_elegant" %}
+      .odoo-header,
+      .odoo-card {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .odoo-header::before,
+      .odoo-card::before {
+        content: "";
+        position: absolute;
+        width: 220px;
+        height: 220px;
+        right: -80px;
+        top: -90px;
+        background: radial-gradient(circle at center, rgba(255, 182, 225, 0.42), rgba(255, 182, 225, 0));
+        pointer-events: none;
+      }
+
+      .btn-primary {
+        background-image: linear-gradient(135deg, #a03578, #742255) !important;
+        border-color: #742255 !important;
+        box-shadow: 0 8px 18px rgba(142, 42, 106, 0.28) !important;
+      }
+
+      .btn-primary:hover,
+      .btn-primary:focus {
+        background-image: linear-gradient(135deg, #b63f87, #8e2a6a) !important;
+        border-color: #8e2a6a !important;
+      }
+
+      .nav-tabs .nav-link.active {
+        box-shadow: 0 4px 14px rgba(142, 42, 106, 0.22) !important;
+      }
+      {% endif %}
+
+      .odoo-header::after {
+        background: linear-gradient(
+          120deg,
+          color-mix(in srgb, var(--hp-primary) 16%, transparent),
+          color-mix(in srgb, var(--hp-primary) 9%, transparent),
+          rgba(248, 250, 252, 0)
+        ) !important;
+      }
+
+      .odoo-table tbody tr:hover,
+      .table-hover > tbody > tr:hover,
+      .table-hover > tbody > tr > td:hover,
+      .table-hover > tbody > tr > th:hover {
+        background: var(--hp-primary-100) !important;
+      }
+
+      .odoo-elevated {
+        border-color: color-mix(in srgb, var(--hp-primary) 16%, #ffffff) !important;
+        box-shadow: var(--ui-card-shadow) !important;
+      }
+
+      .odoo-elevated-soft {
+        border-color: color-mix(in srgb, var(--hp-primary) 12%, #ffffff) !important;
+      }
+
+      .odoo-plate {
+        background: linear-gradient(
+          180deg,
+          #ffffff 0%,
+          color-mix(in srgb, var(--hp-primary-100) 44%, #ffffff) 100%
+        ) !important;
+      }
+
+      .btn,
+      .form-control,
+      .form-select {
+        border-radius: var(--ui-btn-radius) !important;
+      }
+
+      .form-control:focus,
+      .form-select:focus {
+        border-color: var(--hp-primary) !important;
+        box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--hp-primary) 22%, transparent) !important;
+      }
+
+      .nav-tabs .nav-link {
+        border-radius: var(--ui-tab-radius) var(--ui-tab-radius) 0 0 !important;
+      }
+
+      .nav-tabs .nav-link.active {
+        color: var(--hp-primary) !important;
+        border-color: color-mix(in srgb, var(--hp-primary) 35%, #dbe5f0) !important;
+        border-bottom-color: #fff !important;
+      }
+
+      .sidebar .nav-link:hover,
+      .sidebar .nav-link:focus {
+        background: var(--hp-primary-100) !important;
+        color: #0f172a !important;
+      }
+
+      .text-primary,
+      .text-brand {
+        color: var(--hp-primary) !important;
+      }
+
+      .badge.text-bg-primary,
+      .bg-primary {
+        background-color: var(--hp-primary) !important;
+      }
+
+      .bg-primary-subtle {
+        background-color: var(--hp-primary-100) !important;
+        color: var(--hp-primary) !important;
+      }
+
+      /* Sales UI hardcoded override */
+      .bg-\[\#efe7f0\],
+      .bg-\[\#f6eef6\],
+      .bg-\[\#eef5ff\],
+      .bg-\[\#dbeafe\] {
+        background: var(--hp-primary-100) !important;
+      }
+
+      .text-\[\#5a2f6b\],
+      .text-\[\#1e3a8a\] {
+        color: var(--hp-primary) !important;
+      }
+
+      [style*="#efe4f3"],
+      [style*="#efe7f0"],
+      [style*="#f6eef6"],
+      [style*="#dbeafe"] {
+        background: var(--hp-primary-100) !important;
+        color: var(--hp-primary) !important;
+      }
+
+      .border-\[\#e9dbe8\],
+      .border-\[\#e8d7e6\],
+      .border-\[\#f2d9cc\] {
+        border-color: color-mix(in srgb, var(--hp-primary) 22%, #e5e7eb) !important;
+      }
+
+      [class*="from-[#f6eef6]"],
+      [class*="from-[#eef5ff]"] {
+        --tw-gradient-from: color-mix(in srgb, var(--hp-primary) 12%, #ffffff) var(--tw-gradient-from-position) !important;
+      }
+
+      [class*="to-[#eef6ff]"],
+      [class*="to-[#dbeafe]"] {
+        --tw-gradient-to: color-mix(in srgb, var(--hp-primary) 8%, #ffffff) var(--tw-gradient-to-position) !important;
+      }
+
+      #layout main section.sticky,
+      #sales-form,
+      #party-inline {
+        border-radius: var(--ui-card-radius) !important;
+        box-shadow: var(--ui-card-shadow) !important;
+      }
+    </style>
     {% block extra_head %}{% endblock %}
   </head>
   <body>

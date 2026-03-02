@@ -52,6 +52,7 @@ def _default_branding() -> dict[str, str]:
             "pos_logo_url": "/static/logo_hollywood.png",
             "favicon_url": "/static/favicon.ico",
             "inventory_cs_only": False,
+            "theme_code": "default",
         }
     return {
         "legal_name": "Hollywood Pacas",
@@ -66,6 +67,7 @@ def _default_branding() -> dict[str, str]:
         "pos_logo_url": "/static/logo_hollywood.png",
         "favicon_url": "/static/favicon.ico",
         "inventory_cs_only": False,
+        "theme_code": "default",
     }
 
 
@@ -92,6 +94,7 @@ async def attach_branding(request, call_next):
                     "pos_logo_url": row.pos_logo_url or branding["pos_logo_url"],
                     "favicon_url": row.favicon_url or branding["favicon_url"],
                     "inventory_cs_only": bool(row.inventory_cs_only),
+                    "theme_code": (getattr(row, "theme_code", "") or branding.get("theme_code") or "default"),
                 }
             )
         menu_links = web.get_sidebar_menu_layout(db)

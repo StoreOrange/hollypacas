@@ -768,6 +768,9 @@ def _seed_company_profile_settings(db: Session) -> None:
         if existing.price_margin_percent is None:
             existing.price_margin_percent = 0
             changed = True
+        if not (getattr(existing, "theme_code", "") or "").strip():
+            existing.theme_code = "default"
+            changed = True
         if changed:
             db.commit()
         return
@@ -790,6 +793,7 @@ def _seed_company_profile_settings(db: Session) -> None:
                 multi_branch_enabled=multi_branch_enabled,
                 price_auto_from_cost_enabled=False,
                 price_margin_percent=0,
+                theme_code="default",
                 updated_by="system-bootstrap",
             )
         )
@@ -812,6 +816,7 @@ def _seed_company_profile_settings(db: Session) -> None:
                 multi_branch_enabled=multi_branch_enabled,
                 price_auto_from_cost_enabled=False,
                 price_margin_percent=0,
+                theme_code="default",
                 updated_by="system-bootstrap",
             )
         )
@@ -1005,6 +1010,10 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN price_margin_percent INTEGER DEFAULT 0"))
                 conn.execute(text("UPDATE company_profile_settings SET price_margin_percent = 0 WHERE price_margin_percent IS NULL"))
+        if "theme_code" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN theme_code VARCHAR(40) DEFAULT 'default'"))
+                conn.execute(text("UPDATE company_profile_settings SET theme_code = 'default' WHERE theme_code IS NULL OR theme_code = ''"))
     if "vendedor_bodegas" not in inspector.get_table_names():
         with engine.begin() as conn:
             conn.execute(
