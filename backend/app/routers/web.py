@@ -10526,22 +10526,6 @@ def _sales_special_report_filters(request: Request):
     return start_date, end_date, branch_id, currency, selected_year, top_n
 
 
-def _safe_date_label(value: object) -> str:
-    if value is None:
-        return "-"
-    if isinstance(value, datetime):
-        return value.strftime("%d/%m/%Y")
-    if isinstance(value, date):
-        return value.strftime("%d/%m/%Y")
-    raw = str(value).strip()
-    if not raw:
-        return "-"
-    try:
-        return date.fromisoformat(raw[:10]).strftime("%d/%m/%Y")
-    except Exception:
-        return raw
-
-
 @router.get("/reports/ventas-especial")
 def report_sales_special(
     request: Request,
@@ -10669,7 +10653,6 @@ def _build_sales_special_report_data(
         daily_rows.append(
             {
                 "day": day_key,
-                "day_label": _safe_date_label(day_key),
                 "facturas": int(facturas or 0),
                 "items": float(items_dec),
                 "total_cs": float(total_cs_dec),
@@ -10983,7 +10966,7 @@ def report_sales_special_export(
         selected_value = row["total_cs"] if currency == "CS" else row["total_usd"]
         ws_daily.append(
             [
-                row.get("day_label") or "",
+                row["day"].strftime("%Y-%m-%d") if row["day"] else "",
                 row["facturas"],
                 row["items"],
                 row["total_cs"],
