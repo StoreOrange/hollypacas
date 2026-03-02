@@ -1,0 +1,510 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+  .dx-shell {
+    border: 1px solid #dbe3ef;
+    border-radius: 14px;
+    background: #fff;
+    overflow: hidden;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  .dx-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: .625rem .75rem;
+    border-bottom: 1px solid #e6edf7;
+    background: linear-gradient(180deg, #fbfdff 0%, #f4f8fd 100%);
+  }
+  .dx-input {
+    min-width: 220px;
+    max-width: 340px;
+    border: 1px solid #cfd9e8;
+    border-radius: .625rem;
+    padding: .35rem .6rem;
+    font-size: .78rem;
+    outline: none;
+  }
+  .dx-input:focus {
+    border-color: #5a87c9;
+    box-shadow: 0 0 0 3px rgba(90, 135, 201, .18);
+  }
+  .dx-density button {
+    border: 1px solid #ccd8ea;
+    background: #fff;
+    color: #334155;
+    border-radius: .5rem;
+    padding: .2rem .5rem;
+    font-size: .72rem;
+  }
+  .dx-density button.active {
+    background: #0b3b6f;
+    border-color: #0b3b6f;
+    color: #fff;
+  }
+  .dx-grid-wrap {
+    max-height: 58vh;
+    overflow: auto;
+  }
+  .dx-grid {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: .78rem;
+    color: #1e293b;
+  }
+  .dx-grid th,
+  .dx-grid td {
+    border-bottom: 1px solid #e8eef8;
+    border-right: 1px solid #eff4fb;
+    padding: .45rem .6rem;
+    white-space: nowrap;
+  }
+  .dx-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #eef4fc;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-size: .68rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .dx-grid tbody tr:nth-child(even) td {
+    background: #fafcff;
+  }
+  .dx-grid tbody tr:hover td {
+    background: #edf4ff;
+  }
+  .dx-grid .sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: inherit;
+  }
+  .dx-grid thead .sticky-col {
+    z-index: 3;
+    background: #e5eefb;
+  }
+  .dx-grid .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .dx-grid tfoot td {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: #dce9fb;
+    font-weight: 700;
+  }
+  .dx-grid.compact th,
+  .dx-grid.compact td {
+    padding: .3rem .45rem;
+    font-size: .72rem;
+  }
+  @media (max-width: 1280px) {
+    .dx-shell { max-width: 100%; }
+    .dx-grid { min-width: 700px; }
+  }
+  @media (max-width: 768px) {
+    .dx-grid { min-width: 640px; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Informes</li>
+                <li class="breadcrumb-item active" aria-current="page">Ventas especial</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Reporte especial de ventas</div>
+            <div class="odoo-subtitle mt-1 text-sm">Totales diarios, acumulado anual y top articulos por sucursal.</div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="odoo-pill primary">
+              <i class="bi bi-currency-exchange"></i>
+              Total periodo: {{ currency_label }} {{ "{:,.2f}".format(period_total_selected or 0) }}
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/reports">Informes</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/reports/ventas-especial">Ventas especial</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/ventas">Ventas detallado</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/ventas-productos">Ventas por producto</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="odoo-card">
+        <form class="row g-2 align-items-end" method="get" action="/reports/ventas-especial">
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+            <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+            <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Moneda</label>
+            <select name="currency" class="form-select form-select-sm">
+              <option value="CS" {% if selected_currency == "CS" %}selected{% endif %}>Cordobas (C$)</option>
+              <option value="USD" {% if selected_currency == "USD" %}selected{% endif %}>Dolares (USD)</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Anio acumulado</label>
+            <input name="year" type="number" min="2000" max="2100" class="form-control form-control-sm" value="{{ selected_year }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Top articulos</label>
+            <input name="top_n" type="number" min="5" max="100" class="form-control form-control-sm" value="{{ top_n }}">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">
+              <i class="bi bi-search"></i>
+              Generar
+            </button>
+            <a class="btn btn-outline-secondary btn-sm" href="/reports/ventas-especial">
+              <i class="bi bi-eraser"></i>
+              Limpiar
+            </a>
+          </div>
+        </form>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-lg-4">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Total periodo</div>
+            <div class="odoo-title text-xl mt-1">{{ currency_label }} {{ "{:,.2f}".format(period_total_selected or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-4">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Items vendidos periodo</div>
+            <div class="odoo-title text-xl mt-1">{{ "{:,.2f}".format(period_total_items or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-4">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Acumulado {{ selected_year }}</div>
+            <div class="odoo-title text-xl mt-1">{{ currency_label }} {{ "{:,.2f}".format(year_total_selected or 0) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="odoo-section-title mb-3 text-base">Pivot diario (rango seleccionado)</div>
+        <div class="dx-shell">
+          <div class="dx-grid-wrap">
+          <table class="dx-grid" id="pivotGrid">
+            <thead>
+              <tr>
+                <th class="sticky-col">Fecha</th>
+                <th class="num">Items</th>
+                <th class="num">Venta C$</th>
+                <th class="num">Venta USD</th>
+                <th class="num">Venta {{ currency_label }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in daily_rows %}
+              <tr>
+                <td class="sticky-col font-semibold">{{ row.day_key }}</td>
+                <td class="num">{{ "{:,.2f}".format(row.items_qty or 0) }}</td>
+                <td class="num">C$ {{ "{:,.2f}".format(row.total_cs or 0) }}</td>
+                <td class="num">$ {{ "{:,.2f}".format(row.total_usd or 0) }}</td>
+                <td class="num font-semibold">
+                  {% if selected_currency == "CS" %}
+                  C$ {{ "{:,.2f}".format(row.total_cs or 0) }}
+                  {% else %}
+                  $ {{ "{:,.2f}".format(row.total_usd or 0) }}
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              {% if daily_rows|length == 0 %}
+              <tr>
+                <td colspan="5" class="py-4 text-center text-slate-500">Sin datos para el rango seleccionado.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td class="sticky-col">Total periodo</td>
+                <td class="num">{{ "{:,.2f}".format(period_total_items or 0) }}</td>
+                <td class="num">C$ {{ "{:,.2f}".format(period_total_cs or 0) }}</td>
+                <td class="num">$ {{ "{:,.2f}".format(period_total_usd or 0) }}</td>
+                <td class="num">{{ currency_label }} {{ "{:,.2f}".format(period_total_selected or 0) }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="odoo-section-title mb-3 text-base">Comparativo anual {{ selected_year }} (barra + linea)</div>
+        <div class="dx-shell">
+          <div class="px-3 py-2 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+            <div class="text-xs text-slate-600">
+              Moneda: <span class="font-semibold text-slate-800">{{ currency_label }}</span>
+            </div>
+            <div class="text-xs text-slate-600">
+              Total anual: <span class="font-semibold text-slate-800">{{ currency_label }} {{ "{:,.2f}".format(year_total_selected or 0) }}</span>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <div id="yearCompareWrap" class="relative min-w-[860px] px-4 pt-8 pb-6">
+              <svg id="yearCompareSvg" class="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none"></svg>
+              <div class="grid grid-cols-12 gap-4 items-end relative z-10">
+                {% for row in year_rows %}
+                {% set row_selected = row.total_cs if selected_currency == "CS" else row.total_usd %}
+                <div class="year-col" data-value="{{ row_selected or 0 }}">
+                  <div class="text-[11px] font-semibold text-slate-700 text-center">{{ row.month_name }}</div>
+                  <div class="mt-2 h-40 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-1 flex items-end">
+                    <div class="year-bar w-full rounded-lg bg-gradient-to-t from-brand/85 to-brandDeep/95 shadow-sm"></div>
+                  </div>
+                  <div class="mt-2 text-[11px] text-slate-600 text-center">{{ currency_label }} {{ "{:,.2f}".format(row_selected or 0) }}</div>
+                  <div class="text-[10px] text-slate-400 text-center">Items {{ "{:,.0f}".format(row.items_qty or 0) }}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="odoo-section-title mb-3 text-base">Top articulos vendidos (por sucursal)</div>
+        <div class="dx-shell">
+          <div class="dx-toolbar">
+            <div class="d-flex flex-wrap gap-2">
+              <input id="topSearch" class="dx-input" type="text" placeholder="Filtrar por sucursal, codigo o producto...">
+            </div>
+            <div class="dx-density d-flex gap-1">
+              <button type="button" id="densityNormal" class="active">Normal</button>
+              <button type="button" id="densityCompact">Compacto</button>
+            </div>
+          </div>
+          <div class="dx-grid-wrap">
+          <table class="dx-grid" id="topGrid">
+            <thead>
+              <tr>
+                <th class="sticky-col" data-sort="text">Sucursal</th>
+                <th data-sort="text">Codigo</th>
+                <th data-sort="text">Producto</th>
+                <th class="num" data-sort="num">Cantidad</th>
+                <th class="num" data-sort="num">Venta C$</th>
+                <th class="num" data-sort="num">Venta USD</th>
+                <th class="num" data-sort="num">Venta {{ currency_label }}</th>
+              </tr>
+            </thead>
+            <tbody id="topGridBody">
+              {% for row in top_items %}
+              <tr data-search="{{ (row.sucursal ~ ' ' ~ row.codigo ~ ' ' ~ row.producto)|lower }}">
+                <td class="sticky-col">{{ row.sucursal }}</td>
+                <td class="fw-semibold">{{ row.codigo }}</td>
+                <td>{{ row.producto }}</td>
+                <td class="num" data-num="{{ row.cantidad or 0 }}">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
+                <td class="num" data-num="{{ row.total_cs or 0 }}">C$ {{ "{:,.2f}".format(row.total_cs or 0) }}</td>
+                <td class="num" data-num="{{ row.total_usd or 0 }}">$ {{ "{:,.2f}".format(row.total_usd or 0) }}</td>
+                <td class="num fw-semibold" data-num="{% if selected_currency == 'CS' %}{{ row.total_cs or 0 }}{% else %}{{ row.total_usd or 0 }}{% endif %}">
+                  {% if selected_currency == "CS" %}
+                  C$ {{ "{:,.2f}".format(row.total_cs or 0) }}
+                  {% else %}
+                  $ {{ "{:,.2f}".format(row.total_usd or 0) }}
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              {% if top_items|length == 0 %}
+              <tr>
+                <td colspan="7" class="text-center text-slate py-3">Sin datos de articulos en el periodo.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td class="sticky-col">Totales visibles</td>
+                <td></td>
+                <td></td>
+                <td class="num" id="sumCantidad">0.00</td>
+                <td class="num" id="sumCs">C$ 0.00</td>
+                <td class="num" id="sumUsd">$ 0.00</td>
+                <td class="num" id="sumSel">{{ currency_label }} 0.00</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  (function () {
+    const topGrid = document.getElementById("topGrid");
+    const topBody = document.getElementById("topGridBody");
+    const search = document.getElementById("topSearch");
+    const btnNormal = document.getElementById("densityNormal");
+    const btnCompact = document.getElementById("densityCompact");
+    const sumCantidad = document.getElementById("sumCantidad");
+    const sumCs = document.getElementById("sumCs");
+    const sumUsd = document.getElementById("sumUsd");
+    const sumSel = document.getElementById("sumSel");
+    if (!topGrid || !topBody) return;
+
+    const fmt = new Intl.NumberFormat("es-NI", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    let sortState = { index: -1, dir: 1, type: "text" };
+
+    function visibleRows() {
+      return Array.from(topBody.querySelectorAll("tr")).filter((row) => row.style.display !== "none");
+    }
+
+    function recalcFooters() {
+      let qty = 0, cs = 0, usd = 0, sel = 0;
+      visibleRows().forEach((row) => {
+        const tds = row.querySelectorAll("td");
+        if (tds.length < 7) return;
+        qty += parseFloat(tds[3].dataset.num || "0");
+        cs += parseFloat(tds[4].dataset.num || "0");
+        usd += parseFloat(tds[5].dataset.num || "0");
+        sel += parseFloat(tds[6].dataset.num || "0");
+      });
+      sumCantidad.textContent = fmt.format(qty);
+      sumCs.textContent = "C$ " + fmt.format(cs);
+      sumUsd.textContent = "$ " + fmt.format(usd);
+      sumSel.textContent = "{{ currency_label }} " + fmt.format(sel);
+    }
+
+    function applyFilter() {
+      const q = (search?.value || "").trim().toLowerCase();
+      Array.from(topBody.querySelectorAll("tr")).forEach((row) => {
+        const hay = row.dataset.search || "";
+        row.style.display = !q || hay.includes(q) ? "" : "none";
+      });
+      recalcFooters();
+    }
+
+    function sortBy(index, type) {
+      const rows = Array.from(topBody.querySelectorAll("tr"));
+      const dir = (sortState.index === index ? -sortState.dir : 1);
+      sortState = { index, dir, type };
+      rows.sort((a, b) => {
+        const aCell = a.children[index];
+        const bCell = b.children[index];
+        if (!aCell || !bCell) return 0;
+        let av, bv;
+        if (type === "num") {
+          av = parseFloat(aCell.dataset.num || "0");
+          bv = parseFloat(bCell.dataset.num || "0");
+        } else {
+          av = (aCell.textContent || "").trim().toLowerCase();
+          bv = (bCell.textContent || "").trim().toLowerCase();
+        }
+        if (av < bv) return -1 * dir;
+        if (av > bv) return 1 * dir;
+        return 0;
+      });
+      rows.forEach((r) => topBody.appendChild(r));
+      recalcFooters();
+    }
+
+    topGrid.querySelectorAll("thead th").forEach((th, idx) => {
+      const type = th.dataset.sort;
+      if (!type) return;
+      th.addEventListener("click", () => sortBy(idx, type));
+    });
+
+    if (search) search.addEventListener("input", applyFilter);
+
+    btnNormal?.addEventListener("click", () => {
+      topGrid.classList.remove("compact");
+      btnNormal.classList.add("active");
+      btnCompact.classList.remove("active");
+    });
+    btnCompact?.addEventListener("click", () => {
+      topGrid.classList.add("compact");
+      btnCompact.classList.add("active");
+      btnNormal.classList.remove("active");
+    });
+
+    function renderYearCompare() {
+      const wrap = document.getElementById("yearCompareWrap");
+      const svg = document.getElementById("yearCompareSvg");
+      if (!wrap || !svg) return;
+      const cols = Array.from(wrap.querySelectorAll(".year-col"));
+      if (!cols.length) return;
+      const values = cols.map((c) => parseFloat(c.dataset.value || "0"));
+      const maxVal = Math.max(1, ...values);
+      cols.forEach((col, idx) => {
+        const bar = col.querySelector(".year-bar");
+        if (!bar) return;
+        const v = values[idx] || 0;
+        const pct = Math.max(0.05, v / maxVal);
+        bar.style.height = (pct * 100).toFixed(2) + "%";
+      });
+      const wrapRect = wrap.getBoundingClientRect();
+      const points = cols.map((col) => {
+        const bar = col.querySelector(".year-bar");
+        const rect = bar.getBoundingClientRect();
+        return {
+          x: rect.left + rect.width / 2 - wrapRect.left,
+          y: rect.top - wrapRect.top + 1,
+        };
+      });
+      svg.setAttribute("viewBox", `0 0 ${Math.max(1, wrap.clientWidth)} ${Math.max(1, wrap.clientHeight)}`);
+      const d = points
+        .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+        .join(" ");
+      const circles = points
+        .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.2" fill="#0b3b6f" stroke="#ffffff" stroke-width="1.2"></circle>`)
+        .join("");
+      svg.innerHTML = `
+        <path d="${d}" fill="none" stroke="#0b3b6f" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
+        ${circles}
+      `;
+    }
+
+    recalcFooters();
+    renderYearCompare();
+    window.addEventListener("resize", renderYearCompare);
+  })();
+</script>
+{% endblock %}

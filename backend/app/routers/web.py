@@ -10440,6 +10440,308 @@ def _sales_products_report_filters(request: Request):
     return start_date, end_date, branch_id, vendedor_id, producto_id, producto_q
 
 
+def _sales_special_report_filters(request: Request):
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    branch_id = request.query_params.get("branch_id") or "all"
+    currency = (request.query_params.get("currency") or "CS").strip().upper()
+    year_raw = request.query_params.get("year")
+    top_n_raw = request.query_params.get("top_n")
+
+    today = local_today()
+    start_date = today - timedelta(days=30)
+    end_date = today
+    if start_raw:
+        try:
+            start_date = date.fromisoformat(start_raw)
+        except ValueError:
+            pass
+    if end_raw:
+        try:
+            end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            pass
+    if end_date < start_date:
+        end_date = start_date
+
+    if currency not in {"CS", "USD"}:
+        currency = "CS"
+
+    try:
+        selected_year = int(str(year_raw or start_date.year))
+    except ValueError:
+        selected_year = start_date.year
+    selected_year = max(2000, min(2100, selected_year))
+
+    try:
+        top_n = int(str(top_n_raw or 20))
+    except ValueError:
+        top_n = 20
+    top_n = max(5, min(100, top_n))
+
+    return start_date, end_date, branch_id, currency, selected_year, top_n
+
+
+@router.get("/reports/ventas-especial")
+def report_sales_special(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, currency, selected_year, top_n = _sales_special_report_filters(request)
+
+    allowed_codes = _allowed_branch_codes(db)
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
+    selected_branch_id: Optional[int] = None
+    if branch_id != "all":
+        try:
+            selected_branch_id = int(branch_id)
+        except ValueError:
+            selected_branch_id = None
+
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+
+    def _apply_sales_scope(query):
+        query = (
+            query.join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+            .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+            .filter(VentaFactura.estado != "ANULADA")
+            .filter(func.lower(Branch.code).in_(allowed_codes))
+            .filter(Branch.id.in_(scoped_branch_ids))
+        )
+        if selected_branch_id:
+            if selected_branch_id not in scoped_branch_ids:
+                return query.filter(Branch.id == -1)
+            query = query.filter(Branch.id == selected_branch_id)
+        return query
+
+    # Diario por rango
+    daily_sales_rows = (
+        _apply_sales_scope(
+            db.query(
+                func.date(VentaFactura.fecha).label("day"),
+                func.count(VentaFactura.id).label("facturas"),
+                func.sum(VentaFactura.total_cs).label("total_cs"),
+                func.sum(VentaFactura.total_usd).label("total_usd"),
+            )
+            .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+            .group_by(func.date(VentaFactura.fecha))
+            .order_by(func.date(VentaFactura.fecha).asc())
+        )
+        .all()
+    )
+    daily_items_rows = (
+        _apply_sales_scope(
+            db.query(
+                func.date(VentaFactura.fecha).label("day"),
+                func.sum(VentaItem.cantidad).label("items"),
+            )
+            .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+            .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+            .group_by(func.date(VentaFactura.fecha))
+        )
+        .all()
+    )
+    items_by_day: dict[str, Decimal] = {}
+    for day, items in daily_items_rows:
+        day_key = str(day)[:10]
+        items_by_day[day_key] = Decimal(str(items or 0))
+
+    daily_rows: list[dict[str, object]] = []
+    period_total_cs = Decimal("0")
+    period_total_usd = Decimal("0")
+    period_total_items = Decimal("0")
+    period_total_facturas = 0
+    for day, facturas, total_cs, total_usd in daily_sales_rows:
+        day_key = str(day)[:10]
+        total_cs_dec = Decimal(str(total_cs or 0))
+        total_usd_dec = Decimal(str(total_usd or 0))
+        items_dec = Decimal(str(items_by_day.get(day_key, Decimal("0"))))
+        period_total_cs += total_cs_dec
+        period_total_usd += total_usd_dec
+        period_total_items += items_dec
+        period_total_facturas += int(facturas or 0)
+        daily_rows.append(
+            {
+                "day_key": day_key,
+                "facturas": int(facturas or 0),
+                "items_qty": float(items_dec),
+                "total_cs": float(total_cs_dec),
+                "total_usd": float(total_usd_dec),
+            }
+        )
+
+    # Acumulado anual por mes
+    year_start = date(selected_year, 1, 1)
+    year_end = date(selected_year, 12, 31)
+    year_start_dt = datetime.combine(year_start, datetime.min.time())
+    year_end_dt = datetime.combine(year_end + timedelta(days=1), datetime.min.time())
+
+    year_month_sales = (
+        _apply_sales_scope(
+            db.query(
+                func.extract("month", VentaFactura.fecha).label("month_num"),
+                func.count(VentaFactura.id).label("facturas"),
+                func.sum(VentaFactura.total_cs).label("total_cs"),
+                func.sum(VentaFactura.total_usd).label("total_usd"),
+            )
+            .filter(VentaFactura.fecha >= year_start_dt, VentaFactura.fecha < year_end_dt)
+            .group_by(func.extract("month", VentaFactura.fecha))
+        )
+        .all()
+    )
+    year_month_items = (
+        _apply_sales_scope(
+            db.query(
+                func.extract("month", VentaFactura.fecha).label("month_num"),
+                func.sum(VentaItem.cantidad).label("items"),
+            )
+            .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+            .filter(VentaFactura.fecha >= year_start_dt, VentaFactura.fecha < year_end_dt)
+            .group_by(func.extract("month", VentaFactura.fecha))
+        )
+        .all()
+    )
+    month_name = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+        7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+    }
+    year_sales_map: dict[int, dict[str, Decimal | int]] = {}
+    for month_num, facturas, total_cs, total_usd in year_month_sales:
+        m = int(month_num or 0)
+        if m < 1 or m > 12:
+            continue
+        year_sales_map[m] = {
+            "facturas": int(facturas or 0),
+            "total_cs": Decimal(str(total_cs or 0)),
+            "total_usd": Decimal(str(total_usd or 0)),
+            "items": Decimal("0"),
+        }
+    for month_num, items in year_month_items:
+        m = int(month_num or 0)
+        if m < 1 or m > 12:
+            continue
+        if m not in year_sales_map:
+            year_sales_map[m] = {
+                "facturas": 0,
+                "total_cs": Decimal("0"),
+                "total_usd": Decimal("0"),
+                "items": Decimal("0"),
+            }
+        year_sales_map[m]["items"] = Decimal(str(items or 0))
+
+    year_rows: list[dict[str, object]] = []
+    year_total_cs = Decimal("0")
+    year_total_usd = Decimal("0")
+    year_total_items = Decimal("0")
+    year_total_facturas = 0
+    for m in range(1, 13):
+        rec = year_sales_map.get(
+            m,
+            {"facturas": 0, "total_cs": Decimal("0"), "total_usd": Decimal("0"), "items": Decimal("0")},
+        )
+        year_total_cs += Decimal(str(rec["total_cs"]))
+        year_total_usd += Decimal(str(rec["total_usd"]))
+        year_total_items += Decimal(str(rec["items"]))
+        year_total_facturas += int(rec["facturas"])
+        year_rows.append(
+            {
+                "month_name": month_name[m],
+                "facturas": int(rec["facturas"]),
+                "items_qty": float(Decimal(str(rec["items"]))),
+                "total_cs": float(Decimal(str(rec["total_cs"]))),
+                "total_usd": float(Decimal(str(rec["total_usd"]))),
+            }
+        )
+
+    # Top articulos por sucursal en el rango
+    top_rows_query = (
+        db.query(
+            Branch.name.label("sucursal"),
+            Producto.cod_producto.label("codigo"),
+            Producto.descripcion.label("producto"),
+            func.sum(VentaItem.cantidad).label("cantidad"),
+            func.sum(VentaItem.subtotal_cs).label("total_cs"),
+            func.sum(VentaItem.subtotal_usd).label("total_usd"),
+            func.count(func.distinct(VentaFactura.id)).label("facturas"),
+        )
+        .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+        .join(Producto, Producto.id == VentaItem.producto_id)
+        .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+        .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+        .filter(func.lower(Branch.code).in_(allowed_codes))
+        .filter(Branch.id.in_(scoped_branch_ids))
+    )
+    if selected_branch_id:
+        if selected_branch_id not in scoped_branch_ids:
+            top_rows_query = top_rows_query.filter(Branch.id == -1)
+        else:
+            top_rows_query = top_rows_query.filter(Branch.id == selected_branch_id)
+    top_rows = (
+        top_rows_query
+        .group_by(Branch.name, Producto.cod_producto, Producto.descripcion)
+        .order_by(func.sum(VentaItem.cantidad).desc(), func.sum(VentaItem.subtotal_cs).desc())
+        .limit(top_n)
+        .all()
+    )
+    top_items = [
+        {
+            "sucursal": sucursal or "-",
+            "codigo": codigo or "",
+            "producto": producto or "",
+            "cantidad": float(Decimal(str(cantidad or 0))),
+            "total_cs": float(Decimal(str(total_cs or 0))),
+            "total_usd": float(Decimal(str(total_usd or 0))),
+            "facturas": int(facturas or 0),
+        }
+        for sucursal, codigo, producto, cantidad, total_cs, total_usd, facturas in top_rows
+    ]
+
+    currency_label = "C$" if currency == "CS" else "USD"
+    period_total_selected = float(period_total_cs if currency == "CS" else period_total_usd)
+    year_total_selected = float(year_total_cs if currency == "CS" else year_total_usd)
+
+    return request.app.state.templates.TemplateResponse(
+        "report_sales_special.html",
+        {
+            "request": request,
+            "user": user,
+            "branches": branches,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "selected_branch": branch_id,
+            "selected_currency": currency,
+            "selected_year": selected_year,
+            "top_n": top_n,
+            "daily_rows": daily_rows,
+            "period_total_cs": float(period_total_cs),
+            "period_total_usd": float(period_total_usd),
+            "period_total_items": float(period_total_items),
+            "period_total_facturas": period_total_facturas,
+            "period_total_selected": period_total_selected,
+            "year_rows": year_rows,
+            "year_total_cs": float(year_total_cs),
+            "year_total_usd": float(year_total_usd),
+            "year_total_items": float(year_total_items),
+            "year_total_facturas": year_total_facturas,
+            "year_total_selected": year_total_selected,
+            "top_items": top_items,
+            "currency_label": currency_label,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
 def _build_sales_products_report(
     db: Session,
     user: User,
