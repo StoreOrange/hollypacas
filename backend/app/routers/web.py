@@ -23,7 +23,7 @@ from reportlab.lib import colors
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from jose import JWTError, jwt
-from sqlalchemy import and_, create_engine, func, or_
+from sqlalchemy import String, and_, create_engine, func, or_
 from sqlalchemy.orm import Session, aliased
 
 from ..config import (
@@ -77,6 +77,8 @@ from ..models.sales import (
     AccountingSubrubroRule,
     AccountingVoucherType,
     Banco,
+    BodegaRequisaCierre,
+    BodegaRequisaDraft,
     CajaDiaria,
     CierreCaja,
     Cliente,
@@ -167,6 +169,7 @@ SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "inventory_caliente", "label": "Mi inventario en Caliente", "href": "/inventory/caliente", "icon": "bi-lightning-charge-fill", "perm": "menu.inventory.caliente", "alt_perm": None},
     {"id": "inventory_ingresos", "label": "Ingresos Inventario", "href": "/inventory/ingresos", "icon": "bi-box-arrow-in-down", "perm": "menu.inventory.ingresos", "alt_perm": None},
     {"id": "inventory_egresos", "label": "Egresos Inventario", "href": "/inventory/egresos", "icon": "bi-box-arrow-up", "perm": "menu.inventory.egresos", "alt_perm": None},
+    {"id": "inventory_requisas", "label": "Gestion Bodega y Requisas", "href": "/inventory/gestion-bodega-requisas", "icon": "bi-clipboard2-data-fill", "perm": "menu.inventory.requisas", "alt_perm": None},
     {"id": "inventory_traslados", "label": "Traslados Rapidos", "href": "/inventory/traslados-rapidos", "icon": "bi-arrow-left-right", "perm": "menu.inventory.egresos", "alt_perm": None},
     {"id": "finance", "label": "Finanzas", "href": "/finance", "icon": "bi-currency-dollar", "perm": "menu.finance", "alt_perm": None},
     {"id": "accounting", "label": "Contabilidad", "href": "/accounting", "icon": "bi-journal-check", "perm": "menu.accounting", "alt_perm": None},
@@ -361,6 +364,7 @@ PERMISSION_GROUPS = [
         "items": [
             {"name": "menu.inventory.ingresos", "label": "Ingresos de inventario"},
             {"name": "menu.inventory.egresos", "label": "Egresos de inventario"},
+            {"name": "menu.inventory.requisas", "label": "Gestion de bodega y requisas"},
         ],
     },
     {
@@ -384,6 +388,7 @@ PERMISSION_GROUPS = [
             {"name": "access.inventory.caliente", "label": "Inventario en caliente"},
             {"name": "access.inventory.ingresos", "label": "Ingresos de inventario"},
             {"name": "access.inventory.egresos", "label": "Egresos de inventario"},
+            {"name": "access.inventory.requisas", "label": "Gestion de bodega y requisas"},
             {"name": "access.inventory.productos", "label": "Crear/editar productos"},
             {"name": "access.finance", "label": "Acceso a finanzas"},
             {"name": "access.finance.rates", "label": "Configurar tasas"},
@@ -968,6 +973,19 @@ def _current_db_name() -> str:
 def _is_shoes_mode() -> bool:
     name = _current_db_name()
     return name == "bdzapatos" or "zapato" in name
+
+
+def _is_hollpacas_mode() -> bool:
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    db_name = _current_db_name().strip().lower()
+    return (
+        ("hollpacas" in active_company_key)
+        or ("hollywoodpacas" in active_company_key)
+        or ("holl" in active_company_key)
+        or ("pacas" in active_company_key)
+        or ("holl" in db_name)
+        or ("pacas" in db_name)
+    )
 
 
 def _ensure_shoe_size_formats_seed(db: Session) -> None:
@@ -5531,6 +5549,7 @@ def inventory_page(
     global_items = len({p.id for p in productos if (balances.get((p.id, bodega_central.id), Decimal("0")) if bodega_central else Decimal("0")) > 0 or (balances.get((p.id, bodega_esteli.id), Decimal("0")) if bodega_esteli else Decimal("0")) > 0})
     inventory_cs_only = _inventory_cs_only_mode(db)
     auto_price_margin_enabled, auto_price_margin_pct = _price_margin_mode(db)
+    is_hollpacas_mode = _is_hollpacas_mode()
     return request.app.state.templates.TemplateResponse(
         "inventory.html",
         {
@@ -5554,9 +5573,1150 @@ def inventory_page(
             "inventory_cs_only": inventory_cs_only,
             "auto_price_margin_enabled": auto_price_margin_enabled,
             "auto_price_margin_pct": auto_price_margin_pct,
+            "is_hollpacas_mode": is_hollpacas_mode,
             "version": settings.UI_VERSION,
         },
     )
+
+
+def _bodega_requisas_filters(request: Request) -> tuple[date, date, str, str, str, str]:
+    today = local_today()
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    branch_id = (request.query_params.get("branch_id") or "all").strip()
+    bodega_id = (request.query_params.get("bodega_id") or "all").strip()
+    movement_type = (request.query_params.get("movement_type") or "sales_out").strip().lower()
+    q = (request.query_params.get("q") or "").strip()
+
+    start_date = today
+    end_date = today
+    if start_raw:
+        try:
+            start_date = date.fromisoformat(start_raw)
+        except ValueError:
+            start_date = today
+    if end_raw:
+        try:
+            end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            end_date = today
+    if end_date < start_date:
+        end_date = start_date
+    if not branch_id:
+        branch_id = "all"
+    if not bodega_id:
+        bodega_id = "all"
+    if movement_type not in {"sales_out", "inventory_in", "inventory_out"}:
+        movement_type = "sales_out"
+    return start_date, end_date, branch_id, bodega_id, movement_type, q
+
+
+def _next_pending_bodega_close_date(
+    db: Session,
+    scoped_branch_ids: list[int],
+    selected_branch_id: Optional[int],
+    selected_bodega_id: Optional[int],
+    movement_type: str,
+) -> Optional[date]:
+    latest_q = (
+        db.query(func.max(BodegaRequisaCierre.fecha))
+        .filter(BodegaRequisaCierre.anulada.is_(False))
+        .filter(BodegaRequisaCierre.movement_type == movement_type)
+        .filter(or_(BodegaRequisaCierre.branch_id.is_(None), BodegaRequisaCierre.branch_id.in_(scoped_branch_ids)))
+    )
+    if selected_branch_id is not None:
+        latest_q = latest_q.filter(
+            or_(
+                BodegaRequisaCierre.branch_id == selected_branch_id,
+                BodegaRequisaCierre.branch_id.is_(None),
+            )
+        )
+    if selected_bodega_id is not None:
+        latest_q = latest_q.filter(
+            or_(
+                BodegaRequisaCierre.bodega_id == selected_bodega_id,
+                BodegaRequisaCierre.bodega_id.is_(None),
+            )
+        )
+    latest_date = latest_q.scalar()
+    if not latest_date:
+        return None
+    today = local_today()
+    if latest_date >= today:
+        return None
+    return latest_date + timedelta(days=1)
+
+
+@router.get("/inventory/gestion-bodega-requisas")
+def inventory_bodega_requisas(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.inventory.requisas")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/inventory?error=Modulo+disponible+solo+en+entorno+Hollywood+Pacas", status_code=303)
+
+    start_date, end_date, branch_id, bodega_id, movement_type, q = _bodega_requisas_filters(request)
+    success = request.query_params.get("success")
+    error = request.query_params.get("error")
+
+    allowed_codes = _allowed_branch_codes(db)
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+
+    selected_branch_id: Optional[int] = None
+    if branch_id != "all":
+        try:
+            selected_branch_id = int(branch_id)
+        except ValueError:
+            selected_branch_id = None
+
+    selected_bodega_id: Optional[int] = None
+    if bodega_id != "all":
+        try:
+            selected_bodega_id = int(bodega_id)
+        except ValueError:
+            selected_bodega_id = None
+
+    pending_close_date = _next_pending_bodega_close_date(
+        db,
+        scoped_branch_ids,
+        selected_branch_id,
+        selected_bodega_id,
+        movement_type,
+    )
+    if pending_close_date and (start_date != pending_close_date or end_date != pending_close_date):
+        start_date = pending_close_date
+        end_date = pending_close_date
+        block_msg = f"Debe cerrar la fecha pendiente {pending_close_date.isoformat()} antes de avanzar a otro dia."
+        error = f"{error} | {block_msg}" if error else block_msg
+
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
+    bodegas_q = _scoped_bodegas_query(db)
+    if selected_branch_id:
+        bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch_id)
+    bodegas = bodegas_q.order_by(Bodega.name).all()
+
+    filtro_val = (q or "").strip()[:200] or None
+    user_email_norm = (user.email or "").strip().lower()
+    draft = (
+        db.query(BodegaRequisaDraft)
+        .filter(func.lower(BodegaRequisaDraft.user_email) == user_email_norm)
+        .filter(BodegaRequisaDraft.movement_type == movement_type)
+        .filter(BodegaRequisaDraft.start_date == start_date)
+        .filter(BodegaRequisaDraft.end_date == end_date)
+        .filter(BodegaRequisaDraft.branch_id == selected_branch_id)
+        .filter(BodegaRequisaDraft.bodega_id == selected_bodega_id)
+        .order_by(BodegaRequisaDraft.updated_at.desc(), BodegaRequisaDraft.id.desc())
+        .first()
+    )
+    if draft is None and selected_bodega_id is None:
+        draft = (
+            db.query(BodegaRequisaDraft)
+            .filter(func.lower(BodegaRequisaDraft.user_email) == user_email_norm)
+            .filter(BodegaRequisaDraft.movement_type == movement_type)
+            .filter(BodegaRequisaDraft.start_date == start_date)
+            .filter(BodegaRequisaDraft.end_date == end_date)
+            .filter(BodegaRequisaDraft.branch_id == selected_branch_id)
+            .order_by(BodegaRequisaDraft.updated_at.desc(), BodegaRequisaDraft.id.desc())
+            .first()
+        )
+
+    draft_map: dict[int, dict[str, object]] = {}
+    autosave_loaded_at: Optional[str] = draft.updated_at.isoformat() if draft and draft.updated_at else None
+    if draft and draft.detalle_json:
+        try:
+            raw_rows = json.loads(draft.detalle_json)
+            if isinstance(raw_rows, list):
+                for entry in raw_rows:
+                    if not isinstance(entry, dict):
+                        continue
+                    item_id_val = entry.get("item_id")
+                    if not isinstance(item_id_val, int):
+                        continue
+                    delivered_val = entry.get("delivered_qty", 0)
+                    verified_val = entry.get("verified", False)
+                    try:
+                        delivered_int = int(float(delivered_val))
+                    except Exception:
+                        delivered_int = 0
+                    draft_map[item_id_val] = {
+                        "delivered_qty": max(delivered_int, 0),
+                        "verified": bool(verified_val),
+                    }
+        except Exception:
+            draft_map = {}
+
+    rows: list[dict[str, object]] = []
+    total_vendido = Decimal("0")
+    total_monto_cs = Decimal("0")
+    total_monto_usd = Decimal("0")
+    partner_label = "Cliente"
+    owner_label = "Vendedor"
+
+    if movement_type == "inventory_in":
+        partner_label = "Proveedor"
+        owner_label = "Usuario"
+        query_in = (
+            db.query(IngresoInventario, IngresoItem, Producto, Proveedor, Bodega, Branch)
+            .join(IngresoItem, IngresoItem.ingreso_id == IngresoInventario.id)
+            .join(Producto, Producto.id == IngresoItem.producto_id)
+            .join(Bodega, Bodega.id == IngresoInventario.bodega_id, isouter=True)
+            .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+            .join(Proveedor, Proveedor.id == IngresoInventario.proveedor_id, isouter=True)
+            .filter(IngresoInventario.fecha >= start_date, IngresoInventario.fecha <= end_date)
+            .filter(func.lower(Branch.code).in_(allowed_codes))
+            .filter(Branch.id.in_(scoped_branch_ids))
+        )
+        if selected_branch_id is not None:
+            if selected_branch_id not in scoped_branch_ids:
+                query_in = query_in.filter(Branch.id == -1)
+            else:
+                query_in = query_in.filter(Branch.id == selected_branch_id)
+        if selected_bodega_id is not None:
+            query_in = query_in.filter(Bodega.id == selected_bodega_id)
+        if q:
+            q_like = f"%{q.lower()}%"
+            query_in = query_in.filter(
+                or_(
+                    func.cast(IngresoInventario.id, String).like(q_like),
+                    func.lower(Producto.cod_producto).like(q_like),
+                    func.lower(Producto.descripcion).like(q_like),
+                    func.lower(Proveedor.nombre).like(q_like),
+                    func.lower(IngresoInventario.observacion).like(q_like),
+                )
+            )
+        rows_db = query_in.order_by(IngresoInventario.fecha.desc(), IngresoInventario.id.desc(), IngresoItem.id.asc()).all()
+        for ingreso, item, producto, proveedor, bodega_row, branch_row in rows_db:
+            cantidad = Decimal(str(item.cantidad or 0))
+            precio_cs = Decimal(str(item.costo_unitario_cs or 0))
+            subtotal_cs = Decimal(str(item.subtotal_cs or 0))
+            subtotal_usd = Decimal(str(item.subtotal_usd or 0))
+            total_vendido += cantidad
+            total_monto_cs += subtotal_cs
+            total_monto_usd += subtotal_usd
+            draft_row = draft_map.get(int(item.id), {})
+            delivered_qty = int(draft_row.get("delivered_qty", int(cantidad)))
+            verified = bool(draft_row.get("verified", False))
+            rows.append(
+                {
+                    "factura_id": int(ingreso.id),
+                    "item_id": int(item.id),
+                    "fecha": ingreso.fecha.strftime("%Y-%m-%d") if ingreso.fecha else "",
+                    "numero": f"ING-{ingreso.id}",
+                    "cliente": proveedor.nombre if proveedor else "-",
+                    "codigo": producto.cod_producto if producto else "",
+                    "producto": producto.descripcion if producto else "",
+                    "cantidad": float(cantidad),
+                    "precio_cs": float(precio_cs),
+                    "subtotal_cs": float(subtotal_cs),
+                    "subtotal_usd": float(subtotal_usd),
+                    "vendedor": ingreso.usuario_registro or "-",
+                    "sucursal": branch_row.name if branch_row else "-",
+                    "bodega": bodega_row.name if bodega_row else "-",
+                    "delivered_qty": delivered_qty,
+                    "verified": verified,
+                }
+            )
+    elif movement_type == "inventory_out":
+        partner_label = "Motivo"
+        owner_label = "Usuario"
+        query_out = (
+            db.query(EgresoInventario, EgresoItem, Producto, EgresoTipo, Bodega, Branch)
+            .join(EgresoItem, EgresoItem.egreso_id == EgresoInventario.id)
+            .join(Producto, Producto.id == EgresoItem.producto_id)
+            .join(Bodega, Bodega.id == EgresoInventario.bodega_id, isouter=True)
+            .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+            .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id, isouter=True)
+            .filter(EgresoInventario.fecha >= start_date, EgresoInventario.fecha <= end_date)
+            .filter(func.lower(Branch.code).in_(allowed_codes))
+            .filter(Branch.id.in_(scoped_branch_ids))
+        )
+        if selected_branch_id is not None:
+            if selected_branch_id not in scoped_branch_ids:
+                query_out = query_out.filter(Branch.id == -1)
+            else:
+                query_out = query_out.filter(Branch.id == selected_branch_id)
+        if selected_bodega_id is not None:
+            query_out = query_out.filter(Bodega.id == selected_bodega_id)
+        if q:
+            q_like = f"%{q.lower()}%"
+            query_out = query_out.filter(
+                or_(
+                    func.cast(EgresoInventario.id, String).like(q_like),
+                    func.lower(Producto.cod_producto).like(q_like),
+                    func.lower(Producto.descripcion).like(q_like),
+                    func.lower(EgresoTipo.nombre).like(q_like),
+                    func.lower(EgresoInventario.observacion).like(q_like),
+                )
+            )
+        rows_db = query_out.order_by(EgresoInventario.fecha.desc(), EgresoInventario.id.desc(), EgresoItem.id.asc()).all()
+        for egreso, item, producto, egreso_tipo, bodega_row, branch_row in rows_db:
+            cantidad = Decimal(str(item.cantidad or 0))
+            precio_cs = Decimal(str(item.costo_unitario_cs or 0))
+            subtotal_cs = Decimal(str(item.subtotal_cs or 0))
+            subtotal_usd = Decimal(str(item.subtotal_usd or 0))
+            total_vendido += cantidad
+            total_monto_cs += subtotal_cs
+            total_monto_usd += subtotal_usd
+            draft_row = draft_map.get(int(item.id), {})
+            delivered_qty = int(draft_row.get("delivered_qty", int(cantidad)))
+            verified = bool(draft_row.get("verified", False))
+            rows.append(
+                {
+                    "factura_id": int(egreso.id),
+                    "item_id": int(item.id),
+                    "fecha": egreso.fecha.strftime("%Y-%m-%d") if egreso.fecha else "",
+                    "numero": f"EGR-{egreso.id}",
+                    "cliente": egreso_tipo.nombre if egreso_tipo else "-",
+                    "codigo": producto.cod_producto if producto else "",
+                    "producto": producto.descripcion if producto else "",
+                    "cantidad": float(cantidad),
+                    "precio_cs": float(precio_cs),
+                    "subtotal_cs": float(subtotal_cs),
+                    "subtotal_usd": float(subtotal_usd),
+                    "vendedor": egreso.usuario_registro or "-",
+                    "sucursal": branch_row.name if branch_row else "-",
+                    "bodega": bodega_row.name if bodega_row else "-",
+                    "delivered_qty": delivered_qty,
+                    "verified": verified,
+                }
+            )
+    else:
+        query_sales = (
+            db.query(VentaFactura, VentaItem, Producto, Cliente, Vendedor, Bodega, Branch)
+            .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+            .join(Producto, Producto.id == VentaItem.producto_id)
+            .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+            .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+            .join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True)
+            .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
+            .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+            .filter(VentaFactura.estado != "ANULADA")
+            .filter(func.lower(Branch.code).in_(allowed_codes))
+            .filter(Branch.id.in_(scoped_branch_ids))
+        )
+        if selected_branch_id is not None:
+            if selected_branch_id not in scoped_branch_ids:
+                query_sales = query_sales.filter(Branch.id == -1)
+            else:
+                query_sales = query_sales.filter(Branch.id == selected_branch_id)
+        if selected_bodega_id is not None:
+            query_sales = query_sales.filter(Bodega.id == selected_bodega_id)
+        if q:
+            q_like = f"%{q.lower()}%"
+            query_sales = query_sales.filter(
+                or_(
+                    func.lower(VentaFactura.numero).like(q_like),
+                    func.lower(Producto.cod_producto).like(q_like),
+                    func.lower(Producto.descripcion).like(q_like),
+                    func.lower(Cliente.nombre).like(q_like),
+                )
+            )
+        rows_db = query_sales.order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc(), VentaItem.id.asc()).all()
+        for factura, item, producto, cliente, vendedor, bodega_row, branch_row in rows_db:
+            cantidad = Decimal(str(item.cantidad or 0))
+            precio_cs = Decimal(str(item.precio_unitario_cs or 0))
+            subtotal_cs = Decimal(str(item.subtotal_cs or 0))
+            subtotal_usd = Decimal(str(item.subtotal_usd or 0))
+            total_vendido += cantidad
+            total_monto_cs += subtotal_cs
+            total_monto_usd += subtotal_usd
+            draft_row = draft_map.get(int(item.id), {})
+            delivered_qty = int(draft_row.get("delivered_qty", int(cantidad)))
+            verified = bool(draft_row.get("verified", False))
+            rows.append(
+                {
+                    "factura_id": int(factura.id),
+                    "item_id": int(item.id),
+                    "fecha": factura.fecha.strftime("%Y-%m-%d %H:%M") if factura.fecha else "",
+                    "numero": factura.numero or "",
+                    "cliente": cliente.nombre if cliente else "Consumidor final",
+                    "codigo": producto.cod_producto if producto else "",
+                    "producto": producto.descripcion if producto else "",
+                    "cantidad": float(cantidad),
+                    "precio_cs": float(precio_cs),
+                    "subtotal_cs": float(subtotal_cs),
+                    "subtotal_usd": float(subtotal_usd),
+                    "vendedor": vendedor.nombre if vendedor else "-",
+                    "sucursal": branch_row.name if branch_row else "-",
+                    "bodega": bodega_row.name if bodega_row else "-",
+                    "delivered_qty": delivered_qty,
+                    "verified": verified,
+                }
+            )
+
+    recent_q = (
+        db.query(BodegaRequisaCierre)
+        .join(Branch, Branch.id == BodegaRequisaCierre.branch_id, isouter=True)
+        .join(Bodega, Bodega.id == BodegaRequisaCierre.bodega_id, isouter=True)
+        .filter(BodegaRequisaCierre.movement_type == movement_type)
+        .filter(or_(BodegaRequisaCierre.branch_id.is_(None), BodegaRequisaCierre.branch_id.in_(scoped_branch_ids)))
+    )
+    if selected_branch_id:
+        recent_q = recent_q.filter(BodegaRequisaCierre.branch_id == selected_branch_id)
+    if selected_bodega_id:
+        recent_q = recent_q.filter(BodegaRequisaCierre.bodega_id == selected_bodega_id)
+    recent_cierres = recent_q.order_by(BodegaRequisaCierre.created_at.desc(), BodegaRequisaCierre.id.desc()).limit(20).all()
+
+    return request.app.state.templates.TemplateResponse(
+        "inventory_bodega_requisas.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": rows,
+            "branches": branches,
+            "bodegas": bodegas,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "selected_branch": branch_id,
+            "selected_bodega": bodega_id,
+            "movement_type": movement_type,
+            "partner_label": partner_label,
+            "owner_label": owner_label,
+            "q": q,
+            "total_vendido": float(total_vendido),
+            "total_monto_cs": float(total_monto_cs),
+            "total_monto_usd": float(total_monto_usd),
+            "recent_cierres": recent_cierres,
+            "error": error,
+            "success": success,
+            "autosave_loaded_at": autosave_loaded_at,
+            "pending_close_date": pending_close_date.isoformat() if pending_close_date else "",
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/inventory/gestion-bodega-requisas/autosave")
+def inventory_bodega_requisas_autosave(
+    request: Request,
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    branch_id: str = Form("all"),
+    bodega_id: str = Form("all"),
+    movement_type: str = Form("sales_out"),
+    q: str = Form(""),
+    payload: str = Form("[]"),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.inventory.requisas")
+    if not _is_hollpacas_mode():
+        return JSONResponse({"ok": False, "error": "Modulo no habilitado"}, status_code=403)
+    try:
+        start_date_v = date.fromisoformat(start_date)
+        end_date_v = date.fromisoformat(end_date)
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "Fecha invalida"}, status_code=400)
+    if end_date_v < start_date_v:
+        return JSONResponse({"ok": False, "error": "Rango invalido"}, status_code=400)
+    movement_type = (movement_type or "sales_out").strip().lower()
+    if movement_type not in {"sales_out", "inventory_in", "inventory_out"}:
+        movement_type = "sales_out"
+
+    selected_branch_id = int(branch_id) if (branch_id or "all") != "all" and str(branch_id).isdigit() else None
+    selected_bodega_id = int(bodega_id) if (bodega_id or "all") != "all" and str(bodega_id).isdigit() else None
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    pending_close_date = _next_pending_bodega_close_date(
+        db,
+        scoped_branch_ids,
+        selected_branch_id,
+        selected_bodega_id,
+        movement_type,
+    )
+    if pending_close_date and (start_date_v != pending_close_date or end_date_v != pending_close_date):
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": f"Debe cerrar la fecha pendiente {pending_close_date.isoformat()} antes de avanzar.",
+            },
+            status_code=409,
+        )
+
+    rows_payload: list[dict[str, object]] = []
+    try:
+        raw_payload = json.loads(payload or "[]")
+        if isinstance(raw_payload, list):
+            for entry in raw_payload[:3000]:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    item_id = int(entry.get("item_id"))
+                    delivered_qty = int(float(entry.get("delivered_qty", 0)))
+                except Exception:
+                    continue
+                verified = bool(entry.get("verified", False))
+                if delivered_qty < 0:
+                    delivered_qty = 0
+                rows_payload.append(
+                    {
+                        "item_id": item_id,
+                        "delivered_qty": delivered_qty,
+                        "verified": verified,
+                    }
+                )
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Payload invalido"}, status_code=400)
+
+    filtro_val = (q or "").strip()[:200] or None
+    email_val = (user.email or "").strip().lower()
+    matching_drafts = (
+        db.query(BodegaRequisaDraft)
+        .filter(func.lower(BodegaRequisaDraft.user_email) == email_val)
+        .filter(BodegaRequisaDraft.movement_type == movement_type)
+        .filter(BodegaRequisaDraft.start_date == start_date_v)
+        .filter(BodegaRequisaDraft.end_date == end_date_v)
+        .filter(BodegaRequisaDraft.branch_id == selected_branch_id)
+        .filter(BodegaRequisaDraft.bodega_id == selected_bodega_id)
+        .order_by(BodegaRequisaDraft.updated_at.desc(), BodegaRequisaDraft.id.desc())
+        .all()
+    )
+    draft = matching_drafts[0] if matching_drafts else None
+    for extra in matching_drafts[1:]:
+        db.delete(extra)
+
+    if draft is None:
+        draft = BodegaRequisaDraft(
+            user_email=email_val,
+            movement_type=movement_type,
+            branch_id=selected_branch_id,
+            bodega_id=selected_bodega_id,
+        )
+        db.add(draft)
+
+    draft.movement_type = movement_type
+    draft.start_date = start_date_v
+    draft.end_date = end_date_v
+    draft.filtro_texto = filtro_val
+    draft.detalle_json = json.dumps(rows_payload, ensure_ascii=False)
+    db.commit()
+    return JSONResponse(
+        {
+            "ok": True,
+            "saved_at": local_now().strftime("%H:%M:%S"),
+            "rows": len(rows_payload),
+        }
+    )
+
+
+@router.post("/inventory/gestion-bodega-requisas/cierre")
+def inventory_bodega_requisas_cierre(
+    request: Request,
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    branch_id: str = Form("all"),
+    bodega_id: str = Form("all"),
+    movement_type: str = Form("sales_out"),
+    q: str = Form(""),
+    observacion: Optional[str] = Form(None),
+    row_item_id: Optional[list[str]] = Form(None),
+    row_sold_qty: Optional[list[str]] = Form(None),
+    row_delivered_qty: Optional[list[str]] = Form(None),
+    row_verified: Optional[list[str]] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.inventory.requisas")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/inventory?error=Modulo+disponible+solo+en+entorno+Hollywood+Pacas", status_code=303)
+
+    try:
+        start_date_v = date.fromisoformat(start_date)
+        end_date_v = date.fromisoformat(end_date)
+    except ValueError:
+        params = urlencode({"error": "Rango de fecha invalido"})
+        return RedirectResponse(f"/inventory/gestion-bodega-requisas?{params}", status_code=303)
+
+    movement_type = (movement_type or "sales_out").strip().lower()
+    if movement_type not in {"sales_out", "inventory_in", "inventory_out"}:
+        movement_type = "sales_out"
+    selected_branch_id = int(branch_id) if (branch_id or "all") != "all" and str(branch_id).isdigit() else None
+    selected_bodega_id = int(bodega_id) if (bodega_id or "all") != "all" and str(bodega_id).isdigit() else None
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    pending_close_date = _next_pending_bodega_close_date(
+        db,
+        scoped_branch_ids,
+        selected_branch_id,
+        selected_bodega_id,
+        movement_type,
+    )
+    if pending_close_date and (start_date_v != pending_close_date or end_date_v != pending_close_date):
+        params = urlencode(
+            {
+                "start_date": pending_close_date.isoformat(),
+                "end_date": pending_close_date.isoformat(),
+                "branch_id": branch_id or "all",
+                "bodega_id": bodega_id or "all",
+                "movement_type": movement_type,
+                "q": q or "",
+                "error": f"Debe cerrar la fecha pendiente {pending_close_date.isoformat()} antes de avanzar.",
+            }
+        )
+        return RedirectResponse(f"/inventory/gestion-bodega-requisas?{params}", status_code=303)
+
+    item_ids = row_item_id or []
+    sold_list = row_sold_qty or []
+    delivered_list = row_delivered_qty or []
+    verified_list = row_verified or []
+    if not item_ids:
+        params = urlencode(
+            {
+                "start_date": start_date_v.isoformat(),
+                "end_date": end_date_v.isoformat(),
+                "branch_id": branch_id or "all",
+                "bodega_id": bodega_id or "all",
+                "movement_type": movement_type,
+                "q": q or "",
+                "error": "No hay lineas para cierre",
+            }
+        )
+        return RedirectResponse(f"/inventory/gestion-bodega-requisas?{params}", status_code=303)
+
+    details_rows: list[dict[str, object]] = []
+    mismatch_rows: list[dict[str, object]] = []
+    row_state_by_item_id: dict[int, dict[str, object]] = {}
+    row_item_ids_in_order: list[int] = []
+    verified_count = 0
+    total_sold = Decimal("0")
+    total_delivered = Decimal("0")
+
+    for idx, item_raw in enumerate(item_ids):
+        try:
+            item_id = int(str(item_raw or "").strip())
+        except ValueError:
+            continue
+        sold_raw = sold_list[idx] if idx < len(sold_list) else "0"
+        delivered_raw = delivered_list[idx] if idx < len(delivered_list) else sold_raw
+        try:
+            sold_qty_int = int(float(str(sold_raw or "0")))
+        except Exception:
+            sold_qty_int = 0
+        try:
+            delivered_qty_int = int(float(str(delivered_raw or "0")))
+        except Exception:
+            delivered_qty_int = sold_qty_int
+        if sold_qty_int < 0:
+            sold_qty_int = 0
+        if delivered_qty_int < 0:
+            delivered_qty_int = 0
+        sold_qty = Decimal(sold_qty_int)
+        delivered_qty = Decimal(delivered_qty_int)
+        diff = delivered_qty - sold_qty
+        is_verified = (verified_list[idx] if idx < len(verified_list) else "0") == "1"
+        if is_verified:
+            verified_count += 1
+        total_sold += sold_qty
+        total_delivered += delivered_qty
+        detail_row = {
+            "item_id": item_id,
+            "sold_qty": float(sold_qty),
+            "delivered_qty": float(delivered_qty),
+            "diff_qty": float(diff),
+            "verified": is_verified,
+        }
+        row_state_by_item_id[item_id] = detail_row
+        row_item_ids_in_order.append(item_id)
+        details_rows.append(detail_row)
+        if diff != 0:
+            mismatch_rows.append(detail_row)
+
+    report_rows: list[dict[str, object]] = []
+    if row_item_ids_in_order:
+        if movement_type == "inventory_in":
+            meta_rows = (
+                db.query(IngresoItem, IngresoInventario, Producto, Proveedor, Bodega, Branch)
+                .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
+                .join(Producto, Producto.id == IngresoItem.producto_id, isouter=True)
+                .join(Proveedor, Proveedor.id == IngresoInventario.proveedor_id, isouter=True)
+                .join(Bodega, Bodega.id == IngresoInventario.bodega_id, isouter=True)
+                .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+                .filter(IngresoItem.id.in_(row_item_ids_in_order))
+                .all()
+            )
+            meta_by_item_id: dict[int, tuple[IngresoItem, IngresoInventario, Optional[Producto], Optional[Proveedor], Optional[Bodega], Optional[Branch]]] = {int(m[0].id): m for m in meta_rows}
+            for item_id in row_item_ids_in_order:
+                state = row_state_by_item_id.get(item_id) or {}
+                meta = meta_by_item_id.get(item_id)
+                if not meta:
+                    continue
+                item_db, ingreso_db, producto, proveedor, bodega_row, branch_row = meta
+                report_rows.append(
+                    {
+                        "item_id": item_id,
+                        "fecha": ingreso_db.fecha.strftime("%Y-%m-%d") if ingreso_db.fecha else "",
+                        "factura": f"ING-{ingreso_db.id}",
+                        "cliente": proveedor.nombre if proveedor else "-",
+                        "codigo": producto.cod_producto if producto else "",
+                        "producto": producto.descripcion if producto else "",
+                        "vendedor": ingreso_db.usuario_registro or "-",
+                        "sucursal": branch_row.name if branch_row else "-",
+                        "bodega": bodega_row.name if bodega_row else "-",
+                        "precio_cs": float(Decimal(str(item_db.costo_unitario_cs or 0))),
+                        "subtotal_cs": float(Decimal(str(item_db.subtotal_cs or 0))),
+                        "sold_qty": float(state.get("sold_qty", 0.0)),
+                        "delivered_qty": float(state.get("delivered_qty", 0.0)),
+                        "diff_qty": float(state.get("diff_qty", 0.0)),
+                        "verified": bool(state.get("verified", False)),
+                    }
+                )
+        elif movement_type == "inventory_out":
+            meta_rows = (
+                db.query(EgresoItem, EgresoInventario, Producto, EgresoTipo, Bodega, Branch)
+                .join(EgresoInventario, EgresoInventario.id == EgresoItem.egreso_id)
+                .join(Producto, Producto.id == EgresoItem.producto_id, isouter=True)
+                .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id, isouter=True)
+                .join(Bodega, Bodega.id == EgresoInventario.bodega_id, isouter=True)
+                .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+                .filter(EgresoItem.id.in_(row_item_ids_in_order))
+                .all()
+            )
+            meta_by_item_id: dict[int, tuple[EgresoItem, EgresoInventario, Optional[Producto], Optional[EgresoTipo], Optional[Bodega], Optional[Branch]]] = {int(m[0].id): m for m in meta_rows}
+            for item_id in row_item_ids_in_order:
+                state = row_state_by_item_id.get(item_id) or {}
+                meta = meta_by_item_id.get(item_id)
+                if not meta:
+                    continue
+                item_db, egreso_db, producto, tipo_db, bodega_row, branch_row = meta
+                report_rows.append(
+                    {
+                        "item_id": item_id,
+                        "fecha": egreso_db.fecha.strftime("%Y-%m-%d") if egreso_db.fecha else "",
+                        "factura": f"EGR-{egreso_db.id}",
+                        "cliente": tipo_db.nombre if tipo_db else "-",
+                        "codigo": producto.cod_producto if producto else "",
+                        "producto": producto.descripcion if producto else "",
+                        "vendedor": egreso_db.usuario_registro or "-",
+                        "sucursal": branch_row.name if branch_row else "-",
+                        "bodega": bodega_row.name if bodega_row else "-",
+                        "precio_cs": float(Decimal(str(item_db.costo_unitario_cs or 0))),
+                        "subtotal_cs": float(Decimal(str(item_db.subtotal_cs or 0))),
+                        "sold_qty": float(state.get("sold_qty", 0.0)),
+                        "delivered_qty": float(state.get("delivered_qty", 0.0)),
+                        "diff_qty": float(state.get("diff_qty", 0.0)),
+                        "verified": bool(state.get("verified", False)),
+                    }
+                )
+        else:
+            meta_rows = (
+                db.query(VentaItem, VentaFactura, Producto, Cliente, Vendedor, Bodega, Branch)
+                .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+                .join(Producto, Producto.id == VentaItem.producto_id, isouter=True)
+                .join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True)
+                .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
+                .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+                .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+                .filter(VentaItem.id.in_(row_item_ids_in_order))
+                .all()
+            )
+            meta_by_item_id: dict[int, tuple[VentaItem, VentaFactura, Optional[Producto], Optional[Cliente], Optional[Vendedor], Optional[Bodega], Optional[Branch]]] = {int(m[0].id): m for m in meta_rows}
+            for item_id in row_item_ids_in_order:
+                state = row_state_by_item_id.get(item_id) or {}
+                meta = meta_by_item_id.get(item_id)
+                if not meta:
+                    continue
+                venta_item, factura, producto, cliente, vendedor, bodega_row, branch_row = meta
+                report_rows.append(
+                    {
+                        "item_id": item_id,
+                        "fecha": factura.fecha.strftime("%Y-%m-%d %H:%M") if factura.fecha else "",
+                        "factura": factura.numero or "",
+                        "cliente": cliente.nombre if cliente else "Consumidor final",
+                        "codigo": producto.cod_producto if producto else "",
+                        "producto": producto.descripcion if producto else "",
+                        "vendedor": vendedor.nombre if vendedor else "-",
+                        "sucursal": branch_row.name if branch_row else "-",
+                        "bodega": bodega_row.name if bodega_row else "-",
+                        "precio_cs": float(Decimal(str(venta_item.precio_unitario_cs or 0))),
+                        "subtotal_cs": float(Decimal(str(venta_item.subtotal_cs or 0))),
+                        "sold_qty": float(state.get("sold_qty", 0.0)),
+                        "delivered_qty": float(state.get("delivered_qty", 0.0)),
+                        "diff_qty": float(state.get("diff_qty", 0.0)),
+                        "verified": bool(state.get("verified", False)),
+                    }
+                )
+
+    total_diff = total_delivered - total_sold
+    payload = {
+        "filters": {
+            "start_date": start_date_v.isoformat(),
+            "end_date": end_date_v.isoformat(),
+            "branch_id": selected_branch_id,
+            "bodega_id": selected_bodega_id,
+            "movement_type": movement_type,
+            "q": (q or "").strip(),
+        },
+        "summary": {
+            "total_sold": float(total_sold),
+            "total_delivered": float(total_delivered),
+            "total_diff": float(total_diff),
+            "rows_count": len(details_rows),
+            "mismatch_count": len(mismatch_rows),
+            "verified_count": verified_count,
+        },
+        "report_rows": report_rows,
+        "mismatch_rows": mismatch_rows[:500],
+    }
+
+    filtro_val = (q or "").strip()[:200] or None
+    email_val = (user.email or "").strip().lower()
+    matching_drafts = (
+        db.query(BodegaRequisaDraft)
+        .filter(func.lower(BodegaRequisaDraft.user_email) == email_val)
+        .filter(BodegaRequisaDraft.movement_type == movement_type)
+        .filter(BodegaRequisaDraft.start_date == start_date_v)
+        .filter(BodegaRequisaDraft.end_date == end_date_v)
+        .filter(BodegaRequisaDraft.branch_id == selected_branch_id)
+        .filter(BodegaRequisaDraft.bodega_id == selected_bodega_id)
+        .order_by(BodegaRequisaDraft.updated_at.desc(), BodegaRequisaDraft.id.desc())
+        .all()
+    )
+    for d in matching_drafts:
+        db.delete(d)
+
+    cierre = BodegaRequisaCierre(
+        movement_type=movement_type,
+        fecha=end_date_v,
+        branch_id=selected_branch_id,
+        bodega_id=selected_bodega_id,
+        start_date=start_date_v,
+        end_date=end_date_v,
+        filtro_texto=filtro_val,
+        total_items_vendidos=total_sold,
+        total_items_entregados=total_delivered,
+        total_diferencia=total_diff,
+        observacion=(observacion or "").strip()[:500] or None,
+        detalle_json=json.dumps(payload, ensure_ascii=False),
+        usuario_registro=(user.full_name or user.email or "").strip()[:160] or None,
+    )
+    db.add(cierre)
+    db.commit()
+
+    params = urlencode(
+        {
+            "start_date": start_date_v.isoformat(),
+            "end_date": end_date_v.isoformat(),
+            "branch_id": branch_id or "all",
+            "bodega_id": bodega_id or "all",
+            "movement_type": movement_type,
+            "q": q or "",
+            "success": f"Cierre de bodega registrado #{cierre.id}",
+        }
+    )
+    return RedirectResponse(f"/inventory/gestion-bodega-requisas?{params}", status_code=303)
+
+
+@router.get("/inventory/gestion-bodega-requisas/cierre/{cierre_id}/reporte.xlsx")
+def inventory_bodega_requisas_cierre_export_xlsx(
+    request: Request,
+    cierre_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.inventory.requisas")
+    if not _is_hollpacas_mode():
+        raise HTTPException(status_code=403, detail="Modulo no habilitado")
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    cierre = (
+        db.query(BodegaRequisaCierre)
+        .filter(BodegaRequisaCierre.id == cierre_id)
+        .filter(or_(BodegaRequisaCierre.branch_id.is_(None), BodegaRequisaCierre.branch_id.in_(scoped_branch_ids)))
+        .first()
+    )
+    if not cierre:
+        raise HTTPException(status_code=404, detail="Cierre no encontrado")
+
+    payload = {}
+    if cierre.detalle_json:
+        try:
+            payload = json.loads(cierre.detalle_json)
+        except Exception:
+            payload = {}
+    report_rows = payload.get("report_rows") if isinstance(payload, dict) else []
+    if not isinstance(report_rows, list):
+        report_rows = []
+    summary = payload.get("summary") if isinstance(payload, dict) else {}
+    if not isinstance(summary, dict):
+        summary = {}
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "CierreBodega"
+    ws.append(["Campo", "Valor"])
+    ws.append(["Cierre ID", cierre.id])
+    ws.append(["Fecha cierre", cierre.fecha.isoformat() if cierre.fecha else ""])
+    ws.append(["Rango", f"{cierre.start_date} a {cierre.end_date}"])
+    ws.append(["Sucursal", cierre.branch.name if cierre.branch else "Todas"])
+    ws.append(["Bodega", cierre.bodega.name if cierre.bodega else "Todas"])
+    ws.append(["Usuario", cierre.usuario_registro or "-"])
+    ws.append(["Observacion", cierre.observacion or "-"])
+    ws.append(["Total vendidos", float(summary.get("total_sold", cierre.total_items_vendidos or 0))])
+    ws.append(["Total entregados", float(summary.get("total_delivered", cierre.total_items_entregados or 0))])
+    ws.append(["Total diferencia", float(summary.get("total_diff", cierre.total_diferencia or 0))])
+    ws.append(["Total verificados", int(summary.get("verified_count", 0))])
+    ws.append([])
+
+    ws.append(
+        [
+            "Fecha",
+            "Factura",
+            "Cliente",
+            "Codigo",
+            "Producto",
+            "Vendida",
+            "Entregada",
+            "Diferencia",
+            "Verificado",
+            "Precio C$",
+            "Total C$",
+            "Vendedor",
+            "Sucursal",
+            "Bodega",
+        ]
+    )
+    for row in report_rows:
+        if not isinstance(row, dict):
+            continue
+        ws.append(
+            [
+                row.get("fecha", ""),
+                row.get("factura", ""),
+                row.get("cliente", ""),
+                row.get("codigo", ""),
+                row.get("producto", ""),
+                float(row.get("sold_qty", 0) or 0),
+                float(row.get("delivered_qty", 0) or 0),
+                float(row.get("diff_qty", 0) or 0),
+                "SI" if bool(row.get("verified", False)) else "NO",
+                float(row.get("precio_cs", 0) or 0),
+                float(row.get("subtotal_cs", 0) or 0),
+                row.get("vendedor", ""),
+                row.get("sucursal", ""),
+                row.get("bodega", ""),
+            ]
+        )
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"cierre_bodega_{cierre.id}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/inventory/gestion-bodega-requisas/cierre/{cierre_id}/reporte.pdf")
+def inventory_bodega_requisas_cierre_export_pdf(
+    request: Request,
+    cierre_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.pdfgen import canvas
+
+    _enforce_permission(request, user, "access.inventory.requisas")
+    if not _is_hollpacas_mode():
+        raise HTTPException(status_code=403, detail="Modulo no habilitado")
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    cierre = (
+        db.query(BodegaRequisaCierre)
+        .filter(BodegaRequisaCierre.id == cierre_id)
+        .filter(or_(BodegaRequisaCierre.branch_id.is_(None), BodegaRequisaCierre.branch_id.in_(scoped_branch_ids)))
+        .first()
+    )
+    if not cierre:
+        raise HTTPException(status_code=404, detail="Cierre no encontrado")
+
+    payload = {}
+    if cierre.detalle_json:
+        try:
+            payload = json.loads(cierre.detalle_json)
+        except Exception:
+            payload = {}
+    report_rows = payload.get("report_rows") if isinstance(payload, dict) else []
+    if not isinstance(report_rows, list):
+        report_rows = []
+    summary = payload.get("summary") if isinstance(payload, dict) else {}
+    if not isinstance(summary, dict):
+        summary = {}
+
+    buf = io.BytesIO()
+    pdf = canvas.Canvas(buf, pagesize=landscape(A4))
+    width, height = landscape(A4)
+    margin = 18
+    y = height - margin
+
+    def new_page() -> None:
+        nonlocal y
+        pdf.showPage()
+        y = height - margin
+
+    def draw_header() -> None:
+        nonlocal y
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(margin, y, f"Cierre de Bodega #{cierre.id}")
+        y -= 14
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(margin, y, f"Fecha cierre: {cierre.fecha.isoformat() if cierre.fecha else '-'}")
+        pdf.drawString(190, y, f"Rango: {cierre.start_date} a {cierre.end_date}")
+        pdf.drawString(390, y, f"Sucursal: {cierre.branch.name if cierre.branch else 'Todas'}")
+        pdf.drawString(600, y, f"Bodega: {cierre.bodega.name if cierre.bodega else 'Todas'}")
+        y -= 12
+        pdf.drawString(margin, y, f"Usuario: {cierre.usuario_registro or '-'}")
+        y -= 12
+        pdf.drawString(
+            margin,
+            y,
+            (
+                f"Totales -> Vendidos: {float(summary.get('total_sold', cierre.total_items_vendidos or 0)):,.0f} | "
+                f"Entregados: {float(summary.get('total_delivered', cierre.total_items_entregados or 0)):,.0f} | "
+                f"Dif: {float(summary.get('total_diff', cierre.total_diferencia or 0)):,.0f} | "
+                f"Verificados: {int(summary.get('verified_count', 0))}"
+            ),
+        )
+        y -= 14
+        pdf.setFillColor(colors.lightgrey)
+        pdf.rect(margin, y - 10, width - (margin * 2), 12, fill=1, stroke=0)
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica-Bold", 7)
+        pdf.drawString(margin + 2, y - 2, "Fecha")
+        pdf.drawString(margin + 78, y - 2, "Factura")
+        pdf.drawString(margin + 140, y - 2, "Producto")
+        pdf.drawString(margin + 400, y - 2, "Vend")
+        pdf.drawString(margin + 438, y - 2, "Ent")
+        pdf.drawString(margin + 476, y - 2, "Dif")
+        pdf.drawString(margin + 514, y - 2, "Verif")
+        pdf.drawString(margin + 556, y - 2, "Precio")
+        pdf.drawString(margin + 605, y - 2, "Total")
+        pdf.drawString(margin + 660, y - 2, "Sucursal")
+        y -= 14
+
+    draw_header()
+    pdf.setFont("Helvetica", 7)
+    for row in report_rows:
+        if not isinstance(row, dict):
+            continue
+        if y < margin + 20:
+            new_page()
+            draw_header()
+            pdf.setFont("Helvetica", 7)
+        fecha_txt = str(row.get("fecha", ""))[:16]
+        factura_txt = str(row.get("factura", ""))[:12]
+        producto_txt = str(row.get("producto", ""))[:52]
+        sold_txt = f"{float(row.get('sold_qty', 0) or 0):,.0f}"
+        delivered_txt = f"{float(row.get('delivered_qty', 0) or 0):,.0f}"
+        diff_txt = f"{float(row.get('diff_qty', 0) or 0):,.0f}"
+        ver_txt = "SI" if bool(row.get("verified", False)) else "NO"
+        precio_txt = f"{float(row.get('precio_cs', 0) or 0):,.2f}"
+        subtotal_txt = f"{float(row.get('subtotal_cs', 0) or 0):,.2f}"
+        sucursal_txt = str(row.get("sucursal", ""))[:18]
+        pdf.drawString(margin + 2, y, fecha_txt)
+        pdf.drawString(margin + 78, y, factura_txt)
+        pdf.drawString(margin + 140, y, producto_txt)
+        pdf.drawRightString(margin + 430, y, sold_txt)
+        pdf.drawRightString(margin + 468, y, delivered_txt)
+        pdf.drawRightString(margin + 506, y, diff_txt)
+        pdf.drawString(margin + 514, y, ver_txt)
+        pdf.drawRightString(margin + 600, y, precio_txt)
+        pdf.drawRightString(margin + 654, y, subtotal_txt)
+        pdf.drawString(margin + 660, y, sucursal_txt)
+        y -= 10
+
+    pdf.save()
+    buf.seek(0)
+    filename = f"cierre_bodega_{cierre.id}.pdf"
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/inventory/gestion-bodega-requisas/cierre/{cierre_id}/revertir")
+def inventory_bodega_requisas_revertir(
+    request: Request,
+    cierre_id: int,
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    branch_id: str = Form("all"),
+    bodega_id: str = Form("all"),
+    movement_type: str = Form("sales_out"),
+    q: str = Form(""),
+    motivo: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.inventory.requisas")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/inventory?error=Modulo+disponible+solo+en+entorno+Hollywood+Pacas", status_code=303)
+
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    cierre = (
+        db.query(BodegaRequisaCierre)
+        .filter(BodegaRequisaCierre.id == cierre_id)
+        .filter(or_(BodegaRequisaCierre.branch_id.is_(None), BodegaRequisaCierre.branch_id.in_(scoped_branch_ids)))
+        .first()
+    )
+    if not cierre:
+        params = urlencode(
+            {
+                "start_date": start_date,
+                "end_date": end_date,
+                "branch_id": branch_id or "all",
+                "bodega_id": bodega_id or "all",
+                "movement_type": movement_type or "sales_out",
+                "q": q or "",
+                "error": "Cierre no encontrado",
+            }
+        )
+        return RedirectResponse(f"/inventory/gestion-bodega-requisas?{params}", status_code=303)
+    if bool(cierre.anulada):
+        params = urlencode(
+            {
+                "start_date": start_date,
+                "end_date": end_date,
+                "branch_id": branch_id or "all",
+                "bodega_id": bodega_id or "all",
+                "movement_type": movement_type or "sales_out",
+                "q": q or "",
+                "error": "El cierre ya estaba anulado",
+            }
+        )
+        return RedirectResponse(f"/inventory/gestion-bodega-requisas?{params}", status_code=303)
+
+    motivo_txt = (motivo or "").strip()
+    if not motivo_txt:
+        motivo_txt = "Anulado por usuario"
+
+    cierre.anulada = True
+    cierre.anulada_motivo = motivo_txt[:500]
+    cierre.anulada_por = (user.full_name or user.email or "").strip()[:160] or None
+    cierre.anulada_at = local_now_naive()
+    db.commit()
+
+    params = urlencode(
+        {
+            "start_date": start_date,
+            "end_date": end_date,
+            "branch_id": branch_id or "all",
+            "bodega_id": bodega_id or "all",
+            "movement_type": movement_type or "sales_out",
+            "q": q or "",
+            "success": f"Cierre #{cierre.id} anulado",
+        }
+    )
+    return RedirectResponse(f"/inventory/gestion-bodega-requisas?{params}", status_code=303)
 
 
 @router.get("/inventory/caliente")
@@ -10480,6 +11640,808 @@ def _sales_special_report_filters(request: Request):
     top_n = max(5, min(100, top_n))
 
     return start_date, end_date, branch_id, currency, selected_year, top_n
+
+
+def _inventory_matrix_filters(request: Request):
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    branch_id = request.query_params.get("branch_id") or "all"
+    bodega_id = request.query_params.get("bodega_id") or "all"
+    producto_q = (request.query_params.get("producto") or "").strip()
+    today = local_today()
+    start_date = today - timedelta(days=14)
+    end_date = today
+    if start_raw:
+        try:
+            start_date = date.fromisoformat(start_raw)
+        except ValueError:
+            pass
+    if end_raw:
+        try:
+            end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            pass
+    if end_date < start_date:
+        end_date = start_date
+    max_days = 62
+    if (end_date - start_date).days + 1 > max_days:
+        end_date = start_date + timedelta(days=max_days - 1)
+    return start_date, end_date, branch_id, bodega_id, producto_q
+
+
+def _build_inventory_matrix_payload(
+    db: Session,
+    user: User,
+    start_date: date,
+    end_date: date,
+    branch_id: str,
+    bodega_id: str,
+    producto_q: str,
+):
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
+    selected_branch_id: Optional[int] = None
+    selected_branch = None
+    if branch_id != "all":
+        try:
+            selected_branch_id = int(branch_id)
+        except ValueError:
+            selected_branch_id = None
+    if selected_branch_id is not None:
+        selected_branch = next((b for b in branches if int(b.id) == selected_branch_id), None)
+        if selected_branch is None:
+            selected_branch_id = None
+            branch_id = "all"
+    bodegas_q = _scoped_bodegas_query(db)
+    if selected_branch_id is not None:
+        bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch_id)
+    bodegas = bodegas_q.order_by(Bodega.name).all()
+
+    selected_bodega_id: Optional[int] = None
+    if bodega_id != "all":
+        try:
+            selected_bodega_id = int(bodega_id)
+        except ValueError:
+            selected_bodega_id = None
+    selected_bodega_ids = [b.id for b in bodegas]
+    if selected_bodega_id is not None:
+        selected_bodega_ids = [bid for bid in selected_bodega_ids if bid == selected_bodega_id]
+
+    productos_q = db.query(Producto).filter(Producto.activo.is_(True))
+    if producto_q:
+        like = f"%{producto_q.lower()}%"
+        productos_q = productos_q.filter(
+            or_(
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+            )
+        )
+    productos = productos_q.order_by(Producto.descripcion).all()
+    product_ids = [p.id for p in productos]
+
+    dates: list[date] = []
+    d = start_date
+    while d <= end_date:
+        dates.append(d)
+        d += timedelta(days=1)
+
+    rows: list[dict[str, object]] = []
+    totals_by_day: dict[date, dict[str, Decimal]] = {day: {"ing": Decimal("0"), "vta": Decimal("0"), "egr": Decimal("0")} for day in dates}
+    total_opening = Decimal("0")
+    total_current = Decimal("0")
+
+    if selected_bodega_ids and product_ids:
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+
+        opening_ing_rows = (
+            db.query(IngresoItem.producto_id, func.sum(IngresoItem.cantidad))
+            .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
+            .join(Bodega, Bodega.id == IngresoInventario.bodega_id)
+            .filter(IngresoInventario.bodega_id.in_(selected_bodega_ids))
+            .filter(IngresoItem.producto_id.in_(product_ids))
+            .filter(IngresoInventario.fecha < start_date)
+            .filter(Bodega.branch_id == selected_branch_id if selected_branch_id is not None else True)
+            .group_by(IngresoItem.producto_id)
+            .all()
+        )
+        opening_egr_rows = (
+            db.query(EgresoItem.producto_id, func.sum(EgresoItem.cantidad))
+            .join(EgresoInventario, EgresoInventario.id == EgresoItem.egreso_id)
+            .join(Bodega, Bodega.id == EgresoInventario.bodega_id)
+            .filter(EgresoInventario.bodega_id.in_(selected_bodega_ids))
+            .filter(EgresoItem.producto_id.in_(product_ids))
+            .filter(EgresoInventario.fecha < start_date)
+            .filter(Bodega.branch_id == selected_branch_id if selected_branch_id is not None else True)
+            .group_by(EgresoItem.producto_id)
+            .all()
+        )
+        opening_vta_rows = (
+            db.query(VentaItem.producto_id, func.sum(VentaItem.cantidad))
+            .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+            .join(Bodega, Bodega.id == VentaFactura.bodega_id)
+            .filter(VentaFactura.bodega_id.in_(selected_bodega_ids))
+            .filter(VentaItem.producto_id.in_(product_ids))
+            .filter(VentaFactura.estado != "ANULADA")
+            .filter(VentaFactura.fecha < start_dt)
+            .filter(Bodega.branch_id == selected_branch_id if selected_branch_id is not None else True)
+            .group_by(VentaItem.producto_id)
+            .all()
+        )
+        opening_map: dict[int, Decimal] = {int(pid): Decimal(str(qty or 0)) for pid, qty in opening_ing_rows}
+        for pid, qty in opening_egr_rows:
+            opening_map[int(pid)] = opening_map.get(int(pid), Decimal("0")) - Decimal(str(qty or 0))
+        for pid, qty in opening_vta_rows:
+            opening_map[int(pid)] = opening_map.get(int(pid), Decimal("0")) - Decimal(str(qty or 0))
+
+        ing_day_rows = (
+            db.query(IngresoItem.producto_id, IngresoInventario.fecha, func.sum(IngresoItem.cantidad))
+            .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
+            .join(Bodega, Bodega.id == IngresoInventario.bodega_id)
+            .filter(IngresoInventario.bodega_id.in_(selected_bodega_ids))
+            .filter(IngresoItem.producto_id.in_(product_ids))
+            .filter(IngresoInventario.fecha >= start_date, IngresoInventario.fecha <= end_date)
+            .filter(Bodega.branch_id == selected_branch_id if selected_branch_id is not None else True)
+            .group_by(IngresoItem.producto_id, IngresoInventario.fecha)
+            .all()
+        )
+        egr_day_rows = (
+            db.query(EgresoItem.producto_id, EgresoInventario.fecha, func.sum(EgresoItem.cantidad))
+            .join(EgresoInventario, EgresoInventario.id == EgresoItem.egreso_id)
+            .join(Bodega, Bodega.id == EgresoInventario.bodega_id)
+            .filter(EgresoInventario.bodega_id.in_(selected_bodega_ids))
+            .filter(EgresoItem.producto_id.in_(product_ids))
+            .filter(EgresoInventario.fecha >= start_date, EgresoInventario.fecha <= end_date)
+            .filter(Bodega.branch_id == selected_branch_id if selected_branch_id is not None else True)
+            .group_by(EgresoItem.producto_id, EgresoInventario.fecha)
+            .all()
+        )
+        vta_day_rows = (
+            db.query(VentaItem.producto_id, func.date(VentaFactura.fecha), func.sum(VentaItem.cantidad))
+            .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+            .join(Bodega, Bodega.id == VentaFactura.bodega_id)
+            .filter(VentaFactura.bodega_id.in_(selected_bodega_ids))
+            .filter(VentaItem.producto_id.in_(product_ids))
+            .filter(VentaFactura.estado != "ANULADA")
+            .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+            .filter(Bodega.branch_id == selected_branch_id if selected_branch_id is not None else True)
+            .group_by(VentaItem.producto_id, func.date(VentaFactura.fecha))
+            .all()
+        )
+
+        ing_map: dict[tuple[int, date], Decimal] = {}
+        egr_map: dict[tuple[int, date], Decimal] = {}
+        vta_map: dict[tuple[int, date], Decimal] = {}
+        for pid, day, qty in ing_day_rows:
+            ing_map[(int(pid), day)] = Decimal(str(qty or 0))
+        for pid, day, qty in egr_day_rows:
+            egr_map[(int(pid), day)] = Decimal(str(qty or 0))
+        for pid, day, qty in vta_day_rows:
+            day_d = day.date() if isinstance(day, datetime) else day
+            if isinstance(day_d, str):
+                day_d = date.fromisoformat(day_d)
+            vta_map[(int(pid), day_d)] = Decimal(str(qty or 0))
+
+        current_balances = _balances_by_bodega(db, selected_bodega_ids, product_ids)
+        current_map: dict[int, Decimal] = {}
+        for pid in product_ids:
+            total_pid = Decimal("0")
+            for bid in selected_bodega_ids:
+                total_pid += current_balances.get((pid, bid), Decimal("0"))
+            current_map[pid] = total_pid
+
+        for producto in productos:
+            pid = int(producto.id)
+            opening_qty = opening_map.get(pid, Decimal("0"))
+            current_qty = current_map.get(pid, Decimal("0"))
+            day_cells: list[dict[str, float]] = []
+            running = opening_qty
+            has_any = opening_qty != 0 or current_qty != 0
+            for day in dates:
+                ing = ing_map.get((pid, day), Decimal("0"))
+                vta = vta_map.get((pid, day), Decimal("0"))
+                egr = egr_map.get((pid, day), Decimal("0"))
+                running += ing - vta - egr
+                if ing != 0 or vta != 0 or egr != 0:
+                    has_any = True
+                day_cells.append(
+                    {
+                        "ing": float(ing),
+                        "vta": float(vta),
+                        "egr": float(egr),
+                        "saldo": float(running),
+                    }
+                )
+                totals_by_day[day]["ing"] += ing
+                totals_by_day[day]["vta"] += vta
+                totals_by_day[day]["egr"] += egr
+            if not has_any and producto_q:
+                continue
+            rows.append(
+                {
+                    "producto_id": pid,
+                    "codigo": producto.cod_producto or "",
+                    "descripcion": producto.descripcion or "",
+                    "opening_qty": float(opening_qty),
+                    "current_qty": float(current_qty),
+                    "day_cells": day_cells,
+                }
+            )
+            total_opening += opening_qty
+            total_current += current_qty
+
+    totals_running = total_opening
+    totals_day_cells: list[dict[str, float]] = []
+    for day in dates:
+        ing_t = totals_by_day[day]["ing"]
+        vta_t = totals_by_day[day]["vta"]
+        egr_t = totals_by_day[day]["egr"]
+        totals_running += ing_t - vta_t - egr_t
+        totals_day_cells.append(
+            {
+                "ing": float(ing_t),
+                "vta": float(vta_t),
+                "egr": float(egr_t),
+                "saldo": float(totals_running),
+            }
+        )
+
+    return {
+        "branches": branches,
+        "bodegas": bodegas,
+        "selected_branch": branch_id,
+        "selected_branch_name": selected_branch.name if selected_branch else "Todas",
+        "selected_bodega": bodega_id,
+        "producto_q": producto_q,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "dates": dates,
+        "rows": rows,
+        "totals_opening": float(total_opening),
+        "totals_current": float(total_current),
+        "totals_day_cells": totals_day_cells,
+    }
+
+
+@router.get("/reports/matriz-inventario/producto/{producto_id}/mini-kardex")
+def report_inventory_matrix_mini_kardex(
+    request: Request,
+    producto_id: int,
+    start_date: str,
+    end_date: str,
+    branch_id: str = "all",
+    bodega_id: str = "all",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    try:
+        start_d = date.fromisoformat((start_date or "").strip())
+        end_d = date.fromisoformat((end_date or "").strip())
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "Fecha invalida"}, status_code=400)
+    if end_d < start_d:
+        end_d = start_d
+
+    producto = db.query(Producto).filter(Producto.id == producto_id).first()
+    if not producto:
+        return JSONResponse({"ok": False, "error": "Producto no encontrado"}, status_code=404)
+
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    selected_branch_id: Optional[int] = None
+    if (branch_id or "all") != "all":
+        try:
+            selected_branch_id = int(branch_id)
+        except ValueError:
+            selected_branch_id = None
+    if selected_branch_id is not None and selected_branch_id not in scoped_branch_ids:
+        return JSONResponse({"ok": False, "error": "Sucursal no permitida"}, status_code=403)
+
+    bodegas_q = _scoped_bodegas_query(db)
+    if selected_branch_id is not None:
+        bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch_id)
+    bodega_ids = [b.id for b in bodegas_q.all()]
+    selected_bodega_id: Optional[int] = None
+    if (bodega_id or "all") != "all":
+        try:
+            selected_bodega_id = int(bodega_id)
+        except ValueError:
+            selected_bodega_id = None
+    if selected_bodega_id is not None:
+        bodega_ids = [bid for bid in bodega_ids if bid == selected_bodega_id]
+
+    if not bodega_ids:
+        return JSONResponse(
+            {
+                "ok": True,
+                "producto": {"id": int(producto.id), "codigo": producto.cod_producto or "", "descripcion": producto.descripcion or ""},
+                "opening_qty": 0.0,
+                "closing_qty": 0.0,
+                "rows": [],
+            }
+        )
+
+    start_dt = datetime.combine(start_d, datetime.min.time())
+    end_dt = datetime.combine(end_d + timedelta(days=1), datetime.min.time())
+
+    # Opening quantity before the range.
+    opening_ing = (
+        db.query(func.coalesce(func.sum(IngresoItem.cantidad), 0))
+        .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
+        .filter(IngresoItem.producto_id == producto_id)
+        .filter(IngresoInventario.bodega_id.in_(bodega_ids))
+        .filter(IngresoInventario.fecha < start_d)
+        .scalar()
+    )
+    opening_egr = (
+        db.query(func.coalesce(func.sum(EgresoItem.cantidad), 0))
+        .join(EgresoInventario, EgresoInventario.id == EgresoItem.egreso_id)
+        .filter(EgresoItem.producto_id == producto_id)
+        .filter(EgresoInventario.bodega_id.in_(bodega_ids))
+        .filter(EgresoInventario.fecha < start_d)
+        .scalar()
+    )
+    opening_vta = (
+        db.query(func.coalesce(func.sum(VentaItem.cantidad), 0))
+        .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+        .filter(VentaItem.producto_id == producto_id)
+        .filter(VentaFactura.bodega_id.in_(bodega_ids))
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(VentaFactura.fecha < start_dt)
+        .scalar()
+    )
+    running = Decimal(str(opening_ing or 0)) - Decimal(str(opening_egr or 0)) - Decimal(str(opening_vta or 0))
+    opening_qty = running
+
+    movements: list[dict[str, object]] = []
+    in_rows = (
+        db.query(IngresoInventario, IngresoItem, IngresoTipo, Bodega)
+        .join(IngresoItem, IngresoItem.ingreso_id == IngresoInventario.id)
+        .join(IngresoTipo, IngresoTipo.id == IngresoInventario.tipo_id, isouter=True)
+        .join(Bodega, Bodega.id == IngresoInventario.bodega_id, isouter=True)
+        .filter(IngresoItem.producto_id == producto_id)
+        .filter(IngresoInventario.bodega_id.in_(bodega_ids))
+        .filter(IngresoInventario.fecha >= start_d, IngresoInventario.fecha <= end_d)
+        .all()
+    )
+    for ingreso, item, tipo, bodega_row in in_rows:
+        qty = Decimal(str(item.cantidad or 0))
+        movements.append(
+            {
+                "ts": datetime.combine(ingreso.fecha, datetime.min.time()),
+                "fecha": ingreso.fecha.isoformat() if ingreso.fecha else "",
+                "tipo": "ENTRADA",
+                "detalle": tipo.nombre if tipo else "Ingreso",
+                "doc": f"ING-{ingreso.id}",
+                "bodega": bodega_row.name if bodega_row else "-",
+                "vendedor": (ingreso.usuario_registro or "-"),
+                "entrada": float(qty),
+                "salida": 0.0,
+            }
+        )
+
+    out_rows = (
+        db.query(EgresoInventario, EgresoItem, EgresoTipo, Bodega)
+        .join(EgresoItem, EgresoItem.egreso_id == EgresoInventario.id)
+        .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id, isouter=True)
+        .join(Bodega, Bodega.id == EgresoInventario.bodega_id, isouter=True)
+        .filter(EgresoItem.producto_id == producto_id)
+        .filter(EgresoInventario.bodega_id.in_(bodega_ids))
+        .filter(EgresoInventario.fecha >= start_d, EgresoInventario.fecha <= end_d)
+        .all()
+    )
+    for egreso, item, tipo, bodega_row in out_rows:
+        qty = Decimal(str(item.cantidad or 0))
+        movements.append(
+            {
+                "ts": datetime.combine(egreso.fecha, datetime.min.time()),
+                "fecha": egreso.fecha.isoformat() if egreso.fecha else "",
+                "tipo": "SALIDA",
+                "detalle": tipo.nombre if tipo else "Egreso",
+                "doc": f"EGR-{egreso.id}",
+                "bodega": bodega_row.name if bodega_row else "-",
+                "vendedor": (egreso.usuario_registro or "-"),
+                "entrada": 0.0,
+                "salida": float(qty),
+            }
+        )
+
+    sale_rows = (
+        db.query(VentaFactura, VentaItem, Bodega, Vendedor)
+        .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+        .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+        .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
+        .filter(VentaItem.producto_id == producto_id)
+        .filter(VentaFactura.bodega_id.in_(bodega_ids))
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+        .all()
+    )
+    for factura, item, bodega_row, vendedor in sale_rows:
+        qty = Decimal(str(item.cantidad or 0))
+        ts = factura.fecha if isinstance(factura.fecha, datetime) else datetime.combine(factura.fecha, datetime.min.time())
+        movements.append(
+            {
+                "ts": ts,
+                "fecha": ts.strftime("%Y-%m-%d %H:%M"),
+                "tipo": "VENTA",
+                "detalle": "Factura de venta",
+                "doc": factura.numero or f"FAC-{factura.id}",
+                "bodega": bodega_row.name if bodega_row else "-",
+                "vendedor": vendedor.nombre if vendedor else "-",
+                "entrada": 0.0,
+                "salida": float(qty),
+            }
+        )
+
+    movements.sort(key=lambda m: (m["ts"], m["tipo"], m["doc"]))
+    rows: list[dict[str, object]] = []
+    for m in movements:
+        running += Decimal(str(m.get("entrada", 0) or 0))
+        running -= Decimal(str(m.get("salida", 0) or 0))
+        rows.append(
+            {
+                "fecha": m.get("fecha", ""),
+                "tipo": m.get("tipo", ""),
+                "detalle": m.get("detalle", ""),
+                "doc": m.get("doc", ""),
+                "bodega": m.get("bodega", "-"),
+                "vendedor": m.get("vendedor", "-"),
+                "entrada": float(m.get("entrada", 0) or 0),
+                "salida": float(m.get("salida", 0) or 0),
+                "saldo": float(running),
+            }
+        )
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "producto": {
+                "id": int(producto.id),
+                "codigo": producto.cod_producto or "",
+                "descripcion": producto.descripcion or "",
+            },
+            "opening_qty": float(opening_qty),
+            "closing_qty": float(running),
+            "rows": rows,
+        }
+    )
+
+
+@router.get("/reports/matriz-inventario/producto/{producto_id}/mini-kardex.xlsx")
+def report_inventory_matrix_mini_kardex_xlsx(
+    request: Request,
+    producto_id: int,
+    start_date: str,
+    end_date: str,
+    branch_id: str = "all",
+    bodega_id: str = "all",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    try:
+        start_d = date.fromisoformat((start_date or "").strip())
+        end_d = date.fromisoformat((end_date or "").strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Fecha invalida")
+    if end_d < start_d:
+        end_d = start_d
+
+    producto = db.query(Producto).filter(Producto.id == producto_id).first()
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    selected_branch_id: Optional[int] = None
+    if (branch_id or "all") != "all":
+        try:
+            selected_branch_id = int(branch_id)
+        except ValueError:
+            selected_branch_id = None
+    if selected_branch_id is not None and selected_branch_id not in scoped_branch_ids:
+        raise HTTPException(status_code=403, detail="Sucursal no permitida")
+
+    bodegas_q = _scoped_bodegas_query(db)
+    if selected_branch_id is not None:
+        bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch_id)
+    bodega_ids = [b.id for b in bodegas_q.all()]
+    selected_bodega_id: Optional[int] = None
+    if (bodega_id or "all") != "all":
+        try:
+            selected_bodega_id = int(bodega_id)
+        except ValueError:
+            selected_bodega_id = None
+    if selected_bodega_id is not None:
+        bodega_ids = [bid for bid in bodega_ids if bid == selected_bodega_id]
+
+    start_dt = datetime.combine(start_d, datetime.min.time())
+    end_dt = datetime.combine(end_d + timedelta(days=1), datetime.min.time())
+
+    opening_ing = Decimal("0")
+    opening_egr = Decimal("0")
+    opening_vta = Decimal("0")
+    movements: list[dict[str, object]] = []
+    if bodega_ids:
+        opening_ing = Decimal(
+            str(
+                db.query(func.coalesce(func.sum(IngresoItem.cantidad), 0))
+                .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
+                .filter(IngresoItem.producto_id == producto_id)
+                .filter(IngresoInventario.bodega_id.in_(bodega_ids))
+                .filter(IngresoInventario.fecha < start_d)
+                .scalar()
+                or 0
+            )
+        )
+        opening_egr = Decimal(
+            str(
+                db.query(func.coalesce(func.sum(EgresoItem.cantidad), 0))
+                .join(EgresoInventario, EgresoInventario.id == EgresoItem.egreso_id)
+                .filter(EgresoItem.producto_id == producto_id)
+                .filter(EgresoInventario.bodega_id.in_(bodega_ids))
+                .filter(EgresoInventario.fecha < start_d)
+                .scalar()
+                or 0
+            )
+        )
+        opening_vta = Decimal(
+            str(
+                db.query(func.coalesce(func.sum(VentaItem.cantidad), 0))
+                .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+                .filter(VentaItem.producto_id == producto_id)
+                .filter(VentaFactura.bodega_id.in_(bodega_ids))
+                .filter(VentaFactura.estado != "ANULADA")
+                .filter(VentaFactura.fecha < start_dt)
+                .scalar()
+                or 0
+            )
+        )
+
+        in_rows = (
+            db.query(IngresoInventario, IngresoItem, IngresoTipo, Bodega)
+            .join(IngresoItem, IngresoItem.ingreso_id == IngresoInventario.id)
+            .join(IngresoTipo, IngresoTipo.id == IngresoInventario.tipo_id, isouter=True)
+            .join(Bodega, Bodega.id == IngresoInventario.bodega_id, isouter=True)
+            .filter(IngresoItem.producto_id == producto_id)
+            .filter(IngresoInventario.bodega_id.in_(bodega_ids))
+            .filter(IngresoInventario.fecha >= start_d, IngresoInventario.fecha <= end_d)
+            .all()
+        )
+        for ingreso, item, tipo, bodega_row in in_rows:
+            qty = Decimal(str(item.cantidad or 0))
+            movements.append(
+                {
+                    "ts": datetime.combine(ingreso.fecha, datetime.min.time()),
+                    "fecha": ingreso.fecha.isoformat() if ingreso.fecha else "",
+                    "tipo": "ENTRADA",
+                    "detalle": tipo.nombre if tipo else "Ingreso",
+                    "doc": f"ING-{ingreso.id}",
+                    "bodega": bodega_row.name if bodega_row else "-",
+                    "vendedor": ingreso.usuario_registro or "-",
+                    "entrada": float(qty),
+                    "salida": 0.0,
+                }
+            )
+
+        out_rows = (
+            db.query(EgresoInventario, EgresoItem, EgresoTipo, Bodega)
+            .join(EgresoItem, EgresoItem.egreso_id == EgresoInventario.id)
+            .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id, isouter=True)
+            .join(Bodega, Bodega.id == EgresoInventario.bodega_id, isouter=True)
+            .filter(EgresoItem.producto_id == producto_id)
+            .filter(EgresoInventario.bodega_id.in_(bodega_ids))
+            .filter(EgresoInventario.fecha >= start_d, EgresoInventario.fecha <= end_d)
+            .all()
+        )
+        for egreso, item, tipo, bodega_row in out_rows:
+            qty = Decimal(str(item.cantidad or 0))
+            movements.append(
+                {
+                    "ts": datetime.combine(egreso.fecha, datetime.min.time()),
+                    "fecha": egreso.fecha.isoformat() if egreso.fecha else "",
+                    "tipo": "SALIDA",
+                    "detalle": tipo.nombre if tipo else "Egreso",
+                    "doc": f"EGR-{egreso.id}",
+                    "bodega": bodega_row.name if bodega_row else "-",
+                    "vendedor": egreso.usuario_registro or "-",
+                    "entrada": 0.0,
+                    "salida": float(qty),
+                }
+            )
+
+        sale_rows = (
+            db.query(VentaFactura, VentaItem, Bodega, Vendedor)
+            .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+            .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+            .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
+            .filter(VentaItem.producto_id == producto_id)
+            .filter(VentaFactura.bodega_id.in_(bodega_ids))
+            .filter(VentaFactura.estado != "ANULADA")
+            .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+            .all()
+        )
+        for factura, item, bodega_row, vendedor in sale_rows:
+            qty = Decimal(str(item.cantidad or 0))
+            ts = factura.fecha if isinstance(factura.fecha, datetime) else datetime.combine(factura.fecha, datetime.min.time())
+            movements.append(
+                {
+                    "ts": ts,
+                    "fecha": ts.strftime("%Y-%m-%d %H:%M"),
+                    "tipo": "VENTA",
+                    "detalle": "Factura de venta",
+                    "doc": factura.numero or f"FAC-{factura.id}",
+                    "bodega": bodega_row.name if bodega_row else "-",
+                    "vendedor": vendedor.nombre if vendedor else "-",
+                    "entrada": 0.0,
+                    "salida": float(qty),
+                }
+            )
+
+    running = opening_ing - opening_egr - opening_vta
+    opening_qty = running
+    movements.sort(key=lambda m: (m["ts"], m["tipo"], m["doc"]))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "MiniKardex"
+    ws.append(["Producto", f"{producto.cod_producto or ''} - {producto.descripcion or ''}"])
+    ws.append(["Rango", f"{start_d.isoformat()} a {end_d.isoformat()}"])
+    ws.append(["Saldo inicial", float(opening_qty)])
+    ws.append([])
+    ws.append(["Fecha", "Tipo", "Detalle", "Documento", "Bodega", "Vendedor", "Entrada", "Salida", "Saldo"])
+    for c in ws[5]:
+        c.font = Font(bold=True)
+
+    for m in movements:
+        running += Decimal(str(m.get("entrada", 0) or 0))
+        running -= Decimal(str(m.get("salida", 0) or 0))
+        ws.append(
+            [
+                m.get("fecha", ""),
+                m.get("tipo", ""),
+                m.get("detalle", ""),
+                m.get("doc", ""),
+                m.get("bodega", ""),
+                m.get("vendedor", "-"),
+                float(m.get("entrada", 0) or 0),
+                float(m.get("salida", 0) or 0),
+                float(running),
+            ]
+        )
+
+    ws.freeze_panes = "A6"
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"mini_kardex_{producto.cod_producto or producto.id}_{start_d.isoformat()}_{end_d.isoformat()}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reports/matriz-inventario")
+def report_inventory_matrix(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, bodega_id, producto_q = _inventory_matrix_filters(request)
+    payload = _build_inventory_matrix_payload(
+        db=db,
+        user=user,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+        bodega_id=bodega_id,
+        producto_q=producto_q,
+    )
+    return request.app.state.templates.TemplateResponse(
+        "report_inventory_matrix.html",
+        {
+            "request": request,
+            "user": user,
+            **payload,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/reports/matriz-inventario/export.xlsx")
+def report_inventory_matrix_export_xlsx(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, bodega_id, producto_q = _inventory_matrix_filters(request)
+    payload = _build_inventory_matrix_payload(
+        db=db,
+        user=user,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+        bodega_id=bodega_id,
+        producto_q=producto_q,
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "MatrizInventario"
+    ws.append(["Sucursal", payload.get("selected_branch_name", "Todas")])
+    ws.append(["Rango", f"{payload['start_date']} a {payload['end_date']}"])
+    ws.append(["Saldo inicial total", float(payload.get("totals_opening", 0) or 0)])
+    ws.append(["Saldo actual total", float(payload.get("totals_current", 0) or 0)])
+    ws.append([])
+
+    header_top = ["Codigo", "Producto", "Saldo inicial", "Saldo actual"]
+    header_sub = ["", "", "", ""]
+    for d in payload.get("dates", []):
+        header_top.extend([d.strftime("%Y-%m-%d"), "", "", ""])
+        header_sub.extend(["Ingresos", "Ventas", "Egresos", "Saldo"])
+    ws.append(header_top)
+    ws.append(header_sub)
+
+    for row in payload.get("rows", []):
+        excel_row = [
+            row.get("codigo", ""),
+            row.get("descripcion", ""),
+            float(row.get("opening_qty", 0) or 0),
+            float(row.get("current_qty", 0) or 0),
+        ]
+        for c in row.get("day_cells", []):
+            excel_row.extend(
+                [
+                    float(c.get("ing", 0) or 0),
+                    float(c.get("vta", 0) or 0),
+                    float(c.get("egr", 0) or 0),
+                    float(c.get("saldo", 0) or 0),
+                ]
+            )
+        ws.append(excel_row)
+
+    total_row = [
+        "TOTAL",
+        "Sabana",
+        float(payload.get("totals_opening", 0) or 0),
+        float(payload.get("totals_current", 0) or 0),
+    ]
+    for c in payload.get("totals_day_cells", []):
+        total_row.extend(
+            [
+                float(c.get("ing", 0) or 0),
+                float(c.get("vta", 0) or 0),
+                float(c.get("egr", 0) or 0),
+                float(c.get("saldo", 0) or 0),
+            ]
+        )
+    ws.append(total_row)
+
+    for col in ws[6]:
+        col.font = Font(bold=True)
+    for col in ws[7]:
+        col.font = Font(bold=True)
+    for col in ws[ws.max_row]:
+        col.font = Font(bold=True)
+    ws.freeze_panes = "E8"
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"matriz_inventario_{payload['start_date']}_a_{payload['end_date']}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
+    )
 
 
 @router.get("/reports/ventas-especial")

@@ -51,6 +51,11 @@
           <li class="nav-item">
             <a class="nav-link" href="/inventory/egresos">Egresos de inventario</a>
           </li>
+          {% if is_hollpacas_mode %}
+          <li class="nav-item">
+            <a class="nav-link" href="/inventory/gestion-bodega-requisas">Gestion bodega y requisas</a>
+          </li>
+          {% endif %}
           <li class="nav-item">
             <a class="nav-link" href="/inventory/traslados-rapidos">Traslados rapidos</a>
           </li>

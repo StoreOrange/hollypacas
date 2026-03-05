@@ -25,7 +25,7 @@ from .security import hash_password
 
 
 def _seed_roles(db: Session) -> None:
-    role_names = ["administrador", "vendedor", "cajero", "seguridad", "contador"]
+    role_names = ["administrador", "vendedor", "cajero", "seguridad", "contador", "bodega"]
     existing = {role.name for role in db.query(Role).all()}
     for name in role_names:
         if name not in existing:
@@ -76,6 +76,7 @@ def _seed_permissions(db: Session) -> None:
         "menu.inventory.caliente",
         "menu.inventory.ingresos",
         "menu.inventory.egresos",
+        "menu.inventory.requisas",
         "menu.finance",
         "menu.accounting",
         "menu.reports",
@@ -97,6 +98,7 @@ def _seed_permissions(db: Session) -> None:
         "access.inventory.caliente",
         "access.inventory.ingresos",
         "access.inventory.egresos",
+        "access.inventory.requisas",
         "access.inventory.productos",
         "access.finance",
         "access.finance.rates",
@@ -1014,6 +1016,41 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN theme_code VARCHAR(40) DEFAULT 'default'"))
                 conn.execute(text("UPDATE company_profile_settings SET theme_code = 'default' WHERE theme_code IS NULL OR theme_code = ''"))
+    if "bodega_requisa_cierres" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("bodega_requisa_cierres")}
+        if "movement_type" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bodega_requisa_cierres ADD COLUMN movement_type VARCHAR(30) DEFAULT 'sales_out'"))
+                conn.execute(
+                    text(
+                        "UPDATE bodega_requisa_cierres SET movement_type = 'sales_out' "
+                        "WHERE movement_type IS NULL OR movement_type = ''"
+                    )
+                )
+        if "anulada" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bodega_requisa_cierres ADD COLUMN anulada BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("UPDATE bodega_requisa_cierres SET anulada = FALSE WHERE anulada IS NULL"))
+        if "anulada_motivo" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bodega_requisa_cierres ADD COLUMN anulada_motivo VARCHAR(500)"))
+        if "anulada_por" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bodega_requisa_cierres ADD COLUMN anulada_por VARCHAR(160)"))
+        if "anulada_at" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bodega_requisa_cierres ADD COLUMN anulada_at TIMESTAMP"))
+    if "bodega_requisa_drafts" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("bodega_requisa_drafts")}
+        if "movement_type" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bodega_requisa_drafts ADD COLUMN movement_type VARCHAR(30) DEFAULT 'sales_out'"))
+                conn.execute(
+                    text(
+                        "UPDATE bodega_requisa_drafts SET movement_type = 'sales_out' "
+                        "WHERE movement_type IS NULL OR movement_type = ''"
+                    )
+                )
     if "vendedor_bodegas" not in inspector.get_table_names():
         with engine.begin() as conn:
             conn.execute(

@@ -1,0 +1,816 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+  .dx-shell {
+    border: 1px solid #dbe3ef;
+    border-radius: 14px;
+    background: #fff;
+    overflow: visible;
+  }
+  .dx-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .6rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: .65rem .85rem;
+    border-bottom: 1px solid #e6edf7;
+    background: linear-gradient(180deg, #fbfdff 0%, #f4f8fd 100%);
+  }
+  .dx-input {
+    min-width: 240px;
+    border: 1px solid #cfd9e8;
+    border-radius: .625rem;
+    padding: .38rem .62rem;
+    font-size: .78rem;
+    outline: none;
+  }
+  .dx-input:focus {
+    border-color: #5a87c9;
+    box-shadow: 0 0 0 3px rgba(90, 135, 201, .18);
+  }
+  .dx-grid-wrap { max-height: 58vh; overflow: auto; width: 100%; }
+  .dx-grid {
+    width: 100%;
+    min-width: 1120px;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: .77rem;
+    color: #1e293b;
+  }
+  .dx-grid th, .dx-grid td {
+    border-bottom: 1px solid #e8eef8;
+    border-right: 1px solid #eff4fb;
+    padding: .42rem .55rem;
+    white-space: nowrap;
+  }
+  .dx-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #eef4fc;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-size: .66rem;
+  }
+  .dx-grid tbody tr:nth-child(even) td { background: #fafcff; }
+  .dx-grid tbody tr:hover td { background: #edf4ff; }
+  .dx-grid .sticky-col { position: sticky; left: 0; z-index: 2; background: inherit; }
+  .dx-grid thead .sticky-col { background: #e5eefb; z-index: 4; }
+  .dx-grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .dx-grid .wide { max-width: 280px; white-space: normal; word-break: break-word; line-height: 1.2; }
+  .delivered-input {
+    width: 110px;
+    border: 1px solid #cfd9e8;
+    border-radius: .5rem;
+    padding: .28rem .45rem;
+    text-align: right;
+    font-size: .74rem;
+  }
+  .diff-ok { color: #166534; font-weight: 600; }
+  .diff-bad { color: #b91c1c; font-weight: 700; }
+  .factura-cell {
+    font-weight: 700;
+    color: #334155;
+    transition: color .15s ease, text-shadow .15s ease;
+  }
+  .factura-cell.factura-verified {
+    color: #0b63ce;
+    text-shadow: 0 0 0 rgba(11,99,206,.01), 0 0 12px rgba(11,99,206,.18);
+  }
+  .verify-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .3rem;
+  }
+  .verify-check {
+    width: 16px;
+    height: 16px;
+    accent-color: #0b63ce;
+    cursor: pointer;
+  }
+  .history-table { min-width: 980px; }
+  .revert-form {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    flex-wrap: nowrap;
+  }
+  .revert-motivo {
+    width: 170px;
+    min-width: 110px;
+  }
+  .close-confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    padding: 1rem;
+  }
+  .close-confirm-overlay.d-none { display: none !important; }
+  .close-confirm-card {
+    width: min(520px, 100%);
+    background: #ffffff;
+    border: 1px solid rgba(30, 41, 59, 0.12);
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(2, 6, 23, 0.22);
+    padding: 1rem 1rem .85rem;
+  }
+  .close-confirm-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    background: linear-gradient(135deg, #e0ecff 0%, #fff4d8 100%);
+    border: 1px solid #dbeafe;
+  }
+  .close-confirm-title {
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0;
+  }
+  .close-confirm-text {
+    color: #334155;
+    margin: .35rem 0 0;
+    line-height: 1.35;
+  }
+  .close-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem;
+    margin-top: .95rem;
+  }
+  @media (max-width: 1400px) {
+    .dx-grid { min-width: 980px; }
+    .revert-motivo { width: 130px; }
+  }
+  @media (max-width: 1100px) {
+    .dx-grid .sticky-col { position: static; }
+    .dx-grid thead .sticky-col { position: static; }
+    .dx-grid { min-width: 820px; }
+    .history-table { min-width: 860px; }
+    .revert-form {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .revert-motivo {
+      width: 100%;
+      min-width: 0;
+    }
+  }
+  @media (max-width: 768px) {
+    .dx-grid { min-width: 760px; }
+    .history-table { min-width: 760px; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Inventario</li>
+                <li class="breadcrumb-item active" aria-current="page">Gestion bodega y requisas</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Gestion de Bodega y Requisas</div>
+            <div class="odoo-subtitle mt-1 text-sm">Arqueo de salidas facturadas: vendido vs entregado (cierre diario).</div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="odoo-pill primary">
+              <i class="bi bi-boxes"></i>
+              Vendido: {{ "{:,.2f}".format(total_vendido or 0) }} unds
+            </span>
+            <span class="odoo-pill">
+              <i class="bi bi-cash-coin"></i>
+              C$: {{ "{:,.2f}".format(total_monto_cs or 0) }}
+            </span>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item"><a class="nav-link" href="/inventory">Catalogo</a></li>
+          <li class="nav-item"><a class="nav-link" href="/inventory/ingresos">Ingresos</a></li>
+          <li class="nav-item"><a class="nav-link" href="/inventory/egresos">Egresos</a></li>
+          <li class="nav-item"><a class="nav-link active" href="/inventory/gestion-bodega-requisas">Gestion bodega y requisas</a></li>
+        </ul>
+      </div>
+
+      {% if error %}
+      <div class="mt-3 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-2">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2">{{ success }}</div>
+      {% endif %}
+      {% if pending_close_date %}
+      <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-4 py-2">
+        Cierre pendiente bloqueante: debe finalizar <strong>{{ pending_close_date }}</strong> antes de avanzar a otro dia.
+      </div>
+      {% endif %}
+
+      <div class="odoo-card">
+        <form id="requisasFilterForm" class="row g-2 align-items-end" method="get" action="/inventory/gestion-bodega-requisas">
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+            <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+            <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Movimiento</label>
+            <select name="movement_type" class="form-select form-select-sm">
+              <option value="sales_out" {% if movement_type == "sales_out" %}selected{% endif %}>Salidas por ventas</option>
+              <option value="inventory_in" {% if movement_type == "inventory_in" %}selected{% endif %}>Entradas de inventario</option>
+              <option value="inventory_out" {% if movement_type == "inventory_out" %}selected{% endif %}>Salidas de inventario</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Bodega</label>
+            <select name="bodega_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_bodega in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for b in bodegas %}
+              <option value="{{ b.id }}" {% if selected_bodega == b.id|string %}selected{% endif %}>{{ b.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Filtro global</label>
+            <input name="q" class="form-control form-control-sm" placeholder="Factura, codigo, producto o cliente" value="{{ q }}">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i> Filtrar</button>
+            <a class="btn btn-outline-secondary btn-sm" href="/inventory/gestion-bodega-requisas?movement_type={{ movement_type }}"><i class="bi bi-eraser"></i> Hoy</a>
+          </div>
+        </form>
+      </div>
+
+      <form id="requisasCloseForm" method="post" action="/inventory/gestion-bodega-requisas/cierre" class="odoo-card mt-3">
+        <input type="hidden" name="start_date" value="{{ start_date }}">
+        <input type="hidden" name="end_date" value="{{ end_date }}">
+        <input type="hidden" name="branch_id" value="{{ selected_branch }}">
+        <input type="hidden" name="bodega_id" value="{{ selected_bodega }}">
+        <input type="hidden" name="movement_type" value="{{ movement_type }}">
+        <input type="hidden" name="q" value="{{ q }}">
+
+        <div class="dx-shell">
+          <div class="dx-toolbar">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <div class="odoo-section-title text-base">Detalle de salidas facturadas</div>
+              <input id="gridQuickFilter" type="text" class="dx-input" placeholder="Filtro rapido en grilla...">
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <span class="text-xs text-slate" id="autosaveStatus">Auto guardado: listo</span>
+              <span class="odoo-pill">
+                <i class="bi bi-box-seam"></i>
+                Vendido: <span id="totalVendidoLbl">{{ "{:,.0f}".format(total_vendido or 0) }}</span>
+              </span>
+              <span class="odoo-pill">
+                <i class="bi bi-check2-square"></i>
+                Entregado: <span id="totalEntregadoLbl">{{ "{:,.2f}".format(total_vendido or 0) }}</span>
+              </span>
+              <span class="odoo-pill">
+                <i class="bi bi-patch-check"></i>
+                Verificado: <span id="totalVerificadoLbl">0</span>
+              </span>
+              <span class="odoo-pill">
+                <i class="bi bi-arrow-left-right"></i>
+                Diferencia: <span id="totalDiffLbl">0.00</span>
+              </span>
+            </div>
+          </div>
+          <div class="dx-grid-wrap">
+            <table class="dx-grid" id="reqGrid">
+              <thead>
+                <tr>
+                  <th class="sticky-col">Fecha</th>
+                  <th>Factura</th>
+                  <th>{{ partner_label or "Cliente" }}</th>
+                  <th>Codigo</th>
+                <th>Producto</th>
+                <th class="num">Cant. vendida</th>
+                <th class="num">Cant. entregada</th>
+                <th class="num">Dif.</th>
+                <th class="text-center">Verificado</th>
+                <th class="num">Precio C$</th>
+                <th class="num">Total C$</th>
+                <th>{{ owner_label or "Vendedor" }}</th>
+                <th>Sucursal</th>
+              </tr>
+              </thead>
+              <tbody id="reqGridBody">
+                {% for row in rows %}
+                <tr data-search="{{ (row.numero ~ ' ' ~ row.codigo ~ ' ' ~ row.producto ~ ' ' ~ row.cliente ~ ' ' ~ row.vendedor)|lower }}">
+                  <td class="sticky-col">{{ row.fecha }}</td>
+                  <td class="factura-cell">{{ row.numero }}</td>
+                  <td class="wide">{{ row.cliente }}</td>
+                  <td>{{ row.codigo }}</td>
+                  <td class="wide">{{ row.producto }}</td>
+                  <td class="num sold-cell" data-num="{{ row.cantidad }}">{{ "{:,.0f}".format(row.cantidad or 0) }}</td>
+                  <td class="num">
+                    <input type="hidden" name="row_item_id" value="{{ row.item_id }}">
+                    <input type="hidden" name="row_sold_qty" value="{{ row.cantidad }}">
+                    <input type="number" step="1" min="0" inputmode="numeric" class="delivered-input delivered-cell" name="row_delivered_qty" value="{{ "{:.0f}".format(row.delivered_qty if row.delivered_qty is defined else (row.cantidad or 0)) }}">
+                  </td>
+                  <td class="num diff-cell diff-ok">0</td>
+                  <td class="text-center">
+                    <span class="verify-wrap">
+                      <input type="checkbox" class="verify-check" {% if row.verified %}checked{% endif %}>
+                      <input type="hidden" name="row_verified" value="{% if row.verified %}1{% else %}0{% endif %}" class="verified-hidden">
+                    </span>
+                  </td>
+                  <td class="num">C$ {{ "{:,.2f}".format(row.precio_cs or 0) }}</td>
+                  <td class="num">C$ {{ "{:,.2f}".format(row.subtotal_cs or 0) }}</td>
+                  <td>{{ row.vendedor }}</td>
+                  <td>{{ row.sucursal }}</td>
+                </tr>
+                {% endfor %}
+                {% if rows|length == 0 %}
+                <tr><td colspan="13" class="text-center py-3 text-slate">Sin resultados para el filtro seleccionado.</td></tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="mt-3 d-flex flex-wrap gap-2 justify-content-end">
+          <span class="odoo-pill">
+            <i class="bi bi-box-seam"></i>
+            Total bultos vendidos: <span id="totalVendidoBottom">{{ "{:,.0f}".format(total_vendido or 0) }}</span>
+          </span>
+          <span class="odoo-pill">
+            <i class="bi bi-check2-square"></i>
+            Total entregado: <span id="totalEntregadoBottom">{{ "{:,.0f}".format(total_vendido or 0) }}</span>
+          </span>
+          <span class="odoo-pill">
+            <i class="bi bi-patch-check"></i>
+            Total verificado: <span id="totalVerificadoBottom">0</span>
+          </span>
+        </div>
+
+        <div class="mt-3 row g-2 align-items-end">
+          <div class="col-12 col-lg-8">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Observacion del cierre diario</label>
+            <textarea name="observacion" class="form-control form-control-sm" rows="2" placeholder="Notas de arqueo, faltantes, diferencias o incidencias..."></textarea>
+          </div>
+          <div class="col-12 col-lg-4 d-flex justify-content-lg-end">
+            <button class="btn btn-primary btn-sm mt-2 mt-lg-0" type="submit">
+              <i class="bi bi-check2-circle"></i>
+              Ejecutar cierre diario de almacen
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <div class="odoo-card mt-3">
+        <div class="odoo-section-title mb-2 text-base">Historial reciente de cierres</div>
+        <div class="table-responsive">
+          <table class="table table-sm odoo-table align-middle history-table">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>#</th>
+                <th>Fecha cierre</th>
+                <th>Rango</th>
+                <th>Sucursal</th>
+                <th>Bodega</th>
+                <th class="text-end">Vendidas</th>
+                <th class="text-end">Entregadas</th>
+                <th class="text-end">Diferencia</th>
+                <th>Estado</th>
+                <th>Usuario</th>
+                <th class="text-center">Accion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in recent_cierres %}
+              <tr>
+                <td>{{ c.id }}</td>
+                <td>{{ c.created_at.strftime("%Y-%m-%d %H:%M") if c.created_at else "" }}</td>
+                <td>{{ c.start_date }} a {{ c.end_date }}</td>
+                <td>{{ c.branch.name if c.branch else "-" }}</td>
+                <td>{{ c.bodega.name if c.bodega else "-" }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(c.total_items_vendidos or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(c.total_items_entregados or 0) }}</td>
+                <td class="text-end {% if (c.total_diferencia or 0) != 0 %}text-danger fw-semibold{% endif %}">{{ "{:,.2f}".format(c.total_diferencia or 0) }}</td>
+                <td>
+                  {% if c.anulada %}
+                  <span class="badge bg-danger">Anulada</span>
+                  {% if c.anulada_motivo %}
+                  <div class="small text-muted mt-1">{{ c.anulada_motivo }}</div>
+                  {% endif %}
+                  {% else %}
+                  <span class="badge bg-success">Activa</span>
+                  {% endif %}
+                </td>
+                <td>{{ c.usuario_registro or "-" }}</td>
+                <td class="text-center">
+                  <a class="btn btn-outline-secondary btn-sm me-1" href="/inventory/gestion-bodega-requisas/cierre/{{ c.id }}/reporte.pdf" target="_blank">
+                    <i class="bi bi-file-earmark-pdf"></i>
+                    PDF
+                  </a>
+                  <a class="btn btn-outline-secondary btn-sm me-1" href="/inventory/gestion-bodega-requisas/cierre/{{ c.id }}/reporte.xlsx">
+                    <i class="bi bi-file-earmark-excel"></i>
+                    Excel
+                  </a>
+                  {% if c.anulada %}
+                  <span class="text-slate small">-</span>
+                  {% else %}
+                  <form method="post" action="/inventory/gestion-bodega-requisas/cierre/{{ c.id }}/revertir" class="revert-form">
+                    <input type="hidden" name="start_date" value="{{ start_date }}">
+                    <input type="hidden" name="end_date" value="{{ end_date }}">
+                    <input type="hidden" name="branch_id" value="{{ selected_branch }}">
+                    <input type="hidden" name="bodega_id" value="{{ selected_bodega }}">
+                    <input type="hidden" name="movement_type" value="{{ movement_type }}">
+                    <input type="hidden" name="q" value="{{ q }}">
+                    <input type="text" name="motivo" class="form-control form-control-sm revert-motivo" placeholder="Motivo anulación" required>
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                      <i class="bi bi-arrow-counterclockwise"></i>
+                      Revertir
+                    </button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              {% if recent_cierres|length == 0 %}
+              <tr><td colspan="11" class="text-center py-3 text-slate">Aun no hay cierres registrados.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div id="closeConfirmOverlay" class="close-confirm-overlay d-none" aria-hidden="true">
+  <div class="close-confirm-card" role="dialog" aria-modal="true" aria-labelledby="closeConfirmTitle">
+    <div class="d-flex align-items-center gap-2">
+      <span class="close-confirm-icon">🐴😄</span>
+      <h3 id="closeConfirmTitle" class="close-confirm-title">Confirmar cierre diario</h3>
+    </div>
+    <p class="close-confirm-text">
+      Estas seguro de haber revisado todos los movimientos?<br>
+      Despues no este jodiendo si algo esta cruzado.
+    </p>
+    <div class="close-confirm-actions">
+      <button type="button" id="closeConfirmCancel" class="btn btn-outline-secondary btn-sm">Cancelar</button>
+      <button type="button" id="closeConfirmOk" class="btn btn-primary btn-sm">Si, cerrar dia</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  (function () {
+    const body = document.getElementById("reqGridBody");
+    const filterInput = document.getElementById("gridQuickFilter");
+    const totalVendidoLbl = document.getElementById("totalVendidoLbl");
+    const totalEntregadoLbl = document.getElementById("totalEntregadoLbl");
+    const totalVerificadoLbl = document.getElementById("totalVerificadoLbl");
+    const totalDiffLbl = document.getElementById("totalDiffLbl");
+    const totalVendidoBottom = document.getElementById("totalVendidoBottom");
+    const totalEntregadoBottom = document.getElementById("totalEntregadoBottom");
+    const totalVerificadoBottom = document.getElementById("totalVerificadoBottom");
+    const autosaveStatus = document.getElementById("autosaveStatus");
+    const closeForm = document.getElementById("requisasCloseForm");
+    const filterForm = document.getElementById("requisasFilterForm");
+    const closeConfirmOverlay = document.getElementById("closeConfirmOverlay");
+    const closeConfirmCancel = document.getElementById("closeConfirmCancel");
+    const closeConfirmOk = document.getElementById("closeConfirmOk");
+    if (!body) return;
+
+    const fmtInt = new Intl.NumberFormat("es-NI", { maximumFractionDigits: 0 });
+    const autosaveUrl = "/inventory/gestion-bodega-requisas/autosave";
+    let autosaveTimer = null;
+    let autosaveBusy = false;
+    let autosavePending = false;
+
+    function setAutosaveStatus(text, tone) {
+      if (!autosaveStatus) return;
+      autosaveStatus.textContent = text;
+      autosaveStatus.classList.remove("text-slate", "text-emerald-700", "text-red-700");
+      autosaveStatus.classList.add(tone || "text-slate");
+    }
+
+    function collectPayload() {
+      return Array.from(body.querySelectorAll("tr"))
+        .map((row) => {
+          const itemInput = row.querySelector('input[name="row_item_id"]');
+          const deliveredInput = row.querySelector(".delivered-cell");
+          const verifiedInput = row.querySelector(".verified-hidden");
+          const itemId = Number.parseInt(String(itemInput?.value || ""), 10);
+          if (!Number.isFinite(itemId)) return null;
+          let deliveredQty = Number.parseInt(String(deliveredInput?.value || "0"), 10);
+          if (!Number.isFinite(deliveredQty) || deliveredQty < 0) deliveredQty = 0;
+          return {
+            item_id: itemId,
+            delivered_qty: deliveredQty,
+            verified: (verifiedInput?.value || "0") === "1",
+          };
+        })
+        .filter((x) => x !== null);
+    }
+
+    function buildAutosaveParams() {
+      const params = new URLSearchParams();
+      params.set("start_date", String(closeForm?.querySelector('input[name="start_date"]')?.value || ""));
+      params.set("end_date", String(closeForm?.querySelector('input[name="end_date"]')?.value || ""));
+      params.set("branch_id", String(closeForm?.querySelector('input[name="branch_id"]')?.value || "all"));
+      params.set("bodega_id", String(closeForm?.querySelector('input[name="bodega_id"]')?.value || "all"));
+      params.set("movement_type", String(closeForm?.querySelector('input[name="movement_type"]')?.value || "sales_out"));
+      params.set("q", String(closeForm?.querySelector('input[name="q"]')?.value || ""));
+      params.set("payload", JSON.stringify(collectPayload()));
+      return params;
+    }
+
+    async function runAutosave() {
+      if (!closeForm) return;
+      if (autosaveBusy) {
+        autosavePending = true;
+        return;
+      }
+      autosaveBusy = true;
+      setAutosaveStatus("Auto guardado: guardando...", "text-slate");
+
+      const formData = buildAutosaveParams();
+
+      try {
+        const resp = await fetch(autosaveUrl, {
+          method: "POST",
+          body: formData,
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data?.ok) {
+          throw new Error(data?.error || "Error de guardado");
+        }
+        setAutosaveStatus(`Auto guardado: ${data.saved_at || "ok"}`, "text-emerald-700");
+      } catch (_err) {
+        setAutosaveStatus("Auto guardado: error", "text-red-700");
+      } finally {
+        autosaveBusy = false;
+        if (autosavePending) {
+          autosavePending = false;
+          queueAutosave();
+        }
+      }
+    }
+
+    function queueAutosave() {
+      if (!closeForm) return;
+      if (autosaveTimer) window.clearTimeout(autosaveTimer);
+      autosaveTimer = window.setTimeout(() => {
+        void runAutosave();
+      }, 700);
+      setAutosaveStatus("Auto guardado: pendiente...", "text-slate");
+    }
+
+    function flushAutosaveOnExit() {
+      if (!closeForm || !navigator.sendBeacon) return;
+      try {
+        if (autosaveTimer) {
+          window.clearTimeout(autosaveTimer);
+          autosaveTimer = null;
+        }
+        const payload = buildAutosaveParams().toString();
+        const blob = new Blob([payload], { type: "application/x-www-form-urlencoded;charset=UTF-8" });
+        navigator.sendBeacon(autosaveUrl, blob);
+      } catch (_err) {
+        // no-op
+      }
+    }
+
+    function openCloseConfirm() {
+      return new Promise((resolve) => {
+        if (!closeConfirmOverlay || !closeConfirmCancel || !closeConfirmOk) {
+          resolve(true);
+          return;
+        }
+        closeConfirmOverlay.classList.remove("d-none");
+        closeConfirmOverlay.setAttribute("aria-hidden", "false");
+        closeConfirmOk.focus();
+
+        const cleanup = () => {
+          closeConfirmCancel.removeEventListener("click", onCancel);
+          closeConfirmOk.removeEventListener("click", onOk);
+          closeConfirmOverlay.removeEventListener("click", onBackdrop);
+          document.removeEventListener("keydown", onEsc);
+          closeConfirmOverlay.classList.add("d-none");
+          closeConfirmOverlay.setAttribute("aria-hidden", "true");
+        };
+        const done = (val) => {
+          cleanup();
+          resolve(val);
+        };
+        const onCancel = () => done(false);
+        const onOk = () => done(true);
+        const onBackdrop = (ev) => {
+          if (ev.target === closeConfirmOverlay) done(false);
+        };
+        const onEsc = (ev) => {
+          if (ev.key === "Escape") done(false);
+        };
+        closeConfirmCancel.addEventListener("click", onCancel);
+        closeConfirmOk.addEventListener("click", onOk);
+        closeConfirmOverlay.addEventListener("click", onBackdrop);
+        document.addEventListener("keydown", onEsc);
+      });
+    }
+
+    function recalcRow(row) {
+      const soldCell = row.querySelector(".sold-cell");
+      const deliveredInput = row.querySelector(".delivered-cell");
+      const diffCell = row.querySelector(".diff-cell");
+      if (!soldCell || !deliveredInput || !diffCell) return;
+      const sold = Math.round(parseFloat(soldCell.dataset.num || "0"));
+      const rawVal = String(deliveredInput.value || "").replace(/[^\d-]/g, "");
+      let delivered = parseInt(rawVal || "0", 10);
+      if (!Number.isFinite(delivered) || delivered < 0) delivered = 0;
+      deliveredInput.value = String(delivered);
+      const diff = delivered - sold;
+      diffCell.textContent = fmtInt.format(diff);
+      diffCell.classList.toggle("diff-ok", Math.abs(diff) < 0.0001);
+      diffCell.classList.toggle("diff-bad", Math.abs(diff) >= 0.0001);
+    }
+
+    function recalcTotals() {
+      let totalSold = 0;
+      let totalDelivered = 0;
+      let totalVerified = 0;
+      let totalDiff = 0;
+      Array.from(body.querySelectorAll("tr")).forEach((row) => {
+        if (row.style.display === "none") return;
+        const soldCell = row.querySelector(".sold-cell");
+        const deliveredInput = row.querySelector(".delivered-cell");
+        const verifiedInput = row.querySelector(".verified-hidden");
+        if (!soldCell || !deliveredInput) return;
+        const sold = Math.round(parseFloat(soldCell.dataset.num || "0"));
+        const delivered = Math.round(parseFloat(deliveredInput.value || "0"));
+        const verified = (verifiedInput?.value || "0") === "1";
+        totalSold += sold;
+        totalDelivered += delivered;
+        if (verified) totalVerified += delivered;
+        totalDiff += (delivered - sold);
+      });
+      if (totalVendidoLbl) totalVendidoLbl.textContent = fmtInt.format(totalSold);
+      if (totalEntregadoLbl) totalEntregadoLbl.textContent = fmtInt.format(totalDelivered);
+      if (totalVerificadoLbl) totalVerificadoLbl.textContent = fmtInt.format(totalVerified);
+      if (totalDiffLbl) totalDiffLbl.textContent = fmtInt.format(totalDiff);
+      if (totalVendidoBottom) totalVendidoBottom.textContent = fmtInt.format(totalSold);
+      if (totalEntregadoBottom) totalEntregadoBottom.textContent = fmtInt.format(totalDelivered);
+      if (totalVerificadoBottom) totalVerificadoBottom.textContent = fmtInt.format(totalVerified);
+    }
+
+    function applyFilter() {
+      const q = (filterInput?.value || "").trim().toLowerCase();
+      Array.from(body.querySelectorAll("tr")).forEach((row) => {
+        const hay = row.dataset.search || "";
+        row.style.display = (!q || hay.includes(q)) ? "" : "none";
+      });
+      recalcTotals();
+    }
+
+    function syncVerifyState(row) {
+      const check = row.querySelector(".verify-check");
+      const hidden = row.querySelector(".verified-hidden");
+      const facturaCell = row.querySelector(".factura-cell");
+      if (!check || !hidden || !facturaCell) return;
+      hidden.value = check.checked ? "1" : "0";
+      facturaCell.classList.toggle("factura-verified", check.checked);
+    }
+
+    Array.from(body.querySelectorAll(".delivered-cell")).forEach((input) => {
+      input.addEventListener("input", () => {
+        const row = input.closest("tr");
+        if (row) recalcRow(row);
+        recalcTotals();
+        queueAutosave();
+      });
+      input.addEventListener("focus", () => {
+        input.select();
+      });
+      input.addEventListener("click", () => {
+        input.select();
+      });
+      input.addEventListener("keydown", (ev) => {
+        const inputs = Array.from(body.querySelectorAll(".delivered-cell"))
+          .filter((el) => {
+            const row = el.closest("tr");
+            return row && row.style.display !== "none";
+          });
+        const idx = inputs.indexOf(input);
+        if (ev.key === "ArrowDown") {
+          ev.preventDefault();
+          if (idx >= 0 && idx < inputs.length - 1) {
+            inputs[idx + 1].focus();
+            inputs[idx + 1].select();
+          } else {
+            input.focus();
+            input.select();
+          }
+          return;
+        }
+        if (ev.key === "ArrowUp") {
+          ev.preventDefault();
+          if (idx > 0) {
+            inputs[idx - 1].focus();
+            inputs[idx - 1].select();
+          } else {
+            input.focus();
+            input.select();
+          }
+          return;
+        }
+        if (ev.key !== "Enter") return;
+        ev.preventDefault();
+        if (idx >= 0 && idx < inputs.length - 1) {
+          inputs[idx + 1].focus();
+          inputs[idx + 1].select();
+        } else {
+          input.focus();
+          input.select();
+        }
+      });
+    });
+    Array.from(body.querySelectorAll(".verify-check")).forEach((check) => {
+      check.addEventListener("change", () => {
+        const row = check.closest("tr");
+        if (row) syncVerifyState(row);
+        recalcTotals();
+        void runAutosave();
+      });
+    });
+    Array.from(body.querySelectorAll("tr")).forEach((row) => {
+      row.addEventListener("dblclick", (ev) => {
+        const target = ev.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (target.closest("input, select, textarea, button, a, label")) return;
+        const check = row.querySelector(".verify-check");
+        if (!(check instanceof HTMLInputElement)) return;
+        check.checked = !check.checked;
+        syncVerifyState(row);
+        recalcTotals();
+        void runAutosave();
+      });
+    });
+    Array.from(body.querySelectorAll("tr")).forEach(syncVerifyState);
+    Array.from(body.querySelectorAll("tr")).forEach(recalcRow);
+
+    if (filterInput) filterInput.addEventListener("input", applyFilter);
+    if (filterForm) {
+      filterForm.addEventListener("submit", () => {
+        flushAutosaveOnExit();
+      });
+    }
+    if (closeForm) {
+      let submitConfirmed = false;
+      closeForm.addEventListener("submit", async (ev) => {
+        if (submitConfirmed) {
+          submitConfirmed = false;
+          return;
+        }
+        ev.preventDefault();
+        const ok = await openCloseConfirm();
+        if (!ok) {
+          return;
+        }
+        flushAutosaveOnExit();
+        submitConfirmed = true;
+        closeForm.requestSubmit();
+      });
+    }
+    window.addEventListener("pagehide", flushAutosaveOnExit);
+    window.addEventListener("beforeunload", flushAutosaveOnExit);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flushAutosaveOnExit();
+    });
+    recalcTotals();
+    {% if autosave_loaded_at %}
+    setAutosaveStatus("Auto guardado cargado", "text-emerald-700");
+    {% endif %}
+  })();
+</script>
+{% endblock %}

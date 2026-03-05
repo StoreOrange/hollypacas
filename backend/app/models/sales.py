@@ -517,6 +517,52 @@ class CierreCaja(Base):
     bodega = relationship("Bodega")
 
 
+class BodegaRequisaCierre(Base):
+    __tablename__ = "bodega_requisa_cierres"
+
+    id = Column(Integer, primary_key=True, index=True)
+    movement_type = Column(String(30), nullable=False, default="sales_out")
+    fecha = Column(Date, nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    filtro_texto = Column(String(200), nullable=True)
+    total_items_vendidos = Column(Numeric(14, 2), nullable=False, default=0)
+    total_items_entregados = Column(Numeric(14, 2), nullable=False, default=0)
+    total_diferencia = Column(Numeric(14, 2), nullable=False, default=0)
+    observacion = Column(String(500), nullable=True)
+    detalle_json = Column(Text, nullable=True)
+    anulada = Column(Boolean, nullable=False, default=False)
+    anulada_motivo = Column(String(500), nullable=True)
+    anulada_por = Column(String(160), nullable=True)
+    anulada_at = Column(DateTime, nullable=True)
+    usuario_registro = Column(String(160), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+
+
+class BodegaRequisaDraft(Base):
+    __tablename__ = "bodega_requisa_drafts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_email = Column(String(160), nullable=False, index=True)
+    movement_type = Column(String(30), nullable=False, default="sales_out")
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
+    filtro_texto = Column(String(200), nullable=True)
+    detalle_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+
+
 class CuentaContable(Base):
     __tablename__ = "cuentas_contables"
 

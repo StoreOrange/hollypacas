@@ -1,0 +1,548 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+  body { overflow-x: hidden; }
+  #layout, #layout > main, .odoo-page, .odoo-card { min-width: 0; }
+  .odoo-page { overflow-x: hidden; }
+  .matrix-theme {
+    --mx-border: #e2e8f0;
+    --mx-head-a: #f1f5f9;
+    --mx-head-b: #e2e8f0;
+    --mx-head-text: #0f172a;
+    --mx-row-even: #f8fafc;
+    --mx-row-odd: #ffffff;
+    --mx-row-hover: #eff6ff;
+    --sticky-col-1: 130px;
+    --sticky-col-2: 300px;
+  }
+  .matrix-host {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
+    padding: 0;
+  }
+  .matrix-grid-shell {
+    width: 100%;
+    max-width: 100%;
+    max-height: 68vh;
+    overflow: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable both-edges;
+    cursor: grab;
+  }
+  .matrix-grid-shell.is-dragging { cursor: grabbing; user-select: none; }
+  .matrix-grid-shell::-webkit-scrollbar { height: 10px; width: 10px; }
+  .matrix-grid-shell::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 999px; }
+  .matrix-grid-shell::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 999px; }
+  .matrix-table {
+    width: max-content;
+    min-width: 1800px;
+    font-size: 12px;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .matrix-table th, .matrix-table td { border-bottom: 1px solid var(--mx-border); border-right: 1px solid #f1f5f9; padding: .38rem .5rem; white-space: nowrap; background-clip: padding-box; }
+  .matrix-table th:not(.sticky-col):not(.sticky-col-2):not(.sticky-col-3):not(.sticky-col-4),
+  .matrix-table td:not(.sticky-col):not(.sticky-col-2):not(.sticky-col-3):not(.sticky-col-4) { min-width: 86px; }
+  .matrix-table thead th {
+    background: linear-gradient(180deg, var(--mx-head-b), var(--mx-head-a));
+    color: var(--mx-head-text) !important;
+    position: sticky;
+    z-index: 4;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-size: 10.5px;
+    font-weight: 700;
+    border-right: 1px solid #cbd5e1;
+    border-bottom: 1px solid #cbd5e1;
+  }
+  .matrix-table thead tr:first-child th { top: 0; z-index: 8; }
+  .matrix-table thead tr:first-child th[rowspan="2"] { top: 0; z-index: 10; }
+  .matrix-table thead tr:nth-child(2) th { top: 34px; z-index: 9; }
+  .matrix-table .sticky-col,
+  .matrix-table .sticky-col-2,
+  .matrix-table .sticky-col-3,
+  .matrix-table .sticky-col-4 {
+    position: static;
+    left: auto;
+    z-index: 1;
+    background: #fff;
+  }
+  .matrix-table .sticky-col { min-width: 120px; }
+  .matrix-table .sticky-col-2 { min-width: 280px; }
+  .matrix-table .sticky-col-3 { min-width: 120px; }
+  .matrix-table .sticky-col-4 { min-width: 120px; }
+  /* Keep Codigo + Descripcion fixed when scrolling horizontally */
+  .matrix-table th.sticky-col,
+  .matrix-table td.sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 6;
+    width: var(--sticky-col-1) !important;
+    min-width: var(--sticky-col-1) !important;
+    max-width: var(--sticky-col-1) !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .matrix-table thead th.sticky-col,
+  .matrix-table thead th.sticky-col-2,
+  .matrix-table thead th.sticky-col-3,
+  .matrix-table thead th.sticky-col-4 {
+    top: 0 !important;
+    z-index: 11 !important;
+  }
+  .matrix-table th.sticky-col-2,
+  .matrix-table td.sticky-col-2 {
+    position: sticky;
+    left: var(--sticky-col-1);
+    z-index: 6;
+    width: var(--sticky-col-2) !important;
+    min-width: var(--sticky-col-2) !important;
+    max-width: var(--sticky-col-2) !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .matrix-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .matrix-table tbody td { color: #0f172a !important; }
+  .matrix-table .ing { color: #166534 !important; }
+  .matrix-table .vta { color: #1d4ed8 !important; }
+  .matrix-table .egr { color: #b91c1c !important; }
+  .matrix-table .saldo { font-weight: 600; color: #0f172a !important; }
+  .matrix-total td { background: #e2e8f0; font-weight: 700; }
+  .day-head { text-align: center; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+  .sub-head { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: #334155 !important; font-weight: 700; }
+  .day-head { color: #0f172a !important; font-weight: 700; }
+  .matrix-filter .form-control-sm,
+  .matrix-filter .form-select-sm { min-width: 0; }
+  .matrix-filter .btn-sm { white-space: nowrap; }
+  .matrix-filter .f-date { width: 145px; max-width: 100%; }
+  .matrix-filter .f-branch { width: 180px; max-width: 100%; }
+  .matrix-filter .f-bodega { width: 180px; max-width: 100%; }
+  .matrix-filter .f-product { width: 320px; max-width: 100%; }
+  .matrix-row { cursor: pointer; }
+  .matrix-table tbody tr:nth-child(odd) td { background: var(--mx-row-odd); }
+  .matrix-table tbody tr:nth-child(even) td { background: var(--mx-row-even); }
+  .matrix-row:hover td { background: var(--mx-row-hover) !important; }
+  .matrix-row.row-active td { background: #dbeafe !important; color: #0f172a !important; }
+  .matrix-row.row-active td.sticky-col,
+  .matrix-row.row-active td.sticky-col-2 { background: #bfdbfe !important; }
+  .matrix-table tbody tr:nth-child(odd) td.sticky-col,
+  .matrix-table tbody tr:nth-child(odd) td.sticky-col-2 { background: var(--mx-row-odd); }
+  .matrix-table tbody tr:nth-child(even) td.sticky-col,
+  .matrix-table tbody tr:nth-child(even) td.sticky-col-2 { background: var(--mx-row-even); }
+  .matrix-actions {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: #fff;
+    padding-bottom: .35rem;
+    border-bottom: 1px dashed #e2e8f0;
+    margin-bottom: .6rem;
+  }
+  .matrix-grid-shell:focus { outline: 2px solid rgba(37, 99, 235, 0.35); outline-offset: 2px; }
+  .matrix-table td.cell-active { outline: 2px solid #2563eb; outline-offset: -2px; background: #dbeafe !important; }
+  @media (max-width: 992px) {
+    .matrix-filter .f-date,
+    .matrix-filter .f-branch,
+    .matrix-filter .f-bodega,
+    .matrix-filter .f-product { width: 100%; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Reportes</li>
+                <li class="breadcrumb-item active" aria-current="page">Matriz de inventario</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Matriz de inventario</div>
+            <div class="odoo-subtitle mt-1 text-sm">Sabana diaria de ingresos, ventas, egresos y saldo acumulado por producto.</div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item"><a class="nav-link" href="/reports">Informes</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/ventas">Ventas detallado</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/ventas-especial">Ventas especial</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/kardex">Kardex</a></li>
+          <li class="nav-item"><a class="nav-link active" href="/reports/matriz-inventario">Matriz de inventario</a></li>
+        </ul>
+      </div>
+
+      <div class="odoo-card">
+        <div class="matrix-actions d-flex flex-wrap gap-2 align-items-center">
+          <button class="btn btn-primary btn-sm" type="submit" form="matrixFilterForm">
+            <i class="bi bi-funnel-fill"></i>
+            Filtrar datos
+          </button>
+          <a
+            class="btn btn-outline-success btn-sm"
+            href="/reports/matriz-inventario/export.xlsx?start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&bodega_id={{ selected_bodega }}&producto={{ (producto_q or '') | replace(' ', '%20') }}"
+          >
+            <i class="bi bi-file-earmark-excel"></i>
+            Exportar Excel
+          </a>
+        </div>
+        <form id="matrixFilterForm" class="row g-2 align-items-end matrix-filter" method="get" action="/reports/matriz-inventario">
+          <div class="col-12 col-sm-6 col-lg-auto">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+            <input name="start_date" type="date" class="form-control form-control-sm f-date" value="{{ start_date }}">
+          </div>
+          <div class="col-12 col-sm-6 col-lg-auto">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+            <input name="end_date" type="date" class="form-control form-control-sm f-date" value="{{ end_date }}">
+          </div>
+          <div class="col-12 col-sm-6 col-lg-auto">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm f-branch">
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for b in branches %}
+              <option value="{{ b.id }}" {% if selected_branch == b.id|string %}selected{% endif %}>{{ b.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-sm-6 col-lg-auto">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Bodega</label>
+            <select name="bodega_id" class="form-select form-select-sm f-bodega">
+              <option value="all" {% if selected_bodega in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for b in bodegas %}
+              <option value="{{ b.id }}" {% if selected_bodega == b.id|string %}selected{% endif %}>{{ b.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-lg-auto flex-grow-1">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto</label>
+            <input name="producto" class="form-control form-control-sm f-product" placeholder="Codigo o descripcion" value="{{ producto_q }}">
+          </div>
+          <div class="col-12 col-lg-auto d-grid">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">
+              <i class="bi bi-search"></i>
+              Aplicar
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="odoo-card mt-3 matrix-theme">
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <span class="odoo-pill">Sucursal: {{ selected_branch_name or "Todas" }}</span>
+          <span class="odoo-pill">Saldo inicial total: {{ "{:,.2f}".format(totals_opening or 0) }}</span>
+          <span class="odoo-pill primary">Saldo actual total: {{ "{:,.2f}".format(totals_current or 0) }}</span>
+          <span class="odoo-pill">{{ rows|length }} productos</span>
+        </div>
+        <div class="matrix-host">
+          <div class="matrix-grid-shell table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-0 matrix-table">
+            <thead>
+              <tr>
+                <th class="sticky-col" rowspan="2">Codigo</th>
+                <th class="sticky-col-2" rowspan="2">Producto</th>
+                <th class="sticky-col-3 num" rowspan="2">Saldo inicial</th>
+                <th class="sticky-col-4 num" rowspan="2">Saldo actual</th>
+                {% for d in dates %}
+                <th class="day-head" colspan="4">{{ d.strftime("%d/%m/%Y") }}</th>
+                {% endfor %}
+              </tr>
+              <tr>
+                {% for d in dates %}
+                <th class="sub-head ing num">Ing</th>
+                <th class="sub-head vta num">Vta</th>
+                <th class="sub-head egr num">Egr</th>
+                <th class="sub-head saldo num">Saldo</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr class="matrix-row" data-product-id="{{ row.producto_id }}" data-code="{{ row.codigo }}" data-name="{{ row.descripcion }}">
+                <td class="sticky-col">{{ row.codigo }}</td>
+                <td class="sticky-col-2">{{ row.descripcion }}</td>
+                <td class="sticky-col-3 num">{{ "{:,.2f}".format(row.opening_qty or 0) }}</td>
+                <td class="sticky-col-4 num">{{ "{:,.2f}".format(row.current_qty or 0) }}</td>
+                {% for cell in row.day_cells %}
+                <td class="num ing">{{ "{:,.2f}".format(cell.ing or 0) }}</td>
+                <td class="num vta">{{ "{:,.2f}".format(cell.vta or 0) }}</td>
+                <td class="num egr">{{ "{:,.2f}".format(cell.egr or 0) }}</td>
+                <td class="num saldo">{{ "{:,.2f}".format(cell.saldo or 0) }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+              {% if rows|length == 0 %}
+              <tr>
+                <td colspan="{{ 4 + (dates|length * 4) }}" class="text-center py-4 text-slate">Sin datos para el rango/filtros seleccionados.</td>
+              </tr>
+              {% endif %}
+              <tr class="matrix-total">
+                <td class="sticky-col">TOTAL</td>
+                <td class="sticky-col-2">Sabana</td>
+                <td class="sticky-col-3 num">{{ "{:,.2f}".format(totals_opening or 0) }}</td>
+                <td class="sticky-col-4 num">{{ "{:,.2f}".format(totals_current or 0) }}</td>
+                {% for cell in totals_day_cells %}
+                <td class="num ing">{{ "{:,.2f}".format(cell.ing or 0) }}</td>
+                <td class="num vta">{{ "{:,.2f}".format(cell.vta or 0) }}</td>
+                <td class="num egr">{{ "{:,.2f}".format(cell.egr or 0) }}</td>
+                <td class="num saldo">{{ "{:,.2f}".format(cell.saldo or 0) }}</td>
+                {% endfor %}
+              </tr>
+            </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="modal fade" id="miniKardexModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Mini Kardex del producto</h5>
+        <a id="mkExcelBtn" class="btn btn-outline-success btn-sm me-2" href="#" target="_blank" rel="noopener">
+          <i class="bi bi-file-earmark-excel"></i>
+          Excel
+        </a>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <span class="odoo-pill" id="mkProducto">Producto</span>
+          <span class="odoo-pill">Saldo inicial: <span id="mkOpening">0</span></span>
+          <span class="odoo-pill primary">Saldo cierre: <span id="mkClosing">0</span></span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Detalle</th>
+                <th>Documento</th>
+                <th>Bodega</th>
+                <th>Vendedor</th>
+                <th class="text-end">Entrada</th>
+                <th class="text-end">Salida</th>
+                <th class="text-end">Saldo</th>
+              </tr>
+            </thead>
+            <tbody id="mkBody">
+              <tr><td colspan="9" class="text-center text-muted py-3">Seleccione un producto...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  (function () {
+    const gridShell = document.querySelector(".matrix-grid-shell");
+    const gridTable = document.querySelector(".matrix-table");
+    if (gridShell && gridTable && gridTable.tBodies && gridTable.tBodies.length) {
+      gridShell.setAttribute("tabindex", "0");
+      let activeCell = null;
+      let isDragging = false;
+      let dragStartX = 0;
+      let dragStartY = 0;
+      let dragScrollLeft = 0;
+      let dragScrollTop = 0;
+      function gridRows() {
+        return Array.from(gridTable.tBodies[0].rows || []).filter((r) => r.cells && r.cells.length);
+      }
+      function clearActive() {
+        if (activeCell) {
+          activeCell.classList.remove("cell-active");
+          const prevRow = activeCell.parentElement;
+          if (prevRow) prevRow.classList.remove("row-active");
+          if (activeCell.getAttribute("tabindex") === "0") activeCell.setAttribute("tabindex", "-1");
+        }
+      }
+      function focusCell(r, c) {
+        const rs = gridRows();
+        if (!rs.length) return;
+        const rr = Math.max(0, Math.min(r, rs.length - 1));
+        const cc = Math.max(0, Math.min(c, rs[rr].cells.length - 1));
+        const cell = rs[rr].cells[cc];
+        if (!cell) return;
+        clearActive();
+        activeCell = cell;
+        activeCell.classList.add("cell-active");
+        const activeRow = activeCell.parentElement;
+        if (activeRow) activeRow.classList.add("row-active");
+        activeCell.setAttribute("tabindex", "0");
+        activeCell.focus({ preventScroll: true });
+        ensureCellVisible(activeCell);
+      }
+      function _numCssVar(name, fallback) {
+        const raw = getComputedStyle(gridTable).getPropertyValue(name || "").trim();
+        if (!raw) return fallback;
+        const v = parseFloat(raw.replace("px", "").trim());
+        return Number.isFinite(v) ? v : fallback;
+      }
+      function ensureCellVisible(cell) {
+        if (!cell) return;
+        const shellRect = gridShell.getBoundingClientRect();
+        const cellRect = cell.getBoundingClientRect();
+        const stickyLeft = _numCssVar("--sticky-col-1", 130) + _numCssVar("--sticky-col-2", 300);
+        const headerRows = gridTable.querySelectorAll("thead tr");
+        let headerHeight = 0;
+        headerRows.forEach((tr) => { headerHeight += (tr.getBoundingClientRect().height || 0); });
+        if (headerHeight <= 0) headerHeight = 56;
+
+        const leftBound = shellRect.left + stickyLeft + 6;
+        const rightBound = shellRect.right - 6;
+        const topBound = shellRect.top + headerHeight + 4;
+        const bottomBound = shellRect.bottom - 4;
+
+        const isFixed = cell.classList.contains("sticky-col") || cell.classList.contains("sticky-col-2");
+        if (!isFixed) {
+          if (cellRect.left < leftBound) {
+            gridShell.scrollLeft -= (leftBound - cellRect.left);
+          } else if (cellRect.right > rightBound) {
+            gridShell.scrollLeft += (cellRect.right - rightBound);
+          }
+        }
+        if (cellRect.top < topBound) {
+          gridShell.scrollTop -= (topBound - cellRect.top);
+        } else if (cellRect.bottom > bottomBound) {
+          gridShell.scrollTop += (cellRect.bottom - bottomBound);
+        }
+      }
+      function locateCell(cell) {
+        const tr = cell && cell.parentElement;
+        const rs = gridRows();
+        const r = rs.indexOf(tr);
+        if (r < 0) return { r: 0, c: 0 };
+        return { r, c: cell.cellIndex || 0 };
+      }
+      gridShell.addEventListener("click", (e) => {
+        const td = e.target.closest("td");
+        if (!td || !gridTable.contains(td)) return;
+        const pos = locateCell(td);
+        focusCell(pos.r, pos.c);
+      });
+
+      // Drag horizontal/vertical scroll like professional data grids.
+      gridShell.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest("input,select,textarea,button,a")) return;
+        isDragging = true;
+        gridShell.classList.add("is-dragging");
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        dragScrollLeft = gridShell.scrollLeft;
+        dragScrollTop = gridShell.scrollTop;
+      });
+      window.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+        gridShell.scrollLeft = dragScrollLeft - dx;
+        gridShell.scrollTop = dragScrollTop - dy;
+      });
+      window.addEventListener("mouseup", () => {
+        if (!isDragging) return;
+        isDragging = false;
+        gridShell.classList.remove("is-dragging");
+      });
+
+      gridShell.addEventListener("keydown", (e) => {
+        if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
+        if (!activeCell) return;
+        const targetTag = (e.target && e.target.tagName ? e.target.tagName.toLowerCase() : "");
+        if (["input", "textarea", "select", "button"].includes(targetTag)) return;
+        e.preventDefault();
+        const start = activeCell ? locateCell(activeCell) : { r: 0, c: 0 };
+        let nr = start.r;
+        let nc = start.c;
+        if (e.key === "ArrowUp") nr -= 1;
+        if (e.key === "ArrowDown") nr += 1;
+        if (e.key === "ArrowLeft") nc -= 1;
+        if (e.key === "ArrowRight") nc += 1;
+        focusCell(nr, nc);
+      });
+    }
+
+    const rows = Array.from(document.querySelectorAll(".matrix-row"));
+    const modalEl = document.getElementById("miniKardexModal");
+    const mkProducto = document.getElementById("mkProducto");
+    const mkOpening = document.getElementById("mkOpening");
+    const mkClosing = document.getElementById("mkClosing");
+    const mkBody = document.getElementById("mkBody");
+    const mkExcelBtn = document.getElementById("mkExcelBtn");
+    if (!modalEl || !mkBody) return;
+    const modal = window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+    const fmt = new Intl.NumberFormat("es-NI", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const startDate = "{{ start_date }}";
+    const endDate = "{{ end_date }}";
+    const branchId = "{{ selected_branch }}";
+    const bodegaId = "{{ selected_bodega }}";
+
+    function setLoading(text) {
+      mkBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-3">${text}</td></tr>`;
+    }
+    function renderRows(items) {
+      if (!items || !items.length) {
+        setLoading("Sin movimientos en el rango seleccionado.");
+        return;
+      }
+      mkBody.innerHTML = items.map((r) => `
+        <tr>
+          <td>${r.fecha || ""}</td>
+          <td>${r.tipo || ""}</td>
+          <td>${r.detalle || ""}</td>
+          <td>${r.doc || ""}</td>
+          <td>${r.bodega || ""}</td>
+          <td>${r.vendedor || "-"}</td>
+          <td class="text-end text-success">${fmt.format(Number(r.entrada || 0))}</td>
+          <td class="text-end text-danger">${fmt.format(Number(r.salida || 0))}</td>
+          <td class="text-end fw-semibold">${fmt.format(Number(r.saldo || 0))}</td>
+        </tr>
+      `).join("");
+    }
+
+    rows.forEach((row) => {
+      row.addEventListener("dblclick", async () => {
+        const productId = row.getAttribute("data-product-id");
+        const code = row.getAttribute("data-code") || "";
+        const name = row.getAttribute("data-name") || "";
+        if (!productId) return;
+        if (mkProducto) mkProducto.textContent = `${code} - ${name}`;
+        if (mkOpening) mkOpening.textContent = "0.00";
+        if (mkClosing) mkClosing.textContent = "0.00";
+        if (mkExcelBtn) {
+          mkExcelBtn.href = `/reports/matriz-inventario/producto/${productId}/mini-kardex.xlsx?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}&branch_id=${encodeURIComponent(branchId)}&bodega_id=${encodeURIComponent(bodegaId)}`;
+        }
+        setLoading("Cargando mini kardex...");
+        if (modal) modal.show();
+        try {
+          const url = `/reports/matriz-inventario/producto/${productId}/mini-kardex?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}&branch_id=${encodeURIComponent(branchId)}&bodega_id=${encodeURIComponent(bodegaId)}`;
+          const resp = await fetch(url, { credentials: "same-origin" });
+          const data = await resp.json();
+          if (!resp.ok || !data?.ok) {
+            throw new Error(data?.error || "No se pudo cargar el mini kardex");
+          }
+          if (mkOpening) mkOpening.textContent = fmt.format(Number(data.opening_qty || 0));
+          if (mkClosing) mkClosing.textContent = fmt.format(Number(data.closing_qty || 0));
+          renderRows(data.rows || []);
+        } catch (err) {
+          setLoading("Error cargando mini kardex.");
+        }
+      });
+    });
+  })();
+</script>
+{% endblock %}
