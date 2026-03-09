@@ -8158,6 +8158,66 @@ async def mobile_preventas_create(
     if not parsed_items:
         return RedirectResponse("/m/preventas?error=No+hay+items+validos", status_code=303)
 
+    total_usd = sum((x["subtotal_usd"] for x in parsed_items), Decimal("0"))
+    total_cs = sum((x["subtotal_cs"] for x in parsed_items), Decimal("0"))
+    total_items = sum((x["cantidad"] for x in parsed_items), Decimal("0"))
+
+    def _norm_dec(value: Decimal, places: str) -> str:
+        return str(Decimal(str(value or 0)).quantize(Decimal(places)))
+
+    incoming_signature = sorted(
+        (
+            int(x["producto"].id),
+            _norm_dec(x["cantidad"], "1"),
+            _norm_dec(x["precio_usd"], "0.01"),
+            _norm_dec(x["precio_cs"], "0.01"),
+            str(x["combo_role"] or ""),
+            str(x["combo_group"] or ""),
+        )
+        for x in parsed_items
+    )
+
+    # Evita duplicados por doble toque/reintento inmediato en movil.
+    duplicate_window_start = local_now_naive() - timedelta(seconds=12)
+    duplicate_query = (
+        db.query(Preventa)
+        .filter(Preventa.branch_id == branch.id)
+        .filter(Preventa.bodega_id == bodega.id)
+        .filter(Preventa.vendedor_id == vendedor.id)
+        .filter(Preventa.created_at >= duplicate_window_start)
+        .filter(Preventa.total_usd == total_usd)
+        .filter(Preventa.total_cs == total_cs)
+        .filter(Preventa.total_items == total_items)
+        .order_by(Preventa.created_at.desc())
+    )
+    cliente_id_int = int(cliente_id) if cliente_id else None
+    if cliente_id_int is None:
+        duplicate_query = duplicate_query.filter(Preventa.cliente_id.is_(None))
+    else:
+        duplicate_query = duplicate_query.filter(Preventa.cliente_id == cliente_id_int)
+    duplicate_candidate = duplicate_query.first()
+    if duplicate_candidate:
+        existing_signature = sorted(
+            (
+                int(it.producto_id),
+                _norm_dec(Decimal(str(it.cantidad or 0)), "1"),
+                _norm_dec(Decimal(str(it.precio_unitario_usd or 0)), "0.01"),
+                _norm_dec(Decimal(str(it.precio_unitario_cs or 0)), "0.01"),
+                str(it.combo_role or ""),
+                str(it.combo_group or ""),
+            )
+            for it in (
+                db.query(PreventaItem)
+                .filter(PreventaItem.preventa_id == duplicate_candidate.id)
+                .all()
+            )
+        )
+        if existing_signature == incoming_signature and (duplicate_candidate.observacion or "") == (observacion or ""):
+            return RedirectResponse(
+                f"/m/preventas?success=Preventa+{duplicate_candidate.numero}+ya+registrada+(duplicado+evitado)",
+                status_code=303,
+            )
+
     seq, numero = _next_preventa_number(db, branch)
     now_local = local_now()
     fecha_dt = datetime.combine(fecha_value, now_local.time()).replace(tzinfo=None)
@@ -8171,9 +8231,9 @@ async def mobile_preventas_create(
         fecha=fecha_dt,
         estado="PENDIENTE",
         observacion=observacion,
-        total_usd=sum((x["subtotal_usd"] for x in parsed_items), Decimal("0")),
-        total_cs=sum((x["subtotal_cs"] for x in parsed_items), Decimal("0")),
-        total_items=sum((x["cantidad"] for x in parsed_items), Decimal("0")),
+        total_usd=total_usd,
+        total_cs=total_cs,
+        total_items=total_items,
         usuario_registro=user.full_name,
         created_at=local_now_naive(),
     )
@@ -22276,4 +22336,3 @@ def inventory_activate_product(
         db.commit()
         return RedirectResponse("/inventory", status_code=303)
     return RedirectResponse("/inventory?error=Producto+no+encontrado", status_code=303)
-

@@ -327,7 +327,7 @@
 
 <div class="app-actionbar">
   <div class="container" style="max-width: 780px;">
-    <button class="btn btn-primary w-100" type="submit" form="preventaForm">
+    <button id="submitPreventaBtn" class="btn btn-primary w-100" type="submit" form="preventaForm">
       <i class="bi bi-send-check me-1"></i>
       Enviar preventa
     </button>
@@ -393,8 +393,10 @@
     const productSearch = document.getElementById("productSearch");
     const btnProductSearch = document.getElementById("btnProductSearch");
     const productResults = document.getElementById("productSearchResults");
+    const preventaForm = document.getElementById("preventaForm");
     const itemsBody = document.getElementById("itemsBody");
     const noItemsRow = document.getElementById("noItemsRow");
+    const submitButtons = Array.from(document.querySelectorAll('button[type="submit"][form="preventaForm"], #preventaForm button[type="submit"]'));
 
     const btnOpenCombo = document.getElementById("btnOpenCombo");
     const comboModalEl = document.getElementById("combo-modal");
@@ -429,6 +431,7 @@
 
     let comboParent = null;
     let comboGifts = [];
+    let isSubmittingPreventa = false;
 
     function notify(icon, title, text) {
       if (typeof Swal !== "undefined") {
@@ -469,6 +472,20 @@
 
     function clearProductResults() { productResults.innerHTML = ""; }
     function clearClienteResults() { clienteResults.innerHTML = ""; }
+
+    function setSubmittingState(active) {
+      submitButtons.forEach((btn) => {
+        btn.disabled = !!active;
+        if (!btn.dataset.defaultHtml) {
+          btn.dataset.defaultHtml = btn.innerHTML;
+        }
+        if (active) {
+          btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Enviando...';
+        } else if (btn.dataset.defaultHtml) {
+          btn.innerHTML = btn.dataset.defaultHtml;
+        }
+      });
+    }
 
     function getCurrentQty(productId) {
       let sum = 0;
@@ -1114,6 +1131,26 @@
       renderComboPrice();
     });
     comboApply?.addEventListener("click", applyComboToItems);
+
+    preventaForm?.addEventListener("submit", (event) => {
+      if (isSubmittingPreventa) {
+        event.preventDefault();
+        return;
+      }
+      const hasItems = !!itemsBody.querySelector("tr[data-item-row]");
+      if (!hasItems) {
+        event.preventDefault();
+        notify("warning", "Preventa", "Agrega al menos un item antes de enviar.");
+        return;
+      }
+      isSubmittingPreventa = true;
+      setSubmittingState(true);
+    });
+
+    if (flashSuccess) {
+      isSubmittingPreventa = false;
+      setSubmittingState(false);
+    }
   });
 </script>
 {% endblock %}

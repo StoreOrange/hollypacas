@@ -7,13 +7,24 @@ Write-Host ""
 # PATH del proyecto
 $root = $PSScriptRoot
 $backendPath = Join-Path $root "backend"
-$venvPython = Join-Path $backendPath "venv\Scripts\python.exe"
+$venvCandidates = @(
+  (Join-Path $backendPath "venv\Scripts\python.exe"), # Windows venv
+  (Join-Path $backendPath ".venv\Scripts\python.exe"), # Windows .venv
+  (Join-Path $backendPath "venv/bin/python"),          # macOS/Linux venv
+  (Join-Path $backendPath ".venv/bin/python")          # macOS/Linux .venv
+)
+$venvPython = $venvCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 
-if (!(Test-Path $venvPython)) {
-  Write-Host "No se encontro el venv en backend\venv."
-  Write-Host "Crea una venv con Python 3.12 o 3.11 y ejecuta:"
-  Write-Host "  python -m venv backend\venv"
-  Write-Host "  backend\venv\Scripts\pip.exe install -r backend\requirements.txt"
+if ([string]::IsNullOrWhiteSpace($venvPython)) {
+  Write-Host "No se encontro un entorno virtual en backend/venv ni backend/.venv."
+  Write-Host "Crea una venv y luego instala dependencias:"
+  if ($IsWindows) {
+    Write-Host "  python -m venv backend\venv"
+    Write-Host "  backend\venv\Scripts\pip.exe install -r backend\requirements.txt"
+  } else {
+    Write-Host "  python3 -m venv backend/.venv"
+    Write-Host "  backend/.venv/bin/pip install -r backend/requirements.txt"
+  }
   Write-Host ""
 }
 
@@ -23,7 +34,7 @@ if (!(Test-Path $venvPython)) {
 Write-Host "Iniciando BACKEND (FastAPI)..."
 
 $env:SECRET_KEY = "CHANGE_ME"
-$pythonExe = if (Test-Path -LiteralPath $venvPython) { $venvPython } else { "python" }
+$pythonExe = if ($venvPython) { $venvPython } else { if ($IsWindows) { "python" } else { "python3" } }
 
 try {
   Set-Location -Path $backendPath
