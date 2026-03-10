@@ -5644,7 +5644,12 @@ def _next_pending_bodega_close_date(
     today = local_today()
     if latest_date >= today:
         return None
-    return latest_date + timedelta(days=1)
+    next_date = latest_date + timedelta(days=1)
+    while next_date < today:
+        if next_date.weekday() != 6:
+            return next_date
+        next_date += timedelta(days=1)
+    return None
 
 
 @router.get("/inventory/gestion-bodega-requisas")
@@ -7155,6 +7160,7 @@ def inventory_ingresos_page(
     error = request.query_params.get("error")
     success = request.query_params.get("success")
     print_id = request.query_params.get("print_id")
+    print_labels_id = request.query_params.get("print_labels_id")
     rate_today = (
         db.query(ExchangeRate)
         .filter(ExchangeRate.effective_date <= local_today())
@@ -7189,6 +7195,7 @@ def inventory_ingresos_page(
             "selected_product_query": selected_product_query,
             "success": success,
             "print_id": print_id,
+            "print_labels_id": print_labels_id,
             "inventory_cs_only": inventory_cs_only,
             "auto_price_margin_enabled": auto_price_margin_enabled,
             "auto_price_margin_pct": auto_price_margin_pct,
@@ -18229,6 +18236,187 @@ def inventory_ingreso_pdf(
     return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
 
 
+def _ingreso_labels_payload(ingreso: IngresoInventario) -> tuple[list[dict[str, object]], int]:
+    grouped: dict[str, dict[str, object]] = {}
+    total_labels = 0
+    for item in (ingreso.items or []):
+        qty_raw = Decimal(str(item.cantidad or 0))
+        qty_int = int(qty_raw.to_integral_value(rounding=ROUND_HALF_UP))
+        if qty_int <= 0:
+            continue
+        code_value = ""
+        display_name = ""
+        color_name = ""
+        talla_name = ""
+        if getattr(item, "variante", None):
+            code_value = (item.variante.cod_variante or "").strip()
+            if item.variante.color:
+                color_name = (item.variante.color.nombre or "").strip()
+            talla_name = (item.variante.talla or "").strip()
+        if not code_value and item.producto:
+            code_value = (item.producto.cod_producto or "").strip()
+        if item.producto:
+            display_name = (item.producto.descripcion or "").strip()
+        if not code_value:
+            continue
+        key = code_value
+        if key not in grouped:
+            grouped[key] = {
+                "code": code_value,
+                "name": display_name or code_value,
+                "color": color_name,
+                "talla": talla_name,
+                "qty": 0,
+            }
+        grouped[key]["qty"] = int(grouped[key]["qty"] or 0) + qty_int
+        if color_name and not grouped[key].get("color"):
+            grouped[key]["color"] = color_name
+        if talla_name and not grouped[key].get("talla"):
+            grouped[key]["talla"] = talla_name
+
+    items = sorted(grouped.values(), key=lambda row: str(row.get("code") or ""))
+    for row in items:
+        total_labels += int(row.get("qty") or 0)
+    return items, total_labels
+
+
+@router.get("/inventory/ingresos/{ingreso_id}/labels/preview")
+def inventory_ingreso_labels_preview(
+    request: Request,
+    ingreso_id: int,
+    width_cm: Optional[float] = None,
+    height_cm: Optional[float] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.ingresos")
+    ingreso = (
+        db.query(IngresoInventario)
+        .filter(IngresoInventario.id == ingreso_id)
+        .first()
+    )
+    if not ingreso:
+        raise HTTPException(status_code=404, detail="Ingreso no encontrado")
+    label_w_cm = max(2.0, min(12.0, float(width_cm or 3.0)))
+    label_h_cm = max(1.2, min(8.0, float(height_cm or 2.0)))
+    label_items, total_labels = _ingreso_labels_payload(ingreso)
+    return request.app.state.templates.TemplateResponse(
+        "inventory_ingreso_labels_preview.html",
+        {
+            "request": request,
+            "user": user,
+            "ingreso": ingreso,
+            "label_items": label_items,
+            "total_labels": total_labels,
+            "label_w_cm": label_w_cm,
+            "label_h_cm": label_h_cm,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/inventory/ingresos/{ingreso_id}/labels/pdf")
+def inventory_ingreso_labels_pdf(
+    request: Request,
+    ingreso_id: int,
+    width_cm: Optional[float] = None,
+    height_cm: Optional[float] = None,
+    gap_mm: Optional[float] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.ingresos")
+    ingreso = (
+        db.query(IngresoInventario)
+        .filter(IngresoInventario.id == ingreso_id)
+        .first()
+    )
+    if not ingreso:
+        raise HTTPException(status_code=404, detail="Ingreso no encontrado")
+    label_items, total_labels = _ingreso_labels_payload(ingreso)
+    if not label_items:
+        raise HTTPException(status_code=400, detail="No hay etiquetas para imprimir")
+    try:
+        from reportlab.graphics.barcode.code128 import Code128
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.units import cm, mm
+        from reportlab.pdfgen import canvas
+    except ImportError as exc:
+        raise HTTPException(status_code=500, detail="ReportLab no esta instalado") from exc
+
+    label_w = max(2.0, min(12.0, float(width_cm or 3.0))) * cm
+    label_h = max(1.2, min(8.0, float(height_cm or 2.0))) * cm
+    gap = max(1.0, min(10.0, float(gap_mm or 1.5))) * mm
+    page_w, page_h = letter
+    margin_x = 10 * mm
+    margin_y = 10 * mm
+    usable_w = max(label_w, page_w - (margin_x * 2))
+    usable_h = max(label_h, page_h - (margin_y * 2))
+    cols = max(1, int((usable_w + gap) // (label_w + gap)))
+    rows = max(1, int((usable_h + gap) // (label_h + gap)))
+    per_page = max(1, cols * rows)
+
+    expanded: list[dict[str, object]] = []
+    for item in label_items:
+        qty = int(item.get("qty") or 0)
+        for _ in range(max(0, qty)):
+            expanded.append(item)
+    if not expanded:
+        raise HTTPException(status_code=400, detail="No hay etiquetas para imprimir")
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    for idx, item in enumerate(expanded):
+        slot = idx % per_page
+        if idx > 0 and slot == 0:
+            pdf.showPage()
+        row = slot // cols
+        col = slot % cols
+        x = margin_x + col * (label_w + gap)
+        y = page_h - margin_y - ((row + 1) * label_h) - (row * gap)
+
+        pdf.setLineWidth(0.4)
+        pdf.roundRect(x, y, label_w, label_h, 3, stroke=1, fill=0)
+
+        code_value = str(item.get("code") or "").strip()
+        product_name = str(item.get("name") or "").strip()
+        color_name = str(item.get("color") or "").strip()
+        talla_name = str(item.get("talla") or "").strip()
+        detail = " ".join([part for part in [color_name, talla_name] if part]).strip()
+
+        pdf.setFont("Helvetica-Bold", 7)
+        top_txt = product_name[:44] if product_name else code_value[:44]
+        pdf.drawString(x + 4, y + label_h - 10, top_txt)
+        if detail:
+            pdf.setFont("Helvetica", 6.5)
+            pdf.drawString(x + 4, y + label_h - 18, detail[:48])
+
+        barcode = Code128(code_value, barHeight=max(8 * mm, label_h * 0.34), barWidth=0.28 * mm, humanReadable=False)
+        bar_x = x + 4
+        bar_y = y + max(7 * mm, label_h * 0.2)
+        max_bar_w = label_w - 8
+        if barcode.width > max_bar_w:
+            shrink = max_bar_w / float(barcode.width)
+            barcode = Code128(
+                code_value,
+                barHeight=max(8 * mm, label_h * 0.34),
+                barWidth=max(0.12 * mm, (0.28 * mm) * shrink),
+                humanReadable=False,
+            )
+        barcode.drawOn(pdf, bar_x, bar_y)
+
+        pdf.setFont("Helvetica-Bold", 7)
+        pdf.drawCentredString(x + (label_w / 2), y + 3.6 * mm, code_value[:64])
+
+    pdf.save()
+    buffer.seek(0)
+    headers = {
+        "Content-Disposition": f"inline; filename=ingreso_{ingreso.id}_labels_code128.pdf",
+        "X-Total-Labels": str(total_labels),
+    }
+    return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
+
+
 @router.get("/inventory/egresos/{egreso_id}/pdf")
 def inventory_egreso_pdf(
     request: Request,
@@ -19682,18 +19870,126 @@ async def inventory_create_shoe_format(
             )
         )
     db.flush()
+    line_rows = (
+        db.query(ShoeSizeFormatLine)
+        .filter(ShoeSizeFormatLine.formato_id == formato.id)
+        .order_by(ShoeSizeFormatLine.orden.asc(), ShoeSizeFormatLine.id.asc())
+        .all()
+    )
     payload = {
         "id": formato.id,
         "codigo": formato.codigo,
         "nombre": formato.nombre,
         "lineas": [
             {"talla": str(ln.talla or ""), "cantidad": int(ln.cantidad or 0), "orden": int(ln.orden or 0)}
-            for ln in sorted(formato.lineas or [], key=lambda item: (item.orden or 0, item.id or 0))
+            for ln in line_rows
         ],
     }
     db.commit()
     if is_fetch:
         return JSONResponse({"ok": True, "message": "Formato creado", "format": payload})
+    return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
+
+
+@router.post("/inventory/shoe-format/{format_id}/update")
+async def inventory_update_shoe_format(
+    request: Request,
+    format_id: int,
+    codigo: str = Form(...),
+    nombre: str = Form(...),
+    lineas_json: str = Form(...),
+    redirect_to: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(_require_admin_web),
+):
+    is_fetch = request.headers.get("x-requested-with") == "fetch" or "application/json" in (
+        request.headers.get("accept", "")
+    )
+    if not _is_shoes_mode():
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Modo zapatos no habilitado"}, status_code=400)
+        return RedirectResponse((redirect_to or "/inventory/ingresos") + "?error=Modo+zapatos+no+habilitado", status_code=303)
+
+    formato = db.query(ShoeSizeFormat).filter(ShoeSizeFormat.id == format_id).first()
+    if not formato:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Formato no encontrado"}, status_code=404)
+        return RedirectResponse((redirect_to or "/inventory/ingresos") + "?error=Formato+no+encontrado", status_code=303)
+
+    code_norm = (codigo or "").strip().upper()
+    name_norm = (nombre or "").strip()
+    if not code_norm or not name_norm:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Codigo y nombre requeridos"}, status_code=400)
+        return RedirectResponse((redirect_to or "/inventory/ingresos") + "?error=Codigo+y+nombre+requeridos", status_code=303)
+
+    exists = (
+        db.query(ShoeSizeFormat)
+        .filter(func.lower(ShoeSizeFormat.codigo) == code_norm.lower(), ShoeSizeFormat.id != format_id)
+        .first()
+    )
+    if exists:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Ya existe otro formato con ese codigo"}, status_code=409)
+        return RedirectResponse((redirect_to or "/inventory/ingresos") + "?error=Codigo+de+formato+ya+existe", status_code=303)
+
+    try:
+        parsed = json.loads(lineas_json or "[]")
+    except Exception:
+        parsed = []
+    if not isinstance(parsed, list):
+        parsed = []
+
+    cleaned_lines = []
+    for row in parsed:
+        if not isinstance(row, dict):
+            continue
+        talla = str(row.get("talla") or "").strip()
+        try:
+            cantidad = int(row.get("cantidad") or 0)
+        except Exception:
+            cantidad = 0
+        if talla and cantidad > 0:
+            cleaned_lines.append({"talla": talla, "cantidad": cantidad})
+    if not cleaned_lines:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Define al menos una talla con cantidad"}, status_code=400)
+        return RedirectResponse((redirect_to or "/inventory/ingresos") + "?error=Define+al+menos+una+talla", status_code=303)
+
+    formato.codigo = code_norm[:30]
+    formato.nombre = name_norm[:80]
+    formato.activo = True
+    db.query(ShoeSizeFormatLine).filter(ShoeSizeFormatLine.formato_id == formato.id).delete(synchronize_session=False)
+    db.flush()
+    for idx, row in enumerate(cleaned_lines, start=1):
+        db.add(
+            ShoeSizeFormatLine(
+                formato_id=formato.id,
+                talla=row["talla"][:20],
+                cantidad=int(row["cantidad"]),
+                orden=idx,
+            )
+        )
+    db.flush()
+
+    line_rows = (
+        db.query(ShoeSizeFormatLine)
+        .filter(ShoeSizeFormatLine.formato_id == formato.id)
+        .order_by(ShoeSizeFormatLine.orden.asc(), ShoeSizeFormatLine.id.asc())
+        .all()
+    )
+    payload = {
+        "id": formato.id,
+        "codigo": formato.codigo,
+        "nombre": formato.nombre,
+        "lineas": [
+            {"talla": str(ln.talla or ""), "cantidad": int(ln.cantidad or 0), "orden": int(ln.orden or 0)}
+            for ln in line_rows
+        ],
+    }
+    db.commit()
+    if is_fetch:
+        return JSONResponse({"ok": True, "message": "Formato actualizado", "format": payload})
     return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
 
 
@@ -19729,6 +20025,12 @@ async def inventory_create_ingreso_zapatos(
     matrix_json = (form.get("matrix_json") or "").strip()
     if not tipo_id or not bodega_id or not fecha or not codigo_base or not linea_id_raw:
         return RedirectResponse("/inventory/ingresos?error=Faltan+datos+obligatorios+en+ingreso+de+zapatos", status_code=303)
+    if precio_unitario <= 0:
+        return RedirectResponse("/inventory/ingresos?error=El+precio+de+venta+debe+ser+mayor+a+cero", status_code=303)
+    if costo_unitario < 0:
+        return RedirectResponse("/inventory/ingresos?error=El+costo+no+puede+ser+negativo", status_code=303)
+    if costo_unitario >= precio_unitario:
+        return RedirectResponse("/inventory/ingresos?error=El+costo+debe+ser+menor+al+precio+de+venta", status_code=303)
     try:
         fecha_value = date.fromisoformat(str(fecha).split("T")[0])
     except ValueError:
@@ -19862,6 +20164,7 @@ async def inventory_create_ingreso_zapatos(
                 IngresoItem(
                     ingreso_id=ingreso.id,
                     producto_id=parent_product.id,
+                    variante_id=variant.id,
                     cantidad=float(qty),
                     costo_unitario_usd=float(costo_usd),
                     costo_unitario_cs=float(costo_cs),
@@ -19932,7 +20235,10 @@ async def inventory_create_ingreso_zapatos(
     if auto_entry:
         db.add(auto_entry)
     db.commit()
-    return RedirectResponse(f"/inventory/ingresos?success=Ingreso+zapatos+registrado&print_id={ingreso.id}", status_code=303)
+    return RedirectResponse(
+        f"/inventory/ingresos?success=Ingreso+zapatos+registrado&print_id={ingreso.id}&print_labels_id={ingreso.id}",
+        status_code=303,
+    )
 
 
 @router.post("/inventory/ingresos")
@@ -20017,6 +20323,18 @@ async def inventory_create_ingreso(
         price = to_float(item_prices[index] if index < len(item_prices) else 0)
         if qty <= 0:
             continue
+        if price <= 0:
+            db.rollback()
+            return RedirectResponse("/inventory/ingresos?error=El+precio+de+venta+debe+ser+mayor+a+cero", status_code=303)
+        if cost < 0:
+            db.rollback()
+            return RedirectResponse("/inventory/ingresos?error=El+costo+no+puede+ser+negativo", status_code=303)
+        if cost >= price:
+            db.rollback()
+            return RedirectResponse(
+                "/inventory/ingresos?error=El+costo+debe+ser+menor+al+precio+de+venta+en+todos+los+items",
+                status_code=303,
+            )
         qty_dec = to_decimal(qty)
 
         if moneda == "USD":
@@ -20077,7 +20395,7 @@ async def inventory_create_ingreso(
         db.add(auto_entry)
     db.commit()
     return RedirectResponse(
-        f"/inventory/ingresos?success=Ingreso+registrado&print_id={ingreso.id}",
+        f"/inventory/ingresos?success=Ingreso+registrado&print_id={ingreso.id}&print_labels_id={ingreso.id}",
         status_code=303,
     )
 

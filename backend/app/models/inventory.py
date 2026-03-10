@@ -256,6 +256,7 @@ class IngresoItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     ingreso_id = Column(Integer, ForeignKey("ingresos_inventario.id"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    variante_id = Column(Integer, ForeignKey("shoe_product_variants.id"), nullable=True)
     cantidad = Column(Numeric(14, 2), default=0)
     costo_unitario_usd = Column(Numeric(14, 2), default=0)
     costo_unitario_cs = Column(Numeric(14, 2), default=0)
@@ -264,6 +265,7 @@ class IngresoItem(Base):
 
     ingreso = relationship("IngresoInventario", back_populates="items")
     producto = relationship("Producto")
+    variante = relationship("ShoeProductVariant")
 
 
 class EgresoTipo(Base):

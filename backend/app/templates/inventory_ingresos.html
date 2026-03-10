@@ -142,6 +142,15 @@
     margin: 0 auto;
     text-align: center;
   }
+  .shoe-quickload-panel {
+    background: linear-gradient(145deg, #f4ecdf 0%, #efe2cf 52%, #e7d5bc 100%);
+    border: 1px solid #dbc4a3;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 8px 16px rgba(111, 78, 44, 0.08);
+  }
+  .shoe-quickload-panel .quickload-card {
+    background: rgba(255, 255, 255, 0.6);
+    border-color: #d6c0a2;
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -346,7 +355,7 @@
               </div>
             </div>
             <div class="col-12">
-              <div class="border rounded-3 p-2 bg-light">
+              <div class="border rounded-3 p-2 shoe-quickload-panel">
                 <div class="d-flex align-items-center justify-content-between mb-2">
                   <strong class="small">Carga rapida (maximo 3 colores por bloque)</strong>
                   <button id="shoe-add-3-selections" class="btn btn-sm btn-outline-primary" type="button">Agregar seleccionados</button>
@@ -359,7 +368,7 @@
                   </datalist>
                   {% for slot in [1, 2, 3] %}
                   <div class="col-lg-4">
-                    <div class="border rounded-3 p-2 h-100 bg-white">
+                    <div class="border rounded-3 p-2 h-100 quickload-card">
                       <div class="fw-semibold small mb-1">Opcion {{ slot }}</div>
                       <div class="mb-2">
                         <label class="form-label">Color</label>
@@ -392,11 +401,50 @@
               <div class="border rounded-3 p-2 bg-light">
                 <div class="d-flex align-items-center justify-content-between mb-2">
                   <strong class="small">Formatos de tallas</strong>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#shoe-format-modal">
+                  <button id="shoe-open-format-modal-btn" type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#shoe-format-modal">
                     Nuevo formato
                   </button>
                 </div>
-                <div class="text-muted small">Crea formatos en un modal y luego selecciona el formato por color.</div>
+                <div class="text-muted small">Visualiza formatos vigentes, edita uno existente o crea uno nuevo.</div>
+                <div class="table-responsive mt-2 border rounded-2 bg-white">
+                  <table class="table table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Codigo</th>
+                        <th>Nombre</th>
+                        <th>Tallas</th>
+                        <th class="text-end">Accion</th>
+                      </tr>
+                    </thead>
+                    <tbody id="shoe-format-list-body">
+                      {% for formato in shoe_size_formats_payload %}
+                      <tr data-format-id="{{ formato.id }}">
+                        <td class="fw-semibold">{{ formato.codigo }}</td>
+                        <td>{{ formato.nombre }}</td>
+                        <td class="small text-muted">
+                          {% if formato.lineas %}
+                            {% for ln in formato.lineas[:6] %}
+                              {{ ln.talla }}x{{ ln.cantidad }}{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                            {% if formato.lineas|length > 6 %}...{% endif %}
+                          {% else %}
+                            Sin tallas
+                          {% endif %}
+                        </td>
+                        <td class="text-end">
+                          <button type="button" class="btn btn-sm btn-outline-primary shoe-edit-format-btn" data-format-id="{{ formato.id }}">
+                            Editar
+                          </button>
+                        </td>
+                      </tr>
+                      {% else %}
+                      <tr>
+                        <td colspan="4" class="text-center text-muted small py-2">Sin formatos registrados.</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
             <div class="col-12">
@@ -432,7 +480,7 @@
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
           <div class="modal-content">
             <div class="modal-header">
-              <h5 class="modal-title">Nuevo formato de tallas</h5>
+              <h5 class="modal-title" id="shoe-format-modal-title">Nuevo formato de tallas</h5>
               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
@@ -447,7 +495,7 @@
                 </div>
               </div>
               <div class="row g-2 mt-2" id="shoe-format-size-grid">
-                {% for talla in ["1","2","3","4","5.5","6","6.5","7","7.5","8","8.5","9","10","11","12","13","14"] %}
+                {% for talla in ["1","2","3","4","5","5.5","6","6.5","7","7.5","8","8.5","9","10","11","12","13","14"] %}
                 <div class="col-6 col-md-3 col-lg-2">
                   <label class="form-label">Talla {{ talla }}</label>
                   <input type="number" min="0" step="1" value="0" class="form-control form-control-sm shoe-new-format-size" data-size="{{ talla }}" />
@@ -1902,6 +1950,14 @@
     window.open("/inventory/ingresos/{{ print_id }}/pdf", "_blank", "noopener");
   }
   {% endif %}
+  {% if print_labels_id %}
+  const labelsPreviewUrl = "/inventory/ingresos/{{ print_labels_id }}/labels/preview";
+  if (window.erpOpenPrintable) {
+    window.erpOpenPrintable(labelsPreviewUrl, { fallbackSameTab: false });
+  } else {
+    window.open(labelsPreviewUrl, "_blank", "noopener");
+  }
+  {% endif %}
 
   if (focusIngresoId) {
     setIngresoView("list");
@@ -2835,6 +2891,30 @@
         }
         return;
       }
+      const pricingIssue = Array.from(itemsTable?.querySelectorAll("tr[data-item-row]") || []).find((row) => {
+        const costVal = parseFloat(row.querySelector(".row-cost")?.value || 0);
+        const priceVal = parseFloat(row.querySelector(".row-price")?.value || 0);
+        return !(priceVal > 0 && costVal >= 0 && costVal < priceVal);
+      });
+      if (pricingIssue) {
+        event.preventDefault();
+        const productText = (pricingIssue.querySelector("td")?.textContent || "item").trim();
+        const errorBanner = document.getElementById("ingreso-client-error");
+        if (errorBanner) {
+          errorBanner.textContent = `Costo/Precio invalido en ${productText}. El costo debe ser menor al precio de venta.`;
+          errorBanner.classList.remove("d-none");
+        }
+        if (typeof Swal !== "undefined") {
+          Swal.fire({
+            icon: "warning",
+            title: "Costo y precio no validos",
+            text: `Revisa ${productText}. El costo debe ser menor al precio de venta y el precio mayor a cero.`,
+          });
+        } else {
+          alert(`Revisa ${productText}. El costo debe ser menor al precio de venta y el precio mayor a cero.`);
+        }
+        return;
+      }
       if (!validateIngresoRequired()) {
         event.preventDefault();
         return;
@@ -2960,9 +3040,14 @@
     }));
     const addThreeBtn = document.getElementById("shoe-add-3-selections");
     const createFormatBtn = document.getElementById("shoe-create-format-btn");
+    const openFormatModalBtn = document.getElementById("shoe-open-format-modal-btn");
+    const formatModalEl = document.getElementById("shoe-format-modal");
+    const formatModalTitle = document.getElementById("shoe-format-modal-title");
+    const formatListBody = document.getElementById("shoe-format-list-body");
     const newFormatCodeInput = document.getElementById("shoe-new-format-code");
     const newFormatNameInput = document.getElementById("shoe-new-format-name");
     const codigoBaseInput = document.getElementById("shoe-codigo-base");
+    const costoInput = document.getElementById("shoe-costo-unitario");
     const precioInput = document.getElementById("shoe-precio-unitario");
     const priceScaleBody = document.getElementById("shoe-price-scale-body");
     const clearFormBtn = document.getElementById("shoe-clear-form-btn");
@@ -2973,6 +3058,9 @@
     const newColorName = document.getElementById("shoe-new-color-name");
     const newColorAbbr = document.getElementById("shoe-new-color-abbr");
     const matrixState = new Map();
+    const initialFormatCatalog = {{ shoe_size_formats_payload | tojson }};
+    let formatCatalog = Array.isArray(initialFormatCatalog) ? [...initialFormatCatalog] : [];
+    let editingFormatId = null;
 
     function getDatalistOptionByValue(listEl, value) {
       const target = String(value || "").trim().toLowerCase();
@@ -2983,6 +3071,13 @@
       if (!lineaIdInput) return;
       const opt = getDatalistOptionByValue(lineaList, lineaTextInput?.value || "");
       lineaIdInput.value = opt ? String(opt.dataset.id || "") : "";
+    }
+    function focusAndSelect(inputEl) {
+      if (!inputEl) return;
+      inputEl.focus();
+      if (typeof inputEl.select === "function") {
+        inputEl.select();
+      }
     }
 
     function sanitizeToken(v) {
@@ -3022,6 +3117,85 @@
       const n = Number(v || 0);
       return Number.isFinite(n) ? n : 0;
     }
+    function normalizeFormatLines(rawLines) {
+      if (!Array.isArray(rawLines)) return [];
+      return rawLines
+        .map((item, idx) => ({
+          talla: String(item?.talla || "").trim(),
+          cantidad: Math.max(0, Math.trunc(toNumber(item?.cantidad || 0))),
+          orden: Math.max(1, Math.trunc(toNumber(item?.orden || idx + 1))),
+        }))
+        .filter((item) => item.talla && item.cantidad > 0)
+        .sort((a, b) => a.orden - b.orden);
+    }
+    function formatLineSummary(lines) {
+      const valid = normalizeFormatLines(lines);
+      if (!valid.length) return "Sin tallas";
+      const preview = valid.slice(0, 6).map((line) => `${line.talla}x${line.cantidad}`).join(", ");
+      return valid.length > 6 ? `${preview}...` : preview;
+    }
+    function renderFormatCatalogList() {
+      if (!formatListBody) return;
+      if (!formatCatalog.length) {
+        formatListBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted small py-2">Sin formatos registrados.</td></tr>';
+        return;
+      }
+      formatListBody.innerHTML = formatCatalog
+        .map((fmt) => `
+          <tr data-format-id="${fmt.id}">
+            <td class="fw-semibold">${fmt.codigo || ""}</td>
+            <td>${fmt.nombre || ""}</td>
+            <td class="small text-muted">${formatLineSummary(fmt.lineas)}</td>
+            <td class="text-end">
+              <button type="button" class="btn btn-sm btn-outline-primary shoe-edit-format-btn" data-format-id="${fmt.id}">Editar</button>
+            </td>
+          </tr>
+        `)
+        .join("");
+    }
+    function loadFormatIntoModal(fmt) {
+      if (!fmt) return;
+      editingFormatId = Number(fmt.id || 0) || null;
+      if (formatModalTitle) {
+        formatModalTitle.textContent = editingFormatId ? "Editar formato de tallas" : "Nuevo formato de tallas";
+      }
+      if (createFormatBtn) {
+        createFormatBtn.textContent = editingFormatId ? "Actualizar formato" : "Guardar formato";
+      }
+      if (newFormatCodeInput) newFormatCodeInput.value = fmt.codigo || "";
+      if (newFormatNameInput) newFormatNameInput.value = fmt.nombre || "";
+      const lineMap = new Map(normalizeFormatLines(fmt.lineas).map((line) => [String(line.talla), Number(line.cantidad)]));
+      document.querySelectorAll(".shoe-new-format-size").forEach((el) => {
+        const key = String(el.dataset.size || "");
+        el.value = String(lineMap.get(key) || 0);
+      });
+    }
+    function resetFormatModalToCreate() {
+      editingFormatId = null;
+      if (formatModalTitle) formatModalTitle.textContent = "Nuevo formato de tallas";
+      if (createFormatBtn) createFormatBtn.textContent = "Guardar formato";
+      if (newFormatCodeInput) newFormatCodeInput.value = "";
+      if (newFormatNameInput) newFormatNameInput.value = "";
+      document.querySelectorAll(".shoe-new-format-size").forEach((el) => {
+        el.value = "0";
+      });
+    }
+    openFormatModalBtn?.addEventListener("click", () => {
+      resetFormatModalToCreate();
+    });
+    formatListBody?.addEventListener("click", (event) => {
+      const btn = event.target.closest(".shoe-edit-format-btn");
+      if (!btn) return;
+      const formatId = Number(btn.dataset.formatId || 0);
+      const selected = formatCatalog.find((item) => Number(item.id) === formatId);
+      if (!selected) return;
+      loadFormatIntoModal(selected);
+      if (formatModalEl && window.bootstrap?.Modal) {
+        const instance = window.bootstrap.Modal.getOrCreateInstance(formatModalEl);
+        instance.show();
+      }
+    });
+    renderFormatCatalogList();
     function updatePriceScale() {
       if (!priceScaleBody) return;
       const base = Math.max(0, toNumber(precioInput?.value));
@@ -3154,6 +3328,9 @@
         const talla = String(line.talla || "");
         const key = `${color.id}|${talla}`;
         const qtyToAdd = Math.max(0, toNumber(line.cantidad || 0) * packs);
+        if (qtyToAdd <= 0) {
+          return;
+        }
         const current = matrixState.get(key);
         if (current) {
           current.qty = Math.max(0, toNumber(current.qty) + qtyToAdd);
@@ -3170,6 +3347,55 @@
         }
       });
       return true;
+    }
+    function buildExpectedTotalsByColor() {
+      const expected = new Map();
+      slotConfig.forEach((slotObj) => {
+        const color = selectedColor(slotObj);
+        const lines = selectedFormatLines(slotObj.formatSelect);
+        const packs = Math.max(1, Math.trunc(toNumber(slotObj.cajonesInput?.value || 1)));
+        if (!color || !color.id || !lines.length) return;
+        const totalForSlot = lines.reduce((acc, line) => {
+          const qty = Math.max(0, Math.trunc(toNumber(line.cantidad || 0)));
+          return acc + (qty * packs);
+        }, 0);
+        if (totalForSlot <= 0) return;
+        const current = expected.get(String(color.id)) || {
+          colorId: String(color.id),
+          colorName: String(color.name || `Color ${color.id}`),
+          qty: 0,
+        };
+        current.qty += totalForSlot;
+        expected.set(String(color.id), current);
+      });
+      return expected;
+    }
+    function buildActualTotalsByColor(cleanedMatrix) {
+      const actual = new Map();
+      Object.entries(cleanedMatrix || {}).forEach(([colorId, sizes]) => {
+        if (!sizes || typeof sizes !== "object") return;
+        const qty = Object.values(sizes).reduce((acc, raw) => acc + Math.max(0, Math.trunc(toNumber(raw))), 0);
+        if (qty <= 0) return;
+        actual.set(String(colorId), qty);
+      });
+      return actual;
+    }
+    function validateExpectedVsActualTotals(cleanedMatrix) {
+      const expected = buildExpectedTotalsByColor();
+      if (!expected.size) return { ok: true, message: "" };
+      const actual = buildActualTotalsByColor(cleanedMatrix);
+      const mismatches = [];
+      expected.forEach((entry, colorId) => {
+        const actualQty = actual.get(colorId) || 0;
+        if (actualQty !== entry.qty) {
+          mismatches.push(`${entry.colorName}: esperado ${entry.qty}, actual ${actualQty}`);
+        }
+      });
+      if (!mismatches.length) return { ok: true, message: "" };
+      return {
+        ok: false,
+        message: `Los totales por color no cuadran con Formato x Cajones: ${mismatches.join(" | ")}`,
+      };
     }
 
     addThreeBtn?.addEventListener("click", () => {
@@ -3189,6 +3415,27 @@
       slotObj.colorTextInput?.addEventListener("change", () => updateSlotTotal(slotObj));
       slotObj.cajonesInput?.addEventListener("input", () => updateSlotTotal(slotObj));
       slotObj.formatSelect?.addEventListener("change", () => updateSlotTotal(slotObj));
+      slotObj.colorTextInput?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        selectedColor(slotObj);
+        slotObj.formatSelect?.focus();
+      });
+      slotObj.formatSelect?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        focusAndSelect(slotObj.cajonesInput);
+      });
+      slotObj.cajonesInput?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        const nextSlot = slotConfig.find((item) => item.slot === (slotObj.slot + 1));
+        if (nextSlot?.colorTextInput) {
+          focusAndSelect(nextSlot.colorTextInput);
+          return;
+        }
+        addThreeBtn?.focus();
+      });
     });
 
     lineaTextInput?.addEventListener("input", () => {
@@ -3199,8 +3446,39 @@
       resolveLineaIdFromInput();
       renderMatrixFromState();
     });
+    codigoBaseInput?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      focusAndSelect(lineaTextInput);
+    });
+    lineaTextInput?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      resolveLineaIdFromInput();
+      focusAndSelect(marcaSelect);
+    });
     marcaSelect?.addEventListener("input", renderMatrixFromState);
     marcaSelect?.addEventListener("change", renderMatrixFromState);
+    marcaSelect?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      focusAndSelect(costoInput);
+    });
+    costoInput?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      focusAndSelect(precioInput);
+    });
+    precioInput?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const firstColor = slotConfig[0]?.colorTextInput;
+      if (firstColor) {
+        focusAndSelect(firstColor);
+        return;
+      }
+      addThreeBtn?.focus();
+    });
     codigoBaseInput?.addEventListener("input", renderMatrixFromState);
     precioInput?.addEventListener("input", updatePriceScale);
     resolveLineaIdFromInput();
@@ -3260,74 +3538,122 @@
       updateAllSlotTotals();
     });
     createFormatBtn?.addEventListener("click", async () => {
-      const codigo = (newFormatCodeInput?.value || "").trim().toUpperCase();
-      const nombre = (newFormatNameInput?.value || "").trim();
-      const lines = Array.from(document.querySelectorAll(".shoe-new-format-size"))
-        .map((el) => ({
-          talla: String(el.dataset.size || "").trim(),
-          cantidad: Math.max(0, Math.trunc(toNumber(el.value || 0))),
-        }))
-        .filter((item) => item.talla && item.cantidad > 0);
-      if (!codigo || !nombre || !lines.length) {
-        alert("Debes completar codigo, nombre y al menos una talla con cantidad.");
-        return;
-      }
-      const body = new URLSearchParams();
-      body.append("codigo", codigo);
-      body.append("nombre", nombre);
-      body.append("lineas_json", JSON.stringify(lines));
-      body.append("redirect_to", "/inventory/ingresos");
-      const response = await fetch("/inventory/shoe-format", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "X-Requested-With": "fetch",
-          "Accept": "application/json",
-        },
-        body: body.toString(),
-      });
-      if (!response.ok) {
-        alert("No se pudo guardar el formato.");
-        return;
-      }
-      const data = await response.json();
-      if (!data?.ok || !data?.format) {
-        alert(data?.message || "No se pudo guardar el formato.");
-        return;
-      }
-      const fmt = data.format;
-      slotConfig.forEach((slotObj) => {
-        const select = slotObj.formatSelect;
-        if (!select) return;
-        let option = Array.from(select.options || []).find((opt) => String(opt.value) === String(fmt.id));
-        if (!option) {
-          option = document.createElement("option");
-          option.value = String(fmt.id);
-          option.dataset.lines = JSON.stringify(fmt.lineas || []);
-          option.textContent = `${fmt.codigo} - ${fmt.nombre}`;
-          select.appendChild(option);
-        } else {
-          option.dataset.lines = JSON.stringify(fmt.lineas || []);
-          option.textContent = `${fmt.codigo} - ${fmt.nombre}`;
+      try {
+        const codigo = (newFormatCodeInput?.value || "").trim().toUpperCase();
+        const nombre = (newFormatNameInput?.value || "").trim();
+        const lines = Array.from(document.querySelectorAll(".shoe-new-format-size"))
+          .map((el) => ({
+            talla: String(el.dataset.size || "").trim(),
+            cantidad: Math.max(0, Math.trunc(toNumber(el.value || 0))),
+          }))
+          .filter((item) => item.talla && item.cantidad > 0);
+        if (!codigo || !nombre || !lines.length) {
+          alert("Debes completar codigo, nombre y al menos una talla con cantidad.");
+          return;
         }
-        if (!select.value) select.value = String(fmt.id);
-      });
-      if (newFormatCodeInput) newFormatCodeInput.value = "";
-      if (newFormatNameInput) newFormatNameInput.value = "";
-      document.querySelectorAll(".shoe-new-format-size").forEach((el) => {
-        el.value = "0";
-      });
-      const modalEl = document.getElementById("shoe-format-modal");
-      if (modalEl && window.bootstrap?.Modal) {
-        const instance = window.bootstrap.Modal.getOrCreateInstance(modalEl);
-        instance.hide();
+        const body = new URLSearchParams();
+        body.append("codigo", codigo);
+        body.append("nombre", nombre);
+        body.append("lineas_json", JSON.stringify(lines));
+        body.append("redirect_to", "/inventory/ingresos");
+        const endpoint = editingFormatId
+          ? `/inventory/shoe-format/${editingFormatId}/update`
+          : "/inventory/shoe-format";
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "fetch",
+            "Accept": "application/json",
+          },
+          body: body.toString(),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.ok || !data?.format) {
+          alert(data?.message || "No se pudo guardar el formato.");
+          return;
+        }
+        const fmt = data.format;
+        const idxExisting = formatCatalog.findIndex((item) => Number(item.id) === Number(fmt.id));
+        if (idxExisting >= 0) {
+          formatCatalog[idxExisting] = fmt;
+        } else {
+          formatCatalog.push(fmt);
+        }
+        formatCatalog = formatCatalog.sort((a, b) => String(a.codigo || "").localeCompare(String(b.codigo || "")));
+        renderFormatCatalogList();
+        slotConfig.forEach((slotObj) => {
+          const select = slotObj.formatSelect;
+          if (!select) return;
+          let option = Array.from(select.options || []).find((opt) => String(opt.value) === String(fmt.id));
+          if (!option) {
+            option = document.createElement("option");
+            option.value = String(fmt.id);
+            option.dataset.lines = JSON.stringify(fmt.lineas || []);
+            option.textContent = `${fmt.codigo} - ${fmt.nombre}`;
+            select.appendChild(option);
+          } else {
+            option.dataset.lines = JSON.stringify(fmt.lineas || []);
+            option.textContent = `${fmt.codigo} - ${fmt.nombre}`;
+          }
+          select.value = String(fmt.id);
+          select.dispatchEvent(new Event("change"));
+        });
+        if ((data.message || "").toLowerCase().includes("ya existe")) {
+          alert("Ese formato ya existia; se cargó el existente.");
+        }
+        resetFormatModalToCreate();
+        if (formatModalEl && window.bootstrap?.Modal) {
+          const instance = window.bootstrap.Modal.getOrCreateInstance(formatModalEl);
+          instance.hide();
+        }
+        window.setTimeout(() => {
+          window.location.reload();
+        }, 120);
+      } catch (error) {
+        alert(error?.message || "No se pudo guardar el formato.");
       }
     });
     clearFormBtn?.addEventListener("click", resetShoeFormView);
     form.addEventListener("submit", (event) => {
-      if (!matrixJsonInput.value || matrixJsonInput.value === "{}") {
+      const costoVal = Math.max(0, toNumber(costoInput?.value || 0));
+      const precioVal = Math.max(0, toNumber(precioInput?.value || 0));
+      if (precioVal <= 0) {
         event.preventDefault();
-        alert("Debes agregar al menos un color + formato.");
+        alert("El precio de venta debe ser mayor a cero.");
+        return;
+      }
+      if (costoVal >= precioVal) {
+        event.preventDefault();
+        alert("El costo debe ser menor al precio de venta.");
+        return;
+      }
+      let parsed = {};
+      try {
+        parsed = JSON.parse(matrixJsonInput.value || "{}");
+      } catch {
+        parsed = {};
+      }
+      const cleaned = {};
+      Object.entries(parsed || {}).forEach(([colorId, sizes]) => {
+        if (!sizes || typeof sizes !== "object") return;
+        Object.entries(sizes).forEach(([talla, qtyRaw]) => {
+          const qty = Math.max(0, Math.trunc(toNumber(qtyRaw)));
+          if (qty <= 0) return;
+          if (!cleaned[colorId]) cleaned[colorId] = {};
+          cleaned[colorId][talla] = qty;
+        });
+      });
+      matrixJsonInput.value = JSON.stringify(cleaned);
+      if (!Object.keys(cleaned).length) {
+        event.preventDefault();
+        alert("Debes agregar al menos una talla con cantidad mayor a 0.");
+        return;
+      }
+      const matchValidation = validateExpectedVsActualTotals(cleaned);
+      if (!matchValidation.ok) {
+        event.preventDefault();
+        alert(matchValidation.message);
       }
     });
   })();

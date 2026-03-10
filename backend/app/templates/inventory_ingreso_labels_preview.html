@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<style>
+  .labels-preview-page {
+    background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 55%, #e8edf5 100%);
+    min-height: 100vh;
+  }
+  .labels-preview-shell {
+    max-width: 1220px;
+    margin: 0 auto;
+    padding: 1.25rem 1rem 2rem;
+  }
+  .labels-preview-card {
+    border: 1px solid #d7e0eb;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  }
+  .labels-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+    gap: 0.7rem;
+  }
+  .label-chip {
+    border: 1px solid #d9e2ef;
+    border-radius: 10px;
+    background: #ffffff;
+    min-height: 120px;
+    padding: 0.35rem 0.42rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .label-chip .name {
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.05;
+    color: #0f172a;
+    min-height: 1.4rem;
+  }
+  .label-chip .meta {
+    font-size: 0.64rem;
+    color: #64748b;
+    line-height: 1.05;
+  }
+  .label-chip .code {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #0b1220;
+    text-align: center;
+    margin-top: 0.1rem;
+  }
+  .label-svg {
+    width: 100%;
+    height: 40px;
+  }
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="labels-preview-page">
+  <div class="labels-preview-shell">
+    <div class="labels-preview-card p-3 p-lg-4 no-print">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div>
+          <div class="text-uppercase text-muted small">Inventario / Ingresos / Etiquetas</div>
+          <h5 class="mb-1">Preview etiquetas Code128</h5>
+          <div class="small text-muted">
+            Ingreso #{{ ingreso.id }} ·
+            Codigos: <strong>{{ label_items|length }}</strong> ·
+            Etiquetas totales: <strong id="labels-total">{{ total_labels }}</strong>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap align-items-end gap-2">
+          <div>
+            <label class="form-label mb-1 small">Ancho (cm)</label>
+            <input id="label-width-cm" type="number" class="form-control form-control-sm" min="2" max="12" step="0.1" value="{{ '%.2f'|format(label_w_cm) }}">
+          </div>
+          <div>
+            <label class="form-label mb-1 small">Alto (cm)</label>
+            <input id="label-height-cm" type="number" class="form-control form-control-sm" min="1.2" max="8" step="0.1" value="{{ '%.2f'|format(label_h_cm) }}">
+          </div>
+          <div>
+            <label class="form-label mb-1 small">Espacio (mm)</label>
+            <input id="label-gap-mm" type="number" class="form-control form-control-sm" min="1" max="10" step="0.5" value="1.5">
+          </div>
+          <a id="open-pdf-btn" class="btn btn-primary btn-sm" target="_blank" rel="noopener">Generar PDF</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="labels-preview-card p-3 mt-3">
+      {% if not label_items %}
+      <div class="text-center text-muted py-5">No hay etiquetas para este ingreso.</div>
+      {% else %}
+      <div class="labels-preview-grid">
+        {% for item in label_items %}
+          {% set qty = item.qty | int %}
+          {% for _ in range(qty) %}
+          <div class="label-chip">
+            <div class="name">{{ item.name or item.code }}</div>
+            <div class="meta">
+              {% if item.color or item.talla %}
+                {{ item.color or '-' }}{% if item.talla %} · Talla {{ item.talla }}{% endif %}
+              {% else %}
+                Producto
+              {% endif %}
+            </div>
+            <svg class="label-svg barcode-svg" data-code="{{ item.code | e }}"></svg>
+            <div class="code">{{ item.code }}</div>
+          </div>
+          {% endfor %}
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    <div class="text-end text-muted small mt-2 no-print">Version {{ version }}</div>
+  </div>
+</div>
+
+<script>
+  (() => {
+    const widthInput = document.getElementById("label-width-cm");
+    const heightInput = document.getElementById("label-height-cm");
+    const gapInput = document.getElementById("label-gap-mm");
+    const pdfBtn = document.getElementById("open-pdf-btn");
+    const ingresoId = {{ ingreso.id }};
+
+    const renderBarcodes = () => {
+      document.querySelectorAll(".barcode-svg").forEach((svg) => {
+        const code = String(svg.dataset.code || "").trim();
+        if (!code) return;
+        try {
+          JsBarcode(svg, code, {
+            format: "CODE128",
+            width: 1.2,
+            height: 38,
+            margin: 0,
+            displayValue: false,
+            lineColor: "#000000",
+          });
+        } catch (err) {
+          svg.innerHTML = "";
+        }
+      });
+    };
+
+    const buildPdfUrl = () => {
+      const w = Math.max(2, Math.min(12, Number(widthInput?.value || 3)));
+      const h = Math.max(1.2, Math.min(8, Number(heightInput?.value || 2)));
+      const g = Math.max(1, Math.min(10, Number(gapInput?.value || 1.5)));
+      const params = new URLSearchParams({
+        width_cm: w.toFixed(2),
+        height_cm: h.toFixed(2),
+        gap_mm: g.toFixed(2),
+      });
+      return `/inventory/ingresos/${ingresoId}/labels/pdf?${params.toString()}`;
+    };
+
+    const syncPdfBtn = () => {
+      if (!pdfBtn) return;
+      pdfBtn.setAttribute("href", buildPdfUrl());
+    };
+
+    [widthInput, heightInput, gapInput].forEach((input) => {
+      input?.addEventListener("input", syncPdfBtn);
+      input?.addEventListener("change", syncPdfBtn);
+    });
+
+    renderBarcodes();
+    syncPdfBtn();
+  })();
+</script>
+{% endblock %}

@@ -894,6 +894,11 @@ def init_db() -> None:
         if "variante_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE egreso_items ADD COLUMN variante_id INTEGER"))
+    if "ingreso_items" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("ingreso_items")}
+        if "variante_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ingreso_items ADD COLUMN variante_id INTEGER"))
     if "ventas_items" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("ventas_items")}
         if "combo_role" not in columns:
