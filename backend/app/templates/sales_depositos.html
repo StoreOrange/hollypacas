@@ -102,6 +102,16 @@
               </div>
               <div class="col-md-6">
                 <label class="odoo-field-label d-flex align-items-center gap-2">
+                  <i class="bi bi-credit-card text-brand"></i>
+                  Metodo *
+                </label>
+                <select class="form-select odoo-input" name="metodo" id="deposito-metodo" required>
+                  <option value="DEPOSITO_BANCARIO" selected>Deposito Bancario</option>
+                  <option value="TARJETA_AFILIACION">Tarjeta Afiliacion</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label d-flex align-items-center gap-2">
                   <i class="bi bi-bank text-brand"></i>
                   Banco *
                 </label>
@@ -227,6 +237,7 @@
                   <tr>
                     <th>Fecha</th>
                     <th>Vendedor</th>
+                    <th>Metodo</th>
                     <th>Banco</th>
                     <th>Moneda</th>
                     <th class="text-end">Monto depositado</th>
@@ -239,6 +250,7 @@
                   <tr data-id="{{ dep.id }}"
                       data-fecha="{{ dep.fecha }}"
                       data-vendedor="{{ dep.vendedor_id }}"
+                      data-metodo="{{ dep.metodo or 'DEPOSITO_BANCARIO' }}"
                       data-banco="{{ dep.banco_id }}"
                       data-cuenta="{{ dep.cuenta_id or '' }}"
                       data-moneda="{{ dep.moneda }}"
@@ -246,6 +258,7 @@
                       data-observacion="{{ dep.observacion or '' }}">
                     <td>{{ dep.fecha }}</td>
                     <td>{{ dep.vendedor.nombre if dep.vendedor else '-' }}</td>
+                    <td>{{ "Tarjeta Afiliacion" if (dep.metodo or "") == "TARJETA_AFILIACION" else "Deposito Bancario" }}</td>
                     <td>{{ dep.banco.nombre if dep.banco else '-' }}</td>
                     <td>{{ dep.moneda }}</td>
                     <td class="text-end">{{ "{:,.2f}".format(dep.monto_usd if dep.moneda == 'USD' else dep.monto_cs) }}</td>
@@ -262,12 +275,12 @@
                 </tbody>
                 <tfoot>
                   <tr>
-                    <th colspan="4" class="text-end">Total C$</th>
+                    <th colspan="5" class="text-end">Total C$</th>
                     <th class="text-end">C$ {{ "{:,.2f}".format(total_cs) }}</th>
                     <th></th>
                   </tr>
                   <tr>
-                    <th colspan="4" class="text-end">Total USD</th>
+                    <th colspan="5" class="text-end">Total USD</th>
                     <th class="text-end">$ {{ "{:,.2f}".format(total_usd) }}</th>
                     <th></th>
                   </tr>
@@ -285,6 +298,7 @@
               <table class="table table-sm table-hover odoo-table text-sm">
                 <thead>
                   <tr>
+                    <th>Metodo</th>
                     <th>Banco</th>
                     <th>Moneda</th>
                     <th class="text-end">Cantidad</th>
@@ -292,17 +306,14 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {% for group in summary_grouped_rows %}
-                    {% for row in group.rows %}
-                    <tr>
-                      {% if loop.first %}
-                      <td rowspan="{{ group.rows | length }}" class="fw-semibold text-ink align-middle">{{ group.banco }}</td>
-                      {% endif %}
-                      <td>{{ row.moneda }}</td>
-                      <td class="text-end">{{ row.count }}</td>
-                      <td class="text-end">{{ "{:,.2f}".format(row.total) }}</td>
-                    </tr>
-                    {% endfor %}
+                  {% for row in summary_rows %}
+                  <tr>
+                    <td>{{ row.metodo }}</td>
+                    <td>{{ row.banco }}</td>
+                    <td>{{ row.moneda }}</td>
+                    <td class="text-end">{{ row.count }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(row.total) }}</td>
+                  </tr>
                   {% endfor %}
                 </tbody>
               </table>
@@ -359,6 +370,7 @@
   const focusOrder = [
     "deposito-fecha",
     "deposito-vendedor",
+    "deposito-metodo",
     "deposito-banco",
     "deposito-cuenta",
     "deposito-moneda",
@@ -383,6 +395,7 @@
 
   const bancoSelect = document.getElementById("deposito-banco");
   const cuentaSelect = document.getElementById("deposito-cuenta");
+  const metodoSelect = document.getElementById("deposito-metodo");
   const depositoId = document.getElementById("deposito-id");
   const depositoFecha = document.getElementById("deposito-fecha");
   const depositoVendedor = document.getElementById("deposito-vendedor");
@@ -395,11 +408,13 @@
       if (depositoId) depositoId.value = row.dataset.id || "";
       if (depositoFecha) depositoFecha.value = row.dataset.fecha || "";
       if (depositoVendedor) depositoVendedor.value = row.dataset.vendedor || "";
+      if (metodoSelect) metodoSelect.value = row.dataset.metodo || "DEPOSITO_BANCARIO";
       if (bancoSelect) bancoSelect.value = row.dataset.banco || "";
       if (cuentaSelect) cuentaSelect.value = row.dataset.cuenta || "";
       if (depositoMoneda) depositoMoneda.value = row.dataset.moneda || "CS";
       if (depositoMonto) depositoMonto.value = formatMoney(row.dataset.monto || 0, row.dataset.moneda || "CS");
       if (depositoObservacion) depositoObservacion.value = row.dataset.observacion || "";
+      if (metodoSelect) metodoSelect.dispatchEvent(new Event("change"));
       if (bancoSelect) bancoSelect.dispatchEvent(new Event("change"));
     });
   });
@@ -441,6 +456,35 @@
       }
     });
   }
+
+  const syncMetodoDeposito = () => {
+    const metodo = metodoSelect?.value || "DEPOSITO_BANCARIO";
+    const isAfiliacion = metodo === "TARJETA_AFILIACION";
+    if (depositoMoneda && isAfiliacion) {
+      depositoMoneda.value = "CS";
+      depositoMoneda.disabled = true;
+    } else if (depositoMoneda) {
+      depositoMoneda.disabled = false;
+    }
+    if (bancoSelect) {
+      bancoSelect.disabled = isAfiliacion;
+      if (isAfiliacion) {
+        const bacId = "{{ bac_bank_id }}";
+        if (bacId) {
+          bancoSelect.value = String(bacId);
+        }
+      }
+      bancoSelect.dispatchEvent(new Event("change"));
+    }
+    if (cuentaSelect) {
+      if (isAfiliacion) {
+        cuentaSelect.value = "";
+      }
+      cuentaSelect.disabled = isAfiliacion;
+    }
+  };
+  metodoSelect?.addEventListener("change", syncMetodoDeposito);
+  syncMetodoDeposito();
 
   if (cuentaSelect && depositoMoneda && depositoMonto) {
     cuentaSelect.addEventListener("change", () => {

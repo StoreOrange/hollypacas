@@ -593,6 +593,36 @@ def _get_or_create_consumidor_final(db: Session) -> Cliente:
     return cliente
 
 
+def _branch_sales_series_letter(branch_code: Optional[str]) -> str:
+    normalized = (branch_code or "").strip().lower()
+    if _is_shoes_mode():
+        shoes_mapping = {
+            "central": "A",
+            "kg": "B",
+            "kgf": "C",
+        }
+        if normalized in shoes_mapping:
+            return shoes_mapping[normalized]
+    if normalized == "central":
+        return "C"
+    if normalized == "esteli":
+        return "E"
+    return (normalized[:1] or "X").upper()
+
+
+def _branch_cobranza_series_meta(branch_code: Optional[str]) -> tuple[str, int]:
+    normalized = (branch_code or "").strip().lower()
+    if _is_shoes_mode():
+        shoes_mapping = {
+            "central": ("A", 1),
+            "kg": ("B", 2),
+            "kgf": ("C", 3),
+        }
+        if normalized in shoes_mapping:
+            return shoes_mapping[normalized]
+    return _branch_sales_series_letter(normalized), 1
+
+
 def _next_preventa_number(db: Session, branch: Branch) -> tuple[int, str]:
     last = (
         db.query(Preventa)
@@ -601,8 +631,7 @@ def _next_preventa_number(db: Session, branch: Branch) -> tuple[int, str]:
         .first()
     )
     seq = (last.secuencia if last else 0) + 1
-    branch_code = (branch.code or "").lower()
-    prefix = "C" if branch_code == "central" else "E" if branch_code == "esteli" else branch_code[:1].upper()
+    prefix = _branch_sales_series_letter(branch.code)
     return seq, f"PV{prefix}-{seq:06d}"
 
 
@@ -7535,8 +7564,7 @@ def sales_page(
             .first()
         )
         next_seq = (last_factura.secuencia if last_factura else 0) + 1
-        branch_code = (branch.code or "").lower()
-        prefix = "C" if branch_code == "central" else "E" if branch_code == "esteli" else branch_code[:1].upper()
+        prefix = _branch_sales_series_letter(branch.code)
         width = 6
         next_invoice = f"{prefix}-{next_seq:0{width}d}"
     pos_print = (
@@ -11397,6 +11425,7 @@ def sales_depositos(
     vendedores = _vendedores_for_bodega(db, bodega)
     bancos = db.query(Banco).order_by(Banco.nombre).all()
     cuentas = db.query(CuentaBancaria).order_by(CuentaBancaria.banco_id).all()
+    bac_bank = db.query(Banco).filter(func.lower(Banco.nombre) == "bac").first()
 
     depositos_query = db.query(DepositoCliente)
     if bodega:
@@ -11414,9 +11443,11 @@ def sales_depositos(
     total_cs = Decimal("0")
     total_usd = Decimal("0")
     for dep in depositos:
-        key = (dep.banco_id, dep.moneda)
+        method_label = _deposito_method_label(getattr(dep, "metodo", None))
+        key = (method_label, dep.banco_id, dep.moneda)
         if key not in summary:
             summary[key] = {
+                "metodo": method_label,
                 "banco": dep.banco.nombre if dep.banco else "-",
                 "moneda": dep.moneda,
                 "count": 0,
@@ -11432,10 +11463,11 @@ def sales_depositos(
             summary[key]["total"] += monto_cs
             total_cs += monto_cs
 
-    summary_rows = sorted(summary.values(), key=lambda row: (row["banco"], row["moneda"]))
+    summary_rows = sorted(summary.values(), key=lambda row: (row["metodo"], row["banco"], row["moneda"]))
     summary_grouped = {}
     for row in summary_rows:
-        summary_grouped.setdefault(row["banco"], []).append(row)
+        group_key = f"{row['metodo']} / {row['banco']}"
+        summary_grouped.setdefault(group_key, []).append(row)
     summary_grouped_rows = [
         {"banco": banco, "rows": rows} for banco, rows in summary_grouped.items()
     ]
@@ -11450,6 +11482,7 @@ def sales_depositos(
             "vendedores": vendedores,
             "bancos": bancos,
             "cuentas": cuentas,
+            "bac_bank_id": bac_bank.id if bac_bank else "",
             "depositos": depositos,
             "summary_rows": summary_rows,
             "summary_grouped_rows": summary_grouped_rows,
@@ -14162,11 +14195,28 @@ def report_depositos(
 
     total_cs = Decimal("0")
     total_usd = Decimal("0")
+    report_summary = {}
     for dep in depositos:
+        method_label = _deposito_method_label(getattr(dep, "metodo", None))
+        summary_key = (method_label, dep.banco.nombre if dep.banco else "-", dep.moneda)
+        if summary_key not in report_summary:
+            report_summary[summary_key] = {
+                "metodo": method_label,
+                "banco": dep.banco.nombre if dep.banco else "-",
+                "moneda": dep.moneda,
+                "count": 0,
+                "total": Decimal("0"),
+            }
+        report_summary[summary_key]["count"] += 1
         if dep.moneda == "USD":
-            total_usd += Decimal(str(dep.monto_usd or 0))
+            amount = Decimal(str(dep.monto_usd or 0))
+            total_usd += amount
+            report_summary[summary_key]["total"] += amount
         else:
-            total_cs += Decimal(str(dep.monto_cs or 0))
+            amount = Decimal(str(dep.monto_cs or 0))
+            total_cs += amount
+            report_summary[summary_key]["total"] += amount
+    report_summary_rows = sorted(report_summary.values(), key=lambda row: (row["metodo"], row["banco"], row["moneda"]))
 
     return request.app.state.templates.TemplateResponse(
         "report_depositos.html",
@@ -14180,6 +14230,7 @@ def report_depositos(
             "selected_branch": branch_id or "",
             "total_cs": float(total_cs),
             "total_usd": float(total_usd),
+            "summary_rows": report_summary_rows,
             "version": settings.UI_VERSION,
         },
     )
@@ -14247,12 +14298,14 @@ def report_depositos_export(
 
     grouped_map = {}
     for dep in depositos:
+        method_label = _deposito_method_label(getattr(dep, "metodo", None))
         banco_name = dep.banco.nombre if dep.banco else "-"
         if len(banco_name) > 12:
             banco_name = banco_name[:12] + "…"
-        grouped_map.setdefault(dep.banco_id, {"banco": banco_name, "rows": []})
-        grouped_map[dep.banco_id]["rows"].append(dep)
-    grouped_list = sorted(grouped_map.values(), key=lambda row: row["banco"])
+        key = (method_label, dep.banco_id)
+        grouped_map.setdefault(key, {"metodo": method_label, "banco": banco_name, "rows": []})
+        grouped_map[key]["rows"].append(dep)
+    grouped_list = sorted(grouped_map.values(), key=lambda row: (row["metodo"], row["banco"]))
 
     total_count = 0
     for group in grouped_list:
@@ -14263,7 +14316,7 @@ def report_depositos_export(
         c.roundRect(24, y - 6, width - 48, 16, 4, fill=1, stroke=0)
         c.setFillColor(colors.white)
         c.setFont("Times-Bold", 9)
-        c.drawString(30, y - 2, group["banco"])
+        c.drawString(30, y - 2, f"{group['metodo']} / {group['banco']}")
         c.setFillColor(colors.black)
         y -= 20
 
@@ -15524,14 +15577,27 @@ def _depositos_filters(request: Request):
     return start_date, end_date, vendedor_q, banco_q, moneda_q
 
 
+def _normalize_deposito_method(value: Optional[str]) -> str:
+    normalized = (value or "").strip().upper()
+    if normalized == "TARJETA_AFILIACION":
+        return "TARJETA_AFILIACION"
+    return "DEPOSITO_BANCARIO"
+
+
+def _deposito_method_label(value: Optional[str]) -> str:
+    return "Tarjeta Afiliacion" if _normalize_deposito_method(value) == "TARJETA_AFILIACION" else "Deposito Bancario"
+
+
 def _depositos_grouped(depositos):
     summary = {}
     total_cs = Decimal("0")
     total_usd = Decimal("0")
     for dep in depositos:
-        key = dep.banco_id
+        method_label = _deposito_method_label(getattr(dep, "metodo", None))
+        key = (method_label, dep.banco_id)
         if key not in summary:
             summary[key] = {
+                "metodo": method_label,
                 "banco": dep.banco.nombre if dep.banco else "-",
                 "total_cs": Decimal("0"),
                 "total_usd": Decimal("0"),
@@ -15544,7 +15610,7 @@ def _depositos_grouped(depositos):
         else:
             summary[key]["total_cs"] += monto_cs
             total_cs += monto_cs
-    grouped = sorted(summary.values(), key=lambda row: row["banco"])
+    grouped = sorted(summary.values(), key=lambda row: (row["metodo"], row["banco"]))
     return grouped, total_cs, total_usd
 
 
@@ -15613,12 +15679,14 @@ def sales_depositos_export(
 
         grouped_map = {}
         for dep in depositos:
+            method_label = _deposito_method_label(getattr(dep, "metodo", None))
             banco_name = dep.banco.nombre if dep.banco else "-"
             if len(banco_name) > 12:
                 banco_name = banco_name[:12] + "…"
-            grouped_map.setdefault(dep.banco_id, {"banco": banco_name, "rows": []})
-            grouped_map[dep.banco_id]["rows"].append(dep)
-        grouped_list = sorted(grouped_map.values(), key=lambda row: row["banco"])
+            key = (method_label, dep.banco_id)
+            grouped_map.setdefault(key, {"metodo": method_label, "banco": banco_name, "rows": []})
+            grouped_map[key]["rows"].append(dep)
+        grouped_list = sorted(grouped_map.values(), key=lambda row: (row["metodo"], row["banco"]))
 
         total_count = 0
         for group in grouped_list:
@@ -15629,7 +15697,7 @@ def sales_depositos_export(
             c.roundRect(24, y - 6, width - 48, 16, 4, fill=1, stroke=0)
             c.setFillColor(colors.white)
             c.setFont("Times-Bold", 9)
-            c.drawString(30, y - 2, group["banco"])
+            c.drawString(30, y - 2, f"{group['metodo']} / {group['banco']}")
             c.setFillColor(colors.black)
             y -= 20
 
@@ -15716,24 +15784,26 @@ def sales_depositos_export(
     ws["A1"] = "Informe de Depositos"
     ws["A2"] = f"Rango: {start_date} a {end_date}"
     ws["A3"] = f"Tasa: {rate_today.rate if rate_today else 'N/D'}"
-    ws["A5"] = "Banco"
-    ws["B5"] = "Total C$"
-    ws["C5"] = "Total USD"
-    for cell in ("A1", "A5", "B5", "C5"):
+    ws["A5"] = "Metodo"
+    ws["B5"] = "Banco"
+    ws["C5"] = "Total C$"
+    ws["D5"] = "Total USD"
+    for cell in ("A1", "A5", "B5", "C5", "D5"):
         ws[cell].font = Font(bold=True)
     row_idx = 6
     for row in grouped:
-        ws.cell(row=row_idx, column=1, value=row["banco"])
-        ws.cell(row=row_idx, column=2, value=float(row["total_cs"]))
-        ws.cell(row=row_idx, column=3, value=float(row["total_usd"]))
+        ws.cell(row=row_idx, column=1, value=row["metodo"])
+        ws.cell(row=row_idx, column=2, value=row["banco"])
+        ws.cell(row=row_idx, column=3, value=float(row["total_cs"]))
+        ws.cell(row=row_idx, column=4, value=float(row["total_usd"]))
         row_idx += 1
     ws.cell(row=row_idx, column=1, value="Totales").font = Font(bold=True)
-    ws.cell(row=row_idx, column=2, value=float(total_cs)).font = Font(bold=True)
-    ws.cell(row=row_idx, column=3, value=float(total_usd)).font = Font(bold=True)
+    ws.cell(row=row_idx, column=3, value=float(total_cs)).font = Font(bold=True)
+    ws.cell(row=row_idx, column=4, value=float(total_usd)).font = Font(bold=True)
     row_idx += 1
     ws.cell(row=row_idx, column=1, value="Total USD (convertido)").font = Font(bold=True)
-    ws.cell(row=row_idx, column=3, value=float(total_usd_equiv)).font = Font(bold=True)
-    for col in range(1, 4):
+    ws.cell(row=row_idx, column=4, value=float(total_usd_equiv)).font = Font(bold=True)
+    for col in range(1, 5):
         ws.column_dimensions[chr(64 + col)].width = 20
     stream = io.BytesIO()
     wb.save(stream)
@@ -15757,12 +15827,13 @@ async def sales_depositos_create(
     vendedor_id = form.get("vendedor_id")
     banco_id = form.get("banco_id")
     cuenta_id = form.get("cuenta_id") or None
+    metodo = _normalize_deposito_method(form.get("metodo"))
     fecha_raw = form.get("fecha")
     moneda = (form.get("moneda") or "CS").upper()
     monto_raw = form.get("monto")
     observacion = (form.get("observacion") or "").strip()
 
-    if not vendedor_id or not banco_id or not monto_raw:
+    if not vendedor_id or not monto_raw or (metodo != "TARJETA_AFILIACION" and not banco_id):
         return RedirectResponse("/sales/depositos?error=Datos+incompletos", status_code=303)
     if moneda not in {"CS", "USD"}:
         return RedirectResponse("/sales/depositos?error=Moneda+no+valida", status_code=303)
@@ -15820,11 +15891,16 @@ async def sales_depositos_create(
         return RedirectResponse("/sales/depositos?error=Bodega+no+configurada+para+la+sucursal", status_code=303)
 
     vendedor = db.query(Vendedor).filter(Vendedor.id == int(vendedor_id)).first()
-    banco = db.query(Banco).filter(Banco.id == int(banco_id)).first()
+    if metodo == "TARJETA_AFILIACION":
+        banco = db.query(Banco).filter(func.lower(Banco.nombre) == "bac").first()
+        moneda = "CS"
+        cuenta_id = None
+    else:
+        banco = db.query(Banco).filter(Banco.id == int(banco_id)).first()
     if not vendedor or not banco:
         return RedirectResponse("/sales/depositos?error=Vendedor+o+banco+no+valido", status_code=303)
     cuenta = None
-    if cuenta_id:
+    if cuenta_id and metodo != "TARJETA_AFILIACION":
         cuenta = db.query(CuentaBancaria).filter(CuentaBancaria.id == int(cuenta_id)).first()
 
     if moneda == "USD":
@@ -15845,6 +15921,7 @@ async def sales_depositos_create(
         deposito.vendedor_id = vendedor.id
         deposito.banco_id = banco.id
         deposito.cuenta_id = cuenta.id if cuenta else None
+        deposito.metodo = metodo
         deposito.fecha = fecha_value
         deposito.moneda = moneda
         deposito.tasa_cambio = tasa if tasa else None
@@ -15859,6 +15936,7 @@ async def sales_depositos_create(
             vendedor_id=vendedor.id,
             banco_id=banco.id,
             cuenta_id=cuenta.id if cuenta else None,
+            metodo=metodo,
             fecha=fecha_value,
             moneda=moneda,
             tasa_cambio=tasa if tasa else None,
@@ -15912,11 +15990,15 @@ def sales_detail(
 
     items = []
     for item in factura.items:
+        color_name = item.variante.color.nombre if item.variante and item.variante.color else ""
+        talla_name = item.variante.talla if item.variante and item.variante.talla else ""
         items.append(
             {
                 "producto_id": item.producto_id,
-                "codigo": item.producto.cod_producto if item.producto else "",
+                "codigo": item.variante.cod_variante if item.variante and item.variante.cod_variante else (item.producto.cod_producto if item.producto else ""),
                 "descripcion": item.producto.descripcion if item.producto else "",
+                "color": color_name,
+                "talla": talla_name,
                 "cantidad": float(item.cantidad or 0),
                 "precio_usd": float(item.precio_unitario_usd or 0),
                 "precio_cs": float(item.precio_unitario_cs or 0),
@@ -18300,6 +18382,9 @@ def inventory_ingreso_labels_preview(
     label_w_cm = max(2.0, min(12.0, float(width_cm or 3.0)))
     label_h_cm = max(1.2, min(8.0, float(height_cm or 2.0)))
     label_items, total_labels = _ingreso_labels_payload(ingreso)
+    return_to = (request.query_params.get("return_to") or "/inventory/ingresos").strip()
+    if not return_to.startswith("/"):
+        return_to = "/inventory/ingresos"
     return request.app.state.templates.TemplateResponse(
         "inventory_ingreso_labels_preview.html",
         {
@@ -18310,6 +18395,7 @@ def inventory_ingreso_labels_preview(
             "total_labels": total_labels,
             "label_w_cm": label_w_cm,
             "label_h_cm": label_h_cm,
+            "return_to": return_to,
             "version": settings.UI_VERSION,
         },
     )
@@ -20236,7 +20322,7 @@ async def inventory_create_ingreso_zapatos(
         db.add(auto_entry)
     db.commit()
     return RedirectResponse(
-        f"/inventory/ingresos?success=Ingreso+zapatos+registrado&print_id={ingreso.id}&print_labels_id={ingreso.id}",
+        f"/inventory/ingresos/{ingreso.id}/labels/preview?return_to=/inventory/ingresos?success=Ingreso+zapatos+registrado%26clear_draft%3D1",
         status_code=303,
     )
 
@@ -20395,7 +20481,7 @@ async def inventory_create_ingreso(
         db.add(auto_entry)
     db.commit()
     return RedirectResponse(
-        f"/inventory/ingresos?success=Ingreso+registrado&print_id={ingreso.id}&print_labels_id={ingreso.id}",
+        f"/inventory/ingresos/{ingreso.id}/labels/preview?return_to=/inventory/ingresos?success=Ingreso+registrado%26clear_draft%3D1",
         status_code=303,
     )
 
@@ -20872,8 +20958,7 @@ async def sales_create_invoice(
         .first()
     )
     next_seq = (last_factura.secuencia if last_factura else 0) + 1
-    branch_code = (branch.code or "").lower()
-    prefix = "C" if branch_code == "central" else "E" if branch_code == "esteli" else branch_code[:1].upper()
+    prefix = _branch_sales_series_letter(branch.code)
     width = 6
     numero = f"{prefix}-{next_seq:0{width}d}"
 
@@ -21383,6 +21468,7 @@ def sales_cobranza(
             "total_pacas": float(total_pacas),
             "total_vendido_cs": float(total_vendido_cs),
             "disable_abono_print_preview": include_all_facturas,
+            "shoes_mode": _is_shoes_mode(),
             "version": settings.UI_VERSION,
         },
     )
@@ -21655,6 +21741,118 @@ def sales_cobranza_export(
     )
 
 
+@router.get("/sales/cobranza/cliente/estado-cuenta/print")
+def sales_cobranza_cliente_estado_cuenta_print(
+    request: Request,
+    cliente: str,
+    return_to: Optional[str] = "/sales/cobranza",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.cobranza")
+    cliente_q = (cliente or "").strip()
+    if not cliente_q:
+        raise HTTPException(status_code=400, detail="Cliente requerido")
+    return_to_clean = return_to if return_to and return_to.startswith("/") else "/sales/cobranza"
+
+    selected_cliente = (
+        db.query(Cliente)
+        .filter(func.lower(Cliente.nombre) == cliente_q.lower())
+        .first()
+    )
+    if not selected_cliente:
+        selected_cliente = (
+            db.query(Cliente)
+            .filter(func.lower(Cliente.nombre).like(f"%{cliente_q.lower()}%"))
+            .order_by(Cliente.nombre.asc())
+            .first()
+        )
+    if not selected_cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    db_name = _current_db_name()
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    include_all_facturas = (
+        ("holl" in db_name) or ("pacas" in db_name)
+        or ("holl" in active_company_key) or ("pacas" in active_company_key)
+    )
+    scoped_bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
+    scoped_bodega_ids = [int(b.id) for b in scoped_bodegas]
+    if include_all_facturas:
+        scoped_bodega_ids = []
+    _, bodega = _resolve_branch_bodega(db, user)
+
+    estado_query = db.query(VentaFactura).filter(VentaFactura.cliente_id == selected_cliente.id)
+    if not include_all_facturas:
+        estado_query = estado_query.filter(VentaFactura.condicion_venta == "CREDITO")
+    if scoped_bodega_ids:
+        estado_query = estado_query.filter(VentaFactura.bodega_id.in_(scoped_bodega_ids))
+    elif bodega and not include_all_facturas:
+        estado_query = estado_query.filter(VentaFactura.bodega_id == bodega.id)
+    estado_facturas = estado_query.order_by(VentaFactura.fecha.asc(), VentaFactura.id.asc()).all()
+
+    rows = []
+    totals = {
+        "facturado_cs": Decimal("0"),
+        "abonado_cs": Decimal("0"),
+        "saldo_cs": Decimal("0"),
+        "facturado_usd": Decimal("0"),
+        "abonado_usd": Decimal("0"),
+        "saldo_usd": Decimal("0"),
+    }
+
+    for factura in estado_facturas:
+        total_due_usd = Decimal(str(factura.total_usd or 0))
+        total_due_cs = Decimal(str(factura.total_cs or 0))
+        total_abono_usd, total_abono_cs = _cobranza_abonos_totals(list(factura.abonos or []))
+        total_pago_usd = sum(Decimal(str(p.monto_usd or 0)) for p in (factura.pagos or []))
+        total_pago_cs = sum(Decimal(str(p.monto_cs or 0)) for p in (factura.pagos or []))
+        paid_usd = total_abono_usd + total_pago_usd
+        paid_cs = total_abono_cs + total_pago_cs
+        saldo_usd = max(total_due_usd - paid_usd, Decimal("0"))
+        saldo_cs = max(total_due_cs - paid_cs, Decimal("0"))
+        totals["facturado_cs"] += total_due_cs
+        totals["abonado_cs"] += paid_cs
+        totals["saldo_cs"] += saldo_cs
+        totals["facturado_usd"] += total_due_usd
+        totals["abonado_usd"] += paid_usd
+        totals["saldo_usd"] += saldo_usd
+        rows.append(
+            {
+                "numero": factura.numero,
+                "fecha": factura.fecha.date().isoformat() if factura.fecha else "",
+                "vendedor": factura.vendedor.nombre if factura.vendedor else "-",
+                "bodega": factura.bodega.name if factura.bodega else "-",
+                "moneda": factura.moneda,
+                "estado": factura.estado_cobranza,
+                "total_cs": float(total_due_cs),
+                "total_usd": float(total_due_usd),
+                "abonado_cs": float(paid_cs),
+                "abonado_usd": float(paid_usd),
+                "saldo_cs": float(saldo_cs),
+                "saldo_usd": float(saldo_usd),
+            }
+        )
+
+    company_profile = _company_profile_payload(db)
+    return request.app.state.templates.TemplateResponse(
+        "sales_cobranza_estado_cuenta_print.html",
+        {
+            "request": request,
+            "user": user,
+            "selected_cliente": selected_cliente,
+            "rows": rows,
+            "cliente_totals": {key: float(value) for key, value in totals.items()},
+            "company_name": (company_profile.get("trade_name") or company_profile.get("legal_name") or "Empresa").strip(),
+            "company_phone": company_profile.get("phone", ""),
+            "company_address": company_profile.get("address", ""),
+            "return_to": return_to_clean,
+            "shoes_mode": _is_shoes_mode(),
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
 def _cobranza_abono_factor(tipo_mov: Optional[str]) -> Decimal:
     return Decimal("-1") if (tipo_mov or "").strip().upper() == "NOTA_DEBITO" else Decimal("1")
 
@@ -21795,8 +21993,8 @@ async def sales_cobranza_abono(
     )
     next_seq = (last_abono.secuencia if last_abono else 0) + 1
     branch_code = (factura.bodega.branch.code if factura.bodega and factura.bodega.branch else "").lower()
-    prefix = "C" if branch_code == "central" else "E" if branch_code == "esteli" else (branch_code[:1].upper() or "X")
-    numero = f"RE-{prefix}-{next_seq:06d}"
+    prefix, branch_series_no = _branch_cobranza_series_meta(branch_code)
+    numero = f"{prefix}-{branch_series_no}-{next_seq:04d}"
 
     abono = CobranzaAbono(
         factura_id=factura.id,

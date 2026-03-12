@@ -2,6 +2,11 @@
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
+  :root {
+    --label-print-width: {{ '%.2f'|format(label_w_cm) }}cm;
+    --label-print-height: {{ '%.2f'|format(label_h_cm) }}cm;
+    --label-print-gap: 1.5mm;
+  }
   .labels-preview-page {
     background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 55%, #e8edf5 100%);
     min-height: 100vh;
@@ -57,17 +62,77 @@
     height: 40px;
   }
   @media print {
+    @page {
+      size: var(--label-print-width) var(--label-print-height);
+      margin: 0;
+    }
+    html,
+    body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #ffffff !important;
+    }
     .no-print {
       display: none !important;
     }
+    .labels-preview-page,
+    .labels-preview-shell,
+    .labels-preview-card {
+      background: #ffffff !important;
+      box-shadow: none !important;
+      border: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      min-height: auto !important;
+      max-width: none !important;
+    }
+    .labels-preview-grid {
+      display: block !important;
+      gap: 0 !important;
+    }
+    .label-chip {
+      width: var(--label-print-width) !important;
+      height: var(--label-print-height) !important;
+      min-height: var(--label-print-height) !important;
+      max-height: var(--label-print-height) !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      margin: 0 !important;
+      padding: 1.2mm 1.4mm !important;
+      page-break-after: always;
+      break-after: page;
+      overflow: hidden;
+    }
+    .label-chip:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+    .label-chip .name {
+      font-size: 8pt !important;
+      min-height: 0 !important;
+      line-height: 1.05 !important;
+    }
+    .label-chip .meta {
+      font-size: 6.3pt !important;
+      line-height: 1.05 !important;
+    }
+    .label-svg {
+      height: calc(var(--label-print-height) * 0.34) !important;
+    }
+    .label-chip .code {
+      font-size: 7pt !important;
+      margin-top: 0.5mm !important;
+    }
   }
 </style>
+<style id="dynamic-print-style"></style>
 {% endblock %}
 {% block content %}
 <div class="labels-preview-page">
   <div class="labels-preview-shell">
     <div class="labels-preview-card p-3 p-lg-4 no-print">
-      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
         <div>
           <div class="text-uppercase text-muted small">Inventario / Ingresos / Etiquetas</div>
           <h5 class="mb-1">Preview etiquetas Code128</h5>
@@ -78,6 +143,9 @@
           </div>
         </div>
         <div class="d-flex flex-wrap align-items-end gap-2">
+          <a class="btn btn-outline-secondary btn-sm" href="{{ return_to }}">
+            Cerrar y volver
+          </a>
           <div>
             <label class="form-label mb-1 small">Ancho (cm)</label>
             <input id="label-width-cm" type="number" class="form-control form-control-sm" min="2" max="12" step="0.1" value="{{ '%.2f'|format(label_w_cm) }}">
@@ -90,7 +158,8 @@
             <label class="form-label mb-1 small">Espacio (mm)</label>
             <input id="label-gap-mm" type="number" class="form-control form-control-sm" min="1" max="10" step="0.5" value="1.5">
           </div>
-          <a id="open-pdf-btn" class="btn btn-primary btn-sm" target="_blank" rel="noopener">Generar PDF</a>
+          <button id="print-labels-btn" class="btn btn-primary btn-sm" type="button">Imprimir etiquetas</button>
+          <a id="open-pdf-btn" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener">PDF tecnico</a>
         </div>
       </div>
     </div>
@@ -130,7 +199,12 @@
     const heightInput = document.getElementById("label-height-cm");
     const gapInput = document.getElementById("label-gap-mm");
     const pdfBtn = document.getElementById("open-pdf-btn");
+    const printBtn = document.getElementById("print-labels-btn");
+    const dynamicPrintStyle = document.getElementById("dynamic-print-style");
     const ingresoId = {{ ingreso.id }};
+    const returnTo = {{ return_to|tojson }};
+    let printRequested = false;
+    let printSettled = false;
 
     const renderBarcodes = () => {
       document.querySelectorAll(".barcode-svg").forEach((svg) => {
@@ -151,10 +225,15 @@
       });
     };
 
-    const buildPdfUrl = () => {
+    const getLabelMetrics = () => {
       const w = Math.max(2, Math.min(12, Number(widthInput?.value || 3)));
       const h = Math.max(1.2, Math.min(8, Number(heightInput?.value || 2)));
       const g = Math.max(1, Math.min(10, Number(gapInput?.value || 1.5)));
+      return { w, h, g };
+    };
+
+    const buildPdfUrl = () => {
+      const { w, h, g } = getLabelMetrics();
       const params = new URLSearchParams({
         width_cm: w.toFixed(2),
         height_cm: h.toFixed(2),
@@ -168,13 +247,58 @@
       pdfBtn.setAttribute("href", buildPdfUrl());
     };
 
+    const syncPrintLayout = () => {
+      const { w, h, g } = getLabelMetrics();
+      document.documentElement.style.setProperty("--label-print-width", `${w.toFixed(2)}cm`);
+      document.documentElement.style.setProperty("--label-print-height", `${h.toFixed(2)}cm`);
+      document.documentElement.style.setProperty("--label-print-gap", `${g.toFixed(2)}mm`);
+      if (dynamicPrintStyle) {
+        dynamicPrintStyle.textContent = `
+          @media print {
+            @page { size: ${w.toFixed(2)}cm ${h.toFixed(2)}cm; margin: 0; }
+          }
+        `;
+      }
+    };
+
+    const finishPrintFlow = () => {
+      if (printSettled) return;
+      printSettled = true;
+      printRequested = false;
+      window.location.href = returnTo || "/inventory/ingresos";
+    };
+
+    const handlePrint = () => {
+      printRequested = true;
+      printSettled = false;
+      syncPrintLayout();
+      window.print();
+    };
+
     [widthInput, heightInput, gapInput].forEach((input) => {
       input?.addEventListener("input", syncPdfBtn);
       input?.addEventListener("change", syncPdfBtn);
+      input?.addEventListener("input", syncPrintLayout);
+      input?.addEventListener("change", syncPrintLayout);
+    });
+
+    printBtn?.addEventListener("click", handlePrint);
+    window.addEventListener("afterprint", () => {
+      if (!printRequested) return;
+      finishPrintFlow();
+    });
+    window.addEventListener("focus", () => {
+      if (!printRequested) return;
+      window.setTimeout(() => {
+        if (printRequested) {
+          finishPrintFlow();
+        }
+      }, 250);
     });
 
     renderBarcodes();
     syncPdfBtn();
+    syncPrintLayout();
   })();
 </script>
 {% endblock %}

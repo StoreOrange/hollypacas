@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+  .statement-page {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #f8f4ed 0%, #f4eee4 55%, #eee4d5 100%);
+  }
+  .statement-shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 2.5rem;
+  }
+  .statement-card {
+    border: 1px solid #e6d8c5;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 14px 40px rgba(94, 66, 32, 0.08);
+  }
+  .statement-metric {
+    border: 1px solid #eadbc8;
+    border-radius: 14px;
+    background: #fffdf9;
+    padding: 0.9rem 1rem;
+  }
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+    .statement-page,
+    .statement-shell {
+      background: #ffffff !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      max-width: none !important;
+    }
+    .statement-card,
+    .statement-metric {
+      box-shadow: none !important;
+      border-color: #d7d7d7 !important;
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="statement-page">
+  <div class="statement-shell">
+    <div class="statement-card p-3 p-lg-4">
+      <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 no-print">
+        <div>
+          <div class="text-uppercase text-muted small">Cobranza / Estado de cuenta</div>
+          <h4 class="mb-1">{{ selected_cliente.nombre }}</h4>
+          <div class="small text-muted">{{ company_name }}{% if company_phone %} · {{ company_phone }}{% endif %}{% if company_address %} · {{ company_address }}{% endif %}</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{{ return_to }}" class="btn btn-outline-secondary btn-sm">Volver</a>
+          <button type="button" class="btn btn-primary btn-sm" onclick="window.print()">Imprimir estado</button>
+        </div>
+      </div>
+
+      <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+        <div>
+          <div class="text-uppercase text-muted small">Estado de cuenta completo</div>
+          <div class="fw-semibold text-dark">{{ selected_cliente.nombre }}</div>
+        </div>
+        <div class="small text-muted">Documento generado desde gestion de cobranza</div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-12 col-md-4">
+          <div class="statement-metric">
+            <div class="text-xs text-muted">Facturado C$</div>
+            <div class="fw-bold">C$ {{ "{:,.2f}".format(cliente_totals.facturado_cs) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="statement-metric">
+            <div class="text-xs text-muted">Abonado C$</div>
+            <div class="fw-bold">C$ {{ "{:,.2f}".format(cliente_totals.abonado_cs) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="statement-metric">
+            <div class="text-xs text-muted">Saldo C$</div>
+            <div class="fw-bold text-danger">C$ {{ "{:,.2f}".format(cliente_totals.saldo_cs) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Factura</th>
+              <th>Fecha</th>
+              <th>Vendedor</th>
+              <th>Bodega</th>
+              <th class="text-end">Total</th>
+              <th class="text-end">Abonado</th>
+              <th class="text-end">Saldo</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in rows %}
+            <tr>
+              <td class="fw-semibold">{{ item.numero }}</td>
+              <td>{{ item.fecha }}</td>
+              <td>{{ item.vendedor }}</td>
+              <td>{{ item.bodega }}</td>
+              <td class="text-end">{{ "C$" if item.moneda != "USD" else "$" }} {{ "{:,.2f}".format(item.total_cs if item.moneda != "USD" else item.total_usd) }}</td>
+              <td class="text-end">{{ "C$" if item.moneda != "USD" else "$" }} {{ "{:,.2f}".format(item.abonado_cs if item.moneda != "USD" else item.abonado_usd) }}</td>
+              <td class="text-end">{{ "C$" if item.moneda != "USD" else "$" }} {{ "{:,.2f}".format(item.saldo_cs if item.moneda != "USD" else item.saldo_usd) }}</td>
+              <td>{{ item.estado }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">No hay movimientos para este cliente.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

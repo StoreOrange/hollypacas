@@ -80,6 +80,36 @@
       </div>
 
       <div class="odoo-card text-sm">
+        <div class="odoo-section-title mb-3 text-base">Resumen por metodo / banco</div>
+        <div class="table-responsive mb-4">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Metodo</th>
+                <th>Banco</th>
+                <th>Moneda</th>
+                <th class="text-end">Cantidad</th>
+                <th class="text-end">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in summary_rows %}
+              <tr>
+                <td>{{ row.metodo }}</td>
+                <td>{{ row.banco }}</td>
+                <td>{{ row.moneda }}</td>
+                <td class="text-end">{{ row.count }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.total) }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="5" class="text-center text-slate py-3">Sin resultados.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
         <div class="odoo-section-title mb-3 text-base">Detalle de depositos</div>
         <div class="table-responsive">
           <table class="table table-sm table-hover odoo-table text-sm align-middle">
@@ -89,6 +119,7 @@
                 <th>Sucursal</th>
                 <th>Bodega</th>
                 <th>Vendedor</th>
+                <th>Metodo</th>
                 <th>Banco</th>
                 <th>Moneda</th>
                 <th class="text-end">Monto</th>
@@ -102,6 +133,7 @@
                 <td>{{ dep.branch.name if dep.branch else "-" }}</td>
                 <td>{{ dep.bodega.name if dep.bodega else "-" }}</td>
                 <td>{{ dep.vendedor.nombre if dep.vendedor else "-" }}</td>
+                <td>{{ "Tarjeta Afiliacion" if (dep.metodo or "") == "TARJETA_AFILIACION" else "Deposito Bancario" }}</td>
                 <td>{{ dep.banco.nombre if dep.banco else "-" }}</td>
                 <td>{{ dep.moneda }}</td>
                 <td class="text-end">{{ "%.2f"|format(dep.monto_usd if dep.moneda == "USD" else dep.monto_cs) }}</td>
@@ -110,13 +142,13 @@
               {% endfor %}
               {% if depositos|length == 0 %}
               <tr>
-                <td colspan="8" class="text-center text-slate py-3">Sin resultados.</td>
+                <td colspan="9" class="text-center text-slate py-3">Sin resultados.</td>
               </tr>
               {% endif %}
             </tbody>
             <tfoot>
               <tr class="table-light">
-                <th colspan="6" class="text-end">Totales</th>
+                <th colspan="7" class="text-end">Totales</th>
                 <th class="text-end">C$ {{ "%.2f"|format(total_cs or 0) }} / $ {{ "%.2f"|format(total_usd or 0) }}</th>
                 <th></th>
               </tr>

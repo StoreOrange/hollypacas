@@ -151,6 +151,19 @@
     background: rgba(255, 255, 255, 0.6);
     border-color: #d6c0a2;
   }
+  .labels-preview-frame {
+    width: 100%;
+    min-height: 72vh;
+    border: 0;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #f7f2e8 0%, #f5efe3 100%);
+  }
+  .labels-preview-modal-card {
+    border: 1px solid rgba(161, 128, 95, 0.18);
+    border-radius: 16px;
+    background: linear-gradient(180deg, #fffdf8 0%, #f8f2e8 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -1199,10 +1212,16 @@
           <td class="px-4 py-3 text-right text-slate">C$ {{ "%.2f"|format(ingreso.total_cs or 0) }}</td>
           <td class="px-4 py-3 text-slate">{{ ingreso.observacion or "-" }}</td>
           <td class="px-4 py-3 text-center">
-            <a class="btn btn-outline-secondary btn-sm" href="/inventory/ingresos/{{ ingreso.id }}/pdf" target="_blank" rel="noopener">
-              <i class="bi bi-printer"></i>
-              PDF
-            </a>
+            <div class="d-inline-flex flex-wrap justify-content-center gap-2">
+              <a class="btn btn-outline-secondary btn-sm" href="/inventory/ingresos/{{ ingreso.id }}/pdf" target="_blank" rel="noopener">
+                <i class="bi bi-printer"></i>
+                PDF
+              </a>
+              <button type="button" class="btn btn-outline-dark btn-sm" data-open-labels-preview="{{ ingreso.id }}">
+                <i class="bi bi-upc-scan"></i>
+                Etiquetas
+              </button>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -1215,6 +1234,40 @@
 </section>
 </div>
   </main>
+</div>
+<div class="modal fade" id="labels-preview-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl modal-fullscreen-lg-down">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header border-0 pb-0">
+        <div>
+          <div class="text-uppercase text-muted small">Inventario / Etiquetas</div>
+          <h5 class="modal-title mb-1">Preview de etiquetas Code128</h5>
+          <div class="small text-muted">Vista previa antes de imprimir.</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <div class="labels-preview-modal-card p-3">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div class="small text-muted">
+              Revisa el diseno y la cantidad de etiquetas antes de abrir la impresion.
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              <a id="labels-preview-open-page" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener">
+                <i class="bi bi-box-arrow-up-right me-1"></i>
+                Abrir pagina
+              </a>
+              <a id="labels-preview-print-btn" class="btn btn-primary btn-sm" target="_blank" rel="noopener">
+                <i class="bi bi-printer me-1"></i>
+                Imprimir PDF
+              </a>
+            </div>
+          </div>
+          <iframe id="labels-preview-frame" class="labels-preview-frame" loading="lazy"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 <div class="modal fade" id="quick-product-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -1922,6 +1975,16 @@
   if (successBanner) {
     successBanner.style.display = "none";
   }
+  const pageParams = new URLSearchParams(window.location.search);
+  if (pageParams.get("clear_draft") === "1") {
+    try {
+      localStorage.removeItem("hp_ingreso_draft_v1");
+    } catch {}
+    const cleanedParams = new URLSearchParams(pageParams.toString());
+    cleanedParams.delete("clear_draft");
+    const nextUrl = `${window.location.pathname}${cleanedParams.toString() ? `?${cleanedParams.toString()}` : ""}`;
+    window.history.replaceState({}, document.title, nextUrl);
+  }
   {% if error %}
   if (typeof Swal !== "undefined") {
     Swal.fire({
@@ -1943,20 +2006,45 @@
     });
   }
   {% endif %}
-  {% if print_id %}
+  {% if print_id and not print_labels_id %}
   if (window.erpOpenPrintable) {
     window.erpOpenPrintable("/inventory/ingresos/{{ print_id }}/pdf", { fallbackSameTab: true });
   } else {
     window.open("/inventory/ingresos/{{ print_id }}/pdf", "_blank", "noopener");
   }
   {% endif %}
+
+  const labelsPreviewModalEl = document.getElementById("labels-preview-modal");
+  const labelsPreviewFrame = document.getElementById("labels-preview-frame");
+  const labelsPreviewPageBtn = document.getElementById("labels-preview-open-page");
+  const labelsPreviewPrintBtn = document.getElementById("labels-preview-print-btn");
+  const labelsPreviewModal = labelsPreviewModalEl && typeof bootstrap !== "undefined"
+    ? new bootstrap.Modal(labelsPreviewModalEl)
+    : null;
+  const buildLabelsPreviewUrl = (ingresoId) => `/inventory/ingresos/${ingresoId}/labels/preview`;
+  const buildLabelsPdfUrl = (ingresoId) => `/inventory/ingresos/${ingresoId}/labels/pdf`;
+  const openLabelsPreview = (ingresoId) => {
+    const normalizedId = Number(ingresoId || 0);
+    if (!normalizedId || !labelsPreviewFrame || !labelsPreviewModal) return;
+    const previewUrl = buildLabelsPreviewUrl(normalizedId);
+    labelsPreviewFrame.setAttribute("src", previewUrl);
+    labelsPreviewPageBtn?.setAttribute("href", previewUrl);
+    labelsPreviewPrintBtn?.setAttribute("href", buildLabelsPdfUrl(normalizedId));
+    labelsPreviewModal.show();
+  };
+
+  document.querySelectorAll("[data-open-labels-preview]").forEach((button) => {
+    button.addEventListener("click", () => {
+      openLabelsPreview(button.getAttribute("data-open-labels-preview"));
+    });
+  });
+
+  labelsPreviewModalEl?.addEventListener("hidden.bs.modal", () => {
+    labelsPreviewFrame?.setAttribute("src", "about:blank");
+  });
+
   {% if print_labels_id %}
-  const labelsPreviewUrl = "/inventory/ingresos/{{ print_labels_id }}/labels/preview";
-  if (window.erpOpenPrintable) {
-    window.erpOpenPrintable(labelsPreviewUrl, { fallbackSameTab: false });
-  } else {
-    window.open(labelsPreviewUrl, "_blank", "noopener");
-  }
+  openLabelsPreview({{ print_labels_id }});
   {% endif %}
 
   if (focusIngresoId) {

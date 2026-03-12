@@ -81,12 +81,76 @@
     outline: 2px solid #2563eb;
     outline-offset: -2px;
   }
+  {% if shoes_mode %}
+  .cobranza-ui-shoes .odoo-card {
+    border-radius: 20px;
+    background: linear-gradient(180deg, #fffdf8 0%, #f8f3ea 100%);
+  }
+  .cobranza-ui-shoes .cobranza-grid-wrap {
+    max-height: 74vh;
+    border-radius: 18px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  }
+  .cobranza-ui-shoes .cobranza-table thead th {
+    font-size: 0.72rem;
+    background: linear-gradient(180deg, #f8efe1 0%, #f1e2cf 100%);
+    color: #5b4022;
+  }
+  .cobranza-ui-shoes .cobranza-summary-shell {
+    border: 1px solid #e6d7c0;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #fffefb 0%, #f7f0e6 100%);
+  }
+  .cobranza-ui-shoes .cobranza-summary-metric {
+    border: 1px solid #eadbc6;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.84);
+    padding: 0.85rem 1rem;
+  }
+  .cobranza-ui-shoes #cobranza-abono-modal .modal-dialog {
+    max-width: 1360px;
+    margin-top: 0.2rem;
+    margin-bottom: 0.5rem;
+  }
+  .cobranza-ui-shoes #cobranza-abono-modal .modal-content {
+    min-height: 0;
+  }
+  .cobranza-ui-shoes #cobranza-abono-modal .odoo-modal-header {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+  }
+  .cobranza-ui-shoes #cobranza-abono-modal .odoo-modal-body {
+    padding-top: 0.55rem !important;
+    padding-bottom: 0.75rem !important;
+  }
+  .cobranza-ui-shoes .abono-workspace {
+    display: grid;
+    grid-template-columns: minmax(340px, 430px) minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: start;
+  }
+  .cobranza-ui-shoes .abono-column-card {
+    border: 1px solid #e7dbc9;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 0.8rem;
+    box-shadow: 0 10px 24px rgba(92, 63, 31, 0.06);
+  }
+  .cobranza-ui-shoes .abono-ledger-table {
+    min-width: 720px;
+  }
+  @media (max-width: 991.98px) {
+    .cobranza-ui-shoes .abono-workspace {
+      grid-template-columns: 1fr;
+    }
+  }
+  {% endif %}
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
   <main class="p-6 lg:p-8 text-[16px]">
-    <div class="odoo-page">
+    <div class="odoo-page{% if shoes_mode %} cobranza-ui-shoes{% endif %}">
       <div class="odoo-header">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
           <div>
@@ -179,29 +243,42 @@
         </div>
 
         {% if selected_cliente %}
-        <div class="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
+        <div class="mt-3 p-3 rounded-xl border border-slate-200 bg-slate-50 cobranza-summary-shell">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
             <div>
               <div class="text-xs uppercase tracking-[0.2em] text-slate">Estado de cuenta del cliente</div>
               <div class="fw-semibold text-ink">{{ selected_cliente.nombre }}</div>
             </div>
-            <div class="small text-muted">Historial de facturas credito, abonos y saldo acumulado</div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <div class="small text-muted">Historial de facturas credito, abonos y saldo acumulado</div>
+              {% if shoes_mode %}
+              <a
+                class="btn btn-sm btn-outline-dark"
+                target="_blank"
+                rel="noopener"
+                href="/sales/cobranza/cliente/estado-cuenta/print?cliente={{ selected_cliente.nombre|urlencode }}&return_to={{ ('/sales/cobranza?cliente=' ~ selected_cliente.nombre)|urlencode }}"
+              >
+                <i class="bi bi-printer me-1"></i>
+                Imprimir estado
+              </a>
+              {% endif %}
+            </div>
           </div>
           <div class="row g-2 mb-3">
             <div class="col-12 col-md-4">
-              <div class="p-2 rounded border bg-white">
+              <div class="cobranza-summary-metric">
                 <div class="text-xs text-slate">Facturado C$</div>
                 <div class="fw-bold text-ink">{{ "C$ {:,.2f}".format(cliente_totals.facturado_cs) }}</div>
               </div>
             </div>
             <div class="col-12 col-md-4">
-              <div class="p-2 rounded border bg-white">
+              <div class="cobranza-summary-metric">
                 <div class="text-xs text-slate">Abonado C$</div>
                 <div class="fw-bold text-ink">{{ "C$ {:,.2f}".format(cliente_totals.abonado_cs) }}</div>
               </div>
             </div>
             <div class="col-12 col-md-4">
-              <div class="p-2 rounded border bg-white">
+              <div class="cobranza-summary-metric">
                 <div class="text-xs text-slate">Saldo C$</div>
                 <div class="fw-bold text-danger">{{ "C$ {:,.2f}".format(cliente_totals.saldo_cs) }}</div>
               </div>
@@ -285,6 +362,17 @@
                   <button class="btn btn-sm btn-outline-primary" type="button" data-detail="{{ factura.id }}">
                     <i class="bi bi-eye"></i>
                   </button>
+                  {% if shoes_mode %}
+                  <a
+                    class="btn btn-sm btn-outline-dark"
+                    target="_blank"
+                    rel="noopener"
+                    href="/sales/cobranza/cliente/estado-cuenta/print?cliente={{ (factura.cliente.nombre if factura.cliente else 'Consumidor final')|urlencode }}&return_to={{ ('/sales/cobranza?cliente=' ~ (factura.cliente.nombre if factura.cliente else 'Consumidor final'))|urlencode }}"
+                    title="Imprimir estado de cuenta completo"
+                  >
+                    <i class="bi bi-file-earmark-text"></i>
+                  </a>
+                  {% endif %}
                   <button class="btn btn-sm btn-outline-success" type="button" data-abono="{{ factura.id }}" data-moneda="{{ factura.moneda }}" data-saldo="{{ row.saldo_cs if factura.moneda != 'USD' else row.saldo_usd }}" data-estado="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" data-numero="{{ factura.numero }}" data-cliente="{{ factura.cliente.nombre if factura.cliente else 'Consumidor final' }}" data-vendedor="{{ factura.vendedor.nombre if factura.vendedor else '-' }}" title="{% if factura.estado == 'ANULADA' %}Ver abonos aplicados{% elif factura.estado_cobranza == 'PAGADA' %}Ver pagos y abonos{% else %}Registrar abono{% endif %}">
                     <i class="bi bi-plus-circle"></i>
                   </button>
@@ -336,7 +424,7 @@
 </div>
 
 <div class="modal fade" id="cobranza-abono-modal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
+  <div class="modal-dialog {% if shoes_mode %}modal-xl modal-dialog-scrollable{% endif %}">
     <div class="modal-content odoo-modal">
       <div class="odoo-modal-header d-flex align-items-center justify-content-between">
         <div class="odoo-modal-title">Registrar abono</div>
@@ -345,77 +433,81 @@
       <div class="odoo-modal-body p-4">
         <input type="hidden" id="abono-factura-id">
         <input type="hidden" id="abono-id">
-        <div class="mb-3 p-2 rounded-lg bg-white border border-slate-200">
-          <div class="row g-2 text-sm mb-2">
-            <div class="col-12">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Factura</div>
-              <div class="fw-semibold text-ink" id="abono-factura-numero">--</div>
+        <div class="{% if shoes_mode %}abono-workspace{% endif %}">
+          <div class="{% if shoes_mode %}abono-column-card{% endif %}">
+            <div class="mb-3 p-2 rounded-lg bg-white border border-slate-200">
+              <div class="row g-2 text-sm mb-2">
+                <div class="col-12">
+                  <div class="text-xs uppercase tracking-[0.2em] text-slate">Factura</div>
+                  <div class="fw-semibold text-ink" id="abono-factura-numero">--</div>
+                </div>
+                <div class="col-12">
+                  <div class="text-xs uppercase tracking-[0.2em] text-slate">Cliente</div>
+                  <div class="text-ink" id="abono-factura-cliente">--</div>
+                </div>
+                <div class="col-12">
+                  <div class="text-xs uppercase tracking-[0.2em] text-slate">Vendedor</div>
+                  <div class="text-ink" id="abono-factura-vendedor">--</div>
+                </div>
+              </div>
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Saldo pendiente</div>
+              <div class="fs-5 fw-bold text-ink" id="abono-saldo">--</div>
+              <div class="text-xs text-muted mt-1">Nota de credito disminuye saldo. Nota de debito aumenta saldo.</div>
             </div>
-            <div class="col-12">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Cliente</div>
-              <div class="text-ink" id="abono-factura-cliente">--</div>
+            <div class="row g-3">
+              <div class="col-6">
+                <label class="odoo-field-label">Tipo movimiento</label>
+                <select class="form-select odoo-input" id="abono-tipo">
+                  <option value="ABONO">Abono</option>
+                  <option value="NOTA_CREDITO">Nota de credito</option>
+                  <option value="NOTA_DEBITO">Nota de debito</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="odoo-field-label">Moneda</label>
+                <select class="form-select odoo-input" id="abono-moneda">
+                  <option value="CS">Cordobas</option>
+                  <option value="USD">Dolares</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="odoo-field-label">Monto</label>
+                <input class="form-control odoo-input" id="abono-monto" type="text" placeholder="0.00">
+              </div>
+              <div class="col-12">
+                <button class="btn btn-primary w-100" id="abono-submit" type="button">
+                  <i class="bi bi-save2"></i>
+                  Guardar abono
+                </button>
+              </div>
             </div>
-            <div class="col-12">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Vendedor</div>
-              <div class="text-ink" id="abono-factura-vendedor">--</div>
+          </div>
+          <div class="{% if shoes_mode %}abono-column-card{% else %}mt-4{% endif %}">
+            <div class="odoo-section-title mb-2">Recibos aplicados</div>
+            <div class="table-responsive">
+              <table class="table table-sm odoo-table text-sm {% if shoes_mode %}abono-ledger-table{% endif %}">
+                <thead>
+                  <tr>
+                    <th>Recibo</th>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Moneda</th>
+                    <th class="text-end">Monto</th>
+                    <th>Obs.</th>
+                    <th class="text-end">Accion</th>
+                  </tr>
+                </thead>
+                <tbody id="abono-list">
+                  <tr>
+                    <td colspan="7" class="text-center text-slate py-2">Sin abonos</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
-          <div class="text-xs uppercase tracking-[0.2em] text-slate">Saldo pendiente</div>
-          <div class="fs-5 fw-bold text-ink" id="abono-saldo">--</div>
-          <div class="text-xs text-muted mt-1">Nota de credito disminuye saldo. Nota de debito aumenta saldo.</div>
-        </div>
-        <div class="row g-3">
-          <div class="col-6">
-            <label class="odoo-field-label">Tipo movimiento</label>
-            <select class="form-select odoo-input" id="abono-tipo">
-              <option value="ABONO">Abono</option>
-              <option value="NOTA_CREDITO">Nota de credito</option>
-              <option value="NOTA_DEBITO">Nota de debito</option>
-            </select>
-          </div>
-          <div class="col-6">
-            <label class="odoo-field-label">Moneda</label>
-            <select class="form-select odoo-input" id="abono-moneda">
-              <option value="CS">Cordobas</option>
-              <option value="USD">Dolares</option>
-            </select>
-          </div>
-          <div class="col-12">
-            <label class="odoo-field-label">Monto</label>
-            <input class="form-control odoo-input" id="abono-monto" type="text" placeholder="0.00">
-          </div>
-          <div class="col-12">
-            <label class="odoo-field-label">Observacion</label>
-            <textarea class="form-control odoo-input" id="abono-observacion" rows="2"></textarea>
-          </div>
-          <div class="col-12">
-            <button class="btn btn-primary" id="abono-submit" type="button">
-              <i class="bi bi-save2"></i>
-              Guardar abono
-            </button>
-          </div>
-        </div>
-        <div class="mt-4">
-          <div class="odoo-section-title mb-2">Recibos aplicados</div>
-          <div class="table-responsive">
-            <table class="table table-sm odoo-table text-sm">
-              <thead>
-                <tr>
-                  <th>Recibo</th>
-                  <th>Fecha</th>
-                  <th>Tipo</th>
-                  <th>Moneda</th>
-                  <th class="text-end">Monto</th>
-                  <th>Obs.</th>
-                  <th class="text-end">Accion</th>
-                </tr>
-              </thead>
-              <tbody id="abono-list">
-                <tr>
-                  <td colspan="7" class="text-center text-slate py-2">Sin abonos</td>
-                </tr>
-              </tbody>
-            </table>
+            <div class="mt-3">
+              <label class="odoo-field-label">Observacion</label>
+              <textarea class="form-control odoo-input" id="abono-observacion" rows="3"></textarea>
+            </div>
           </div>
         </div>
       </div>
@@ -610,14 +702,23 @@
           return;
         }
         const items = payload.factura.items
-          .map((item) => `<tr><td>${item.codigo}</td><td>${item.descripcion}</td><td class="text-end">${item.cantidad}</td><td class="text-end">${item.subtotal_cs.toFixed(2)}</td></tr>`)
+          .map((item) => `
+            <tr>
+              <td>${item.codigo}</td>
+              <td>${item.descripcion}</td>
+              <td>${item.color || "-"}</td>
+              <td>${item.talla || "-"}</td>
+              <td class="text-end">${item.cantidad}</td>
+              <td class="text-end">${item.subtotal_cs.toFixed(2)}</td>
+            </tr>
+          `)
           .join("");
         target.innerHTML = `
           <div class="mb-3">
             <strong>${payload.factura.numero}</strong> - ${payload.factura.cliente}
           </div>
           <table class="table table-sm odoo-table">
-            <thead><tr><th>Codigo</th><th>Descripcion</th><th class="text-end">Cant</th><th class="text-end">Subtotal</th></tr></thead>
+            <thead><tr><th>Codigo</th><th>Descripcion</th><th>Color</th><th>Talla</th><th class="text-end">Cant</th><th class="text-end">Subtotal</th></tr></thead>
             <tbody>${items}</tbody>
           </table>
         `;
@@ -708,7 +809,22 @@
         btn.addEventListener("click", async (ev) => {
           ev.stopPropagation();
           const abonoId = btn.dataset.abonoDelete;
-          if (!confirm("Eliminar este recibo de abono?")) {
+          if (typeof Swal !== "undefined") {
+            const result = await Swal.fire({
+              icon: "warning",
+              title: "Anular recibo",
+              text: "Esto eliminara el recibo aplicado. Confirma si estas seguro.",
+              showCancelButton: true,
+              confirmButtonText: "Si, anular",
+              cancelButtonText: "Cancelar",
+              confirmButtonColor: "#b91c1c",
+              cancelButtonColor: "#475569",
+              reverseButtons: true,
+            });
+            if (!result.isConfirmed) {
+              return;
+            }
+          } else if (!confirm("Eliminar este recibo de abono?")) {
             return;
           }
           const facturaId = document.getElementById("abono-factura-id").value;

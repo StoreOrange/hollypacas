@@ -459,6 +459,7 @@ class DepositoCliente(Base):
     vendedor_id = Column(Integer, ForeignKey("vendedores.id"), nullable=False)
     banco_id = Column(Integer, ForeignKey("bancos.id"), nullable=False)
     cuenta_id = Column(Integer, ForeignKey("cuentas_bancarias.id"), nullable=True)
+    metodo = Column(String(40), nullable=False, default="DEPOSITO_BANCARIO")
     fecha = Column(Date, nullable=False)
     moneda = Column(String(10), nullable=False)
     tasa_cambio = Column(Numeric(12, 4), nullable=True)

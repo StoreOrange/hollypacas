@@ -121,28 +121,57 @@ def _seed_permissions(db: Session) -> None:
 
 
 def _seed_branches(db: Session) -> None:
-    multi_branch_enabled = get_active_company_key() != "comestibles"
-    branches = [
-        (
-            "central",
-            "Central",
-            "Hollywood Pacas",
-            "0012202910068H",
-            "8900-0300",
-            "Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
-        ),
-    ]
-    if multi_branch_enabled:
-        branches.append(
+    active_company = (get_active_company_key() or "").strip().lower()
+    multi_branch_enabled = active_company != "comestibles"
+    if active_company == "bdzapatos":
+        branches = [
             (
-                "esteli",
-                "Sucursal Esteli",
+                "central",
+                "Central",
+                "BD Zapatos",
+                "",
+                "",
+                "Sucursal Central",
+            ),
+            (
+                "kg",
+                "KG",
+                "BD Zapatos",
+                "",
+                "",
+                "Sucursal KG",
+            ),
+            (
+                "kgf",
+                "KGF",
+                "BD Zapatos",
+                "",
+                "",
+                "Sucursal KGF",
+            ),
+        ]
+    else:
+        branches = [
+            (
+                "central",
+                "Central",
                 "Hollywood Pacas",
                 "0012202910068H",
                 "8900-0300",
-                "Esteli, De auto lote del Norte 7 cuadras al este.",
+                "Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
+            ),
+        ]
+        if multi_branch_enabled:
+            branches.append(
+                (
+                    "esteli",
+                    "Sucursal Esteli",
+                    "Hollywood Pacas",
+                    "0012202910068H",
+                    "8900-0300",
+                    "Esteli, De auto lote del Norte 7 cuadras al este.",
+                )
             )
-        )
     existing = {branch.code for branch in db.query(Branch).all()}
     for code, name, company_name, ruc, telefono, direccion in branches:
         if code not in existing:
@@ -165,6 +194,9 @@ def _seed_branches(db: Session) -> None:
                     "direccion": direccion,
                 }
             )
+        db.query(Branch).filter(Branch.code == code).update({"activo": True})
+    if active_company == "bdzapatos":
+        db.query(Branch).filter(Branch.code == "esteli").update({"activo": False})
     db.commit()
 
 
@@ -264,7 +296,12 @@ def _seed_admin_branch_access(db: Session) -> None:
     admin = db.query(User).filter(User.email == settings.ADMIN_EMAIL).first()
     if not admin:
         return
+    active_branches = db.query(Branch).filter(Branch.activo.is_(True)).order_by(Branch.id).all()
     central_branch = db.query(Branch).filter(Branch.code == "central").first()
+    active_ids = {branch.id for branch in active_branches}
+    current_ids = {branch.id for branch in (admin.branches or [])}
+    if active_ids - current_ids:
+        admin.branches = list(admin.branches or []) + [branch for branch in active_branches if branch.id not in current_ids]
     if not admin.branches and central_branch:
         admin.branches = [central_branch]
     if central_branch and not admin.default_branch_id:
@@ -360,13 +397,21 @@ def _seed_marcas(db: Session) -> None:
 
 
 def _seed_bodegas(db: Session) -> None:
-    multi_branch_enabled = get_active_company_key() != "comestibles"
+    active_company = (get_active_company_key() or "").strip().lower()
+    multi_branch_enabled = active_company != "comestibles"
     branches = {branch.code: branch for branch in db.query(Branch).all()}
-    bodegas = [
-        ("central", "Central", "central"),
-    ]
-    if multi_branch_enabled:
-        bodegas.append(("esteli", "Esteli", "esteli"))
+    if active_company == "bdzapatos":
+        bodegas = [
+            ("central", "Central", "central"),
+            ("kg", "KG", "kg"),
+            ("kgf", "KGF", "kgf"),
+        ]
+    else:
+        bodegas = [
+            ("central", "Central", "central"),
+        ]
+        if multi_branch_enabled:
+            bodegas.append(("esteli", "Esteli", "esteli"))
     existing = {bodega.code for bodega in db.query(Bodega).all()}
     for code, name, branch_code in bodegas:
         if code not in existing and branch_code in branches:
@@ -378,7 +423,18 @@ def _seed_bodegas(db: Session) -> None:
                     activo=True,
                 )
             )
+        elif code in existing and branch_code in branches:
+            db.query(Bodega).filter(Bodega.code == code).update(
+                {
+                    "name": name,
+                    "branch_id": branches[branch_code].id,
+                    "activo": True,
+                }
+            )
     db.commit()
+    if active_company == "bdzapatos":
+        db.query(Bodega).filter(Bodega.code == "esteli").update({"activo": False})
+        db.commit()
     if not multi_branch_enabled:
         db.query(Bodega).filter(Bodega.code == "esteli").update({"activo": False})
         db.commit()
@@ -424,7 +480,7 @@ def _seed_egreso_tipos(db: Session) -> None:
 
 
 def _seed_formas_pago(db: Session) -> None:
-    formas = ["Tarjeta", "Banco", "Efectivo", "Credito", "Anticipo"]
+    formas = ["Tarjeta", "Tarjeta Afiliacion", "Banco", "Efectivo", "Credito", "Anticipo"]
     existing = {forma.nombre for forma in db.query(FormaPago).all()}
     for nombre in formas:
         if nombre not in existing:
@@ -940,6 +996,12 @@ def init_db() -> None:
         if "tipo" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE cuentas_contables ADD COLUMN tipo VARCHAR(20)"))
+    if "depositos_clientes" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("depositos_clientes")}
+        if "metodo" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE depositos_clientes ADD COLUMN metodo VARCHAR(40) DEFAULT 'DEPOSITO_BANCARIO'"))
+                conn.execute(text("UPDATE depositos_clientes SET metodo = 'DEPOSITO_BANCARIO' WHERE metodo IS NULL"))
     if "marcas" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("marcas")}
         if "abreviatura" not in columns:
