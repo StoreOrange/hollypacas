@@ -1217,10 +1217,12 @@
                 <i class="bi bi-printer"></i>
                 PDF
               </a>
+              {% if shoes_mode %}
               <button type="button" class="btn btn-outline-dark btn-sm" data-open-labels-preview="{{ ingreso.id }}">
                 <i class="bi bi-upc-scan"></i>
                 Etiquetas
               </button>
+              {% endif %}
             </div>
           </td>
         </tr>
@@ -1235,6 +1237,7 @@
 </div>
   </main>
 </div>
+{% if shoes_mode %}
 <div class="modal fade" id="labels-preview-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-xl modal-fullscreen-lg-down">
     <div class="modal-content border-0 shadow-lg">
@@ -1269,6 +1272,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 <div class="modal fade" id="quick-product-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
@@ -2014,6 +2018,7 @@
   }
   {% endif %}
 
+  {% if shoes_mode %}
   const labelsPreviewModalEl = document.getElementById("labels-preview-modal");
   const labelsPreviewFrame = document.getElementById("labels-preview-frame");
   const labelsPreviewPageBtn = document.getElementById("labels-preview-open-page");
@@ -2045,6 +2050,7 @@
 
   {% if print_labels_id %}
   openLabelsPreview({{ print_labels_id }});
+  {% endif %}
   {% endif %}
 
   if (focusIngresoId) {

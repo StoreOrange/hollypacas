@@ -1047,6 +1047,7 @@
   let activeProductRows = [];
   let productNavMode = "search";
   let variantSearchTimer = null;
+  let pendingVariantQty = 1;
 
   const formatMoney = (value, currency) => {
     const number = Number(value || 0);
@@ -1186,6 +1187,34 @@
       timer: 1200,
       timerProgressBar: true,
     });
+  };
+
+  const openVariantPickerForProduct = async ({ code, name, qty }) => {
+    if (!variantModal || !window.bootstrap?.Modal) {
+      pauseNavForAlert({
+        icon: "info",
+        title: "Selecciona talla y color",
+        text: "Usa el boton Buscar variantes para elegir la variante correcta.",
+      });
+      return false;
+    }
+    pendingVariantQty = Math.max(1, parseQty(qty || 1));
+    if (variantSearchQ) {
+      variantSearchQ.value = String(code || "").toUpperCase();
+    }
+    if (variantSearchColor) {
+      variantSearchColor.value = "";
+    }
+    if (variantSearchSize) {
+      variantSearchSize.value = "";
+    }
+    if (variantSearchStatus) {
+      variantSearchStatus.textContent = `Selecciona talla y color para ${code || name || "el producto"}.`;
+    }
+    const modal = window.bootstrap.Modal.getOrCreateInstance(variantModal);
+    modal.show();
+    await runVariantSearch(true);
+    return true;
   };
 
   const startPreventaLiveStream = () => {
@@ -1652,61 +1681,11 @@
       pauseNavForAlert({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible libre: ${freeQty}` });
       return false;
     }
-    const productId = button.dataset.productId;
-    const existingRow = findInvoiceRow(productId, "");
-    if (existingRow) {
-      const qtyHidden = existingRow.querySelector("input[name='item_cantidad']");
-      const currentQty = parseFloat(qtyHidden?.value || 0);
-      const newQty = currentQty + qty;
-      if (newQty > freeQty) {
-        pauseNavForAlert({
-          icon: "warning",
-          title: "Saldo insuficiente",
-          text: `Disponible libre: ${freeQty} | En factura: ${currentQty}`,
-        });
-        return false;
-      }
-      const qtyInputRow = existingRow.querySelector(".row-qty");
-      if (qtyInputRow && qtyHidden) {
-        qtyInputRow.value = Math.trunc(newQty).toString();
-        qtyHidden.value = Math.trunc(newQty).toFixed(2);
-      }
-      const priceInputRow = existingRow.querySelector(".row-price");
-      const priceValue = parseFloat(priceInputRow?.value || 0);
-      const moneda = monedaField.value || "USD";
-      const subtotal = priceValue * newQty;
-      existingRow.dataset.subtotalUsd = moneda === "USD" ? subtotal.toFixed(2) : (rateToday ? (subtotal / rateToday).toFixed(2) : "0.00");
-      existingRow.dataset.subtotalCs = moneda === "USD" ? (subtotal * rateToday).toFixed(2) : subtotal.toFixed(2);
-      const subtotalCell = existingRow.querySelector(".subtotal-cell");
-      if (subtotalCell) {
-        subtotalCell.textContent = formatMoney(subtotal, moneda === "USD" ? "USD" : "CS");
-      }
-      updateTotals();
-      return true;
-    }
-
-    const moneda = monedaField.value || "USD";
-    const priceUsd = parseFloat(button.dataset.priceUsd || 0);
-    const priceCs = parseFloat(button.dataset.priceCs || 0);
-    const price = moneda === "USD" ? priceUsd : priceCs;
-    const subtotal = price * qty;
-    const subtotalUsd = moneda === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
-    const subtotalCs = moneda === "USD" ? subtotal * rateToday : subtotal;
-    addItemRow({
-      productId: button.dataset.productId,
-      variantId: "",
+    return openVariantPickerForProduct({
       code: button.dataset.code,
       name: button.dataset.name,
-      qtyValue: Math.trunc(qty).toFixed(2),
-      qtyValueDisplay: Math.trunc(qty).toString(),
-      qtyStep: "1",
-      maxQty: maxQty,
-      priceValue: price.toFixed(2),
-      subtotalLabel: formatMoney(subtotal, moneda === "USD" ? "USD" : "CS"),
-      subtotalUsd,
-      subtotalCs,
+      qty,
     });
-    return true;
   };
 
   const addVariantToInvoice = (variant, qtyValueRaw) => {
@@ -1784,6 +1763,7 @@
       .map((item) => {
         const existencia = Number(item.existencia || 0);
         const disabled = existencia <= 0;
+        const defaultQty = Math.max(1, Math.min(Math.trunc(existencia || 0) || 1, pendingVariantQty || 1));
         return `
           <tr class="variant-row" data-variant='${encodeURIComponent(JSON.stringify(item))}'>
             <td class="fw-semibold">${escapeHtml(item.cod_variante)}</td>
@@ -1796,7 +1776,7 @@
             <td class="text-end ${existencia > 0 ? "text-success" : "text-danger"} fw-semibold">${existencia.toFixed(0)}</td>
             <td class="text-end">${formatMoney(item.selected_price_cs || item.precio_venta1, "CS")}</td>
             <td class="text-center">
-              <input class="form-control form-control-sm text-end variant-qty" type="number" min="1" step="1" max="${Math.max(1, Math.trunc(existencia))}" value="1" ${disabled ? "disabled" : ""} />
+              <input class="form-control form-control-sm text-end variant-qty" type="number" min="1" step="1" max="${Math.max(1, Math.trunc(existencia))}" value="${defaultQty}" ${disabled ? "disabled" : ""} />
             </td>
             <td class="text-center">
               <button type="button" class="btn btn-sm btn-outline-primary variant-add" ${disabled ? "disabled" : ""}>
@@ -2460,10 +2440,11 @@
       if (added) {
         showVariantAddedToast(variant);
         if (qtyInput) {
-          qtyInput.value = "1";
+          qtyInput.value = String(Math.max(1, pendingVariantQty || 1));
           qtyInput.focus();
           qtyInput.select();
         }
+        pendingVariantQty = 1;
         setTimeout(() => {
           if (productSearch) {
             productSearch.focus();
@@ -2506,6 +2487,7 @@
       }
     });
     variantModal.addEventListener("hidden.bs.modal", () => {
+      pendingVariantQty = 1;
       productNavMode = "search";
       focusScannerInput(true);
     });
@@ -3946,5 +3928,4 @@
   {% endif %}
 </script>
 {% endblock %}
-
 

@@ -480,6 +480,14 @@
                   Guardar abono
                 </button>
               </div>
+              {% if shoes_mode %}
+              <div class="col-12">
+                <label class="d-flex align-items-center gap-2 text-sm text-slate">
+                  <input id="abono-afecta-caja" type="checkbox" class="form-check-input">
+                  Afecta caja / arqueo del dia
+                </label>
+              </div>
+              {% endif %}
             </div>
           </div>
           <div class="{% if shoes_mode %}abono-column-card{% else %}mt-4{% endif %}">
@@ -745,6 +753,7 @@
         const abonoMontoEl = document.getElementById("abono-monto");
         const abonoObsEl = document.getElementById("abono-observacion");
         const abonoSubmitEl = document.getElementById("abono-submit");
+        const abonoAfectaCajaEl = document.getElementById("abono-afecta-caja");
         abonoTipoEl.value = "ABONO";
         abonoMonedaEl.value = moneda;
         document.getElementById("abono-saldo").textContent = formatMoney(saldo, moneda);
@@ -752,6 +761,10 @@
         abonoMonedaEl.disabled = readOnly;
         abonoMontoEl.disabled = readOnly;
         abonoObsEl.disabled = readOnly;
+        if (abonoAfectaCajaEl) {
+          abonoAfectaCajaEl.checked = false;
+          abonoAfectaCajaEl.disabled = readOnly;
+        }
         if (abonoSubmitEl) {
           abonoSubmitEl.classList.toggle("d-none", readOnly);
         }
@@ -802,6 +815,10 @@
             document.getElementById("abono-moneda").value = item.moneda;
             document.getElementById("abono-monto").value = formatMoney(item.monto, item.moneda);
             document.getElementById("abono-observacion").value = item.observacion || "";
+            const afectaCajaEl = document.getElementById("abono-afecta-caja");
+            if (afectaCajaEl) {
+              afectaCajaEl.checked = !!item.afecta_caja;
+            }
           });
         });
       }
@@ -865,8 +882,9 @@
       const moneda = document.getElementById("abono-moneda").value;
       const monto = parseMoneyValue(document.getElementById("abono-monto").value).toFixed(2);
       const observacion = document.getElementById("abono-observacion").value;
+      const afectaCaja = document.getElementById("abono-afecta-caja")?.checked ? "1" : "0";
       const returnTo = `${window.location.pathname}${window.location.search || ""}`;
-      const body = new URLSearchParams({ tipo_mov: tipoMov, moneda, monto, observacion, return_to: returnTo });
+      const body = new URLSearchParams({ tipo_mov: tipoMov, moneda, monto, observacion, return_to: returnTo, afecta_caja: afectaCaja });
       const endpoint = abonoId
         ? `/sales/cobranza/${facturaId}/abono/${abonoId}`
         : `/sales/cobranza/${facturaId}/abono`;

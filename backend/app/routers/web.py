@@ -10858,6 +10858,17 @@ def sales_cierre(
         for r in recibos
         if r.tipo == "EGRESO"
     )
+    if _is_shoes_mode():
+        abonos_caja_query = db.query(CobranzaAbono).filter(
+            CobranzaAbono.fecha == fecha_value,
+            CobranzaAbono.afecta_caja.is_(True),
+        )
+        if bodega:
+            abonos_caja_query = abonos_caja_query.filter(CobranzaAbono.bodega_id == bodega.id)
+        total_ingresos_usd += sum(
+            (_cobranza_cashflow_usd(abono, tasa) for abono in abonos_caja_query.all()),
+            Decimal("0"),
+        )
 
     depositos_query = db.query(DepositoCliente).filter(func.date(DepositoCliente.fecha) == fecha_value)
     if bodega:
@@ -11016,6 +11027,17 @@ async def sales_cierre_create(
         for r in recibos
         if r.tipo == "EGRESO"
     )
+    if _is_shoes_mode():
+        abonos_caja_query = db.query(CobranzaAbono).filter(
+            CobranzaAbono.fecha == fecha_value,
+            CobranzaAbono.afecta_caja.is_(True),
+        )
+        if bodega:
+            abonos_caja_query = abonos_caja_query.filter(CobranzaAbono.bodega_id == bodega.id)
+        total_ingresos_usd += sum(
+            (_cobranza_cashflow_usd(abono, tasa) for abono in abonos_caja_query.all()),
+            Decimal("0"),
+        )
 
     depositos_query = db.query(DepositoCliente).filter(func.date(DepositoCliente.fecha) == fecha_value)
     if bodega:
@@ -14459,6 +14481,104 @@ def report_sales_products(
     )
 
 
+@router.get("/reports/ganancias")
+def report_profit(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, vendedor_id, producto_id, producto_q = _sales_products_report_filters(request)
+    (
+        report_rows,
+        detail_rows,
+        total_qty,
+        total_usd,
+        total_cs,
+        total_cost_usd,
+        total_cost_cs,
+        total_facturas,
+    ) = _build_sales_products_report(db, user, start_date, end_date, branch_id, vendedor_id, producto_id, producto_q)
+
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
+    _, bodega = _resolve_branch_bodega(db, user)
+    vendedores = _vendedores_for_bodega(db, bodega)
+    productos = (
+        db.query(Producto)
+        .filter(Producto.activo.is_(True))
+        .order_by(Producto.descripcion)
+        .all()
+    )
+
+    total_margin_usd = Decimal(str(total_usd or 0)) - Decimal(str(total_cost_usd or 0))
+    total_margin_cs = Decimal(str(total_cs or 0)) - Decimal(str(total_cost_cs or 0))
+
+    summary_rows = []
+    for row in report_rows:
+        venta_usd = Decimal(str(row.get("venta_usd") or 0))
+        venta_cs = Decimal(str(row.get("venta_cs") or 0))
+        costo_usd = Decimal(str(row.get("costo_usd") or 0))
+        costo_cs = Decimal(str(row.get("costo_cs") or 0))
+        summary_rows.append(
+            {
+                **row,
+                "margen_usd": float(venta_usd - costo_usd),
+                "margen_cs": float(venta_cs - costo_cs),
+            }
+        )
+
+    detail_rows_enriched = []
+    for row in detail_rows:
+        cantidad = Decimal(str(row.get("cantidad") or 0))
+        venta_usd = Decimal(str(row.get("venta_usd") or 0))
+        venta_cs = Decimal(str(row.get("venta_cs") or 0))
+        costo_usd = Decimal(str(row.get("costo_usd") or 0))
+        costo_cs = Decimal(str(row.get("costo_cs") or 0))
+        detail_rows_enriched.append(
+            {
+                **row,
+                "costo_unit_usd": float((costo_usd / cantidad) if cantidad else Decimal("0")),
+                "costo_unit_cs": float((costo_cs / cantidad) if cantidad else Decimal("0")),
+                "margen_usd": float(venta_usd - costo_usd),
+                "margen_cs": float(venta_cs - costo_cs),
+            }
+        )
+
+    return request.app.state.templates.TemplateResponse(
+        "report_profit.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": summary_rows,
+            "detail_rows": detail_rows_enriched,
+            "branches": branches,
+            "vendedores": vendedores,
+            "productos": productos,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "selected_branch": branch_id or "",
+            "selected_vendedor": vendedor_id or "",
+            "selected_producto": producto_id or "",
+            "producto_q": producto_q,
+            "total_qty": float(total_qty),
+            "total_usd": float(total_usd),
+            "total_cs": float(total_cs),
+            "total_cost_usd": float(total_cost_usd),
+            "total_cost_cs": float(total_cost_cs),
+            "total_margin_usd": float(total_margin_usd),
+            "total_margin_cs": float(total_margin_cs),
+            "total_facturas": total_facturas,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
 @router.get("/reports/ventas-productos/export")
 def report_sales_products_export(
     request: Request,
@@ -15586,6 +15706,18 @@ def _normalize_deposito_method(value: Optional[str]) -> str:
 
 def _deposito_method_label(value: Optional[str]) -> str:
     return "Tarjeta Afiliacion" if _normalize_deposito_method(value) == "TARJETA_AFILIACION" else "Deposito Bancario"
+
+
+def _cobranza_cashflow_usd(
+    abono: CobranzaAbono,
+    tasa: Decimal,
+) -> Decimal:
+    tipo_mov = (getattr(abono, "tipo_mov", "ABONO") or "ABONO").strip().upper()
+    factor = Decimal("-1") if tipo_mov == "NOTA_DEBITO" else Decimal("1")
+    if (abono.moneda or "CS") == "USD":
+        return Decimal(str(abono.monto_usd or 0)) * factor
+    amount_cs = Decimal(str(abono.monto_cs or 0))
+    return ((amount_cs / tasa) if tasa else Decimal("0")) * factor
 
 
 def _depositos_grouped(depositos):
@@ -18372,6 +18504,8 @@ def inventory_ingreso_labels_preview(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.inventory.ingresos")
+    if not _is_shoes_mode():
+        raise HTTPException(status_code=404, detail="Vista de etiquetas disponible solo en modo zapatos")
     ingreso = (
         db.query(IngresoInventario)
         .filter(IngresoInventario.id == ingreso_id)
@@ -18412,6 +18546,8 @@ def inventory_ingreso_labels_pdf(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.inventory.ingresos")
+    if not _is_shoes_mode():
+        raise HTTPException(status_code=404, detail="Impresion de etiquetas disponible solo en modo zapatos")
     ingreso = (
         db.query(IngresoInventario)
         .filter(IngresoInventario.id == ingreso_id)
@@ -20321,8 +20457,13 @@ async def inventory_create_ingreso_zapatos(
     if auto_entry:
         db.add(auto_entry)
     db.commit()
+    if _is_shoes_mode():
+        return RedirectResponse(
+            f"/inventory/ingresos/{ingreso.id}/labels/preview?return_to=/inventory/ingresos?success=Ingreso+zapatos+registrado%26clear_draft%3D1",
+            status_code=303,
+        )
     return RedirectResponse(
-        f"/inventory/ingresos/{ingreso.id}/labels/preview?return_to=/inventory/ingresos?success=Ingreso+zapatos+registrado%26clear_draft%3D1",
+        "/inventory/ingresos?success=Ingreso+zapatos+registrado&clear_draft=1",
         status_code=303,
     )
 
@@ -20480,8 +20621,13 @@ async def inventory_create_ingreso(
     if auto_entry:
         db.add(auto_entry)
     db.commit()
+    if _is_shoes_mode():
+        return RedirectResponse(
+            f"/inventory/ingresos/{ingreso.id}/labels/preview?return_to=/inventory/ingresos?success=Ingreso+registrado%26clear_draft%3D1",
+            status_code=303,
+        )
     return RedirectResponse(
-        f"/inventory/ingresos/{ingreso.id}/labels/preview?return_to=/inventory/ingresos?success=Ingreso+registrado%26clear_draft%3D1",
+        "/inventory/ingresos?success=Ingreso+registrado&clear_draft=1",
         status_code=303,
     )
 
@@ -21902,6 +22048,7 @@ def sales_cobranza_abonos(
                 "moneda": abono.moneda,
                 "monto": float(base * factor),
                 "observacion": abono.observacion or "",
+                "afecta_caja": bool(getattr(abono, "afecta_caja", False)),
             }
         )
     return JSONResponse({"ok": True, "items": items})
@@ -21920,6 +22067,7 @@ async def sales_cobranza_abono(
     moneda = (form.get("moneda") or "CS").upper()
     monto_raw = form.get("monto")
     observacion = (form.get("observacion") or "").strip()
+    afecta_caja = (form.get("afecta_caja") or "").strip().lower() in {"1", "true", "on", "yes"}
     return_to = (form.get("return_to") or "/sales/cobranza").strip()
     if not return_to.startswith("/sales/cobranza"):
         return_to = "/sales/cobranza"
@@ -22008,6 +22156,7 @@ async def sales_cobranza_abono(
         tasa_cambio=tasa if tasa else None,
         monto_usd=monto_usd,
         monto_cs=monto_cs,
+        afecta_caja=afecta_caja if _is_shoes_mode() else False,
         observacion=observacion,
         usuario_registro=user.full_name,
     )
@@ -22065,6 +22214,7 @@ async def sales_cobranza_abono_update(
     moneda = (form.get("moneda") or "CS").upper()
     monto_raw = form.get("monto")
     observacion = (form.get("observacion") or "").strip()
+    afecta_caja = (form.get("afecta_caja") or "").strip().lower() in {"1", "true", "on", "yes"}
     if not monto_raw:
         return JSONResponse({"ok": False, "message": "Monto requerido"}, status_code=400)
     if moneda not in {"CS", "USD"}:
@@ -22131,6 +22281,7 @@ async def sales_cobranza_abono_update(
     abono.tasa_cambio = tasa if tasa else None
     abono.monto_usd = monto_usd
     abono.monto_cs = monto_cs
+    abono.afecta_caja = afecta_caja if _is_shoes_mode() else False
     abono.observacion = observacion
     db.commit()
 

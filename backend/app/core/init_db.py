@@ -1002,6 +1002,12 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE depositos_clientes ADD COLUMN metodo VARCHAR(40) DEFAULT 'DEPOSITO_BANCARIO'"))
                 conn.execute(text("UPDATE depositos_clientes SET metodo = 'DEPOSITO_BANCARIO' WHERE metodo IS NULL"))
+    if "cobranza_abonos" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("cobranza_abonos")}
+        if "afecta_caja" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE cobranza_abonos ADD COLUMN afecta_caja BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("UPDATE cobranza_abonos SET afecta_caja = FALSE WHERE afecta_caja IS NULL"))
     if "marcas" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("marcas")}
         if "abreviatura" not in columns:

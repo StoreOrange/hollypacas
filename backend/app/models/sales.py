@@ -392,6 +392,7 @@ class CobranzaAbono(Base):
     tasa_cambio = Column(Numeric(12, 4), nullable=True)
     monto_usd = Column(Numeric(14, 2), default=0)
     monto_cs = Column(Numeric(14, 2), default=0)
+    afecta_caja = Column(Boolean, default=False)
     observacion = Column(String(300), nullable=True)
     usuario_registro = Column(String(120), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
