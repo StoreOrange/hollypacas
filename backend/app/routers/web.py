@@ -14536,8 +14536,8 @@ def report_profit(
     detail_rows_enriched = []
     for row in detail_rows:
         cantidad = Decimal(str(row.get("cantidad") or 0))
-        venta_usd = Decimal(str(row.get("venta_usd") or 0))
-        venta_cs = Decimal(str(row.get("venta_cs") or 0))
+        venta_usd = Decimal(str(row.get("subtotal_usd") or 0))
+        venta_cs = Decimal(str(row.get("subtotal_cs") or 0))
         costo_usd = Decimal(str(row.get("costo_usd") or 0))
         costo_cs = Decimal(str(row.get("costo_cs") or 0))
         detail_rows_enriched.append(

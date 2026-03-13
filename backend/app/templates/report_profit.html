@@ -150,7 +150,6 @@
                 <th class="text-end">Cantidad</th>
                 <th class="text-end">Precio vendido C$</th>
                 <th class="text-end">Costo unit C$</th>
-                <th class="text-end">Venta C$</th>
                 <th class="text-end">Costo C$</th>
                 <th class="text-end">Ganancia C$</th>
               </tr>
@@ -165,14 +164,13 @@
                 <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.precio_cs or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.costo_unit_cs or 0) }}</td>
-                <td class="text-end">C$ {{ "%.2f"|format(row.venta_cs or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.costo_cs or 0) }}</td>
                 <td class="text-end fw-semibold {% if (row.margen_cs or 0) >= 0 %}text-emerald-700{% else %}text-danger{% endif %}">C$ {{ "%.2f"|format(row.margen_cs or 0) }}</td>
               </tr>
               {% endfor %}
               {% if detail_rows|length == 0 %}
               <tr>
-                <td colspan="10" class="text-center text-slate py-3">Sin resultados.</td>
+                <td colspan="9" class="text-center text-slate py-3">Sin resultados.</td>
               </tr>
               {% endif %}
             </tbody>
@@ -180,9 +178,8 @@
               <tr class="table-light">
                 <th colspan="4" class="text-end">Totales</th>
                 <th class="text-end">{{ "%.2f"|format(total_qty or 0) }}</th>
-                <th class="text-end">-</th>
-                <th class="text-end">-</th>
                 <th class="text-end">C$ {{ "%.2f"|format(total_cs or 0) }}</th>
+                <th class="text-end">-</th>
                 <th class="text-end">C$ {{ "%.2f"|format(total_cost_cs or 0) }}</th>
                 <th class="text-end">C$ {{ "%.2f"|format(total_margin_cs or 0) }}</th>
               </tr>
