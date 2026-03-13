@@ -28,11 +28,11 @@
             </div>
             <div class="odoo-pill primary">
               <i class="bi bi-graph-up-arrow"></i>
-              Ganancia C$: C$ {{ "%.2f"|format(total_margin_cs or 0) }}
+              Ganancia C$: C$ {{ "{:,.2f}".format(total_margin_cs or 0) }}
             </div>
             <div class="odoo-pill">
               <i class="bi bi-currency-dollar"></i>
-              Ganancia USD: $ {{ "%.2f"|format(total_margin_usd or 0) }}
+              Ganancia USD: $ {{ "{:,.2f}".format(total_margin_usd or 0) }}
             </div>
           </div>
         </div>
@@ -110,22 +110,22 @@
         <div class="col-12 col-md-6 col-xl-3">
           <div class="odoo-card h-100">
             <div class="text-xs uppercase tracking-[0.2em] text-slate">Venta total</div>
-            <div class="mt-2 text-lg fw-semibold text-ink">C$ {{ "%.2f"|format(total_cs or 0) }}</div>
-            <div class="text-sm text-slate">$ {{ "%.2f"|format(total_usd or 0) }}</div>
+            <div class="mt-2 text-lg fw-semibold text-ink">C$ {{ "{:,.2f}".format(total_cs or 0) }}</div>
+            <div class="text-sm text-slate">$ {{ "{:,.2f}".format(total_usd or 0) }}</div>
           </div>
         </div>
         <div class="col-12 col-md-6 col-xl-3">
           <div class="odoo-card h-100">
             <div class="text-xs uppercase tracking-[0.2em] text-slate">Costo total</div>
-            <div class="mt-2 text-lg fw-semibold text-ink">C$ {{ "%.2f"|format(total_cost_cs or 0) }}</div>
-            <div class="text-sm text-slate">$ {{ "%.2f"|format(total_cost_usd or 0) }}</div>
+            <div class="mt-2 text-lg fw-semibold text-ink">C$ {{ "{:,.2f}".format(total_cost_cs or 0) }}</div>
+            <div class="text-sm text-slate">$ {{ "{:,.2f}".format(total_cost_usd or 0) }}</div>
           </div>
         </div>
         <div class="col-12 col-md-6 col-xl-3">
           <div class="odoo-card h-100 border border-emerald-200">
             <div class="text-xs uppercase tracking-[0.2em] text-slate">Ganancia total</div>
-            <div class="mt-2 text-lg fw-semibold text-emerald-700">C$ {{ "%.2f"|format(total_margin_cs or 0) }}</div>
-            <div class="text-sm text-slate">$ {{ "%.2f"|format(total_margin_usd or 0) }}</div>
+            <div class="mt-2 text-lg fw-semibold text-emerald-700">C$ {{ "{:,.2f}".format(total_margin_cs or 0) }}</div>
+            <div class="text-sm text-slate">$ {{ "{:,.2f}".format(total_margin_usd or 0) }}</div>
           </div>
         </div>
         <div class="col-12 col-md-6 col-xl-3">
@@ -162,10 +162,10 @@
                 <td class="fw-semibold">{{ row.codigo }}</td>
                 <td>{{ row.producto }}</td>
                 <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
-                <td class="text-end">C$ {{ "%.2f"|format(row.precio_cs or 0) }}</td>
-                <td class="text-end">C$ {{ "%.2f"|format(row.costo_unit_cs or 0) }}</td>
-                <td class="text-end">C$ {{ "%.2f"|format(row.costo_cs or 0) }}</td>
-                <td class="text-end fw-semibold {% if (row.margen_cs or 0) >= 0 %}text-emerald-700{% else %}text-danger{% endif %}">C$ {{ "%.2f"|format(row.margen_cs or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.precio_cs or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.costo_unit_cs or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td>
+                <td class="text-end fw-semibold {% if (row.margen_cs or 0) >= 0 %}text-emerald-700{% else %}text-danger{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td>
               </tr>
               {% endfor %}
               {% if detail_rows|length == 0 %}
@@ -178,10 +178,10 @@
               <tr class="table-light">
                 <th colspan="4" class="text-end">Totales</th>
                 <th class="text-end">{{ "%.2f"|format(total_qty or 0) }}</th>
-                <th class="text-end">C$ {{ "%.2f"|format(total_cs or 0) }}</th>
+                <th class="text-end">C$ {{ "{:,.2f}".format(total_cs or 0) }}</th>
                 <th class="text-end">-</th>
-                <th class="text-end">C$ {{ "%.2f"|format(total_cost_cs or 0) }}</th>
-                <th class="text-end">C$ {{ "%.2f"|format(total_margin_cs or 0) }}</th>
+                <th class="text-end">C$ {{ "{:,.2f}".format(total_cost_cs or 0) }}</th>
+                <th class="text-end">C$ {{ "{:,.2f}".format(total_margin_cs or 0) }}</th>
               </tr>
             </tfoot>
           </table>
@@ -208,9 +208,9 @@
                 <td class="fw-semibold">{{ row.codigo }}</td>
                 <td>{{ row.producto }}</td>
                 <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
-                <td class="text-end">C$ {{ "%.2f"|format(row.venta_cs or 0) }}</td>
-                <td class="text-end">C$ {{ "%.2f"|format(row.costo_cs or 0) }}</td>
-                <td class="text-end fw-semibold {% if (row.margen_cs or 0) >= 0 %}text-emerald-700{% else %}text-danger{% endif %}">C$ {{ "%.2f"|format(row.margen_cs or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td>
+                <td class="text-end fw-semibold {% if (row.margen_cs or 0) >= 0 %}text-emerald-700{% else %}text-danger{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td>
               </tr>
               {% endfor %}
               {% if rows|length == 0 %}
