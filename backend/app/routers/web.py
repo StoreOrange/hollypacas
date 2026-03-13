@@ -1000,8 +1000,8 @@ def _current_db_name() -> str:
 
 
 def _is_shoes_mode() -> bool:
-    name = _current_db_name()
-    return name == "bdzapatos" or "zapato" in name
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    return active_company_key == "bdzapatos"
 
 
 def _is_hollpacas_mode() -> bool:
