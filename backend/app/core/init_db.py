@@ -786,7 +786,7 @@ def _seed_email_recipients(db: Session) -> None:
     existing = {r.email for r in db.query(NotificationRecipient).all()}
     for email in recipients:
         if email not in existing:
-            db.add(NotificationRecipient(email=email, active=True))
+            db.add(NotificationRecipient(email=email, active=True, sales_close_active=False))
     db.commit()
 
 
@@ -1089,6 +1089,12 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN theme_code VARCHAR(40) DEFAULT 'default'"))
                 conn.execute(text("UPDATE company_profile_settings SET theme_code = 'default' WHERE theme_code IS NULL OR theme_code = ''"))
+    if "email_recipients" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("email_recipients")}
+        if "sales_close_active" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE email_recipients ADD COLUMN sales_close_active BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("UPDATE email_recipients SET sales_close_active = FALSE WHERE sales_close_active IS NULL"))
     if "bodega_requisa_cierres" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("bodega_requisa_cierres")}
         if "movement_type" not in columns:

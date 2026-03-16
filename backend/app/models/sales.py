@@ -158,6 +158,7 @@ class NotificationRecipient(Base):
     email = Column(String(160), nullable=False, unique=True)
     name = Column(String(160), nullable=True)
     active = Column(Boolean, default=True)
+    sales_close_active = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
 
 

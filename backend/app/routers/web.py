@@ -4,12 +4,14 @@ import asyncio
 
 import csv
 import json
+import mimetypes
 import os
 import re
 import smtplib
 import subprocess
 import tempfile
 from email.message import EmailMessage
+from email.utils import make_msgid
 
 import io
 from pathlib import Path
@@ -1165,6 +1167,88 @@ def _company_identity(branch: Optional[Branch], profile: dict[str, str]) -> dict
     }
 
 
+def _format_money(value: Decimal | float | int) -> str:
+    return f"{Decimal(str(value or 0)).quantize(Decimal('0.01')):,.2f}"
+
+
+def _format_qty(value: Decimal | float | int) -> str:
+    text = f"{Decimal(str(value or 0)).quantize(Decimal('0.01')).normalize():f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _render_sales_close_email_html(
+    request: Request,
+    db: Session,
+    cierre: CierreCaja,
+    branch: Branch,
+    summary: dict[str, Decimal],
+    total_sales_cs: Decimal,
+    total_sales_usd: Decimal,
+    total_items: Decimal,
+    tasa: Decimal,
+) -> tuple[str, list[dict[str, object]]]:
+    company_profile = _company_profile_payload(db)
+    company_identity = _company_identity(branch, company_profile)
+    difference_usd = Decimal(str(cierre.diferencia_usd or 0))
+    difference_cs = (difference_usd * tasa).quantize(Decimal("0.01")) if tasa else Decimal("0")
+    if difference_usd > 0:
+        difference_status = "Sobrante de caja"
+        difference_caption = f"Excedente equivalente a C$ {_format_money(difference_cs)}"
+        difference_color = "#15803d"
+        difference_label = f"+$ {_format_money(difference_usd)}"
+    elif difference_usd < 0:
+        difference_status = "Faltante de caja"
+        difference_caption = f"Diferencia equivalente a C$ {_format_money(abs(difference_cs))}"
+        difference_color = "#b91c1c"
+        difference_label = f"-$ {_format_money(abs(difference_usd))}"
+    else:
+        difference_status = "Caja cuadrada"
+        difference_caption = "Sin diferencia entre arqueo y sistema"
+        difference_color = "#1d4ed8"
+        difference_label = "$ 0.00"
+
+    close_dt = cierre.created_at or local_now_naive()
+    close_label = close_dt.strftime("%d/%m/%Y %I:%M %p") if isinstance(close_dt, datetime) else str(close_dt)
+    logo_path = _resolve_logo_path(
+        company_profile.get("logo_url", ""),
+        pos_logo_url=company_profile.get("pos_logo_url", ""),
+    )
+    logo_cid = make_msgid(domain="erp.local")[1:-1] if logo_path.exists() else ""
+    template = request.app.state.templates.env.get_template("sales_cierre_email.html")
+    html = template.render(
+        subject=f"Ventas Oficial del dia {cierre.fecha.strftime('%d/%m/%Y')} de la Tienda Sucursal {branch.name}",
+        company_name=company_identity["company_name"],
+        branch_name=branch.name or company_identity["sucursal"],
+        operational_day=cierre.fecha.strftime("%d/%m/%Y"),
+        close_datetime=close_label,
+        registered_by=(cierre.usuario_registro or "Sistema"),
+        items_sold_label=_format_qty(total_items),
+        total_sales_cs=_format_money(total_sales_cs),
+        total_sales_usd=_format_money(total_sales_usd),
+        exchange_rate=_format_money(tasa) if tasa else "N/D",
+        counted_cs=_format_money(cierre.total_efectivo_cs or 0),
+        counted_usd=_format_money(cierre.total_efectivo_usd or 0),
+        counted_total_cs=_format_money(
+            Decimal(str(cierre.total_efectivo_cs or 0)) + (Decimal(str(cierre.total_efectivo_usd or 0)) * Decimal(str(tasa or 0)))
+        ),
+        counted_total_usd=_format_money(cierre.total_efectivo_usd_equiv or 0),
+        expected_total_usd=_format_money(cierre.total_calculado_usd or 0),
+        difference_status=difference_status,
+        difference_caption=difference_caption,
+        difference_color=difference_color,
+        difference_label=difference_label,
+        total_ingresos_usd=_format_money(summary.get("ingresos_usd", 0)),
+        total_egresos_usd=_format_money(summary.get("egresos_usd", 0)),
+        total_depositos_usd=_format_money(summary.get("depositos_usd", 0)),
+        total_creditos_usd=_format_money(summary.get("creditos_usd", 0)),
+        logo_cid=logo_cid,
+    )
+    inline_images: list[dict[str, object]] = []
+    if logo_cid and logo_path.exists():
+        inline_images.append({"path": logo_path, "cid": logo_cid})
+    return html, inline_images
+
+
 def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[str, str]] = None) -> bytes:
     from reportlab.lib.units import mm
     from reportlab.pdfgen import canvas
@@ -1896,6 +1980,23 @@ def _send_reversion_email(
     sender_email: Optional[str] = None,
     sender_name: Optional[str] = None,
     ) -> Optional[str]:
+    return _send_html_email(
+        subject=subject,
+        html_body=html_body,
+        recipients=recipients,
+        sender_email=sender_email,
+        sender_name=sender_name,
+    )
+
+
+def _send_html_email(
+    subject: str,
+    html_body: str,
+    recipients: list[str],
+    sender_email: Optional[str] = None,
+    sender_name: Optional[str] = None,
+    inline_images: Optional[list[dict[str, object]]] = None,
+) -> Optional[str]:
     if not recipients:
         return "No hay destinatarios activos"
     smtp_user = settings.SMTP_USER
@@ -1933,6 +2034,28 @@ def _send_reversion_email(
     message["To"] = ", ".join(recipients)
     message.set_content("Se requiere un cliente de correo compatible con HTML.")
     message.add_alternative(html_body, subtype="html")
+    html_part = message.get_payload()[-1]
+    for image in inline_images or []:
+        image_path = image.get("path")
+        content_id = str(image.get("cid") or "").strip()
+        if not image_path or not content_id:
+            continue
+        try:
+            path_obj = Path(str(image_path))
+            if not path_obj.exists():
+                continue
+            mime_type, _ = mimetypes.guess_type(path_obj.name)
+            maintype, subtype = (mime_type or "image/png").split("/", 1)
+            with path_obj.open("rb") as fh:
+                html_part.add_related(
+                    fh.read(),
+                    maintype=maintype,
+                    subtype=subtype,
+                    cid=f"<{content_id}>",
+                    filename=path_obj.name,
+                )
+        except Exception:
+            continue
 
     try:
         with smtplib.SMTP(config["host"], config["port"]) as smtp:
@@ -10811,6 +10934,7 @@ def sales_cierre(
     _enforce_permission(request, user, "access.sales.cierre")
     error = request.query_params.get("error")
     success = request.query_params.get("success")
+    email_warning = request.query_params.get("email_warning")
     print_id = request.query_params.get("print_id")
     fecha_raw = request.query_params.get("fecha")
     fecha_value = local_today()
@@ -10932,6 +11056,7 @@ def sales_cierre(
             "denominaciones_usd": denominaciones_usd,
             "error": error,
             "success": success,
+            "email_warning": email_warning,
             "print_id": print_id,
             "version": settings.UI_VERSION,
         },
@@ -11008,6 +11133,8 @@ async def sales_cierre_create(
     if bodega:
         ventas_query = ventas_query.filter(VentaFactura.bodega_id == bodega.id)
     ventas = ventas_query.all()
+    total_ventas_cs = sum(Decimal(str(f.total_cs or 0)) for f in ventas)
+    total_ventas_usd_raw = sum(Decimal(str(f.total_usd or 0)) for f in ventas)
     total_ventas_usd = sum(
         to_usd(f.moneda or "CS", f.total_cs or 0, f.total_usd or 0) for f in ventas
     )
@@ -11078,6 +11205,16 @@ async def sales_cierre_create(
         - Decimal(str(total_creditos_usd))
     )
     diferencia = total_usd_equiv - total_calculado_usd
+    total_bultos = (
+        db.query(func.coalesce(func.sum(VentaItem.cantidad), 0))
+        .join(VentaFactura)
+        .filter(
+            func.date(VentaFactura.fecha) == fecha_value,
+            VentaFactura.estado != "ANULADA",
+            VentaFactura.bodega_id == bodega.id,
+        )
+        .scalar()
+    )
 
     cierre = CierreCaja(
         branch_id=branch.id,
@@ -11099,6 +11236,56 @@ async def sales_cierre_create(
     )
     db.add(cierre)
     db.commit()
+    db.refresh(cierre)
+
+    config = db.query(EmailConfig).first()
+    close_recipients = []
+    email_warning = ""
+    if config and config.active:
+        close_recipients = [
+            row.email
+            for row in db.query(NotificationRecipient)
+            .filter(NotificationRecipient.active.is_(True))
+            .filter(NotificationRecipient.sales_close_active.is_(True))
+            .order_by(NotificationRecipient.email.asc())
+            .all()
+            if (row.email or "").strip()
+        ]
+        if not close_recipients:
+            email_warning = "Correo de cierre no enviado: no hay destinatarios activos para cierre operativo."
+    if close_recipients:
+        try:
+            resumen = {
+                "ventas_usd": total_ventas_usd,
+                "ingresos_usd": total_ingresos_usd,
+                "egresos_usd": total_egresos_usd,
+                "depositos_usd": total_depositos_usd,
+                "creditos_usd": total_creditos_usd,
+                "total_calculado_usd": total_calculado_usd,
+            }
+            close_html, inline_images = _render_sales_close_email_html(
+                request=request,
+                db=db,
+                cierre=cierre,
+                branch=branch,
+                summary=resumen,
+                total_sales_cs=total_ventas_cs,
+                total_sales_usd=total_ventas_usd_raw,
+                total_items=Decimal(str(total_bultos or 0)),
+                tasa=tasa,
+            )
+            send_error = _send_html_email(
+                subject=f"Ventas Oficial del dia {fecha_value.strftime('%d/%m/%Y')} de la Tienda Sucursal {branch.name}",
+                html_body=close_html,
+                recipients=close_recipients,
+                sender_email=config.sender_email if config else None,
+                sender_name=config.sender_name if config else None,
+                inline_images=inline_images,
+            )
+            if send_error:
+                email_warning = f"Correo de cierre no enviado: {send_error}"
+        except Exception:
+            email_warning = "Correo de cierre no enviado: error interno al preparar el mensaje."
     pos_print = (
         db.query(PosPrintSetting)
         .filter(PosPrintSetting.branch_id == branch.id)
@@ -11115,16 +11302,6 @@ async def sales_cierre_create(
                 "creditos_usd": total_creditos_usd,
                 "total_calculado_usd": total_calculado_usd,
             }
-            total_bultos = (
-                db.query(func.coalesce(func.sum(VentaItem.cantidad), 0))
-                .join(VentaFactura)
-                .filter(
-                    func.date(VentaFactura.fecha) == fecha_value,
-                    VentaFactura.estado != "ANULADA",
-                    VentaFactura.bodega_id == bodega.id,
-                )
-                .scalar()
-            )
             _print_cierre_ticket(
                 cierre,
                 tasa,
@@ -11137,7 +11314,10 @@ async def sales_cierre_create(
             )
         except Exception:
             pass
-    return RedirectResponse(f"/sales/cierre?success=Cierre+registrado&print_id={cierre.id}", status_code=303)
+    redirect_url = f"/sales/cierre?success=Cierre+registrado&print_id={cierre.id}"
+    if email_warning:
+        redirect_url += f"&email_warning={quote_plus(email_warning)}"
+    return RedirectResponse(redirect_url, status_code=303)
 
 
 @router.get("/sales/cierre/{cierre_id}/pdf")
@@ -16782,6 +16962,7 @@ def data_notificaciones_add_recipient(
     request: Request,
     email: str = Form(...),
     name: Optional[str] = Form(None),
+    sales_close_active: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -16792,7 +16973,14 @@ def data_notificaciones_add_recipient(
     exists = db.query(NotificationRecipient).filter(NotificationRecipient.email == email).first()
     if exists:
         return RedirectResponse("/data/notificaciones?error=Correo+ya+existe", status_code=303)
-    db.add(NotificationRecipient(email=email, name=name, active=True))
+    db.add(
+        NotificationRecipient(
+            email=email,
+            name=name,
+            active=True,
+            sales_close_active=sales_close_active == "on",
+        )
+    )
     db.commit()
     return RedirectResponse("/data/notificaciones?success=Destinatario+agregado", status_code=303)
 
@@ -16804,6 +16992,7 @@ def data_notificaciones_update_recipient(
     email: str = Form(...),
     name: Optional[str] = Form(None),
     active: Optional[str] = Form(None),
+    sales_close_active: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -16814,6 +17003,7 @@ def data_notificaciones_update_recipient(
     recipient.email = email.strip().lower()
     recipient.name = name
     recipient.active = active == "on"
+    recipient.sales_close_active = sales_close_active == "on"
     db.commit()
     return RedirectResponse("/data/notificaciones?success=Destinatario+actualizado", status_code=303)
 
@@ -18664,6 +18854,18 @@ def inventory_egreso_pdf(
 
     total_items = len(egreso.items or [])
     total_bultos = sum(float(item.cantidad or 0) for item in (egreso.items or []))
+    is_transfer = "traslado" in ((egreso.tipo.nombre if egreso.tipo else "") or "").lower()
+    display_currency = "CS" if is_transfer or (egreso.moneda or "").upper() == "CS" else "USD"
+    cost_label = "Costo C$" if display_currency == "CS" else "Costo USD"
+    subtotal_label = "Subtotal C$" if display_currency == "CS" else "Subtotal USD"
+
+    def item_unit_cost(item: EgresoItem) -> float:
+        return float(item.costo_unitario_cs or 0) if display_currency == "CS" else float(item.costo_unitario_usd or 0)
+
+    def item_subtotal(item: EgresoItem) -> float:
+        return float(item.subtotal_cs or 0) if display_currency == "CS" else float(item.subtotal_usd or 0)
+
+    display_total = float(egreso.total_cs or 0) if display_currency == "CS" else float(egreso.total_usd or 0)
 
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter)
@@ -18745,8 +18947,8 @@ def inventory_egreso_pdf(
     pdf.drawString(margin, y, "Codigo")
     pdf.drawString(margin + 80, y, "Descripcion")
     pdf.drawRightString(margin + 340, y, "Cant.")
-    pdf.drawRightString(margin + 420, y, "Costo USD")
-    pdf.drawRightString(margin + 500, y, "Subtotal USD")
+    pdf.drawRightString(margin + 420, y, cost_label)
+    pdf.drawRightString(margin + 500, y, subtotal_label)
     y -= 12
 
     pdf.setFont("Helvetica", 8)
@@ -18764,8 +18966,8 @@ def inventory_egreso_pdf(
             pdf.drawString(margin, y, "Codigo")
             pdf.drawString(margin + 80, y, "Descripcion")
             pdf.drawRightString(margin + 340, y, "Cant.")
-            pdf.drawRightString(margin + 420, y, "Costo USD")
-            pdf.drawRightString(margin + 500, y, "Subtotal USD")
+            pdf.drawRightString(margin + 420, y, cost_label)
+            pdf.drawRightString(margin + 500, y, subtotal_label)
             y -= 12
             pdf.setFont("Helvetica", 8)
 
@@ -18776,8 +18978,8 @@ def inventory_egreso_pdf(
         pdf.drawString(margin, y, codigo)
         pdf.drawString(margin + 80, y, descripcion)
         pdf.drawRightString(margin + 340, y, f"{float(item.cantidad or 0):.2f}")
-        pdf.drawRightString(margin + 420, y, f"{float(item.costo_unitario_usd or 0):.2f}")
-        pdf.drawRightString(margin + 500, y, f"{float(item.subtotal_usd or 0):.2f}")
+        pdf.drawRightString(margin + 420, y, f"{item_unit_cost(item):.2f}")
+        pdf.drawRightString(margin + 500, y, f"{item_subtotal(item):.2f}")
         y -= 12
 
     y -= 8
@@ -18788,11 +18990,15 @@ def inventory_egreso_pdf(
     pdf.drawRightString(margin + 420, y, "Total items:")
     pdf.drawRightString(margin + 500, y, f"{int(total_items or 0)}")
     y -= 12
-    pdf.drawRightString(margin + 420, y, "Total USD:")
-    pdf.drawRightString(margin + 500, y, f"{float(egreso.total_usd or 0):.2f}")
+    pdf.drawRightString(margin + 420, y, f"Total {display_currency}:")
+    pdf.drawRightString(margin + 500, y, f"{display_total:.2f}")
     y -= 12
-    pdf.drawRightString(margin + 420, y, "Total C$:")
-    pdf.drawRightString(margin + 500, y, f"{float(egreso.total_cs or 0):.2f}")
+    if display_currency == "CS":
+        pdf.drawRightString(margin + 420, y, "Total USD:")
+        pdf.drawRightString(margin + 500, y, f"{float(egreso.total_usd or 0):.2f}")
+    else:
+        pdf.drawRightString(margin + 420, y, "Total C$:")
+        pdf.drawRightString(margin + 500, y, f"{float(egreso.total_cs or 0):.2f}")
 
     pdf.setFont("Helvetica", 8)
     pdf.drawRightString(

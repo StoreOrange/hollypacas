@@ -31,6 +31,13 @@
     padding-top: .32rem;
     padding-bottom: .32rem;
   }
+  .transfer-bodega-label {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  .transfer-bodega-select {
+    font-size: 0.98rem;
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -87,16 +94,16 @@
             <input id="fecha" type="date" name="fecha" class="form-control form-control-sm" required />
           </div>
           <div class="col-12 col-md-3">
-            <label class="form-label">Bodega origen *</label>
-            <select id="bodega-origen" name="bodega_id" class="form-select form-select-sm" required>
+            <label class="form-label transfer-bodega-label">Bodega origen *</label>
+            <select id="bodega-origen" name="bodega_id" class="form-select form-select-sm transfer-bodega-select" required>
               {% for b in bodegas %}
               <option value="{{ b.id }}" {% if b.id == default_origen_id %}selected{% endif %}>{{ b.name }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-3">
-            <label class="form-label">Bodega destino *</label>
-            <select id="bodega-destino" name="bodega_destino_id" class="form-select form-select-sm" required>
+            <label class="form-label transfer-bodega-label">Bodega destino *</label>
+            <select id="bodega-destino" name="bodega_destino_id" class="form-select form-select-sm transfer-bodega-select" required>
               {% for b in bodegas %}
               <option value="{{ b.id }}" {% if b.id == default_destino_id %}selected{% endif %}>{{ b.name }}</option>
               {% endfor %}

@@ -69,6 +69,11 @@
         {% endif %}
       </div>
       {% endif %}
+      {% if email_warning %}
+      <div class="alert alert-warning">
+        {{ email_warning }}
+      </div>
+      {% endif %}
 
       <div class="odoo-card odoo-elevated-soft odoo-plate mb-3">
         <div class="d-flex flex-wrap align-items-end gap-2">

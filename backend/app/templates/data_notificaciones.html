@@ -14,7 +14,7 @@
             </ol>
           </nav>
           <h1 class="h5 mb-1">Notificaciones por correo</h1>
-          <p class="text-muted mb-0">Define emisor y destinatarios para reversiones.</p>
+          <p class="text-muted mb-0">Define emisor y destinatarios para reversiones y cierres operativos.</p>
         </div>
         <div class="d-none d-md-block">
           <a class="btn btn-outline-secondary btn-sm" href="/data">
@@ -78,17 +78,23 @@
                   Agregar
                 </button>
               </div>
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="sales_close_active" id="sales_close_active_new" />
+                  <label class="form-check-label" for="sales_close_active_new">Recibe informacion de cierre de ventas operativo</label>
+                </div>
+              </div>
             </form>
 
             <div class="d-flex flex-column gap-2 mt-4">
               {% for recipient in recipients %}
               <form class="border border-slate-200 rounded-3xl p-3 bg-white" method="post" action="/data/notificaciones/recipients/{{ recipient.id }}/update">
                 <div class="row g-2 align-items-center">
-                  <div class="col-md-5">
+                  <div class="col-md-4">
                     <label class="odoo-field-label">Correo</label>
                     <input class="form-control form-control-sm odoo-input" name="email" value="{{ recipient.email }}" />
                   </div>
-                  <div class="col-md-4">
+                  <div class="col-md-3">
                     <label class="odoo-field-label">Nombre</label>
                     <input class="form-control form-control-sm odoo-input" name="name" value="{{ recipient.name or '' }}" />
                   </div>
@@ -96,6 +102,12 @@
                     <label class="odoo-field-label">Activo</label>
                     <div class="form-check mt-1">
                       <input class="form-check-input" type="checkbox" name="active" {% if recipient.active %}checked{% endif %} />
+                    </div>
+                  </div>
+                  <div class="col-md-2">
+                    <label class="odoo-field-label">Cierre operativo</label>
+                    <div class="form-check mt-1">
+                      <input class="form-check-input" type="checkbox" name="sales_close_active" {% if recipient.sales_close_active %}checked{% endif %} />
                     </div>
                   </div>
                   <div class="col-md-1 d-flex align-items-end">
