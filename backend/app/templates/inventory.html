@@ -239,7 +239,7 @@
                 <th class="text-right px-4 py-3">
                   <span class="inline-flex items-center gap-2">
                     <i class="bi bi-stack text-amber-600"></i>
-                    Existencia
+                    Existencia{% if current_bodega %} {{ current_bodega.name }}{% endif %}
                   </span>
                 </th>
                 <th class="text-center px-4 py-3">
@@ -272,8 +272,10 @@
                 data-precio2-usd="{% if inventory_cs_only %}{{ "%.2f"|format(p.precio_venta2 or 0) }}{% else %}{{ "%.2f"|format(p.precio_venta2_usd or 0) }}{% endif %}"
                 data-precio3-usd="{% if inventory_cs_only %}{{ "%.2f"|format(p.precio_venta3 or 0) }}{% else %}{{ "%.2f"|format(p.precio_venta3_usd or 0) }}{% endif %}"
                 data-costo-usd="{% if inventory_cs_only %}{{ "%.2f"|format(p.costo_producto or 0) }}{% elif p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0{% endif %}"
-                data-existencia="{{ p.saldo.existencia if p.saldo else 0 }}"
+                data-existencia="{{ current_bodega_saldos.get(p.id, 0) }}"
                 data-activo="{{ 1 if p.activo else 0 }}"
+                data-es-por-peso="{{ 1 if p.es_por_peso else 0 }}"
+                data-unidad-medida-id="{{ p.unidad_medida_id or '' }}"
               >
                 <td class="px-4 py-3 font-semibold text-ink">{{ p.cod_producto }}</td>
                 <td class="px-4 py-3 text-slate">{{ p.descripcion }}</td>
@@ -283,7 +285,7 @@
                 <td class="px-4 py-3 text-right text-slate">$ {{ "%.2f"|format(p.precio_venta1_usd or 0) }}</td>
                 {% endif %}
                 <td class="px-4 py-3 text-right text-slate">C$ {{ "%.2f"|format(p.precio_venta1 or 0) }}</td>
-                <td class="px-4 py-3 text-right text-slate">{{ p.saldo.existencia if p.saldo else 0 }}</td>
+                <td class="px-4 py-3 text-right text-slate">{{ "%.2f"|format(current_bodega_saldos.get(p.id, 0)) }}</td>
                 <td class="px-4 py-3 text-center">
                   {% if p.activo %}
                   <span class="odoo-badge success">Activo</span>
@@ -438,6 +440,22 @@
                 <span id="field-existencia" class="font-semibold text-ink ms-2">0</span>
               </div>
             </div>
+            {% if weighted_inventory_enabled or weighted_sales_enabled %}
+            <div class="col-md-6 d-flex align-items-center">
+              <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
+                <input id="field-es-por-peso" class="accent-brand" type="checkbox" name="es_por_peso" />
+                Producto por peso
+              </label>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label odoo-field-label">Unidad de medida</label>
+              <select id="field-unidad-medida" name="unidad_medida_id" class="form-select odoo-input">
+                {% for unidad in unidades_medida %}
+                <option value="{{ unidad.id }}" {% if unidad.codigo == 'LIBRAS' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endif %}
             <div class="col-md-6 d-flex align-items-center">
               <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
                 <input id="field-activo" class="accent-brand" type="checkbox" name="activo" checked />
@@ -691,6 +709,8 @@
   const fieldCosto = document.getElementById("field-costo");
   const fieldMargin = document.getElementById("field-margin");
   const fieldExistencia = document.getElementById("field-existencia");
+  const fieldEsPorPeso = document.getElementById("field-es-por-peso");
+  const fieldUnidadMedida = document.getElementById("field-unidad-medida");
   const fieldActivo = document.getElementById("field-activo");
   const modalTabs = document.querySelectorAll(".modal-tab");
   const modalPanels = document.querySelectorAll(".modal-panel");
@@ -778,6 +798,11 @@
     fieldCosto.value = "";
     if (fieldMargin) fieldMargin.value = "";
     fieldExistencia.textContent = "0";
+    if (fieldEsPorPeso) fieldEsPorPeso.checked = false;
+    if (fieldUnidadMedida) {
+      const defaultUnitOption = Array.from(fieldUnidadMedida.options).find((option) => option.textContent.toLowerCase().includes("libras"));
+      fieldUnidadMedida.value = defaultUnitOption?.value || fieldUnidadMedida.value;
+    }
     fieldActivo.checked = true;
     cancelEdit.classList.add("hidden");
     modalTitle.textContent = "Nuevo producto";
@@ -799,6 +824,8 @@
     fieldPrecio3.value = row.dataset.precio3Usd || "";
     fieldCosto.value = row.dataset.costoUsd || "";
     fieldExistencia.textContent = row.dataset.existencia || "0";
+    if (fieldEsPorPeso) fieldEsPorPeso.checked = row.dataset.esPorPeso === "1";
+    if (fieldUnidadMedida) fieldUnidadMedida.value = row.dataset.unidadMedidaId || fieldUnidadMedida.value;
     fieldActivo.checked = row.dataset.activo === "1";
     cancelEdit.classList.remove("hidden");
     modalTitle.textContent = `Editar producto ${row.dataset.cod || ""}`;

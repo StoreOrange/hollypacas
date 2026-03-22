@@ -38,6 +38,19 @@ class Marca(Base):
     registro = Column(DateTime, server_default=func.now())
 
 
+class UnidadMedida(Base):
+    __tablename__ = "unidades_medida"
+
+    id = Column(Integer, primary_key=True, index=True)
+    codigo = Column(String(20), unique=True, nullable=False)
+    nombre = Column(String(80), unique=True, nullable=False)
+    abreviatura = Column(String(20), nullable=False)
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    productos = relationship("Producto", back_populates="unidad_medida")
+
+
 class ColorCatalog(Base):
     __tablename__ = "color_catalog"
 
@@ -146,6 +159,8 @@ class Producto(Base):
     servicio_producto = Column(Boolean, default=False)
     costo_producto = Column(Numeric(12, 2), default=0)
     referencia_producto = Column(String(120), nullable=True)
+    es_por_peso = Column(Boolean, default=False)
+    unidad_medida_id = Column(Integer, ForeignKey("unidades_medida.id"), nullable=True)
     usuario_registro = Column(String(80), nullable=True)
     maquina_registro = Column(String(80), nullable=True)
     registro = Column(DateTime, server_default=func.now())
@@ -153,6 +168,7 @@ class Producto(Base):
 
     linea = relationship("Linea", back_populates="productos")
     segmento = relationship("Segmento", back_populates="productos")
+    unidad_medida = relationship("UnidadMedida", back_populates="productos")
     saldo = relationship("SaldoProducto", back_populates="producto", uselist=False)
     combo_children = relationship(
         "ProductoCombo",

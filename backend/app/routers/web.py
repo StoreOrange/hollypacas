@@ -67,6 +67,7 @@ from ..models.inventory import (
     Proveedor,
     SaldoProducto,
     Segmento,
+    UnidadMedida,
     ShoeProductVariant,
     ShoeSizeFormat,
     ShoeSizeFormatLine,
@@ -878,6 +879,8 @@ def _default_company_profile_payload() -> dict[str, str]:
             "pos_logo_url": "/static/logo_hollywood.png",
             "favicon_url": "/static/favicon.ico",
             "inventory_cs_only": False,
+            "weighted_inventory_enabled": False,
+            "weighted_sales_enabled": False,
             "multi_branch_enabled": multi_branch_enabled,
             "price_auto_from_cost_enabled": False,
             "price_margin_percent": 0,
@@ -897,6 +900,8 @@ def _default_company_profile_payload() -> dict[str, str]:
         "pos_logo_url": "/static/logo_hollywood.png",
         "favicon_url": "/static/favicon.ico",
         "inventory_cs_only": False,
+        "weighted_inventory_enabled": False,
+        "weighted_sales_enabled": False,
         "multi_branch_enabled": multi_branch_enabled,
         "price_auto_from_cost_enabled": False,
         "price_margin_percent": 0,
@@ -924,6 +929,8 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
             "pos_logo_url": row.pos_logo_url or payload["pos_logo_url"],
             "favicon_url": row.favicon_url or payload["favicon_url"],
             "inventory_cs_only": bool(row.inventory_cs_only),
+            "weighted_inventory_enabled": bool(getattr(row, "weighted_inventory_enabled", False)),
+            "weighted_sales_enabled": bool(getattr(row, "weighted_sales_enabled", False)),
             "multi_branch_enabled": bool(row.multi_branch_enabled),
             "price_auto_from_cost_enabled": bool(row.price_auto_from_cost_enabled),
             "price_margin_percent": int(row.price_margin_percent or 0),
@@ -936,6 +943,16 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
 def _inventory_cs_only_mode(db: Session) -> bool:
     profile = _company_profile_payload(db)
     return bool(profile.get("inventory_cs_only"))
+
+
+def _weighted_inventory_enabled_mode(db: Session) -> bool:
+    profile = _company_profile_payload(db)
+    return bool(profile.get("weighted_inventory_enabled", False))
+
+
+def _weighted_sales_enabled_mode(db: Session) -> bool:
+    profile = _company_profile_payload(db)
+    return bool(profile.get("weighted_sales_enabled", False))
 
 
 def _multi_branch_enabled_mode(db: Session) -> bool:
@@ -1971,6 +1988,39 @@ def _get_company_profile_setting(db: Session) -> CompanyProfileSetting:
     db.commit()
     db.refresh(row)
     return row
+
+
+def _default_weight_unit(db: Session) -> Optional[UnidadMedida]:
+    unit = (
+        db.query(UnidadMedida)
+        .filter(UnidadMedida.activo.is_(True))
+        .filter(func.upper(UnidadMedida.codigo) == "LIBRAS")
+        .order_by(UnidadMedida.id.asc())
+        .first()
+    )
+    if unit:
+        return unit
+    return (
+        db.query(UnidadMedida)
+        .filter(UnidadMedida.activo.is_(True))
+        .order_by(UnidadMedida.id.asc())
+        .first()
+    )
+
+
+def _resolve_weight_unit(
+    db: Session,
+    raw_unit_id: Optional[str],
+    *,
+    fallback_default: bool = True,
+) -> Optional[UnidadMedida]:
+    if str(raw_unit_id or "").isdigit():
+        unit = db.query(UnidadMedida).filter(UnidadMedida.id == int(str(raw_unit_id))).first()
+        if unit:
+            return unit
+    if fallback_default:
+        return _default_weight_unit(db)
+    return None
 
 
 def _send_reversion_email(
@@ -5665,6 +5715,7 @@ def inventory_page(
     lineas = db.query(Linea).order_by(Linea.linea).all()
     segmentos = db.query(Segmento).order_by(Segmento.segmento).all()
     marcas = db.query(Marca).filter(Marca.activo.is_(True)).order_by(Marca.nombre).all()
+    unidades_medida = db.query(UnidadMedida).filter(UnidadMedida.activo.is_(True)).order_by(UnidadMedida.id.asc()).all()
     error = request.query_params.get("error")
     success = request.query_params.get("success")
     rate_today = (
@@ -5676,6 +5727,13 @@ def inventory_page(
     product_ids = [p.id for p in productos]
     bodega_ids = [b.id for b in bodegas]
     balances = _balances_by_bodega(db, bodega_ids, product_ids)
+    _, current_bodega = _resolve_branch_bodega(db, user)
+    if not current_bodega and bodegas:
+        current_bodega = bodegas[0]
+    current_bodega_saldos: dict[int, float] = {}
+    if current_bodega:
+        for producto in productos:
+            current_bodega_saldos[producto.id] = float(balances.get((producto.id, current_bodega.id), Decimal("0")) or 0)
     bodega_central = next((b for b in bodegas if (b.code or "").lower() == "central"), None)
     if not bodega_central:
         bodega_central = next((b for b in bodegas if "central" in (b.name or "").lower()), None)
@@ -5700,6 +5758,8 @@ def inventory_page(
     global_qty = central_qty + esteli_qty
     global_items = len({p.id for p in productos if (balances.get((p.id, bodega_central.id), Decimal("0")) if bodega_central else Decimal("0")) > 0 or (balances.get((p.id, bodega_esteli.id), Decimal("0")) if bodega_esteli else Decimal("0")) > 0})
     inventory_cs_only = _inventory_cs_only_mode(db)
+    weighted_inventory_enabled = _weighted_inventory_enabled_mode(db)
+    weighted_sales_enabled = _weighted_sales_enabled_mode(db)
     auto_price_margin_enabled, auto_price_margin_pct = _price_margin_mode(db)
     is_hollpacas_mode = _is_hollpacas_mode()
     return request.app.state.templates.TemplateResponse(
@@ -5709,6 +5769,8 @@ def inventory_page(
             "user": user,
             "productos": productos,
             "bodegas": bodegas,
+            "current_bodega": current_bodega,
+            "current_bodega_saldos": current_bodega_saldos,
             "central_qty": float(central_qty),
             "esteli_qty": float(esteli_qty),
             "global_qty": float(global_qty),
@@ -5717,12 +5779,16 @@ def inventory_page(
             "global_items": global_items,
             "lineas": lineas,
             "segmentos": segmentos,
+            "marcas": marcas,
+            "unidades_medida": unidades_medida,
             "edit_product": edit_product,
             "rate_today": rate_today,
             "error": error,
             "success": success,
             "show_inactive": show_inactive,
             "inventory_cs_only": inventory_cs_only,
+            "weighted_inventory_enabled": weighted_inventory_enabled,
+            "weighted_sales_enabled": weighted_sales_enabled,
             "auto_price_margin_enabled": auto_price_margin_enabled,
             "auto_price_margin_pct": auto_price_margin_pct,
             "is_hollpacas_mode": is_hollpacas_mode,
@@ -7284,6 +7350,7 @@ def inventory_ingresos_page(
     lineas = db.query(Linea).order_by(Linea.linea).all()
     segmentos = db.query(Segmento).order_by(Segmento.segmento).all()
     marcas = db.query(Marca).filter(Marca.activo.is_(True)).order_by(Marca.nombre).all()
+    unidades_medida = db.query(UnidadMedida).filter(UnidadMedida.activo.is_(True)).order_by(UnidadMedida.id.asc()).all()
     shoe_colors = db.query(ColorCatalog).filter(ColorCatalog.activo.is_(True)).order_by(ColorCatalog.nombre).all() if shoes_mode else []
     shoe_size_formats = (
         db.query(ShoeSizeFormat).filter(ShoeSizeFormat.activo.is_(True)).order_by(ShoeSizeFormat.codigo).all()
@@ -7320,6 +7387,8 @@ def inventory_ingresos_page(
         .first()
     )
     inventory_cs_only = _inventory_cs_only_mode(db)
+    weighted_inventory_enabled = _weighted_inventory_enabled_mode(db)
+    weighted_sales_enabled = _weighted_sales_enabled_mode(db)
     auto_price_margin_enabled, auto_price_margin_pct = _price_margin_mode(db)
     return request.app.state.templates.TemplateResponse(
         "inventory_ingresos.html",
@@ -7335,6 +7404,7 @@ def inventory_ingresos_page(
             "lineas": lineas,
             "segmentos": segmentos,
             "marcas": marcas,
+            "unidades_medida": unidades_medida,
             "shoes_mode": shoes_mode,
             "shoe_colors": shoe_colors,
             "shoe_size_formats": shoe_size_formats,
@@ -7349,6 +7419,8 @@ def inventory_ingresos_page(
             "print_id": print_id,
             "print_labels_id": print_labels_id,
             "inventory_cs_only": inventory_cs_only,
+            "weighted_inventory_enabled": weighted_inventory_enabled,
+            "weighted_sales_enabled": weighted_sales_enabled,
             "auto_price_margin_enabled": auto_price_margin_enabled,
             "auto_price_margin_pct": auto_price_margin_pct,
             "version": settings.UI_VERSION,
@@ -7784,6 +7856,7 @@ def sales_page(
             "default_vendedor_id": _default_vendedor_id(db, bodega),
             "initial_preventa": initial_preventa,
             "sales_interface_code": interface_code,
+            "weighted_sales_enabled": _weighted_sales_enabled_mode(db),
             "version": settings.UI_VERSION,
         },
     )
@@ -16837,6 +16910,8 @@ def data_empresa_update(
     pos_logo_url: Optional[str] = Form(None),
     favicon_url: Optional[str] = Form(None),
     inventory_cs_only: Optional[str] = Form(None),
+    weighted_inventory_enabled: Optional[str] = Form(None),
+    weighted_sales_enabled: Optional[str] = Form(None),
     multi_branch_enabled: Optional[str] = Form(None),
     price_auto_from_cost_enabled: Optional[str] = Form(None),
     price_margin_percent: Optional[str] = Form(None),
@@ -16859,6 +16934,8 @@ def data_empresa_update(
     profile.pos_logo_url = (pos_logo_url or "").strip() or profile.logo_url
     profile.favicon_url = (favicon_url or "").strip() or "/static/favicon.ico"
     profile.inventory_cs_only = inventory_cs_only == "on"
+    profile.weighted_inventory_enabled = weighted_inventory_enabled == "on"
+    profile.weighted_sales_enabled = weighted_sales_enabled == "on"
     profile.multi_branch_enabled = multi_branch_enabled == "on"
     raw_margin = (price_margin_percent or "").strip()
     margin_value = 0
@@ -18289,6 +18366,10 @@ def sales_products_search(
                 "free_qty": free_qty,
                 "reserved_details": reserved_details.get(producto.id, []),
                 "combo_count": len(producto.combo_children or []),
+                "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
+                "unidad_medida_id": int(producto.unidad_medida_id or 0) if getattr(producto, "unidad_medida_id", None) else None,
+                "unidad_medida_nombre": producto.unidad_medida.nombre if getattr(producto, "unidad_medida", None) else "",
+                "unidad_medida_abreviatura": producto.unidad_medida.abreviatura if getattr(producto, "unidad_medida", None) else "",
             }
         )
     return JSONResponse({"ok": True, "items": items})
@@ -19555,6 +19636,8 @@ def inventory_create_product(
     segmento_id: Optional[str] = Form(None),
     marca: Optional[str] = Form(None),
     referencia_producto: Optional[str] = Form(None),
+    es_por_peso: Optional[str] = Form(None),
+    unidad_medida_id: Optional[str] = Form(None),
     precio_venta1_usd: float = Form(0),
     precio_venta2_usd: float = Form(0),
     precio_venta3_usd: float = Form(0),
@@ -19612,6 +19695,11 @@ def inventory_create_product(
         return _error("Tasa de cambio no configurada")
 
     tasa = float(rate_today.rate)
+    weighted_feature_enabled = _weighted_inventory_enabled_mode(db) or _weighted_sales_enabled_mode(db)
+    is_weight_product = weighted_feature_enabled and es_por_peso == "on"
+    weight_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=is_weight_product)
+    if is_weight_product and not weight_unit:
+        return _error("Unidad de medida invalida")
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
         precio_venta1_cs = float(precio_venta1_usd or 0)
@@ -19643,6 +19731,8 @@ def inventory_create_product(
         precio_venta3_usd=precio_venta3_usd,
         tasa_cambio=tasa,
         costo_producto=costo_producto_cs,
+        es_por_peso=is_weight_product,
+        unidad_medida_id=weight_unit.id if is_weight_product and weight_unit else None,
         activo=active_flag,
 )
     db.add(producto)
@@ -19662,6 +19752,9 @@ def inventory_create_product(
                 "precio_venta1": float(producto.precio_venta1 or 0),
                 "costo_cs": float(producto.costo_producto or 0),
                 "activo": bool(producto.activo),
+                "es_por_peso": bool(producto.es_por_peso),
+                "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
+                "unidad_medida_nombre": producto.unidad_medida.nombre if producto.unidad_medida else "",
             }
         )
     target = redirect_to or "/inventory"
@@ -19675,6 +19768,8 @@ def inventory_update_product(
     descripcion: str = Form(...),
     linea_id: Optional[str] = Form(None),
     segmento_id: Optional[str] = Form(None),
+    es_por_peso: Optional[str] = Form(None),
+    unidad_medida_id: Optional[str] = Form(None),
     precio_venta1_usd: float = Form(0),
     precio_venta2_usd: float = Form(0),
     precio_venta3_usd: float = Form(0),
@@ -19718,6 +19813,12 @@ def inventory_update_product(
         return RedirectResponse(f"{target}?error=Tasa+de+cambio+no+configurada", status_code=303)
 
     tasa = float(rate_today.rate)
+    weighted_feature_enabled = _weighted_inventory_enabled_mode(db) or _weighted_sales_enabled_mode(db)
+    is_weight_product = weighted_feature_enabled and es_por_peso == "on"
+    weight_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=is_weight_product)
+    if is_weight_product and not weight_unit:
+        target = redirect_to or "/inventory"
+        return RedirectResponse(f"{target}?error=Unidad+de+medida+invalida", status_code=303)
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
         precio_venta1_cs = float(precio_venta1_usd or 0)
@@ -19744,6 +19845,8 @@ def inventory_update_product(
     producto.precio_venta3 = precio_venta3_cs
     producto.costo_producto = costo_producto_cs
     producto.tasa_cambio = tasa
+    producto.es_por_peso = is_weight_product
+    producto.unidad_medida_id = weight_unit.id if is_weight_product and weight_unit else None
     producto.activo = activo == "on"
 
     if existencia is not None:
@@ -19766,6 +19869,9 @@ def inventory_update_product(
                 "precio_venta3_usd": float(producto.precio_venta3_usd or 0),
                 "costo_usd": float(costo_producto_usd or 0),
                 "activo": bool(producto.activo),
+                "es_por_peso": bool(producto.es_por_peso),
+                "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
+                "unidad_medida_nombre": producto.unidad_medida.nombre if producto.unidad_medida else "",
             }
         )
     return RedirectResponse(redirect_to or "/inventory", status_code=303)
@@ -19797,6 +19903,8 @@ def inventory_product_json(
             "precio_venta3_usd": float(producto.precio_venta3_usd or 0),
             "costo_usd": costo_usd,
             "activo": bool(producto.activo),
+            "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
+            "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
         }
     )
 
@@ -21400,6 +21508,7 @@ async def sales_create_invoice(
     total_usd = 0.0
     total_cs = 0.0
     total_items = 0.0
+    weighted_sales_enabled = _weighted_sales_enabled_mode(db)
     product_ids = [int(it["product_id"]) for it in source_items if int(it["product_id"]) > 0]
     balances = _balances_by_bodega(db, [bodega.id], list(set(product_ids))) if product_ids else {}
     for src in source_items:
@@ -21413,6 +21522,9 @@ async def sales_create_invoice(
         if not producto:
             db.rollback()
             return RedirectResponse("/sales?error=Producto+no+encontrado", status_code=303)
+        if weighted_sales_enabled and bool(getattr(producto, "es_por_peso", False)) and qty <= 0:
+            db.rollback()
+            return RedirectResponse("/sales?error=Debes+definir+el+peso+a+facturar", status_code=303)
 
         existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0)
         if existencia < qty:

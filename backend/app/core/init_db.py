@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from ..config import get_active_company_key, settings
 from ..database import Base, get_engine, get_session_local
 from ..models.user import Branch, Permission, Role, User
-from ..models.inventory import Bodega, EgresoTipo, IngresoTipo, Linea, Marca, Segmento
+from ..models.inventory import Bodega, EgresoTipo, IngresoTipo, Linea, Marca, Segmento, UnidadMedida
 from ..models.sales import (
     AccountingPolicySetting,
     AccountingVoucherType,
@@ -798,6 +798,43 @@ def _seed_sales_interface_settings(db: Session) -> None:
         db.commit()
 
 
+def _seed_unidades_medida(db: Session) -> None:
+    defaults = [
+        ("LIBRAS", "Libras", "lb"),
+        ("KILOGRAMOS", "Kilogramos", "kg"),
+        ("ONZAS", "Onzas", "oz"),
+    ]
+    existing = {
+        (row.codigo or "").strip().upper(): row
+        for row in db.query(UnidadMedida).all()
+    }
+    changed = False
+    for codigo, nombre, abreviatura in defaults:
+        row = existing.get(codigo)
+        if not row:
+            db.add(
+                UnidadMedida(
+                    codigo=codigo,
+                    nombre=nombre,
+                    abreviatura=abreviatura,
+                    activo=True,
+                )
+            )
+            changed = True
+            continue
+        if row.nombre != nombre:
+            row.nombre = nombre
+            changed = True
+        if (row.abreviatura or "") != abreviatura:
+            row.abreviatura = abreviatura
+            changed = True
+        if row.activo is None:
+            row.activo = True
+            changed = True
+    if changed:
+        db.commit()
+
+
 def _seed_company_profile_settings(db: Session) -> None:
     is_shoes = get_active_company_key() in {"bdzapatos", "zapatos", "miss_zapatos"}
     multi_branch_enabled = get_active_company_key() != "comestibles"
@@ -819,6 +856,12 @@ def _seed_company_profile_settings(db: Session) -> None:
                 changed = True
         if existing.multi_branch_enabled is None:
             existing.multi_branch_enabled = multi_branch_enabled
+            changed = True
+        if getattr(existing, "weighted_inventory_enabled", None) is None:
+            existing.weighted_inventory_enabled = False
+            changed = True
+        if getattr(existing, "weighted_sales_enabled", None) is None:
+            existing.weighted_sales_enabled = False
             changed = True
         if existing.price_auto_from_cost_enabled is None:
             existing.price_auto_from_cost_enabled = False
@@ -848,6 +891,8 @@ def _seed_company_profile_settings(db: Session) -> None:
                 pos_logo_url="/static/logo_hollywood.png",
                 favicon_url="/static/favicon.ico",
                 inventory_cs_only=False,
+                weighted_inventory_enabled=False,
+                weighted_sales_enabled=False,
                 multi_branch_enabled=multi_branch_enabled,
                 price_auto_from_cost_enabled=False,
                 price_margin_percent=0,
@@ -871,6 +916,8 @@ def _seed_company_profile_settings(db: Session) -> None:
                 pos_logo_url="/static/logo_hollywood.png",
                 favicon_url="/static/favicon.ico",
                 inventory_cs_only=False,
+                weighted_inventory_enabled=False,
+                weighted_sales_enabled=False,
                 multi_branch_enabled=multi_branch_enabled,
                 price_auto_from_cost_enabled=False,
                 price_margin_percent=0,
@@ -1027,6 +1074,19 @@ def init_db() -> None:
                 with engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE productos ADD COLUMN {usd_col} NUMERIC(12,2)"))
                     conn.execute(text(f"UPDATE productos SET {usd_col} = 0 WHERE {usd_col} IS NULL"))
+        if "es_por_peso" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE productos ADD COLUMN es_por_peso BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("UPDATE productos SET es_por_peso = FALSE WHERE es_por_peso IS NULL"))
+        if "unidad_medida_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE productos ADD COLUMN unidad_medida_id INTEGER"))
+    if "unidades_medida" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("unidades_medida")}
+        if "abreviatura" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE unidades_medida ADD COLUMN abreviatura VARCHAR(20) DEFAULT 'lb'"))
+                conn.execute(text("UPDATE unidades_medida SET abreviatura = 'lb' WHERE abreviatura IS NULL OR abreviatura = ''"))
     if "pos_print_settings" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("pos_print_settings")}
         if "sumatra_path" not in columns:
@@ -1068,6 +1128,24 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN inventory_cs_only BOOLEAN DEFAULT FALSE"))
                 conn.execute(text("UPDATE company_profile_settings SET inventory_cs_only = FALSE WHERE inventory_cs_only IS NULL"))
+        if "weighted_inventory_enabled" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN weighted_inventory_enabled BOOLEAN DEFAULT FALSE"))
+                conn.execute(
+                    text(
+                        "UPDATE company_profile_settings SET weighted_inventory_enabled = FALSE "
+                        "WHERE weighted_inventory_enabled IS NULL"
+                    )
+                )
+        if "weighted_sales_enabled" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN weighted_sales_enabled BOOLEAN DEFAULT FALSE"))
+                conn.execute(
+                    text(
+                        "UPDATE company_profile_settings SET weighted_sales_enabled = FALSE "
+                        "WHERE weighted_sales_enabled IS NULL"
+                    )
+                )
         if "multi_branch_enabled" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN multi_branch_enabled BOOLEAN DEFAULT TRUE"))
@@ -1148,6 +1226,7 @@ def init_db() -> None:
             )
     db = get_session_local()()
     try:
+        _seed_unidades_medida(db)
         _seed_roles(db)
         _seed_permissions(db)
         _seed_branches(db)

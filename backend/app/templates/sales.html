@@ -826,6 +826,7 @@
   const preventaLiveBtn = document.getElementById("preventa-live-btn");
   const rateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
   const activeBodegaId = Number({{ user.default_bodega.id if user.default_bodega else 0 }}) || 0;
+  const weighted_sales_enabled = {{ "true" if weighted_sales_enabled else "false" }};
   const initialPreventa = {{ (initial_preventa or None) | tojson }};
   let preventaLastId = Number(initialPreventa?.id || 0) || 0;
   let preventaLiveSource = null;
@@ -1041,7 +1042,7 @@
       totalItems.textContent = rows.length.toString();
     }
     if (totalBultos) {
-      totalBultos.textContent = sumQty.toFixed(0);
+      totalBultos.textContent = sumQty.toFixed(2);
     }
     if (totalDisplay) {
       totalDisplay.textContent = monedaField?.value === "USD"
@@ -1153,12 +1154,13 @@
     if (layout && !layout.classList.contains("sidebar-collapsed")) {
       layout.classList.add("sidebar-collapsed");
     }
-    const row = document.createElement("tr");
-    row.dataset.itemRow = "1";
-    row.dataset.productId = payload.productId;
-    row.dataset.subtotalUsd = payload.subtotalUsd.toFixed(2);
-    row.dataset.subtotalCs = payload.subtotalCs.toFixed(2);
-    row.dataset.maxQty = payload.maxQty.toFixed(2);
+      const row = document.createElement("tr");
+      row.dataset.itemRow = "1";
+      row.dataset.productId = payload.productId;
+      row.dataset.subtotalUsd = payload.subtotalUsd.toFixed(2);
+      row.dataset.subtotalCs = payload.subtotalCs.toFixed(2);
+      row.dataset.maxQty = payload.maxQty.toFixed(2);
+      row.dataset.allowDecimal = payload.qtyStep === "0.01" ? "1" : "0";
     row.classList.add("sales-item-row");
     if (payload.role === "parent") {
       row.classList.add("combo-parent");
@@ -1187,7 +1189,7 @@
         <div class="mt-0.5 flex flex-wrap items-center justify-between gap-2 text-sm">
           <div class="flex items-center gap-2">
             <span class="text-xs text-slate uppercase tracking-[0.18em]">Cantidad</span>
-            <input class="row-qty w-20 text-left border-0 bg-transparent focus:outline-none font-semibold text-ink" type="text" inputmode="numeric" value="${payload.qtyValueDisplay}" />
+            <input class="row-qty w-20 text-left border-0 bg-transparent focus:outline-none font-semibold text-ink" type="text" inputmode="decimal" value="${payload.qtyValueDisplay}" />
           </div>
           <div class="flex flex-wrap items-center gap-2 text-right">
             <div class="flex items-center gap-2">
@@ -1227,6 +1229,35 @@
   const parseQty = (value) => {
     const raw = parseFloat(value || 0);
     return Math.max(1, Math.round(raw));
+  };
+
+  const promptWeightForItem = async (button, initialValue = "") => {
+    if (!weighted_sales_enabled || button.dataset.esPorPeso !== "1") return null;
+    const unitLabel = button.dataset.unidadMedida || "lb";
+    if (typeof Swal === "undefined") {
+      const raw = window.prompt(`Define ${unitLabel} a facturar`, initialValue || "0.50");
+      if (raw === null) return null;
+      const parsed = parseFloat(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+    const result = await Swal.fire({
+      title: "Producto por peso",
+      html: `<div class="text-start small text-muted mb-2">${button.dataset.code} - ${button.dataset.name}</div>`,
+      input: "number",
+      inputLabel: `Cantidad en ${unitLabel}`,
+      inputValue: initialValue || "0.50",
+      inputAttributes: { min: "0.01", step: "0.01" },
+      showCancelButton: true,
+      confirmButtonText: "Aplicar peso",
+      cancelButtonText: "Cancelar",
+      inputValidator: (value) => {
+        const parsed = parseFloat(value || 0);
+        if (!Number.isFinite(parsed) || parsed <= 0) return "Ingresa un peso valido";
+        return undefined;
+      },
+    });
+    if (!result.isConfirmed) return null;
+    return parseFloat(result.value || 0);
   };
 
   const pauseNavForAlert = (config) => {
@@ -1330,7 +1361,8 @@
     const row = button.closest(".product-pick-row");
     if (!row) return false;
     const qtyInput = row.querySelector(".qty-input");
-    const qty = parseQty(qtyInput.value);
+    const weightedQty = await promptWeightForItem(button, qtyInput?.value || "");
+    const qty = weightedQty ?? parseQty(qtyInput.value);
     const maxQty = parseFloat(button.dataset.existencia || 0);
     let freeQty = parseFloat(button.dataset.freeQty || maxQty || 0);
     let reservedDetails = parseReservedDetails(button.dataset.reservedDetails || "");
@@ -1379,8 +1411,13 @@
       }
       const qtyInputRow = existingRow.querySelector(".row-qty");
       if (qtyInputRow && qtyHidden) {
-        qtyInputRow.value = Math.trunc(newQty).toString();
-        qtyHidden.value = Math.trunc(newQty).toFixed(2);
+        if (button.dataset.esPorPeso === "1") {
+          qtyInputRow.value = newQty.toFixed(2);
+          qtyHidden.value = newQty.toFixed(2);
+        } else {
+          qtyInputRow.value = Math.trunc(newQty).toString();
+          qtyHidden.value = Math.trunc(newQty).toFixed(2);
+        }
       }
       const priceInputRow = existingRow.querySelector(".row-price");
       const priceValue = parseFloat(priceInputRow?.value || 0);
@@ -1406,10 +1443,10 @@
     addItemRow({
       productId: button.dataset.productId,
       code: button.dataset.code,
-      name: button.dataset.name,
-      qtyValue: Math.trunc(qty).toFixed(2),
-      qtyValueDisplay: Math.trunc(qty).toString(),
-      qtyStep: "1",
+      name: `${button.dataset.name}${button.dataset.esPorPeso === "1" ? ` (${button.dataset.unidadMedida || "lb"})` : ""}`,
+      qtyValue: button.dataset.esPorPeso === "1" ? qty.toFixed(2) : Math.trunc(qty).toFixed(2),
+      qtyValueDisplay: button.dataset.esPorPeso === "1" ? qty.toFixed(2) : Math.trunc(qty).toString(),
+      qtyStep: button.dataset.esPorPeso === "1" ? "0.01" : "1",
       maxQty: maxQty,
       priceValue: price.toFixed(2),
       subtotalLabel: formatMoney(subtotal, moneda === "USD" ? "USD" : "CS"),
@@ -2074,7 +2111,7 @@
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="text-xs uppercase tracking-[0.18em] text-slate">Cantidad</span>
-                    <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" max="${item.free_qty ?? item.existencia}" value="1" />
+                    <input class="qty-input w-24 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="${weighted_sales_enabled && item.es_por_peso ? "0.01" : "1"}" min="${weighted_sales_enabled && item.es_por_peso ? "0.01" : "1"}" max="${item.free_qty ?? item.existencia}" value="${weighted_sales_enabled && item.es_por_peso ? "0.50" : "1"}" />
                   </div>
                 </div>
               </div>
@@ -2090,6 +2127,8 @@
               data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
               data-price-usd="${item.precio_venta1_usd.toFixed(2)}"
               data-price-cs="${item.precio_venta1.toFixed(2)}"
+              data-es-por-peso="${item.es_por_peso ? "1" : "0"}"
+              data-unidad-medida="${item.unidad_medida_abreviatura || "lb"}"
               aria-label="Agregar producto"
             >
               <i class="bi bi-plus-lg"></i>
@@ -2198,6 +2237,11 @@
   if (productListPanel) {
     productListPanel.addEventListener("keydown", handleProductNav, { passive: false });
     productListPanel.addEventListener("click", (event) => {
+      const qtyInput = event.target.closest(".qty-input");
+      if (qtyInput) {
+        productNavMode = "paused";
+        return;
+      }
       const row = event.target.closest(".product-pick-row");
       if (!row) return;
       refreshActiveRows();
@@ -2221,6 +2265,32 @@
         }, 10);
       }
     });
+  }
+
+  if (productList) {
+    productList.addEventListener("focusin", (event) => {
+      const qtyInput = event.target.closest(".qty-input");
+      if (!qtyInput) return;
+      productNavMode = "paused";
+      setTimeout(() => {
+        qtyInput.select();
+      }, 0);
+    });
+    productList.addEventListener("click", (event) => {
+      const qtyInput = event.target.closest(".qty-input");
+      if (!qtyInput) return;
+      event.stopPropagation();
+      productNavMode = "paused";
+      qtyInput.focus();
+      qtyInput.select();
+    });
+    productList.addEventListener("blur", (event) => {
+      const qtyInput = event.target.closest(".qty-input");
+      if (!qtyInput) return;
+      if (productNavMode === "paused") {
+        productNavMode = "panel";
+      }
+    }, true);
   }
 
   document.addEventListener("keydown", (event) => {
@@ -2397,18 +2467,18 @@
       let qty = parseFloat(qtyInput ? qtyInput.value : (qtyHidden ? qtyHidden.value : 0));
       const maxQty = parseFloat(row.dataset.maxQty || 0);
       if (maxQty && qty > maxQty && qtyInput) {
-        qty = Math.trunc(maxQty);
-        qtyInput.value = Math.trunc(maxQty).toString();
+        qty = row.dataset.allowDecimal === "1" ? maxQty : Math.trunc(maxQty);
+        qtyInput.value = row.dataset.allowDecimal === "1" ? maxQty.toFixed(2) : Math.trunc(maxQty).toString();
         if (qtyHidden) {
-          qtyHidden.value = Math.trunc(maxQty).toFixed(2);
+          qtyHidden.value = row.dataset.allowDecimal === "1" ? maxQty.toFixed(2) : Math.trunc(maxQty).toFixed(2);
         }
         if (typeof Swal !== "undefined") {
           Swal.fire({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible: ${maxQty}` });
         }
       }
       if (qtyHidden && qtyInput) {
-        qtyHidden.value = Math.trunc(qty).toFixed(2);
-        qtyInput.value = Math.trunc(qty).toString();
+        qtyHidden.value = row.dataset.allowDecimal === "1" ? qty.toFixed(2) : Math.trunc(qty).toFixed(2);
+        qtyInput.value = row.dataset.allowDecimal === "1" ? qty.toFixed(2) : Math.trunc(qty).toString();
       }
       const price = parseFloat(priceInput ? priceInput.value : 0);
       const moneda = monedaField.value || "USD";
@@ -3128,5 +3198,3 @@
   {% endif %}
 </script>
 {% endblock %}
-
-

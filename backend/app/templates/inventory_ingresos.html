@@ -742,7 +742,7 @@
                   </thead>
                   <tbody id="product-list" class="ingreso-muted">
                     {% for p in productos %}
-                    <tr class="product-pick-row border-b border-slate-50" style="display:none;" data-name="{{ p.descripcion }}" data-code="{{ p.cod_producto }}" data-saldos='{{ saldos_por_bodega[p.id]|tojson }}'>
+                    <tr class="product-pick-row border-b border-slate-50" style="display:none;" data-name="{{ p.descripcion }}" data-code="{{ p.cod_producto }}" data-saldos='{{ saldos_por_bodega[p.id]|tojson }}' data-es-por-peso="{{ 1 if p.es_por_peso else 0 }}" data-unidad-medida="{{ p.unidad_medida.abreviatura if p.unidad_medida else 'lb' }}">
                       <td class="px-3 py-2 font-semibold text-ink">{{ p.cod_producto }}</td>
                       <td class="px-3 py-2 text-slate">{{ p.descripcion }}</td>
                       <td class="px-3 py-2 text-right text-slate">
@@ -755,7 +755,7 @@
                       <td class="px-3 py-2 text-right text-slate">{% if inventory_cs_only %}C$ {{ "%.2f"|format(p.precio_venta1 or 0) }}{% else %}$ {{ "%.2f"|format(p.precio_venta1_usd or 0) }}{% endif %}</td>
                       <td class="px-3 py-2 text-right text-slate saldo-cell">0</td>
       <td class="px-3 py-2 text-right">
-        <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" value="1" />
+        <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="{% if p.es_por_peso %}0.01{% else %}1{% endif %}" min="0.01" value="{% if p.es_por_peso %}0.50{% else %}1{% endif %}" />
       </td>
                       <td class="px-3 py-2 text-center">
                         <button
@@ -768,6 +768,8 @@
                           data-cost-cs="{{ "%.2f"|format(p.costo_producto or 0) }}"
                           data-price-usd="{{ "%.2f"|format(p.precio_venta1_usd or 0) }}"
                           data-price-cs="{{ "%.2f"|format(p.precio_venta1 or 0) }}"
+                          data-es-por-peso="{{ 1 if p.es_por_peso else 0 }}"
+                          data-unidad-medida="{{ p.unidad_medida.abreviatura if p.unidad_medida else 'lb' }}"
                         >
                           <i class="bi bi-plus"></i>
                         </button>
@@ -976,6 +978,24 @@
                   <input id="new-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
                 </label>
               </div>
+              {% if weighted_inventory_enabled or weighted_sales_enabled %}
+              <div class="col-md-6 d-flex align-items-end">
+                <label class="flex items-center gap-2 text-sm font-semibold text-ink">
+                  <input id="new-product-weighted" class="accent-brand" type="checkbox" name="es_por_peso" />
+                  Producto por peso
+                </label>
+              </div>
+              <div class="col-md-6">
+                <label class="block text-sm font-semibold text-ink">
+                  Unidad de medida
+                  <select id="new-product-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
+                    {% for unidad in unidades_medida %}
+                    <option value="{{ unidad.id }}" {% if unidad.codigo == 'LIBRAS' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+              {% endif %}
             </div>
             <button id="create-product-btn" class="w-full btn btn-primary btn-sm mt-3" type="submit">
               Crear producto
@@ -1005,6 +1025,8 @@
                   data-precio3="{{ "%.2f"|format(p.precio_venta3_usd or 0) }}"
                   data-costo="{% if inventory_cs_only %}{{ "%.2f"|format(p.costo_producto or 0) }}{% elif p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0.00{% endif %}"
                   data-activo="{{ 1 if p.activo else 0 }}"
+                  data-es-por-peso="{{ 1 if p.es_por_peso else 0 }}"
+                  data-unidad-medida-id="{{ p.unidad_medida_id or '' }}"
                 >
                   {{ p.cod_producto }} - {{ p.descripcion }}
                 </option>
@@ -1082,6 +1104,24 @@
                   Activo
                 </label>
               </div>
+              {% if weighted_inventory_enabled or weighted_sales_enabled %}
+              <div class="col-md-6 d-flex align-items-end">
+                <label class="flex items-center gap-2 text-sm font-semibold text-ink">
+                  <input id="edit-weighted" class="accent-brand" type="checkbox" name="es_por_peso" />
+                  Producto por peso
+                </label>
+              </div>
+              <div class="col-md-6">
+                <label class="block text-sm font-semibold text-ink">
+                  Unidad de medida
+                  <select id="edit-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
+                    {% for unidad in unidades_medida %}
+                    <option value="{{ unidad.id }}" {% if unidad.codigo == 'LIBRAS' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+              {% endif %}
             </div>
             <button class="w-full btn btn-primary btn-sm">
               Guardar cambios
@@ -1402,6 +1442,24 @@
                 <input id="quick-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
               </label>
             </div>
+            {% if weighted_inventory_enabled or weighted_sales_enabled %}
+            <div class="col-md-6 d-flex align-items-end">
+              <label class="flex items-center gap-2 text-sm font-semibold text-ink">
+                <input id="quick-product-weighted" class="accent-brand" type="checkbox" name="es_por_peso" />
+                Producto por peso
+              </label>
+            </div>
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
+                Unidad de medida
+                <select id="quick-product-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
+                  {% for unidad in unidades_medida %}
+                  <option value="{{ unidad.id }}" {% if unidad.codigo == 'LIBRAS' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            {% endif %}
           </div>
           <div class="d-flex justify-content-end gap-2 mt-4">
             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -1464,6 +1522,8 @@
   const editPrecio3 = document.getElementById("edit-precio3");
   const editProductMargin = document.getElementById("edit-product-margin");
   const editCosto = document.getElementById("edit-costo");
+  const editWeighted = document.getElementById("edit-weighted");
+  const editUnit = document.getElementById("edit-unit");
   const editActivo = document.getElementById("edit-activo");
   const editProveedorSelect = document.getElementById("edit-proveedor-select");
   const editProveedorForm = document.getElementById("proveedor-edit-form");
@@ -1503,6 +1563,8 @@
   const quickProductPrecio = document.getElementById("quick-product-precio");
   const quickProductMargin = document.getElementById("quick-product-margin");
   const quickProductCosto = document.getElementById("quick-product-costo");
+  const quickProductWeighted = document.getElementById("quick-product-weighted");
+  const quickProductUnit = document.getElementById("quick-product-unit");
   const newProductCode = document.getElementById("new-product-code");
   const newProductDesc = document.getElementById("new-product-desc");
   const newProductLinea = document.getElementById("new-product-linea");
@@ -1511,6 +1573,8 @@
   const newProductPrecio = document.getElementById("new-product-precio");
   const newProductMargin = document.getElementById("new-product-margin");
   const newProductCosto = document.getElementById("new-product-costo");
+  const newProductWeighted = document.getElementById("new-product-weighted");
+  const newProductUnit = document.getElementById("new-product-unit");
   if (quickProductModalEl) {
     quickProductModalEl.addEventListener("shown.bs.modal", () => {
       if (quickProductCode) {
@@ -1673,11 +1737,15 @@
 
   const appendProductToList = (payload, lineaId, segmentoId) => {
     if (!productList) return;
+    const isWeighted = payload.es_por_peso === true || Number(payload.es_por_peso || 0) === 1;
+    const unitLabel = payload.unidad_medida_abreviatura || "lb";
     const row = document.createElement("tr");
     row.className = "product-pick-row border-b border-slate-50";
     row.dataset.name = payload.descripcion || "";
     row.dataset.code = payload.cod_producto || "";
     row.dataset.saldos = "{}";
+    row.dataset.esPorPeso = isWeighted ? "1" : "0";
+    row.dataset.unidadMedida = unitLabel;
     row.innerHTML = `
       <td class="px-3 py-2 font-semibold text-ink">${payload.cod_producto || ""}</td>
       <td class="px-3 py-2 text-slate">${payload.descripcion || ""}</td>
@@ -1685,7 +1753,7 @@
       <td class="px-3 py-2 text-right text-slate">${inventoryCsOnly ? "C$" : "$"} ${parseFloat(inventoryCsOnly ? (payload.precio_venta1 || 0) : (payload.precio_venta1_usd || 0)).toFixed(2)}</td>
       <td class="px-3 py-2 text-right text-slate saldo-cell">0</td>
       <td class="px-3 py-2 text-right">
-        <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" value="1" />
+        <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="${isWeighted ? "0.01" : "1"}" min="${isWeighted ? "0.01" : "1"}" value="${isWeighted ? "0.50" : "1"}" />
       </td>
       <td class="px-3 py-2 text-center">
         <button
@@ -1698,6 +1766,8 @@
           data-cost-cs="${parseFloat(payload.costo_cs || 0).toFixed(2)}"
           data-price-usd="${parseFloat(payload.precio_venta1_usd || 0).toFixed(2)}"
           data-price-cs="${parseFloat(payload.precio_venta1 || 0).toFixed(2)}"
+          data-es-por-peso="${isWeighted ? "1" : "0"}"
+          data-unidad-medida="${unitLabel}"
         >
           <i class="bi bi-plus"></i>
         </button>
@@ -2104,6 +2174,12 @@
       if (editCosto) {
         editCosto.value = inventoryCsOnly ? ((parseFloat(data.costo_usd || 0) * rateToday).toFixed(2)) : (data.costo_usd || "");
       }
+      if (editWeighted) {
+        editWeighted.checked = data.es_por_peso === true || data.es_por_peso === "1" || data.es_por_peso === 1;
+      }
+      if (editUnit) {
+        editUnit.value = data.unidad_medida_id ? String(data.unidad_medida_id) : editUnit.value;
+      }
       if (editActivo) {
         editActivo.checked = data.activo === true || data.activo === "1";
       }
@@ -2353,6 +2429,8 @@
           option.dataset.precio3 = "0.00";
           option.dataset.costo = parseFloat(inventoryCsOnly ? (payload.costo_cs || 0) : (payload.costo_usd || 0)).toFixed(2);
           option.dataset.activo = "1";
+          option.dataset.esPorPeso = payload.es_por_peso ? "1" : "0";
+          option.dataset.unidadMedidaId = payload.unidad_medida_id || "";
           editSelect.append(option);
         }
         config.form.reset();
@@ -2705,6 +2783,7 @@
     row.dataset.itemRow = "1";
     row.dataset.subtotalUsd = payload.subtotalUsd.toFixed(2);
     row.dataset.subtotalCs = payload.subtotalCs.toFixed(2);
+    row.dataset.allowDecimal = payload.qtyStep === "0.01" ? "1" : "0";
     row.innerHTML = `
       <td class="px-3 py-2">${payload.code} - ${payload.name}</td>
       <td class="px-3 py-2 text-right">
@@ -2746,25 +2825,27 @@
     }
   };
 
-  const parseQty = (value) => {
+  const parseQty = (value, allowDecimalOverride = false) => {
     const raw = parseFloat(value || 0);
-    if (!allowDecimals || !allowDecimals.checked) {
+    if (!(allowDecimalOverride || (allowDecimals && allowDecimals.checked))) {
       return Math.max(1, Math.round(raw));
     }
     return raw;
   };
 
-  const formatQtyLabel = (qty) => {
-    if (!allowDecimals || !allowDecimals.checked) {
+  const formatQtyLabel = (qty, allowDecimalOverride = false) => {
+    if (!(allowDecimalOverride || (allowDecimals && allowDecimals.checked))) {
       return Math.trunc(qty).toString();
     }
     return qty.toFixed(2);
   };
 
-  if (allowDecimals) {
-    allowDecimals.addEventListener("change", () => {
+    if (allowDecimals) {
+      allowDecimals.addEventListener("change", () => {
       productList.querySelectorAll(".qty-input").forEach((input) => {
-        if (allowDecimals.checked) {
+        const row = input.closest(".product-pick-row");
+        const forceDecimal = row?.dataset.esPorPeso === "1";
+        if (allowDecimals.checked || forceDecimal) {
           input.step = "0.01";
         } else {
           input.step = "1";
@@ -2772,7 +2853,9 @@
         }
       });
       itemsTable.querySelectorAll(".row-qty").forEach((input) => {
-        if (allowDecimals.checked) {
+        const row = input.closest("tr");
+        const forceDecimal = row?.dataset.allowDecimal === "1";
+        if (allowDecimals.checked || forceDecimal) {
           input.step = "0.01";
         } else {
           input.step = "1";
@@ -2786,7 +2869,8 @@
     handleAddItem = (button, focusTarget) => {
       const row = button.closest("tr");
       const qtyInput = row.querySelector(".qty-input");
-      const qty = parseQty(qtyInput.value);
+      const isWeighted = button.dataset.esPorPeso === "1";
+      const qty = parseQty(qtyInput.value, isWeighted);
       if (qty <= 0) return;
 
       const moneda = monedaField.value || defaultMoneda;
@@ -2803,11 +2887,11 @@
       addItemRow({
         productId: button.dataset.productId,
         code: button.dataset.code,
-        name: button.dataset.name,
-        qtyLabel: formatQtyLabel(qty),
-        qtyValue: allowDecimals && allowDecimals.checked ? qty.toFixed(2) : Math.trunc(qty).toFixed(2),
-        qtyValueDisplay: allowDecimals && allowDecimals.checked ? qty.toFixed(2) : Math.trunc(qty).toString(),
-        qtyStep: allowDecimals && allowDecimals.checked ? "0.01" : "1",
+        name: `${button.dataset.name}${isWeighted ? ` (${button.dataset.unidadMedida || "lb"})` : ""}`,
+        qtyLabel: formatQtyLabel(qty, isWeighted),
+        qtyValue: isWeighted || (allowDecimals && allowDecimals.checked) ? qty.toFixed(2) : Math.trunc(qty).toFixed(2),
+        qtyValueDisplay: isWeighted || (allowDecimals && allowDecimals.checked) ? qty.toFixed(2) : Math.trunc(qty).toString(),
+        qtyStep: isWeighted || (allowDecimals && allowDecimals.checked) ? "0.01" : "1",
         costValue: cost.toFixed(2),
         priceValue: price.toFixed(2),
         subtotalLabel: moneda === "USD" ? `$ ${subtotal.toFixed(2)}` : `C$ ${subtotal.toFixed(2)}`,
@@ -2870,7 +2954,9 @@
       const qty = parseFloat(qtyInput ? qtyInput.value : (qtyHidden ? qtyHidden.value : 0));
       const cost = parseFloat(costInput ? costInput.value : 0);
       if (qtyHidden && qtyInput) {
-        qtyHidden.value = allowDecimals && allowDecimals.checked ? qty.toFixed(2) : Math.trunc(qty).toFixed(2);
+        qtyHidden.value = row.dataset.allowDecimal === "1" || (allowDecimals && allowDecimals.checked)
+          ? qty.toFixed(2)
+          : Math.trunc(qty).toFixed(2);
       }
       const subtotal = cost * qty;
       const moneda = monedaField.value || defaultMoneda;

@@ -142,6 +142,8 @@ class CompanyProfileSetting(Base):
     pos_logo_url = Column(String(260), nullable=False, default="/static/logo_hollywood.png")
     favicon_url = Column(String(260), nullable=False, default="/static/favicon.ico")
     inventory_cs_only = Column(Boolean, nullable=False, default=False)
+    weighted_inventory_enabled = Column(Boolean, nullable=False, default=False)
+    weighted_sales_enabled = Column(Boolean, nullable=False, default=False)
     multi_branch_enabled = Column(Boolean, nullable=False, default=True)
     price_auto_from_cost_enabled = Column(Boolean, nullable=False, default=False)
     price_margin_percent = Column(Integer, nullable=False, default=0)

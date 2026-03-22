@@ -125,6 +125,20 @@
               </div>
               <div class="col-12">
                 <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
+                  <input class="accent-brand" type="checkbox" name="weighted_inventory_enabled" {% if profile.weighted_inventory_enabled %}checked{% endif %} />
+                  Ingresos de productos por pesos
+                </label>
+                <div class="text-muted small mt-1">Activa productos por libras, kilogramos u onzas en ingresos y catalogo.</div>
+              </div>
+              <div class="col-12">
+                <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
+                  <input class="accent-brand" type="checkbox" name="weighted_sales_enabled" {% if profile.weighted_sales_enabled %}checked{% endif %} />
+                  Facturacion de productos por pesos
+                </label>
+                <div class="text-muted small mt-1">Si esta activo, ventas pedira el peso exacto antes de agregar esos productos.</div>
+              </div>
+              <div class="col-12">
+                <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
                   <input class="accent-brand" type="checkbox" name="multi_branch_enabled" {% if profile.multi_branch_enabled %}checked{% endif %} />
                   Activar multi sucursales para este entorno
                 </label>
