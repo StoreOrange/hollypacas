@@ -1,5 +1,82 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  @page {
+    size: Letter portrait;
+    margin: 10mm;
+  }
+
+  @media print {
+    html,
+    body {
+      background: #fff !important;
+      font-size: 11px !important;
+    }
+
+    #layout {
+      display: block !important;
+      min-height: auto !important;
+      background: #fff !important;
+    }
+
+    #layout > aside,
+    .breadcrumb,
+    .nav,
+    form,
+    .btn,
+    .odoo-subtitle {
+      display: none !important;
+    }
+
+    main,
+    .odoo-page,
+    .odoo-card {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      max-width: none !important;
+      box-shadow: none !important;
+      border: 0 !important;
+      background: #fff !important;
+    }
+
+    .odoo-header {
+      margin-bottom: 10px !important;
+      padding-bottom: 8px !important;
+      border-bottom: 1px solid #cbd5e1 !important;
+    }
+
+    .table-responsive {
+      overflow: visible !important;
+    }
+
+    .table {
+      width: 100% !important;
+      table-layout: fixed !important;
+      font-size: 10px !important;
+      margin-bottom: 10px !important;
+    }
+
+    .table th,
+    .table td {
+      padding: 4px 6px !important;
+      white-space: normal !important;
+      word-break: break-word !important;
+      vertical-align: top !important;
+    }
+
+    .odoo-pill {
+      border: 1px solid #cbd5e1 !important;
+      background: #fff !important;
+      color: #111827 !important;
+    }
+
+    .odoo-section-title {
+      margin-bottom: 6px !important;
+      font-size: 12px !important;
+    }
+  }
+</style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
@@ -66,6 +143,10 @@
             <button class="btn btn-outline-secondary btn-sm" type="submit">
               <i class="bi bi-search"></i>
               Filtrar
+            </button>
+            <button class="btn btn-outline-primary btn-sm" type="button" onclick="window.print()">
+              <i class="bi bi-printer"></i>
+              Imprimir
             </button>
             <a class="btn btn-outline-danger btn-sm" href="/reports/depositos/export?start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}">
               <i class="bi bi-file-earmark-pdf"></i>
