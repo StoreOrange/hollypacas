@@ -14565,11 +14565,12 @@ def report_depositos_export(
         c.drawString(left_margin + 104, y - 8, "Informe de Depositos, Transferencias y")
         c.drawString(left_margin + 104, y - 26, f"Tarjetas {company_profile.get('trade_name', 'Empresa')}")
         y -= 54
-        c.setFont("Times-Roman", 10)
         c.setFillColor(colors.HexColor("#4b5563"))
         if selected_branch:
+            c.setFont("Times-Bold", 12)
             c.drawString(left_margin, y, f"Sucursal: {selected_branch.name}")
             y -= 16
+        c.setFont("Times-Roman", 10)
         c.drawString(left_margin, y, f"Rango: {start_date} a {end_date}")
         y -= 16
         c.drawString(left_margin, y, f"Tasa: {rate_today.rate if rate_today else 'N/D'}")
