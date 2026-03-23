@@ -14545,31 +14545,54 @@ def report_depositos_export(
 
     buffer = io.BytesIO()
     width = 470
+    page_height = 600
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import portrait
-    from reportlab.lib.units import mm
 
-    c = canvas.Canvas(buffer, pagesize=portrait((width, 600)))
-    y = 560
+    c = canvas.Canvas(buffer, pagesize=portrait((width, page_height)))
     logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
-    if logo_path.exists():
-        c.drawImage(str(logo_path), 24, y - 40, width=90, height=40, mask="auto")
-    c.setFont("Times-Bold", 11)
-    c.drawString(120, y - 8, "Informe de Depositos, Transferencias y")
-    c.drawString(120, y - 24, f"Tarjetas {company_profile.get('trade_name', 'Empresa')}")
-    y -= 50
-    c.setFont("Times-Roman", 9)
-    c.setFillColor(colors.HexColor("#4b5563"))
-    if selected_branch:
-        c.drawString(24, y, f"Sucursal: {selected_branch.name}")
+
+    def _draw_page_header() -> float:
+        y = 560
+        c.setFillColor(colors.black)
+        if logo_path.exists():
+            c.drawImage(str(logo_path), 24, y - 40, width=90, height=40, mask="auto")
+        c.setFont("Times-Bold", 11)
+        c.drawString(120, y - 8, "Informe de Depositos, Transferencias y")
+        c.drawString(120, y - 24, f"Tarjetas {company_profile.get('trade_name', 'Empresa')}")
+        y -= 50
+        c.setFont("Times-Roman", 9)
+        c.setFillColor(colors.HexColor("#4b5563"))
+        if selected_branch:
+            c.drawString(24, y, f"Sucursal: {selected_branch.name}")
+            y -= 14
+        c.drawString(24, y, f"Rango: {start_date} a {end_date}")
         y -= 14
-    c.drawString(24, y, f"Rango: {start_date} a {end_date}")
-    y -= 14
-    c.drawString(24, y, f"Tasa: {rate_today.rate if rate_today else 'N/D'}")
-    y -= 14
-    c.setFillColor(colors.black)
-    c.line(24, y, width - 24, y)
-    y -= 12
+        c.drawString(24, y, f"Tasa: {rate_today.rate if rate_today else 'N/D'}")
+        y -= 14
+        c.setFillColor(colors.black)
+        c.line(24, y, width - 24, y)
+        return y - 12
+
+    def _draw_group_header(y: float, title: str) -> float:
+        c.setFillColor(colors.HexColor("#1e3a8a"))
+        c.roundRect(24, y - 6, width - 48, 16, 4, fill=1, stroke=0)
+        c.setFillColor(colors.white)
+        c.setFont("Times-Bold", 9)
+        c.drawString(30, y - 2, title)
+        c.setFillColor(colors.black)
+        y -= 20
+        c.setFont("Times-Bold", 8)
+        c.drawString(24, y, "Fecha")
+        c.drawString(95, y, "Banco")
+        c.drawRightString(210, y, "Monto Cordobas")
+        c.drawRightString(300, y, "Monto Dolares")
+        c.drawString(310, y, "Vendedor")
+        y -= 12
+        c.setFont("Times-Roman", 8)
+        return y
+
+    y = _draw_page_header()
 
     grouped_map = {}
     for dep in depositos:
@@ -14586,30 +14609,17 @@ def report_depositos_export(
     for group in grouped_list:
         if y < 90:
             c.showPage()
-            y = 560
-        c.setFillColor(colors.HexColor("#1e3a8a"))
-        c.roundRect(24, y - 6, width - 48, 16, 4, fill=1, stroke=0)
-        c.setFillColor(colors.white)
-        c.setFont("Times-Bold", 9)
-        c.drawString(30, y - 2, f"{group['metodo']} / {group['banco']}")
-        c.setFillColor(colors.black)
-        y -= 20
-
-        c.setFont("Times-Bold", 8)
-        c.drawString(24, y, "Fecha")
-        c.drawString(95, y, "Banco")
-        c.drawRightString(210, y, "Monto Cordobas")
-        c.drawRightString(300, y, "Monto Dolares")
-        c.drawString(310, y, "Vendedor")
-        y -= 12
-        c.setFont("Times-Roman", 8)
+            y = _draw_page_header()
+        group_title = f"{group['metodo']} / {group['banco']}"
+        y = _draw_group_header(y, group_title)
 
         subtotal_cs = Decimal("0")
         subtotal_usd = Decimal("0")
         for dep in group["rows"]:
             if y < 70:
                 c.showPage()
-                y = 560
+                y = _draw_page_header()
+                y = _draw_group_header(y, group_title)
             total_count += 1
             fecha_text = dep.fecha.strftime("%d/%m/%Y") if dep.fecha else ""
             vendedor_text = dep.vendedor.nombre if dep.vendedor else "-"
@@ -14645,6 +14655,9 @@ def report_depositos_export(
         c.line(24, y, width - 24, y)
         y -= 16
 
+    if y < 70:
+        c.showPage()
+        y = _draw_page_header()
     c.setFont("Times-Bold", 10)
     c.drawString(24, y, "Totales depositos :")
     c.setFillColor(colors.HexColor("#1d4ed8"))
