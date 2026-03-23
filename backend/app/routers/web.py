@@ -14544,50 +14544,58 @@ def report_depositos_export(
     total_usd_equiv = total_usd + (total_cs / rate if rate else Decimal("0"))
 
     buffer = io.BytesIO()
-    width = 470
-    page_height = 600
+    left_margin = 36
+    right_margin = 36
+    top_margin = 40
+    bottom_margin = 40
     from reportlab.pdfgen import canvas
-    from reportlab.lib.pagesizes import portrait
+    from reportlab.lib.pagesizes import letter
 
-    c = canvas.Canvas(buffer, pagesize=portrait((width, page_height)))
+    page_width, page_height = letter
+    c = canvas.Canvas(buffer, pagesize=letter)
     logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
+    width = page_width
 
     def _draw_page_header() -> float:
-        y = 560
+        y = page_height - top_margin
         c.setFillColor(colors.black)
         if logo_path.exists():
-            c.drawImage(str(logo_path), 24, y - 40, width=90, height=40, mask="auto")
+            c.drawImage(str(logo_path), left_margin, y - 40, width=90, height=40, mask="auto")
         c.setFont("Times-Bold", 11)
-        c.drawString(120, y - 8, "Informe de Depositos, Transferencias y")
-        c.drawString(120, y - 24, f"Tarjetas {company_profile.get('trade_name', 'Empresa')}")
+        c.drawString(left_margin + 96, y - 8, "Informe de Depositos, Transferencias y")
+        c.drawString(left_margin + 96, y - 24, f"Tarjetas {company_profile.get('trade_name', 'Empresa')}")
         y -= 50
         c.setFont("Times-Roman", 9)
         c.setFillColor(colors.HexColor("#4b5563"))
         if selected_branch:
-            c.drawString(24, y, f"Sucursal: {selected_branch.name}")
+            c.drawString(left_margin, y, f"Sucursal: {selected_branch.name}")
             y -= 14
-        c.drawString(24, y, f"Rango: {start_date} a {end_date}")
+        c.drawString(left_margin, y, f"Rango: {start_date} a {end_date}")
         y -= 14
-        c.drawString(24, y, f"Tasa: {rate_today.rate if rate_today else 'N/D'}")
+        c.drawString(left_margin, y, f"Tasa: {rate_today.rate if rate_today else 'N/D'}")
         y -= 14
         c.setFillColor(colors.black)
-        c.line(24, y, width - 24, y)
+        c.line(left_margin, y, width - right_margin, y)
         return y - 12
 
     def _draw_group_header(y: float, title: str) -> float:
+        usable_width = width - left_margin - right_margin
+        amount_cs_x = left_margin + 290
+        amount_usd_x = left_margin + 400
+        vendor_x = left_margin + 420
         c.setFillColor(colors.HexColor("#1e3a8a"))
-        c.roundRect(24, y - 6, width - 48, 16, 4, fill=1, stroke=0)
+        c.roundRect(left_margin, y - 6, usable_width, 16, 4, fill=1, stroke=0)
         c.setFillColor(colors.white)
         c.setFont("Times-Bold", 9)
-        c.drawString(30, y - 2, title)
+        c.drawString(left_margin + 6, y - 2, title)
         c.setFillColor(colors.black)
         y -= 20
         c.setFont("Times-Bold", 8)
-        c.drawString(24, y, "Fecha")
-        c.drawString(95, y, "Banco")
-        c.drawRightString(210, y, "Monto Cordobas")
-        c.drawRightString(300, y, "Monto Dolares")
-        c.drawString(310, y, "Vendedor")
+        c.drawString(left_margin, y, "Fecha")
+        c.drawString(left_margin + 75, y, "Banco")
+        c.drawRightString(amount_cs_x, y, "Monto Cordobas")
+        c.drawRightString(amount_usd_x, y, "Monto Dolares")
+        c.drawString(vendor_x, y, "Vendedor")
         y -= 12
         c.setFont("Times-Roman", 8)
         return y
@@ -14607,7 +14615,7 @@ def report_depositos_export(
 
     total_count = 0
     for group in grouped_list:
-        if y < 90:
+        if y < bottom_margin + 50:
             c.showPage()
             y = _draw_page_header()
         group_title = f"{group['metodo']} / {group['banco']}"
@@ -14616,7 +14624,7 @@ def report_depositos_export(
         subtotal_cs = Decimal("0")
         subtotal_usd = Decimal("0")
         for dep in group["rows"]:
-            if y < 70:
+            if y < bottom_margin + 30:
                 c.showPage()
                 y = _draw_page_header()
                 y = _draw_group_header(y, group_title)
@@ -14624,58 +14632,57 @@ def report_depositos_export(
             fecha_text = dep.fecha.strftime("%d/%m/%Y") if dep.fecha else ""
             vendedor_text = dep.vendedor.nombre if dep.vendedor else "-"
             banco_text = dep.banco.nombre if dep.banco else "-"
-            c.drawString(24, y, fecha_text)
-            c.drawString(95, y, banco_text[:10])
+            c.drawString(left_margin, y, fecha_text)
+            c.drawString(left_margin + 75, y, banco_text[:18])
             if dep.moneda == "USD":
                 monto_usd = Decimal(str(dep.monto_usd or 0))
                 subtotal_usd += monto_usd
                 c.setFillColor(colors.HexColor("#16a34a"))
-                c.drawRightString(210, y, "C$ 0.00")
-                c.drawRightString(300, y, f"$ {monto_usd:,.2f}")
+                c.drawRightString(left_margin + 290, y, "C$ 0.00")
+                c.drawRightString(left_margin + 400, y, f"$ {monto_usd:,.2f}")
                 c.setFillColor(colors.black)
             else:
                 monto_cs = Decimal(str(dep.monto_cs or 0))
                 subtotal_cs += monto_cs
                 c.setFillColor(colors.HexColor("#1d4ed8"))
-                c.drawRightString(210, y, f"C$ {monto_cs:,.2f}")
-                c.drawRightString(300, y, "$ 0.00")
+                c.drawRightString(left_margin + 290, y, f"C$ {monto_cs:,.2f}")
+                c.drawRightString(left_margin + 400, y, "$ 0.00")
                 c.setFillColor(colors.black)
-            c.drawString(310, y, vendedor_text[:18])
+            c.drawString(left_margin + 420, y, vendedor_text[:20])
             y -= 12
 
         y -= 6
         c.setFont("Times-Bold", 9)
-        c.drawString(30, y, "Total depositos :")
+        c.drawString(left_margin + 6, y, "Total depositos :")
         c.setFillColor(colors.HexColor("#1d4ed8"))
-        c.drawString(140, y, f"C$ {subtotal_cs:,.2f}")
+        c.drawString(left_margin + 116, y, f"C$ {subtotal_cs:,.2f}")
         c.setFillColor(colors.HexColor("#16a34a"))
-        c.drawRightString(width - 24, y, f"$ {subtotal_usd:,.2f}")
+        c.drawRightString(width - right_margin, y, f"$ {subtotal_usd:,.2f}")
         c.setFillColor(colors.black)
         y -= 18
-        c.line(24, y, width - 24, y)
+        c.line(left_margin, y, width - right_margin, y)
         y -= 16
 
-    if y < 70:
+    if y < bottom_margin + 36:
         c.showPage()
         y = _draw_page_header()
     c.setFont("Times-Bold", 10)
-    c.drawString(24, y, "Totales depositos :")
+    c.drawString(left_margin, y, "Totales depositos :")
     c.setFillColor(colors.HexColor("#1d4ed8"))
-    c.drawRightString(width - 120, y, f"C$ {total_cs:,.2f}")
+    c.drawRightString(width - 150, y, f"C$ {total_cs:,.2f}")
     c.setFillColor(colors.HexColor("#16a34a"))
-    c.drawRightString(width - 24, y, f"$ {total_usd:,.2f}")
+    c.drawRightString(width - right_margin, y, f"$ {total_usd:,.2f}")
     c.setFillColor(colors.black)
     y -= 18
     c.setFont("Times-Bold", 10)
-    c.drawString(24, y, "Totales depositos Dolarizado")
+    c.drawString(left_margin, y, "Totales depositos Dolarizado")
     c.setFillColor(colors.HexColor("#16a34a"))
-    c.drawRightString(width - 24, y, f"$ {total_usd_equiv:,.2f}")
+    c.drawRightString(width - right_margin, y, f"$ {total_usd_equiv:,.2f}")
     c.setFillColor(colors.black)
     y -= 14
     c.setFont("Times-Roman", 9)
-    c.drawRightString(width - 24, y, f"Cantidad de DP: {total_count}")
+    c.drawRightString(width - right_margin, y, f"Cantidad de DP: {total_count}")
 
-    c.showPage()
     c.save()
     buffer.seek(0)
     return StreamingResponse(
