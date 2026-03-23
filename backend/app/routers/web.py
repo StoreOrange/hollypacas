@@ -14580,24 +14580,24 @@ def report_depositos_export(
 
     def _draw_group_header(y: float, title: str) -> float:
         usable_width = width - left_margin - right_margin
-        amount_cs_x = left_margin + 322
-        amount_usd_x = left_margin + 432
-        vendor_x = left_margin + 448
+        amount_cs_x = left_margin + 250
+        amount_usd_x = left_margin + 342
+        vendor_x = left_margin + 360
         c.setFillColor(colors.HexColor("#1e3a8a"))
-        c.roundRect(left_margin, y - 8, usable_width, 20, 5, fill=1, stroke=0)
+        c.roundRect(left_margin, y - 8, usable_width, 22, 5, fill=1, stroke=0)
         c.setFillColor(colors.white)
-        c.setFont("Times-Bold", 10)
+        c.setFont("Times-Bold", 11)
         c.drawString(left_margin + 8, y, title)
         c.setFillColor(colors.black)
-        y -= 24
-        c.setFont("Times-Bold", 9)
+        y -= 26
+        c.setFont("Times-Bold", 10)
         c.drawString(left_margin, y, "Fecha")
         c.drawString(left_margin + 78, y, "Banco")
         c.drawRightString(amount_cs_x, y, "Monto Cordobas")
         c.drawRightString(amount_usd_x, y, "Monto Dolares")
         c.drawString(vendor_x, y, "Vendedor")
-        y -= 15
-        c.setFont("Times-Roman", 9)
+        y -= 17
+        c.setFont("Times-Roman", 10)
         return y
 
     y = _draw_page_header()
@@ -14633,29 +14633,29 @@ def report_depositos_export(
             vendedor_text = dep.vendedor.nombre if dep.vendedor else "-"
             banco_text = dep.banco.nombre if dep.banco else "-"
             c.drawString(left_margin, y, fecha_text)
-            c.drawString(left_margin + 78, y, banco_text[:20])
+            c.drawString(left_margin + 78, y, banco_text[:16])
             if dep.moneda == "USD":
                 monto_usd = Decimal(str(dep.monto_usd or 0))
                 subtotal_usd += monto_usd
                 c.setFillColor(colors.HexColor("#16a34a"))
-                c.drawRightString(left_margin + 322, y, "C$ 0.00")
-                c.drawRightString(left_margin + 432, y, f"$ {monto_usd:,.2f}")
+                c.drawRightString(left_margin + 250, y, "C$ 0.00")
+                c.drawRightString(left_margin + 342, y, f"$ {monto_usd:,.2f}")
                 c.setFillColor(colors.black)
             else:
                 monto_cs = Decimal(str(dep.monto_cs or 0))
                 subtotal_cs += monto_cs
                 c.setFillColor(colors.HexColor("#1d4ed8"))
-                c.drawRightString(left_margin + 322, y, f"C$ {monto_cs:,.2f}")
-                c.drawRightString(left_margin + 432, y, "$ 0.00")
+                c.drawRightString(left_margin + 250, y, f"C$ {monto_cs:,.2f}")
+                c.drawRightString(left_margin + 342, y, "$ 0.00")
                 c.setFillColor(colors.black)
-            c.drawString(left_margin + 448, y, vendedor_text[:19])
-            y -= 15
+            c.drawString(left_margin + 360, y, vendedor_text[:20])
+            y -= 17
 
         y -= 6
-        c.setFont("Times-Bold", 10)
+        c.setFont("Times-Bold", 11)
         c.drawString(left_margin + 8, y, "Total depositos :")
         c.setFillColor(colors.HexColor("#1d4ed8"))
-        c.drawString(left_margin + 126, y, f"C$ {subtotal_cs:,.2f}")
+        c.drawString(left_margin + 116, y, f"C$ {subtotal_cs:,.2f}")
         c.setFillColor(colors.HexColor("#16a34a"))
         c.drawRightString(width - right_margin, y, f"$ {subtotal_usd:,.2f}")
         c.setFillColor(colors.black)
