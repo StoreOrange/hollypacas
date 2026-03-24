@@ -170,13 +170,16 @@ class ReversionToken(Base):
     id = Column(Integer, primary_key=True, index=True)
     factura_id = Column(Integer, ForeignKey("ventas_facturas.id"), nullable=False)
     token = Column(String(20), nullable=False)
+    action_type = Column(String(40), nullable=False, default="REVERSION")
     motivo = Column(String(300), nullable=False)
+    vendedor_nuevo_id = Column(Integer, ForeignKey("vendedores.id"), nullable=True)
     solicitado_por = Column(String(160), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
 
     factura = relationship("VentaFactura")
+    vendedor_nuevo = relationship("Vendedor")
 
 
 class VentaFactura(Base):

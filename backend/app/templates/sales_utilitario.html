@@ -133,6 +133,17 @@
                     Anulada
                   </button>
                   {% else %}
+                  <button
+                    class="btn btn-outline-primary btn-sm change-vendedor-sale"
+                    data-id="{{ venta.id }}"
+                    data-numero="{{ venta.numero }}"
+                    data-vendedor="{{ venta.vendedor.nombre if venta.vendedor else '-' }}"
+                    data-vendedor-id="{{ venta.vendedor_id or '' }}"
+                    type="button"
+                  >
+                    <i class="bi bi-person-gear"></i>
+                    Cambio ejecutivo
+                  </button>
                   <button class="btn btn-outline-danger btn-sm reversion-sale" data-id="{{ venta.id }}" data-numero="{{ venta.numero }}" type="button">
                     <i class="bi bi-arrow-counterclockwise"></i>
                     Reversion
@@ -275,6 +286,68 @@
   </div>
 </div>
 
+<div class="modal fade" id="sale-change-vendedor-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs uppercase tracking-[0.2em] text-slate d-flex align-items-center gap-2">
+            <i class="bi bi-person-gear text-brand"></i>
+            Cambio de ejecutivo de ventas
+          </div>
+          <div class="text-xl font-semibold text-ink d-flex align-items-center gap-2" id="change-vendedor-title">
+            <i class="bi bi-receipt text-brand"></i>
+            Factura
+          </div>
+          <div class="text-sm text-slate mt-1" id="change-vendedor-current">Ejecutivo actual: -</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0 text-sm">
+        <div class="odoo-card mb-3">
+          <div class="odoo-section-title mb-2 d-flex align-items-center gap-2">
+            <i class="bi bi-person-badge text-brand"></i>
+            Nuevo ejecutivo *
+          </div>
+          <select class="form-select odoo-input" id="change-vendedor-select">
+            <option value="">Selecciona un ejecutivo</option>
+            {% for vendedor in vendedores_utilitario %}
+            <option value="{{ vendedor.id }}">{{ vendedor.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="odoo-card mb-3">
+          <div class="odoo-section-title mb-2 d-flex align-items-center gap-2">
+            <i class="bi bi-chat-left-text text-brand"></i>
+            Motivo del cambio *
+          </div>
+          <textarea class="form-control odoo-input" id="change-vendedor-motivo" rows="3" placeholder="Describe por que debe cambiarse el ejecutivo de venta"></textarea>
+          <div class="d-flex justify-content-end mt-3">
+            <button class="btn btn-outline-secondary" id="change-vendedor-send-code" type="button">
+              <i class="bi bi-envelope-at"></i>
+              Enviar codigo
+            </button>
+          </div>
+        </div>
+        <div class="odoo-card">
+          <div class="odoo-section-title mb-2 d-flex align-items-center gap-2">
+            <i class="bi bi-key text-brand"></i>
+            Codigo de autorizacion
+          </div>
+          <input class="form-control odoo-input" id="change-vendedor-token" placeholder="Ingresa el codigo recibido" />
+          <div class="d-flex justify-content-end mt-3">
+            <button class="btn btn-primary" id="change-vendedor-confirm" type="button">
+              <i class="bi bi-shield-check"></i>
+              Confirmar cambio
+            </button>
+          </div>
+        </div>
+        <div class="text-sm text-slate mt-3" id="change-vendedor-status"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   const detailModal = document.getElementById("sale-detail-modal");
   const detailTitle = document.getElementById("sale-detail-title");
@@ -293,7 +366,18 @@
   const reversionStatus = document.getElementById("reversion-status");
   const reversionSendCode = document.getElementById("reversion-send-code");
   const reversionConfirm = document.getElementById("reversion-confirm");
+  const changeVendedorModal = document.getElementById("sale-change-vendedor-modal");
+  const changeVendedorTitle = document.getElementById("change-vendedor-title");
+  const changeVendedorCurrent = document.getElementById("change-vendedor-current");
+  const changeVendedorSelect = document.getElementById("change-vendedor-select");
+  const changeVendedorMotivo = document.getElementById("change-vendedor-motivo");
+  const changeVendedorToken = document.getElementById("change-vendedor-token");
+  const changeVendedorStatus = document.getElementById("change-vendedor-status");
+  const changeVendedorSendCode = document.getElementById("change-vendedor-send-code");
+  const changeVendedorConfirm = document.getElementById("change-vendedor-confirm");
   let currentReversionId = null;
+  let currentChangeVendedorId = null;
+  let currentChangeVendedorCurrentId = "";
   const focusParams = new URLSearchParams(window.location.search || "");
   const focusSaleId = (focusParams.get("focus_sale_id") || "").trim();
   const focusProductoId = (focusParams.get("focus_producto_id") || "").trim();
@@ -425,6 +509,12 @@
     reversionStatus.classList.toggle("text-success", !isError && Boolean(message));
   };
 
+  const showChangeVendedorStatus = (message, isError) => {
+    changeVendedorStatus.textContent = message || "";
+    changeVendedorStatus.classList.toggle("text-danger", Boolean(isError));
+    changeVendedorStatus.classList.toggle("text-success", !isError && Boolean(message));
+  };
+
   document.querySelectorAll(".reversion-sale").forEach((button) => {
     button.addEventListener("click", () => {
       currentReversionId = button.dataset.id;
@@ -435,6 +525,23 @@
       showReversionStatus("", false);
       if (window.bootstrap) {
         const modal = new bootstrap.Modal(reversionModal);
+        modal.show();
+      }
+    });
+  });
+
+  document.querySelectorAll(".change-vendedor-sale").forEach((button) => {
+    button.addEventListener("click", () => {
+      currentChangeVendedorId = button.dataset.id;
+      currentChangeVendedorCurrentId = button.dataset.vendedorId || "";
+      changeVendedorTitle.textContent = button.dataset.numero || "Factura";
+      changeVendedorCurrent.textContent = `Ejecutivo actual: ${button.dataset.vendedor || "-"}`;
+      changeVendedorMotivo.value = "";
+      changeVendedorToken.value = "";
+      changeVendedorSelect.value = "";
+      showChangeVendedorStatus("", false);
+      if (window.bootstrap) {
+        const modal = new bootstrap.Modal(changeVendedorModal);
         modal.show();
       }
     });
@@ -485,6 +592,65 @@
     }
     if (typeof Swal !== "undefined") {
       Swal.fire({ icon: "success", title: "Factura revertida", timer: 1800, showConfirmButton: false });
+    }
+    window.location.reload();
+  });
+
+  changeVendedorSendCode.addEventListener("click", async () => {
+    if (!currentChangeVendedorId) {
+      return;
+    }
+    const motivo = changeVendedorMotivo.value.trim();
+    const vendedorNuevoId = changeVendedorSelect.value.trim();
+    if (!vendedorNuevoId) {
+      showChangeVendedorStatus("Selecciona el nuevo ejecutivo.", true);
+      return;
+    }
+    if (currentChangeVendedorCurrentId && vendedorNuevoId === currentChangeVendedorCurrentId) {
+      showChangeVendedorStatus("La factura ya pertenece a ese ejecutivo.", true);
+      return;
+    }
+    if (!motivo) {
+      showChangeVendedorStatus("Motivo requerido.", true);
+      return;
+    }
+    const payload = new FormData();
+    payload.append("motivo", motivo);
+    payload.append("vendedor_nuevo_id", vendedorNuevoId);
+    const response = await fetch(`/sales/${currentChangeVendedorId}/change-vendedor/request`, {
+      method: "POST",
+      body: payload,
+    });
+    const data = await response.json().catch(() => null);
+    if (!data || !data.ok) {
+      showChangeVendedorStatus(data?.message || "No se pudo enviar el codigo.", true);
+      return;
+    }
+    showChangeVendedorStatus("Codigo enviado. Revisa tu correo.", false);
+  });
+
+  changeVendedorConfirm.addEventListener("click", async () => {
+    if (!currentChangeVendedorId) {
+      return;
+    }
+    const token = changeVendedorToken.value.trim();
+    if (!token) {
+      showChangeVendedorStatus("Codigo requerido.", true);
+      return;
+    }
+    const payload = new FormData();
+    payload.append("token", token);
+    const response = await fetch(`/sales/${currentChangeVendedorId}/change-vendedor/confirm`, {
+      method: "POST",
+      body: payload,
+    });
+    const data = await response.json().catch(() => null);
+    if (!data || !data.ok) {
+      showChangeVendedorStatus(data?.message || "No se pudo cambiar el ejecutivo.", true);
+      return;
+    }
+    if (typeof Swal !== "undefined") {
+      Swal.fire({ icon: "success", title: "Ejecutivo actualizado", timer: 1800, showConfirmButton: false });
     }
     window.location.reload();
   });

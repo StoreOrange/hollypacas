@@ -987,6 +987,15 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN condicion_venta VARCHAR(20) DEFAULT 'CONTADO'"))
                 conn.execute(text("UPDATE ventas_facturas SET condicion_venta = 'CONTADO' WHERE condicion_venta IS NULL"))
+    if "ventas_reversion_tokens" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("ventas_reversion_tokens")}
+        if "action_type" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_reversion_tokens ADD COLUMN action_type VARCHAR(40) DEFAULT 'REVERSION'"))
+                conn.execute(text("UPDATE ventas_reversion_tokens SET action_type = 'REVERSION' WHERE action_type IS NULL"))
+        if "vendedor_nuevo_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_reversion_tokens ADD COLUMN vendedor_nuevo_id INTEGER"))
     if "egresos_inventario" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("egresos_inventario")}
         if "bodega_destino_id" not in columns:

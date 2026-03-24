@@ -8798,6 +8798,7 @@ def sales_utilitario(
     )
     _, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
+    vendedores_utilitario = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre).all()
     scoped_branch_ids = _user_scoped_branch_ids(db, user)
     branches = (
         _scoped_branches_query(db)
@@ -8813,6 +8814,7 @@ def sales_utilitario(
             "user": user,
             "ventas": ventas,
             "vendedores": vendedores,
+            "vendedores_utilitario": vendedores_utilitario,
             "branches": branches,
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
@@ -16500,6 +16502,7 @@ async def sales_reversion_request(
         ReversionToken(
             factura_id=factura.id,
             token=token,
+            action_type="REVERSION",
             motivo=motivo,
             solicitado_por=user.full_name,
             expires_at=expires_at,
@@ -16625,6 +16628,7 @@ async def sales_reversion_confirm(
         .filter(
             ReversionToken.factura_id == factura.id,
             ReversionToken.token == token,
+            or_(ReversionToken.action_type.is_(None), ReversionToken.action_type == "REVERSION"),
             ReversionToken.used_at.is_(None),
         )
         .order_by(ReversionToken.created_at.desc())
@@ -16650,6 +16654,204 @@ async def sales_reversion_confirm(
     token_row.used_at = local_now_naive()
     db.commit()
     return JSONResponse({"ok": True, "message": "Factura anulada"})
+
+
+@router.post("/sales/{venta_id}/change-vendedor/request")
+async def sales_change_vendedor_request(
+    venta_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.reversion")
+    form = await request.form()
+    motivo = (form.get("motivo") or "").strip()
+    vendedor_nuevo_raw = (form.get("vendedor_nuevo_id") or "").strip()
+    if not motivo:
+        return JSONResponse({"ok": False, "message": "Motivo requerido"}, status_code=400)
+    try:
+        vendedor_nuevo_id = int(vendedor_nuevo_raw)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "message": "Selecciona el nuevo ejecutivo"}, status_code=400)
+
+    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
+    if not factura:
+        return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
+    if factura.estado == "ANULADA":
+        return JSONResponse({"ok": False, "message": "No se puede cambiar vendedor a una factura anulada"}, status_code=400)
+
+    _, bodega = _resolve_branch_bodega(db, user)
+    if bodega and factura.bodega_id != bodega.id:
+        return JSONResponse({"ok": False, "message": "Factura fuera de tu bodega"}, status_code=403)
+
+    vendedor_nuevo = db.query(Vendedor).filter(Vendedor.id == vendedor_nuevo_id, Vendedor.activo.is_(True)).first()
+    if not vendedor_nuevo:
+        return JSONResponse({"ok": False, "message": "El nuevo ejecutivo no existe"}, status_code=404)
+    if factura.vendedor_id == vendedor_nuevo.id:
+        return JSONResponse({"ok": False, "message": "La factura ya pertenece a ese ejecutivo"}, status_code=400)
+
+    config = db.query(EmailConfig).first()
+    if not config or not config.active:
+        return JSONResponse({"ok": False, "message": "Configura el correo emisor"}, status_code=400)
+    recipients = db.query(NotificationRecipient).filter(NotificationRecipient.active.is_(True)).all()
+    recipient_emails = [r.email for r in recipients]
+    if not recipient_emails:
+        return JSONResponse({"ok": False, "message": "No hay destinatarios activos"}, status_code=400)
+
+    token = _generate_token()
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    db.add(
+        ReversionToken(
+            factura_id=factura.id,
+            token=token,
+            action_type="CAMBIO_EJECUTIVO",
+            motivo=motivo,
+            vendedor_nuevo_id=vendedor_nuevo.id,
+            solicitado_por=user.full_name,
+            expires_at=expires_at,
+        )
+    )
+    db.commit()
+
+    branch = factura.bodega.branch if factura.bodega else None
+    sucursal = branch.name if branch else "-"
+    bodega_name = factura.bodega.name if factura.bodega else "-"
+    cliente = factura.cliente.nombre if factura.cliente else "Consumidor final"
+    vendedor_actual = factura.vendedor.nombre if factura.vendedor else "-"
+    fecha_base = factura.created_at or factura.fecha
+    fecha_str = ""
+    hora_str = ""
+    if fecha_base:
+        try:
+            fecha_str = fecha_base.strftime("%d/%m/%Y")
+            hora_str = fecha_base.strftime("%H:%M")
+        except AttributeError:
+            fecha_str = str(fecha_base)
+    moneda = factura.moneda or "CS"
+    total_amount = float(factura.total_cs or 0) if moneda == "CS" else float(factura.total_usd or 0)
+    currency_label = "C$" if moneda == "CS" else "$"
+
+    items_html = "".join(
+        f"""
+        <tr>
+          <td style="padding:6px 8px;border-bottom:1px solid #eee;">{item.producto.cod_producto if item.producto else ''}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid #eee;">{item.producto.descripcion if item.producto else ''}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">{float(item.cantidad or 0):.2f}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">{currency_label} {float(item.subtotal_cs if moneda == 'CS' else item.subtotal_usd or 0):,.2f}</td>
+        </tr>
+        """
+        for item in factura.items
+    )
+
+    html_body = f"""
+    <div style="font-family:Arial,sans-serif;background:#f7f4fb;padding:24px;">
+      <div style="max-width:780px;margin:0 auto;background:#ffffff;border-radius:18px;padding:28px;border:1px solid #eadff2;">
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#8b7aa8;">Solicitud de cambio de ejecutivo de ventas</div>
+          <h2 style="margin:6px 0 0;color:#5b2a86;">Sucursal: {sucursal}</h2>
+          <div style="margin-top:6px;color:#6a5b86;font-size:14px;">Serie/Factura: <strong>{factura.numero}</strong> | Bodega: {bodega_name}</div>
+        </div>
+
+        <div style="background:#f3eefd;border:1px solid #e2d7f5;border-radius:14px;padding:14px;text-align:center;margin-bottom:18px;">
+          <div style="font-size:12px;text-transform:uppercase;color:#7b6a98;">Codigo de autorizacion</div>
+          <div style="font-size:26px;font-weight:700;color:#5b2a86;letter-spacing:3px;margin-top:6px;">{token}</div>
+        </div>
+
+        <div style="background:#faf7ff;border:1px solid #eee3fb;border-radius:12px;padding:12px;margin-bottom:18px;">
+          <div style="font-size:12px;text-transform:uppercase;color:#7b6a98;margin-bottom:6px;">Motivo</div>
+          <div style="font-size:14px;color:#3b2f52;font-weight:600;">Cambio de ejecutivo de venta: por error se facturo la venta a otro nombre.</div>
+          <div style="font-size:13px;color:#5f4b7a;margin-top:8px;">Detalle reportado: {motivo}</div>
+        </div>
+
+        <table style="width:100%;font-size:14px;color:#333;margin-bottom:16px;">
+          <tr><td>Cliente:</td><td><strong>{cliente}</strong></td></tr>
+          <tr><td>Vendedor actual:</td><td>{vendedor_actual}</td></tr>
+          <tr><td>Nuevo ejecutivo:</td><td><strong>{vendedor_nuevo.nombre}</strong></td></tr>
+          <tr><td>Usuario solicitante:</td><td>{user.full_name}</td></tr>
+          <tr><td>Fecha/Hora:</td><td>{fecha_str} {hora_str}</td></tr>
+          <tr><td>Total:</td><td><strong>{currency_label} {total_amount:,.2f}</strong></td></tr>
+        </table>
+
+        <h3 style="margin:12px 0;color:#5b2a86;">Detalle de items</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#f1e8f8;color:#5b2a86;text-align:left;">
+              <th style="padding:6px 8px;">Codigo</th>
+              <th style="padding:6px 8px;">Descripcion</th>
+              <th style="padding:6px 8px;text-align:right;">Cantidad</th>
+              <th style="padding:6px 8px;text-align:right;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items_html}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    """
+
+    send_error = _send_reversion_email(
+        subject=f"Cambio ejecutivo {factura.numero}",
+        html_body=html_body,
+        recipients=recipient_emails,
+        sender_email=config.sender_email if config else None,
+        sender_name=config.sender_name if config else None,
+    )
+    if send_error:
+        return JSONResponse({"ok": False, "message": send_error}, status_code=500)
+
+    return JSONResponse({"ok": True, "message": "Codigo enviado"})
+
+
+@router.post("/sales/{venta_id}/change-vendedor/confirm")
+async def sales_change_vendedor_confirm(
+    venta_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.reversion")
+    form = await request.form()
+    token = (form.get("token") or "").strip()
+    if not token:
+        return JSONResponse({"ok": False, "message": "Codigo requerido"}, status_code=400)
+
+    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
+    if not factura:
+        return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
+    if factura.estado == "ANULADA":
+        return JSONResponse({"ok": False, "message": "No se puede cambiar vendedor a una factura anulada"}, status_code=400)
+
+    _, bodega = _resolve_branch_bodega(db, user)
+    if bodega and factura.bodega_id != bodega.id:
+        return JSONResponse({"ok": False, "message": "Factura fuera de tu bodega"}, status_code=403)
+
+    token_row = (
+        db.query(ReversionToken)
+        .filter(
+            ReversionToken.factura_id == factura.id,
+            ReversionToken.token == token,
+            ReversionToken.action_type == "CAMBIO_EJECUTIVO",
+            ReversionToken.used_at.is_(None),
+        )
+        .order_by(ReversionToken.created_at.desc())
+        .first()
+    )
+    if not token_row:
+        return JSONResponse({"ok": False, "message": "Codigo invalido"}, status_code=400)
+    if token_row.expires_at < datetime.utcnow():
+        return JSONResponse({"ok": False, "message": "Codigo expirado"}, status_code=400)
+    if not token_row.vendedor_nuevo_id:
+        return JSONResponse({"ok": False, "message": "El token no tiene ejecutivo destino"}, status_code=400)
+
+    vendedor_nuevo = db.query(Vendedor).filter(Vendedor.id == token_row.vendedor_nuevo_id, Vendedor.activo.is_(True)).first()
+    if not vendedor_nuevo:
+        return JSONResponse({"ok": False, "message": "El nuevo ejecutivo ya no existe"}, status_code=404)
+
+    factura.vendedor_id = vendedor_nuevo.id
+    token_row.used_at = local_now_naive()
+    db.commit()
+    return JSONResponse({"ok": True, "message": "Ejecutivo actualizado"})
 
 @router.get("/data")
 def data_home(
