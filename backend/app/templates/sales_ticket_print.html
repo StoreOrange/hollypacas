@@ -47,10 +47,60 @@
         gap: 6px;
         padding: 1px 0;
       }
+      .screen-actions {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        background: rgba(255,255,255,0.96);
+        border-bottom: 1px solid #e5e7eb;
+        backdrop-filter: blur(10px);
+      }
+      .screen-actions .group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .screen-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid #d1d5db;
+        background: #ffffff;
+        color: #111827;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .screen-btn.primary {
+        background: #111827;
+        color: #fff;
+        border-color: #111827;
+      }
+      @media print {
+        .screen-actions { display: none !important; }
+      }
     </style>
   </head>
   <body>
     {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
+    <div class="screen-actions">
+      <div class="group">
+        <a class="screen-btn" href="{{ return_to or '/sales' }}">Volver a ventas</a>
+        <button class="screen-btn primary" type="button" id="ticket-print-now">Imprimir ahora</button>
+      </div>
+      <div class="group">
+        <button class="screen-btn" type="button" id="ticket-refresh-return">Nueva venta</button>
+      </div>
+    </div>
     <div class="ticket{% if compact_ticket %} compact{% endif %}">
       <div class="top-meta">
         <span class="left">{{ factura.numero }} - TICKET</span>
@@ -124,7 +174,8 @@
     <script>
       window.addEventListener("load", () => {
         const params = new URLSearchParams(window.location.search);
-        const returnTo = params.get("return_to") || "/sales";
+        const printNowBtn = document.getElementById("ticket-print-now");
+        const refreshReturnBtn = document.getElementById("ticket-refresh-return");
         let exited = false;
         let copies = parseInt(params.get("copies") || "2", 10);
         if (!Number.isFinite(copies) || copies < 1) {
@@ -141,28 +192,32 @@
         }
         let printed = 0;
         let printing = false;
+        let printRequestedAt = 0;
+        let closeFallbackTimer = null;
 
         const triggerPrint = () => {
           if (exited || printing) return;
           if (printed >= copies) return;
           printing = true;
+          printRequestedAt = Date.now();
+          if (closeFallbackTimer) {
+            clearTimeout(closeFallbackTimer);
+          }
+          closeFallbackTimer = setTimeout(() => {
+            if (!exited && printing) {
+              finishFlow();
+            }
+          }, Math.max(3500, copies * 2200));
           window.print();
         };
 
         const finishFlow = () => {
           if (exited) return;
           exited = true;
-          if (window.opener && !window.opener.closed) {
-            try {
-              window.opener.location.href = returnTo;
-            } catch (_) {
-              // noop
-            }
-          }
           window.close();
           setTimeout(() => {
             if (!window.closed) {
-              window.location.replace(returnTo);
+              window.close();
             }
           }, 180);
         };
@@ -179,12 +234,29 @@
           }
         });
 
+        window.addEventListener("focus", () => {
+          if (exited || !printing) return;
+          if ((Date.now() - printRequestedAt) < 600) return;
+          printing = false;
+          printed = Math.max(printed, copies);
+          finishFlow();
+        });
+
         // Fallback por si el navegador no dispara afterprint consistentemente.
         setTimeout(() => {
           if (!exited && printed >= copies) {
             finishFlow();
           }
         }, 30000);
+
+        if (printNowBtn) {
+          printNowBtn.addEventListener("click", () => triggerPrint());
+        }
+        if (refreshReturnBtn) {
+          refreshReturnBtn.addEventListener("click", () => {
+            finishFlow();
+          });
+        }
 
         setTimeout(() => triggerPrint(), 420);
       });

@@ -336,11 +336,107 @@
         border-radius: var(--ui-card-radius) !important;
         box-shadow: var(--ui-card-shadow) !important;
       }
+
+      @media (max-width: 991.98px) {
+        body.mobile-with-global-nav {
+          padding-top: calc(env(safe-area-inset-top, 0px) + 68px);
+        }
+        .odoo-header {
+          padding: 0.9rem 1rem !important;
+          border-radius: 18px !important;
+        }
+        .odoo-title {
+          font-size: 1.14rem !important;
+          line-height: 1.12 !important;
+          margin-top: 0 !important;
+        }
+        .odoo-subtitle {
+          font-size: 0.84rem !important;
+          line-height: 1.3 !important;
+          margin-top: 0.18rem !important;
+        }
+        .odoo-header .breadcrumb {
+          margin-bottom: 0.35rem !important;
+        }
+        .mobile-global-nav {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          z-index: 1045;
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          align-items: center;
+          gap: 0.6rem;
+          min-height: calc(env(safe-area-inset-top, 0px) + 60px);
+          padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px;
+          border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+          background: rgba(255, 255, 255, 0.94);
+          backdrop-filter: blur(14px);
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+        }
+        .mobile-global-nav__home,
+        .mobile-global-nav__menu {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.42rem;
+          min-height: 42px;
+          padding: 0 0.9rem;
+          border-radius: 999px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: #fff;
+          color: #0f172a;
+          text-decoration: none;
+          font-size: 0.82rem;
+          font-weight: 800;
+          letter-spacing: 0.02em;
+          box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+        }
+        .mobile-global-nav__menu {
+          appearance: none;
+          cursor: pointer;
+        }
+        .mobile-global-nav__home i,
+        .mobile-global-nav__menu i {
+          color: var(--hp-primary);
+          font-size: 1rem;
+        }
+        .mobile-global-nav__brand {
+          min-width: 0;
+          text-align: center;
+          padding: 0 0.35rem;
+        }
+        .mobile-global-nav__brand .trade {
+          display: block;
+          font-size: 0.84rem;
+          font-weight: 800;
+          color: #0f172a;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      }
     </style>
     {% block extra_head %}{% endblock %}
   </head>
-  <body>
+  <body class="{% if request and request.url and request.url.path != '/login' %}mobile-with-global-nav{% endif %}">
     {% block content %}{% endblock %}
+    {% if request and request.url and request.url.path != '/login' %}
+    <div class="mobile-global-nav d-lg-none" aria-label="Navegacion movil">
+      <a href="/home" class="mobile-global-nav__home" aria-label="Ir al inicio">
+        <i class="bi bi-house-door-fill"></i>
+        <span>Inicio</span>
+      </a>
+      <div class="mobile-global-nav__brand">
+        <span class="trade">{{ branding.get("trade_name", "Empresa") }}</span>
+      </div>
+      <button class="mobile-global-nav__menu" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar" aria-label="Abrir menu">
+        <i class="bi bi-list"></i>
+        <span>Menu</span>
+      </button>
+    </div>
+    {% endif %}
     <div class="hidden lg:grid-cols-[260px_1fr] lg:grid-cols-[84px_1fr] w-64 w-20 px-6 px-2 text-white bg-slate-900 dark:bg-slate-900"></div>
     <script src="/static/vendor/htmx.min.js?v={{ version }}"></script>
     <script src="/static/vendor/alpine.min.js?v={{ version }}" defer></script>
@@ -363,7 +459,7 @@
       window.erpOpenPrintable = (url, options = {}) => {
         if (!url) return { opened: false, popup: null };
         const fallbackSameTab = options.fallbackSameTab !== false;
-        const popup = window.open(url, "_blank", "noopener");
+        const popup = window.open(url, "erp_print_window", "width=520,height=780,resizable=yes,scrollbars=yes");
         if (!popup && fallbackSameTab) {
           window.location.href = url;
           return { opened: false, popup: null };

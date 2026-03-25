@@ -125,6 +125,28 @@ class MenuLayoutSetting(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class MobilePushSubscription(Base):
+    __tablename__ = "mobile_push_subscriptions"
+    __table_args__ = (UniqueConstraint("endpoint", name="uq_mobile_push_endpoint"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
+    endpoint = Column(Text, nullable=False)
+    p256dh = Column(Text, nullable=False)
+    auth = Column(Text, nullable=False)
+    user_agent = Column(String(255), nullable=True)
+    activo = Column(Boolean, default=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User")
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+
+
 class CompanyProfileSetting(Base):
     __tablename__ = "company_profile_settings"
 

@@ -218,9 +218,7 @@
         <span>{{ success }}</span>
         {% if print_id %}
         <a
-          href="/sales/{{ print_id }}/ticket/print?copies=2"
-          target="_blank"
-          rel="noopener"
+          href="/sales/{{ print_id }}/ticket/print?copies=2&return_to=/sales"
           id="sales-print-ticket"
           class="rounded-full bg-emerald-600 text-white text-xs font-semibold px-4 py-2 shadow-sm hover:bg-emerald-700 transition"
         >
@@ -3871,55 +3869,36 @@
   }
   (function () {
     const printLink = document.getElementById("sales-print-ticket");
-    const printId = "{{ print_id or '' }}";
-    const printGuardKey = printId ? `sales_print_once_${printId}` : "";
     if (!printLink) {
       setTimeout(() => {
         window.location.href = "/sales";
       }, 1900);
       return;
     }
+    const printUrl = printLink.getAttribute("href");
     const reloadAfterPrint = () => {
       window.removeEventListener("focus", reloadAfterPrint);
       setTimeout(() => {
-        window.location.href = "/sales";
-      }, 300);
+        window.location.replace("/sales");
+      }, 180);
     };
-    let opened = false;
     const openPrint = () => {
-      if (opened) return;
-      const url = printLink.getAttribute("href");
-      if (!url) return;
-      opened = true;
-      if (printGuardKey && window.sessionStorage) {
-        try {
-          sessionStorage.setItem(printGuardKey, "1");
-        } catch (_) {
-          // noop
-        }
+      if (!printUrl) return;
+      window.addEventListener("focus", reloadAfterPrint, { once: true });
+      if (window.erpOpenPrintable) {
+        window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
+      } else {
+        window.open(printUrl, "erp_print_window", "width=520,height=780,resizable=yes,scrollbars=yes");
       }
-      // Flujo solicitado: no abrir ventana nueva, imprimir en la misma pestaña.
-      window.location.href = url;
+      setTimeout(() => {
+        window.location.replace("/sales");
+      }, 12000);
     };
 
     printLink.addEventListener("click", (event) => {
       event.preventDefault();
       openPrint();
     });
-
-    if (printGuardKey && window.sessionStorage) {
-      try {
-        const already = sessionStorage.getItem(printGuardKey) === "1";
-        if (already) {
-          setTimeout(() => {
-            window.location.href = "/sales";
-          }, 500);
-          return;
-        }
-      } catch (_) {
-        // noop
-      }
-    }
 
     setTimeout(() => {
       openPrint();
@@ -3928,4 +3907,3 @@
   {% endif %}
 </script>
 {% endblock %}
-

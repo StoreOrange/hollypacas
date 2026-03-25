@@ -122,6 +122,27 @@
     border-radius: 12px;
     font-weight: 600;
   }
+  .mobile-preventa .push-alert-btn {
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    padding: 0.45rem 0.8rem;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .mobile-preventa .push-alert-btn.is-active {
+    background: rgba(34, 197, 94, 0.18);
+    border-color: rgba(134, 239, 172, 0.48);
+    color: #dcfce7;
+  }
+  .mobile-preventa .push-alert-hint {
+    margin-top: 0.55rem;
+    font-size: 0.74rem;
+    color: rgba(255, 255, 255, 0.82);
+  }
   .mobile-preventa .app-actionbar {
     position: fixed;
     left: 0;
@@ -138,6 +159,190 @@
     border-radius: 14px;
     font-weight: 700;
     letter-spacing: 0.01em;
+  }
+  .mobile-preventa .mobile-brand-footer {
+    margin: 1.1rem 0 0.35rem;
+    padding: 1rem 0.75rem 0.2rem;
+    text-align: center;
+  }
+  .mobile-preventa .mobile-brand-footer img {
+    display: block;
+    width: min(68vw, 220px);
+    max-width: 100%;
+    max-height: 92px;
+    margin: 0 auto;
+    object-fit: contain;
+    filter: drop-shadow(0 12px 24px rgba(15, 23, 42, 0.10));
+  }
+  .mobile-preventa .mobile-brand-footer .brand-caption {
+    margin-top: 0.55rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #64748b;
+    font-weight: 700;
+  }
+  .mobile-preventa .preventas-report-card {
+    overflow: hidden;
+  }
+  .mobile-preventa .preventas-report-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+  .mobile-preventa .preventas-report-head::-webkit-details-marker {
+    display: none;
+  }
+  .mobile-preventa .preventas-report-title {
+    font-size: 0.98rem;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .mobile-preventa .preventas-report-subtitle {
+    font-size: 0.76rem;
+    color: #64748b;
+    margin-top: 0.15rem;
+  }
+  .mobile-preventa .preventas-report-caret {
+    font-size: 0.82rem;
+    color: #1e3a8a;
+    transition: transform .18s ease;
+  }
+  .mobile-preventa details[open] .preventas-report-caret {
+    transform: rotate(180deg);
+  }
+  .mobile-preventa .preventas-report-body {
+    margin-top: 0.9rem;
+  }
+  .mobile-preventa .preventa-report-row {
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    background: #fff;
+    margin-bottom: 0.7rem;
+    overflow: hidden;
+  }
+  .mobile-preventa .preventa-report-toggle {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    padding: 0.85rem 0.9rem;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .mobile-preventa .preventa-report-main {
+    min-width: 0;
+  }
+  .mobile-preventa .preventa-report-number {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .mobile-preventa .preventa-report-meta {
+    font-size: 0.76rem;
+    color: #64748b;
+    margin-top: 0.2rem;
+  }
+  .mobile-preventa .preventa-report-client {
+    font-size: 0.82rem;
+    color: #334155;
+    margin-top: 0.22rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mobile-preventa .preventa-report-status {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    padding: 0.32rem 0.65rem;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .mobile-preventa .preventa-report-detail {
+    display: none;
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
+    padding: 0.85rem 0.9rem 0.95rem;
+  }
+  .mobile-preventa .preventa-report-row.is-open .preventa-report-detail {
+    display: block;
+  }
+  .mobile-preventa .preventa-report-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem 0.7rem;
+    margin-bottom: 0.8rem;
+  }
+  .mobile-preventa .preventa-report-kv {
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    padding: 0.55rem 0.65rem;
+  }
+  .mobile-preventa .preventa-report-kv .k {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 0.12rem;
+  }
+  .mobile-preventa .preventa-report-kv .v {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .mobile-preventa .preventa-report-observacion {
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    padding: 0.65rem;
+    margin-bottom: 0.8rem;
+    font-size: 0.82rem;
+    color: #334155;
+  }
+  .mobile-preventa .preventa-report-items-title {
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #1e3a8a;
+    margin-bottom: 0.45rem;
+  }
+  .mobile-preventa .preventa-report-item {
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    padding: 0.6rem 0.65rem;
+    margin-bottom: 0.45rem;
+  }
+  .mobile-preventa .preventa-report-item:last-child {
+    margin-bottom: 0;
+  }
+  .mobile-preventa .preventa-report-item .code {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #1e3a8a;
+  }
+  .mobile-preventa .preventa-report-item .desc {
+    font-size: 0.83rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-top: 0.15rem;
+  }
+  .mobile-preventa .preventa-report-item .meta {
+    font-size: 0.76rem;
+    color: #475569;
+    margin-top: 0.18rem;
   }
   .swal2-popup.mobile-swal {
     border-radius: 18px;
@@ -220,6 +425,13 @@
       </div>
       <div class="small opacity-75">Sucursal: {{ branch.name }} &middot; Bodega: {{ bodega.name }}</div>
     </div>
+    <div class="mt-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <button id="pushAlertsBtn" class="push-alert-btn" type="button">
+        <i class="bi bi-bell me-1"></i>
+        Activar alertas
+      </button>
+      <div id="pushAlertsHint" class="push-alert-hint">Recibe aviso cuando caja convierta tu preventa en factura.</div>
+    </div>
   </div>
 
   {% if success %}
@@ -228,6 +440,39 @@
   {% if error %}
   <div class="alert alert-danger">{{ error }}</div>
   {% endif %}
+
+  <div class="card mb-3 preventas-report-card">
+    <div class="card-body">
+      <details id="preventasReportPanel">
+        <summary class="preventas-report-head">
+          <div>
+            <div class="preventas-report-title">Preventas enviadas</div>
+            <div class="preventas-report-subtitle">Solo muestra preventas del dia actual para mantener la vista ligera.</div>
+          </div>
+          <i class="bi bi-chevron-down preventas-report-caret"></i>
+        </summary>
+        <div class="preventas-report-body">
+          {% if recent_preventas %}
+            {% for row in recent_preventas %}
+            <div class="preventa-report-row" data-preventa-report-row data-preventa-id="{{ row.id }}">
+              <button class="preventa-report-toggle" type="button" data-preventa-toggle data-preventa-id="{{ row.id }}">
+                <div class="preventa-report-main">
+                  <div class="preventa-report-number">{{ row.numero }}</div>
+                  <div class="preventa-report-client">{{ row.cliente }}</div>
+                  <div class="preventa-report-meta">Enviada: {{ row.fecha_label }} · Ejecutivo: {{ row.vendedor }}</div>
+                </div>
+                <span class="preventa-report-status {{ row.badge.class }}">{{ row.badge.label }}</span>
+              </button>
+              <div class="preventa-report-detail" data-preventa-detail></div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-muted small">Hoy aun no hay preventas enviadas para mostrar.</div>
+          {% endif %}
+        </div>
+      </details>
+    </div>
+  </div>
 
   <form method="post" action="/m/preventas" id="preventaForm" autocomplete="off">
     <input type="hidden" name="moneda" value="USD">
@@ -323,6 +568,11 @@
       <button class="btn btn-primary btn-lg" type="submit">Enviar preventa</button>
     </div>
   </form>
+
+  <div class="mobile-brand-footer" aria-hidden="true">
+    <img src="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="{{ branding.get('trade_name', 'Empresa') }}">
+    <div class="brand-caption">{{ branding.get("trade_name", "Empresa") }}</div>
+  </div>
 </div>
 
 <div class="app-actionbar">
@@ -424,6 +674,9 @@
     const clienteNuevoNombre = document.getElementById("clienteNuevoNombre");
     const btnCrearCliente = document.getElementById("btnCrearCliente");
     const clienteCreateMsg = document.getElementById("clienteCreateMsg");
+    const preventaReportRows = Array.from(document.querySelectorAll("[data-preventa-report-row]"));
+    const pushAlertsBtn = document.getElementById("pushAlertsBtn");
+    const pushAlertsHint = document.getElementById("pushAlertsHint");
 
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m]));
     const fmt = (n, p = "") => `${p}${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -432,6 +685,7 @@
     let comboParent = null;
     let comboGifts = [];
     let isSubmittingPreventa = false;
+    const pushStorageKey = "m_preventas_push_endpoint";
 
     function notify(icon, title, text) {
       if (typeof Swal !== "undefined") {
@@ -455,10 +709,189 @@
       }
     }
 
+    function setPushUiState(state, message) {
+      if (!pushAlertsBtn) return;
+      pushAlertsBtn.disabled = state === "loading";
+      pushAlertsBtn.classList.toggle("is-active", state === "active");
+      if (state === "active") {
+        pushAlertsBtn.innerHTML = '<i class="bi bi-bell-fill me-1"></i> Alertas activas';
+      } else if (state === "loading") {
+        pushAlertsBtn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Activando...';
+      } else {
+        pushAlertsBtn.innerHTML = '<i class="bi bi-bell me-1"></i> Activar alertas';
+      }
+      if (pushAlertsHint && message) {
+        pushAlertsHint.textContent = message;
+      }
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    async function ensurePushSubscription() {
+      if (!pushAlertsBtn) return;
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+        setPushUiState("idle", "Este navegador no soporta alertas push en esta vista.");
+        return;
+      }
+      setPushUiState("loading", "Preparando alertas para esta preventa movil...");
+      try {
+        const cfgRes = await fetch("/m/preventas/push/config", { headers: { "X-Requested-With": "fetch" } });
+        const cfg = await cfgRes.json();
+        if (!cfg?.ok || !cfg?.enabled || !cfg?.public_key) {
+          setPushUiState("idle", "Las alertas push aun no estan configuradas en este entorno.");
+          return;
+        }
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+          setPushUiState("idle", "Debes permitir notificaciones para recibir el aviso de preventa facturada.");
+          return;
+        }
+        const registration = await navigator.serviceWorker.register("/m-preventas-sw.js");
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(cfg.public_key),
+          });
+        }
+        const subJson = subscription.toJSON();
+        await fetch("/m/preventas/push/subscribe", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "fetch",
+          },
+          body: JSON.stringify(subJson),
+        });
+        localStorage.setItem(pushStorageKey, subJson.endpoint || "");
+        setPushUiState("active", "Te avisaremos cuando una preventa tuya sea facturada desde caja o administracion.");
+      } catch (error) {
+        setPushUiState("idle", "No se pudieron activar las alertas en este dispositivo.");
+      }
+    }
+
+    function renderPreventaDetail(data) {
+      const preventa = data?.preventa || {};
+      const items = Array.isArray(data?.items) ? data.items : [];
+      const totalLabel = preventa.total_usd
+        ? fmt(preventa.total_usd, "$")
+        : fmt(preventa.total_cs, "C$");
+      const kvRows = [
+        ["Cliente", preventa.cliente || "Consumidor final"],
+        ["Ejecutivo", preventa.vendedor || "Sin definir"],
+        ["Fecha", preventa.fecha || "-"],
+        ["Hora", preventa.hora || "-"],
+        ["Estado", preventa.estado || "Pendiente"],
+        ["Total", totalLabel],
+      ];
+      if (preventa.reviewed_at) {
+        kvRows.push(["Revision", preventa.reviewed_at]);
+      }
+      if (preventa.facturada_at) {
+        kvRows.push(["Facturada", preventa.facturada_at]);
+      }
+      kvRows.push(["Items", Number(preventa.total_items || items.length || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })]);
+
+      const obsHtml = preventa.observacion
+        ? `<div class="preventa-report-observacion"><div class="small text-uppercase text-muted mb-1">Observacion</div>${esc(preventa.observacion)}</div>`
+        : "";
+      const itemsHtml = items.length
+        ? items.map((item) => {
+            const qty = Number(item.cantidad || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            const subtotalLabel = preventa.total_usd
+              ? fmt(item.subtotal_usd, "$")
+              : fmt(item.subtotal_cs, "C$");
+            const priceLabel = preventa.total_usd
+              ? fmt(item.precio_usd, "$")
+              : fmt(item.precio_cs, "C$");
+            const roleLabel = item.combo_role === "gift"
+              ? "Regalia"
+              : item.combo_role === "parent"
+                ? "Oferta"
+                : "";
+            return `
+              <div class="preventa-report-item">
+                <div class="code">${esc(item.codigo || "SIN-CODIGO")}${roleLabel ? ` · ${esc(roleLabel)}` : ""}</div>
+                <div class="desc">${esc(item.descripcion || "Producto")}</div>
+                <div class="meta">Cantidad: ${qty} · Precio: ${priceLabel}</div>
+                <div class="meta">Subtotal: ${subtotalLabel}</div>
+              </div>
+            `;
+          }).join("")
+        : '<div class="preventa-report-item"><div class="desc">Sin detalle de items disponible.</div></div>';
+
+      return `
+        <div class="preventa-report-grid">
+          ${kvRows.map(([k, v]) => `
+            <div class="preventa-report-kv">
+              <div class="k">${esc(k)}</div>
+              <div class="v">${esc(v)}</div>
+            </div>
+          `).join("")}
+        </div>
+        ${obsHtml}
+        <div class="preventa-report-items-title">Detalle de preventa</div>
+        ${itemsHtml}
+      `;
+    }
+
+    function collapseOtherPreventaRows(currentRow) {
+      preventaReportRows.forEach((row) => {
+        if (row !== currentRow) {
+          row.classList.remove("is-open");
+        }
+      });
+    }
+
+    async function togglePreventaReportRow(row) {
+      const detail = row.querySelector("[data-preventa-detail]");
+      const preventaId = row.dataset.preventaId;
+      const isOpen = row.classList.contains("is-open");
+      if (isOpen) {
+        row.classList.remove("is-open");
+        return;
+      }
+      collapseOtherPreventaRows(row);
+      row.classList.add("is-open");
+      if (row.dataset.loaded === "1" || !detail || !preventaId) {
+        return;
+      }
+      detail.innerHTML = '<div class="small text-muted">Cargando detalle...</div>';
+      try {
+        const res = await fetch(`/m/preventas/${encodeURIComponent(preventaId)}/detail`, {
+          headers: { "X-Requested-With": "fetch" },
+        });
+        const data = await res.json();
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.message || "No se pudo cargar la preventa.");
+        }
+        detail.innerHTML = renderPreventaDetail(data);
+        row.dataset.loaded = "1";
+      } catch (err) {
+        detail.innerHTML = `<div class="small text-danger">${esc(err?.message || "No se pudo cargar el detalle.")}</div>`;
+      }
+    }
+
     if (flashError) {
       notify("warning", "Validacion de inventario", flashError);
     } else if (flashSuccess) {
       notify("success", "Preventa", flashSuccess);
+    }
+    if (pushAlertsBtn) {
+      setPushUiState("idle", "Recibe aviso cuando caja convierta tu preventa en factura.");
+      pushAlertsBtn.addEventListener("click", ensurePushSubscription);
+      if (Notification?.permission === "granted" && localStorage.getItem(pushStorageKey)) {
+        setPushUiState("active", "Alertas push activas para esta vista movil.");
+      }
     }
 
     function hideNoItems() {
@@ -1115,6 +1548,22 @@
         modal.show();
       }
     });
+    preventaReportRows.forEach((row) => {
+      const toggle = row.querySelector("[data-preventa-toggle]");
+      toggle?.addEventListener("click", () => {
+        togglePreventaReportRow(row);
+      });
+    });
+    const focusPreventaId = new URLSearchParams(window.location.search).get("focus_preventa");
+    if (focusPreventaId) {
+      const focusRow = preventaReportRows.find((row) => String(row.dataset.preventaId || "") === String(focusPreventaId));
+      if (focusRow) {
+        const panel = document.getElementById("preventasReportPanel");
+        if (panel && !panel.open) panel.open = true;
+        focusRow.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => { togglePreventaReportRow(focusRow); }, 220);
+      }
+    }
     btnComboParentSearch?.addEventListener("click", searchComboParents);
     comboParentSearch?.addEventListener("input", debounce(searchComboParents, 240));
     btnComboGiftSearch?.addEventListener("click", searchComboGifts);

@@ -23,7 +23,7 @@ from openpyxl.styles import Alignment, Font
 from reportlab.lib import colors
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import String, and_, create_engine, func, or_
 from sqlalchemy.orm import Session, aliased
@@ -92,6 +92,7 @@ from ..models.sales import (
     DepositoCliente,
     EmailConfig,
     MenuLayoutSetting,
+    MobilePushSubscription,
     FormaPago,
     NotificationRecipient,
     PosPrintSetting,
@@ -113,6 +114,12 @@ from ..models.sales import (
 )
 from ..models.user import Branch, Permission, Role, User
 
+try:
+    from pywebpush import WebPushException, webpush
+except Exception:  # pragma: no cover - graceful fallback when dependency is unavailable
+    WebPushException = Exception
+    webpush = None
+
 router = APIRouter()
 
 SALES_INTERFACE_OPTIONS = [
@@ -122,6 +129,121 @@ SALES_INTERFACE_OPTIONS = [
     {"code": "comestibles", "label": "Interfaz Tienda de Comestibles"},
     {"code": "zapatos", "label": "Interfaz Tienda de Zapatos"},
 ]
+
+
+def _webpush_enabled() -> bool:
+    return bool(
+        webpush
+        and (settings.WEBPUSH_VAPID_PUBLIC_KEY or "").strip()
+        and (settings.WEBPUSH_VAPID_PRIVATE_KEY or "").strip()
+        and (settings.WEBPUSH_VAPID_SUBJECT or "").strip()
+    )
+
+
+def _subscription_payload_valid(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    keys = payload.get("keys") or {}
+    return bool(
+        str(payload.get("endpoint") or "").strip()
+        and str(keys.get("p256dh") or "").strip()
+        and str(keys.get("auth") or "").strip()
+    )
+
+
+def _users_for_vendedor(db: Session, vendedor: Optional[Vendedor]) -> list[User]:
+    if not vendedor:
+        return []
+    vendedor_name = (vendedor.nombre or "").strip().lower()
+    if not vendedor_name:
+        return []
+    return (
+        db.query(User)
+        .filter(func.lower(User.full_name) == vendedor_name, User.is_active.is_(True))
+        .all()
+    )
+
+
+def _build_mobile_preventa_push_payload(*, preventa: Preventa, actor_name: str, branch_name: str) -> dict[str, object]:
+    title = "Preventa facturada"
+    body = f"{preventa.numero} fue facturada por {actor_name or 'Caja'}"
+    if branch_name:
+        body = f"{preventa.numero} fue facturada en {branch_name} por {actor_name or 'Caja'}"
+    target_url = f"/m/preventas?focus_preventa={preventa.id}"
+    return {
+        "title": title,
+        "body": body,
+        "icon": "/static/logo_hollywood.png",
+        "badge": "/static/favicon.ico",
+        "tag": f"preventa-facturada-{preventa.id}",
+        "data": {
+            "url": target_url,
+            "preventa_id": preventa.id,
+            "numero": preventa.numero,
+            "estado": "FACTURADA",
+        },
+    }
+
+
+def _send_mobile_preventa_push_notifications(
+    db: Session,
+    *,
+    preventa: Optional[Preventa],
+    actor_name: str,
+    branch_name: str,
+) -> None:
+    if not preventa or not _webpush_enabled():
+        return
+    users = _users_for_vendedor(db, preventa.vendedor)
+    if not users:
+        return
+    user_ids = [int(user.id) for user in users]
+    subscriptions = (
+        db.query(MobilePushSubscription)
+        .filter(
+            MobilePushSubscription.user_id.in_(user_ids),
+            MobilePushSubscription.activo.is_(True),
+        )
+        .all()
+    )
+    if not subscriptions:
+        return
+    payload = json.dumps(
+        _build_mobile_preventa_push_payload(
+            preventa=preventa,
+            actor_name=actor_name,
+            branch_name=branch_name,
+        )
+    )
+    touched = False
+    for sub in subscriptions:
+        subscription_info = {
+            "endpoint": sub.endpoint,
+            "keys": {
+                "p256dh": sub.p256dh,
+                "auth": sub.auth,
+            },
+        }
+        try:
+            webpush(
+                subscription_info=subscription_info,
+                data=payload,
+                vapid_private_key=settings.WEBPUSH_VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": settings.WEBPUSH_VAPID_SUBJECT},
+            )
+            sub.last_seen_at = local_now_naive()
+            sub.activo = True
+            touched = True
+        except WebPushException as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if status_code in {404, 410}:
+                sub.activo = False
+                touched = True
+            continue
+        except Exception:
+            continue
+    if touched:
+        db.commit()
 
 THEME_OPTIONS = [
     {"code": "default", "label": "Default Azul"},
@@ -7994,6 +8116,16 @@ def mobile_preventas_page(
     if not default_vendedor_id and vendedores:
         default_vendedor_id = vendedores[0].id
     consumidor = _get_or_create_consumidor_final(db)
+    today_start = datetime.combine(local_today(), datetime.min.time())
+    today_end = today_start + timedelta(days=1)
+    recent_preventas_query = (
+        db.query(Preventa)
+        .filter(Preventa.branch_id == branch.id, Preventa.bodega_id == bodega.id)
+        .filter(Preventa.fecha >= today_start, Preventa.fecha < today_end)
+    )
+    if vendedor_user_id:
+        recent_preventas_query = recent_preventas_query.filter(Preventa.vendedor_id == vendedor_user_id)
+    recent_preventas = recent_preventas_query.order_by(Preventa.created_at.desc(), Preventa.id.desc()).limit(20).all()
     db.commit()
     success = request.query_params.get("success")
     error = request.query_params.get("error")
@@ -8010,10 +8142,167 @@ def mobile_preventas_page(
             "is_vendedor_role": _is_vendedor_role(user),
             "consumidor_final_id": consumidor.id,
             "consumidor_final_nombre": consumidor.nombre,
+            "recent_preventas": [
+                {
+                    "id": p.id,
+                    "numero": p.numero,
+                    "cliente": p.cliente.nombre if p.cliente else "Consumidor final",
+                    "vendedor": p.vendedor.nombre if p.vendedor else "-",
+                    "fecha_label": p.fecha.strftime("%d/%m/%Y %H:%M") if p.fecha else "-",
+                    "estado": p.estado,
+                    "badge": _preventa_estado_badge(p.estado),
+                }
+                for p in recent_preventas
+            ],
             "success": success,
             "error": error,
             "version": settings.UI_VERSION,
         },
+    )
+
+
+@router.get("/m/preventas/push/config")
+def mobile_preventas_push_config(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preventas_mobile_access(request, user)
+    return {
+        "ok": True,
+        "enabled": _webpush_enabled(),
+        "public_key": settings.WEBPUSH_VAPID_PUBLIC_KEY if _webpush_enabled() else "",
+    }
+
+
+@router.post("/m/preventas/push/subscribe")
+async def mobile_preventas_push_subscribe(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preventas_mobile_access(request, user)
+    payload = await request.json()
+    if not _webpush_enabled():
+        return JSONResponse({"ok": False, "message": "Notificaciones no configuradas."}, status_code=400)
+    if not _subscription_payload_valid(payload):
+        return JSONResponse({"ok": False, "message": "Suscripcion invalida."}, status_code=400)
+    branch, bodega = _resolve_branch_bodega(db, user)
+    endpoint = str(payload.get("endpoint") or "").strip()
+    keys = payload.get("keys") or {}
+    row = db.query(MobilePushSubscription).filter(MobilePushSubscription.endpoint == endpoint).first()
+    if not row:
+        row = MobilePushSubscription(endpoint=endpoint, user_id=user.id)
+        db.add(row)
+    row.user_id = user.id
+    row.branch_id = branch.id if branch else None
+    row.bodega_id = bodega.id if bodega else None
+    row.p256dh = str(keys.get("p256dh") or "").strip()
+    row.auth = str(keys.get("auth") or "").strip()
+    row.user_agent = (request.headers.get("user-agent") or "")[:255]
+    row.last_seen_at = local_now_naive()
+    row.activo = True
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/m/preventas/push/unsubscribe")
+async def mobile_preventas_push_unsubscribe(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preventas_mobile_access(request, user)
+    payload = await request.json()
+    endpoint = str((payload or {}).get("endpoint") or "").strip()
+    if endpoint:
+        row = (
+            db.query(MobilePushSubscription)
+            .filter(MobilePushSubscription.endpoint == endpoint, MobilePushSubscription.user_id == user.id)
+            .first()
+        )
+        if row:
+            row.activo = False
+            row.last_seen_at = local_now_naive()
+            db.commit()
+    return {"ok": True}
+
+
+@router.get("/m-preventas-sw.js")
+def mobile_preventas_service_worker():
+    sw_path = Path(__file__).resolve().parents[1] / "static" / "m_preventas_sw.js"
+    if not sw_path.exists():
+        raise HTTPException(status_code=404, detail="Service worker no disponible")
+    return Response(
+        content=sw_path.read_text(encoding="utf-8"),
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
+
+
+@router.get("/m/preventas/{preventa_id}/detail")
+def mobile_preventas_detail(
+    request: Request,
+    preventa_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preventas_mobile_access(request, user)
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        return JSONResponse({"ok": False, "message": "Usuario sin sucursal/bodega asignada"}, status_code=400)
+    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    if not preventa:
+        return JSONResponse({"ok": False, "message": "Preventa no encontrada"}, status_code=404)
+    if int(preventa.branch_id or 0) != int(branch.id) or int(preventa.bodega_id or 0) != int(bodega.id):
+        return JSONResponse({"ok": False, "message": "Preventa fuera de tu sucursal/bodega"}, status_code=403)
+    vendedor_user_id = _vendedor_id_for_user(db, user, bodega)
+    if vendedor_user_id and int(preventa.vendedor_id or 0) != int(vendedor_user_id):
+        return JSONResponse({"ok": False, "message": "Preventa fuera de tu vendedor"}, status_code=403)
+    if _repair_preventa_currency_if_needed(db, preventa):
+        db.commit()
+    rows = (
+        db.query(PreventaItem, Producto)
+        .join(Producto, Producto.id == PreventaItem.producto_id)
+        .filter(PreventaItem.preventa_id == preventa.id)
+        .order_by(PreventaItem.id.asc())
+        .all()
+    )
+    items = []
+    for item, producto in rows:
+        items.append(
+            {
+                "codigo": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "cantidad": float(item.cantidad or 0),
+                "precio_usd": float(item.precio_unitario_usd or 0),
+                "precio_cs": float(item.precio_unitario_cs or 0),
+                "subtotal_usd": float(item.subtotal_usd or 0),
+                "subtotal_cs": float(item.subtotal_cs or 0),
+                "combo_role": (item.combo_role or "").strip().lower(),
+            }
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "preventa": {
+                "id": preventa.id,
+                "numero": preventa.numero,
+                "estado": preventa.estado,
+                "estado_badge": _preventa_estado_badge(preventa.estado),
+                "cliente": preventa.cliente.nombre if preventa.cliente else "Consumidor final",
+                "vendedor": preventa.vendedor.nombre if preventa.vendedor else "-",
+                "fecha": preventa.fecha.strftime("%d/%m/%Y") if preventa.fecha else "-",
+                "hora": preventa.fecha.strftime("%H:%M") if preventa.fecha else "-",
+                "observacion": preventa.observacion or "",
+                "total_usd": float(preventa.total_usd or 0),
+                "total_cs": float(preventa.total_cs or 0),
+                "total_items": float(preventa.total_items or 0),
+                "reviewed_at": preventa.reviewed_at.strftime("%d/%m/%Y %H:%M") if preventa.reviewed_at else "",
+                "facturada_at": preventa.facturada_at.strftime("%d/%m/%Y %H:%M") if preventa.facturada_at else "",
+            },
+            "items": items,
+        }
     )
 
 
@@ -16387,7 +16676,8 @@ def sales_detail(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
-    _enforce_permission(request, user, "access.sales.cobranza")
+    if not (_has_permission(user, "access.sales.cobranza") or _has_permission(user, "access.sales")):
+        _enforce_permission(request, user, "access.sales.cobranza")
     factura = (
         db.query(VentaFactura)
         .filter(VentaFactura.id == venta_id)
@@ -16457,6 +16747,43 @@ def sales_reprint(
             "letter_print_url": f"/sales/{factura.id}/pdf",
         }
     )
+
+
+@router.post("/sales/{venta_id}/print-pos-direct")
+def sales_print_pos_direct(
+    venta_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales")
+    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
+    if not factura or not factura.bodega or not factura.bodega.branch:
+        return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
+
+    pos_print = (
+        db.query(PosPrintSetting)
+        .filter(PosPrintSetting.branch_id == factura.bodega.branch.id)
+        .first()
+    )
+    if not pos_print or not (pos_print.printer_name or "").strip():
+        return JSONResponse({"ok": False, "message": "No hay impresora POS configurada para esta sucursal"}, status_code=400)
+
+    if not _get_sumatra_path(pos_print.sumatra_path):
+        return JSONResponse({"ok": False, "message": "No se encontro SumatraPDF para imprimir a la POS"}, status_code=400)
+
+    try:
+        _print_pos_ticket(
+            factura,
+            pos_print.printer_name.strip(),
+            max(int(pos_print.copies or 1), 1),
+            _company_profile_payload(db),
+            pos_print.sumatra_path,
+        )
+    except Exception:
+        return JSONResponse({"ok": False, "message": "No se pudo enviar la factura a la impresora POS"}, status_code=500)
+
+    return JSONResponse({"ok": True, "message": f"Factura enviada a POS: {pos_print.printer_name}"})
 
 
 @router.post("/sales/{venta_id}/reversion/request")
@@ -19660,6 +19987,9 @@ def sales_ticket_print(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales")
+    return_to = (request.query_params.get("return_to") or "/sales").strip()
+    if not return_to.startswith("/"):
+        return_to = "/sales"
     copies_value = request.query_params.get("copies", "2")
     try:
         copies = max(int(copies_value), 1)
@@ -19845,6 +20175,7 @@ def sales_ticket_print(
             "show_item_code": show_item_code,
             "show_item_subtotal": show_item_subtotal,
             "show_item_subtotal_if_multi_qty": show_item_subtotal_if_multi_qty,
+            "return_to": return_to,
             "version": settings.UI_VERSION,
         },
     )
@@ -21898,6 +22229,16 @@ async def sales_create_invoice(
         db.add(auto_entry)
 
     db.commit()
+    if preventa:
+        try:
+            _send_mobile_preventa_push_notifications(
+                db,
+                preventa=preventa,
+                actor_name=user.full_name or "Caja",
+                branch_name=branch.name if branch else "",
+            )
+        except Exception:
+            pass
     pos_print = (
         db.query(PosPrintSetting)
         .filter(PosPrintSetting.branch_id == branch.id)

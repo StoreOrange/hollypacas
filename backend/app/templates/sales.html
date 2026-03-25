@@ -18,6 +18,14 @@
   .cash-qty-input {
     max-width: 110px;
   }
+  @media (max-width: 767.98px) {
+    .sales-mobile-order-catalog {
+      order: 1;
+    }
+    .sales-mobile-order-ticket {
+      order: 2;
+    }
+  }
   .preventa-live-inline {
     display: none;
     align-items: center;
@@ -146,22 +154,54 @@
       <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2 flex flex-wrap items-center justify-between gap-3" data-success-banner>
         <span>{{ success }}</span>
         {% if print_id %}
-        <a
-          href="/sales/{{ print_id }}/ticket/print?copies=2"
-          target="_blank"
-          rel="noopener"
-          id="sales-print-ticket"
-          class="rounded-full bg-emerald-600 text-white text-xs font-semibold px-4 py-2 shadow-sm hover:bg-emerald-700 transition"
-        >
-          Ver e imprimir ticket
-        </a>
+        <div class="d-flex d-lg-none flex-wrap align-items-center gap-2">
+            <a
+            href="/sales/{{ print_id }}/ticket/print?copies=2&return_to=/sales"
+            target="_blank"
+            rel="noopener"
+            id="sales-print-ticket"
+            class="rounded-full bg-emerald-600 text-white text-xs font-semibold px-4 py-2 shadow-sm hover:bg-emerald-700 transition text-decoration-none"
+          >
+            Ticket POS
+          </a>
+          <a
+            href="/sales/{{ print_id }}/pdf"
+            target="_blank"
+            rel="noopener"
+            id="sales-view-pdf"
+            class="rounded-full bg-white text-emerald-700 text-xs font-semibold px-4 py-2 shadow-sm border border-emerald-300 hover:bg-emerald-100 transition text-decoration-none"
+          >
+            Factura PDF
+          </a>
+          <button
+            id="sales-share-image"
+            type="button"
+            class="rounded-full bg-white text-emerald-700 text-xs font-semibold px-4 py-2 shadow-sm border border-emerald-300 hover:bg-emerald-100 transition"
+          >
+            Compartir imagen
+          </button>
+          <button
+            id="sales-share-pdf"
+            type="button"
+            class="rounded-full bg-white text-emerald-700 text-xs font-semibold px-4 py-2 shadow-sm border border-emerald-300 hover:bg-emerald-100 transition"
+          >
+            Compartir PDF
+          </button>
+          <button
+            id="sales-print-pos-direct"
+            type="button"
+            class="rounded-full bg-white text-emerald-700 text-xs font-semibold px-4 py-2 shadow-sm border border-emerald-300 hover:bg-emerald-100 transition"
+          >
+            Imprimir POS red
+          </button>
+        </div>
         {% endif %}
       </div>
       {% endif %}
 
       <form id="sales-form" class="rounded-[30px] border border-slate-200 bg-white/90 shadow-2xl p-7 space-y-6 backdrop-blur -mt-4" method="post" action="/sales">
         <div class="grid xl:grid-cols-[1.1fr_0.9fr] gap-6">
-          <div class="space-y-5">
+          <div class="space-y-5 sales-mobile-order-ticket">
             <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
               <div class="flex items-center justify-between mb-2">
                 <div>
@@ -286,7 +326,7 @@
             </div>
           </div>
 
-          <div class="space-y-5">
+          <div class="space-y-5 sales-mobile-order-catalog">
             <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
               <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -3135,65 +3175,263 @@
       icon: "success",
       title: "Venta registrada",
       text: "{{ success }}",
-      timer: 1800,
+      timer: 1600,
       showConfirmButton: false,
     });
   }
   (function () {
     const printLink = document.getElementById("sales-print-ticket");
+    const shareImageBtn = document.getElementById("sales-share-image");
+    const sharePdfBtn = document.getElementById("sales-share-pdf");
+    const printPosBtn = document.getElementById("sales-print-pos-direct");
     const printId = "{{ print_id or '' }}";
-    const printGuardKey = printId ? `sales_print_once_${printId}` : "";
     if (!printLink) {
-      setTimeout(() => {
-        window.location.href = "/sales";
-      }, 1900);
       return;
     }
-    const reloadAfterPrint = () => {
-      window.removeEventListener("focus", reloadAfterPrint);
-      setTimeout(() => {
-        window.location.href = "/sales";
-      }, 300);
-    };
-    let opened = false;
-    const openPrint = () => {
-      if (opened) return;
-      const url = printLink.getAttribute("href");
-      if (!url) return;
-      opened = true;
-      if (printGuardKey && window.sessionStorage) {
-        try {
-          sessionStorage.setItem(printGuardKey, "1");
-        } catch (_) {
-          // noop
-        }
-      }
-      // Flujo solicitado: no abrir ventana nueva, imprimir en la misma pestaña.
-      window.location.href = url;
-    };
+    const printUrl = printLink.getAttribute("href");
+    const isMobileViewport = window.matchMedia("(max-width: 991.98px)").matches;
 
-    printLink.addEventListener("click", (event) => {
-      event.preventDefault();
-      openPrint();
-    });
-
-    if (printGuardKey && window.sessionStorage) {
-      try {
-        const already = sessionStorage.getItem(printGuardKey) === "1";
-        if (already) {
+    if (!isMobileViewport) {
+      if (printUrl) {
+        const reloadAfterPrint = () => {
+          window.removeEventListener("focus", reloadAfterPrint);
           setTimeout(() => {
-            window.location.href = "/sales";
-          }, 500);
-          return;
+            window.location.replace("/sales");
+          }, 300);
+        };
+        window.addEventListener("focus", reloadAfterPrint, { once: true });
+        if (window.erpOpenPrintable) {
+          window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
+        } else {
+          window.open(printUrl, "erp_print_window", "width=520,height=780,resizable=yes,scrollbars=yes");
         }
-      } catch (_) {
-        // noop
+        setTimeout(() => {
+          window.location.replace("/sales");
+        }, 12000);
       }
+      return;
     }
 
-    setTimeout(() => {
-      openPrint();
-    }, 350);
+    printLink.addEventListener("click", (event) => {
+      if (window.erpOpenPrintable) {
+        event.preventDefault();
+        if (printUrl) window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
+      }
+    });
+
+    const escapeXml = (value) => String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+
+    const wrapSvgText = (text, maxChars) => {
+      const raw = String(text || "").trim();
+      if (!raw) return ["-"];
+      const words = raw.split(/\s+/);
+      const lines = [];
+      let current = "";
+      words.forEach((word) => {
+        const candidate = current ? `${current} ${word}` : word;
+        if (candidate.length <= maxChars) {
+          current = candidate;
+        } else {
+          if (current) lines.push(current);
+          current = word;
+        }
+      });
+      if (current) lines.push(current);
+      return lines.slice(0, 2);
+    };
+
+    const getSalePayload = async () => {
+      const response = await fetch(`/sales/${printId}/detail`);
+      const payload = await response.json().catch(() => null);
+      if (!payload || !payload.ok) {
+        throw new Error(payload?.message || "No se pudo cargar la factura.");
+      }
+      return payload.factura;
+    };
+
+    const buildInvoiceSvg = (factura) => {
+      const width = 1080;
+      const padding = 54;
+      const items = Array.isArray(factura.items) ? factura.items.slice(0, 10) : [];
+      const lineHeight = 30;
+      const headerBase = 318;
+      const bodyHeight = Math.max(260, (items.length * lineHeight) + 84);
+      const totalY = headerBase + bodyHeight;
+      const footerY = totalY + 94;
+      const height = footerY + 70;
+      const total = factura.moneda === "USD"
+        ? Number(factura.total_usd || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : Number(factura.total_cs || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const currency = factura.moneda === "USD" ? "$" : "C$";
+      const itemRows = items.map((item, index) => {
+        const y = headerBase + 30 + (index * lineHeight);
+        const descLines = wrapSvgText(item.descripcion || "", 38);
+        const desc = descLines.map((line, lineIdx) =>
+          `<tspan x="${padding + 190}" dy="${lineIdx === 0 ? 0 : 14}">${escapeXml(line)}</tspan>`
+        ).join("");
+        const code = escapeXml(item.codigo || "-");
+        const qty = Number(item.cantidad || 0).toFixed(2);
+        const subtotalRaw = factura.moneda === "USD" ? item.subtotal_usd : item.subtotal_cs;
+        const subtotal = Number(subtotalRaw || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return `
+          <line x1="${padding}" y1="${y + 13}" x2="${width - padding}" y2="${y + 13}" stroke="#e2e8f0" stroke-width="1" />
+          <text x="${padding}" y="${y}" fill="#0f172a" font-size="21" font-weight="700">${code}</text>
+          <text y="${y}" fill="#334155" font-size="20">${desc}</text>
+          <text x="${width - 220}" y="${y}" fill="#0f172a" font-size="20" text-anchor="end">${qty}</text>
+          <text x="${width - padding}" y="${y}" fill="#0f172a" font-size="20" font-weight="700" text-anchor="end">${currency} ${subtotal}</text>
+        `;
+      }).join("");
+      return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+          <defs>
+            <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#0f172a" />
+              <stop offset="100%" stop-color="#2563eb" />
+            </linearGradient>
+          </defs>
+          <rect width="${width}" height="${height}" rx="36" fill="#f8fafc" />
+          <rect x="20" y="20" width="${width - 40}" height="${height - 40}" rx="30" fill="#ffffff" stroke="#dbe3ef" stroke-width="2" />
+          <rect x="20" y="20" width="${width - 40}" height="180" rx="30" fill="url(#hero)" />
+          <text x="${padding}" y="86" fill="#ffffff" font-size="24" font-weight="700" letter-spacing="3">FACTURA DE VENTA</text>
+          <text x="${padding}" y="126" fill="#ffffff" font-size="42" font-weight="800">${escapeXml(factura.numero || "FACTURA")}</text>
+          <text x="${padding}" y="162" fill="rgba(255,255,255,0.88)" font-size="24">${escapeXml(factura.sucursal || "-")} · ${escapeXml(factura.bodega || "-")}</text>
+          <text x="${width - padding}" y="86" fill="#ffffff" font-size="22" text-anchor="end">Cliente</text>
+          <text x="${width - padding}" y="122" fill="#ffffff" font-size="28" font-weight="700" text-anchor="end">${escapeXml(factura.cliente || "Consumidor final")}</text>
+          <text x="${width - padding}" y="160" fill="rgba(255,255,255,0.88)" font-size="22" text-anchor="end">Vendedor: ${escapeXml(factura.vendedor || "-")}</text>
+
+          <text x="${padding}" y="246" fill="#64748b" font-size="19" letter-spacing="2">DETALLE</text>
+          <text x="${padding}" y="282" fill="#0f172a" font-size="22" font-weight="700">Codigo</text>
+          <text x="${padding + 190}" y="282" fill="#0f172a" font-size="22" font-weight="700">Descripcion</text>
+          <text x="${width - 220}" y="282" fill="#0f172a" font-size="22" font-weight="700" text-anchor="end">Cant.</text>
+          <text x="${width - padding}" y="282" fill="#0f172a" font-size="22" font-weight="700" text-anchor="end">Subtotal</text>
+          ${itemRows || `<text x="${padding}" y="${headerBase + 40}" fill="#64748b" font-size="22">Sin items</text>`}
+
+          <rect x="${padding}" y="${totalY}" width="${width - (padding * 2)}" height="88" rx="24" fill="#f1f5f9" />
+          <text x="${padding + 28}" y="${totalY + 35}" fill="#475569" font-size="22">Fecha: ${escapeXml(factura.fecha || "-")}</text>
+          <text x="${padding + 28}" y="${totalY + 64}" fill="#475569" font-size="22">Tipo: ${escapeXml(factura.condicion_venta || "CONTADO")}</text>
+          <text x="${width - padding - 28}" y="${totalY + 55}" fill="#0f172a" font-size="34" font-weight="800" text-anchor="end">Total ${currency} ${total}</text>
+
+          <text x="${padding}" y="${footerY}" fill="#94a3b8" font-size="18">Generado desde el sistema de ventas</text>
+        </svg>
+      `.trim();
+    };
+
+    const svgToPngBlob = async (svgMarkup) => {
+      const svgBlob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(svgBlob);
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = reject;
+          image.src = url;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png", 1));
+        if (!blob) throw new Error("No se pudo generar la imagen.");
+        return blob;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+
+    const downloadBlob = (blob, filename) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1200);
+    };
+
+    const shareFile = async (blob, filename, mimeType, title) => {
+      try {
+        const file = new File([blob], filename, { type: mimeType });
+        if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+          await navigator.share({ files: [file], title });
+          return true;
+        }
+      } catch (_) {
+        return false;
+      }
+      return false;
+    };
+
+    shareImageBtn?.addEventListener("click", async () => {
+      try {
+        shareImageBtn.disabled = true;
+        const factura = await getSalePayload();
+        const svg = buildInvoiceSvg(factura);
+        const blob = await svgToPngBlob(svg);
+        const shared = await shareFile(blob, `${factura.numero || "factura"}.png`, "image/png", "Factura de venta");
+        if (!shared) {
+          downloadBlob(blob, `${factura.numero || "factura"}.png`);
+          if (typeof Swal !== "undefined") {
+            Swal.fire({ icon: "success", title: "Imagen lista", text: "Se descargo la imagen para compartir.", timer: 1800, showConfirmButton: false });
+          }
+        }
+      } catch (error) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: error?.message || "No se pudo generar la imagen de la factura." });
+        }
+      } finally {
+        shareImageBtn.disabled = false;
+      }
+    });
+
+    sharePdfBtn?.addEventListener("click", async () => {
+      try {
+        sharePdfBtn.disabled = true;
+        const response = await fetch(`/sales/${printId}/pdf`);
+        const blob = await response.blob();
+        const shared = await shareFile(blob, `factura_${printId}.pdf`, "application/pdf", "Factura PDF");
+        if (!shared) {
+          downloadBlob(blob, `factura_${printId}.pdf`);
+          if (typeof Swal !== "undefined") {
+            Swal.fire({ icon: "success", title: "PDF listo", text: "Se descargo el PDF para compartir.", timer: 1800, showConfirmButton: false });
+          }
+        }
+      } catch (error) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: error?.message || "No se pudo compartir el PDF." });
+        }
+      } finally {
+        sharePdfBtn.disabled = false;
+      }
+    });
+
+    printPosBtn?.addEventListener("click", async () => {
+      try {
+        printPosBtn.disabled = true;
+        const response = await fetch(`/sales/${printId}/print-pos-direct`, { method: "POST" });
+        const data = await response.json().catch(() => null);
+        if (!data || !data.ok) {
+          throw new Error(data?.message || "No se pudo imprimir en la POS.");
+        }
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "success", title: "POS", text: data.message || "Factura enviada a la impresora.", timer: 1800, showConfirmButton: false });
+        }
+      } catch (error) {
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Error", text: error?.message || "No se pudo enviar a la impresora POS." });
+        }
+      } finally {
+        printPosBtn.disabled = false;
+      }
+    });
   })();
   {% endif %}
 </script>

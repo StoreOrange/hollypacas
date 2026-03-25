@@ -18,6 +18,7 @@ from ..models.sales import (
     FormaPago,
     NotificationRecipient,
     PosPrintSetting,
+    MobilePushSubscription,
     SalesInterfaceSetting,
     Vendedor,
 )
@@ -1119,6 +1120,27 @@ def init_db() -> None:
         if "cierre_auto_print" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE pos_print_settings ADD COLUMN cierre_auto_print BOOLEAN DEFAULT FALSE"))
+    if "mobile_push_subscriptions" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("mobile_push_subscriptions")}
+        if "branch_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE mobile_push_subscriptions ADD COLUMN branch_id INTEGER"))
+        if "bodega_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE mobile_push_subscriptions ADD COLUMN bodega_id INTEGER"))
+        if "user_agent" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE mobile_push_subscriptions ADD COLUMN user_agent VARCHAR(255)"))
+        if "activo" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE mobile_push_subscriptions ADD COLUMN activo BOOLEAN DEFAULT TRUE"))
+                conn.execute(text("UPDATE mobile_push_subscriptions SET activo = TRUE WHERE activo IS NULL"))
+        if "last_seen_at" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE mobile_push_subscriptions ADD COLUMN last_seen_at TIMESTAMP"))
+        if "updated_at" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE mobile_push_subscriptions ADD COLUMN updated_at TIMESTAMP DEFAULT NOW()"))
     if "company_profile_settings" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("company_profile_settings")}
         if "ruc" not in columns:
