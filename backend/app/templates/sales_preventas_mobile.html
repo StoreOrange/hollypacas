@@ -764,7 +764,7 @@
           });
         }
         const subJson = subscription.toJSON();
-        await fetch("/m/preventas/push/subscribe", {
+        const saveRes = await fetch("/m/preventas/push/subscribe", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -772,7 +772,15 @@
           },
           body: JSON.stringify(subJson),
         });
-        localStorage.setItem(pushStorageKey, subJson.endpoint || "");
+        const saveData = await saveRes.json().catch(() => null);
+        if (!saveRes.ok || !saveData?.ok) {
+          throw new Error(saveData?.message || "No se pudo guardar la suscripcion.");
+        }
+        try {
+          localStorage.setItem(pushStorageKey, subJson.endpoint || "");
+        } catch (_) {
+          // noop
+        }
         setPushUiState("active", "Te avisaremos cuando una preventa tuya sea facturada desde caja o administracion.");
       } catch (error) {
         setPushUiState("idle", "No se pudieron activar las alertas en este dispositivo.");
@@ -887,10 +895,21 @@
       notify("success", "Preventa", flashSuccess);
     }
     if (pushAlertsBtn) {
-      setPushUiState("idle", "Recibe aviso cuando caja convierta tu preventa en factura.");
-      pushAlertsBtn.addEventListener("click", ensurePushSubscription);
-      if (Notification?.permission === "granted" && localStorage.getItem(pushStorageKey)) {
-        setPushUiState("active", "Alertas push activas para esta vista movil.");
+      try {
+        setPushUiState("idle", "Recibe aviso cuando caja convierta tu preventa en factura.");
+        pushAlertsBtn.addEventListener("click", ensurePushSubscription);
+        const canReadNotification = ("Notification" in window);
+        let hasStoredPush = false;
+        try {
+          hasStoredPush = !!localStorage.getItem(pushStorageKey);
+        } catch (_) {
+          hasStoredPush = false;
+        }
+        if (canReadNotification && Notification.permission === "granted" && hasStoredPush) {
+          setPushUiState("active", "Alertas push activas para esta vista movil.");
+        }
+      } catch (_) {
+        // No bloquear la preventa movil si falla la configuracion de alertas.
       }
     }
 
@@ -1127,32 +1146,40 @@
         clearClienteResults();
         return;
       }
-      const res = await fetch(`/m/preventas/clientes/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
-      const data = await res.json();
-      if (!data.ok) {
-        clearClienteResults();
-        return;
-      }
-      clienteResults.innerHTML = "";
-      if (!data.items || !data.items.length) {
-        clienteResults.innerHTML = '<div class="list-group-item text-muted small">Sin resultados</div>';
-        return;
-      }
-      data.items.forEach((c) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "list-group-item list-group-item-action";
-        btn.innerHTML = `
-          <div class="d-flex justify-content-between gap-2">
-            <div class="fw-semibold">${esc(c.nombre)}</div>
-            <div class="small text-muted">${esc(c.telefono || "")}</div>
-          </div>
-        `;
-        btn.addEventListener("click", () => {
-          setClientePicked(c);
+      try {
+        const res = await fetch(`/m/preventas/clientes/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" }});
+        const data = await res.json();
+        if (!data.ok) {
+          clearClienteResults();
+          clienteCreateMsg.textContent = "No se pudo buscar clientes.";
+          clienteCreateMsg.className = "small text-danger";
+          return;
+        }
+        clienteResults.innerHTML = "";
+        if (!data.items || !data.items.length) {
+          clienteResults.innerHTML = '<div class="list-group-item text-muted small">Sin resultados</div>';
+          return;
+        }
+        data.items.forEach((c) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "list-group-item list-group-item-action";
+          btn.innerHTML = `
+            <div class="d-flex justify-content-between gap-2">
+              <div class="fw-semibold">${esc(c.nombre)}</div>
+              <div class="small text-muted">${esc(c.telefono || "")}</div>
+            </div>
+          `;
+          btn.addEventListener("click", () => {
+            setClientePicked(c);
+          });
+          clienteResults.appendChild(btn);
         });
-        clienteResults.appendChild(btn);
-      });
+      } catch (error) {
+        clearClienteResults();
+        clienteCreateMsg.textContent = "Error de red buscando clientes.";
+        clienteCreateMsg.className = "small text-danger";
+      }
     }
 
     async function crearClienteRapido() {
