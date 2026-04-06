@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block content %}
+{% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
+<style>
+  body {
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  }
+  .mobile-mis-ventas {
+    padding-bottom: 2rem;
+  }
+  .mobile-mis-ventas .card {
+    border-radius: 18px;
+    border: 1px solid #dbe6f4;
+    box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+    background: rgba(255, 255, 255, 0.97);
+  }
+  .mobile-mis-ventas .app-topbar {
+    border-radius: 20px;
+    background: linear-gradient(135deg, #0f172a 0%, #14532d 54%, #16a34a 100%);
+    color: #fff;
+    padding: 1rem;
+    box-shadow: 0 10px 28px rgba(21, 128, 61, 0.22);
+  }
+  .mobile-mis-ventas .app-brand-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .mobile-mis-ventas .app-brand-chip img {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: #fff;
+    object-fit: contain;
+    padding: 1px;
+  }
+  .mobile-mis-ventas .app-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.8rem;
+  }
+  .mobile-mis-ventas .app-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.38rem;
+    border-radius: 999px;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.78rem;
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .mobile-mis-ventas .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem;
+  }
+  .mobile-mis-ventas .range-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+  .mobile-mis-ventas .range-form .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .mobile-mis-ventas .range-form label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    font-weight: 800;
+  }
+  .mobile-mis-ventas .range-form input {
+    min-height: 44px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    padding: 0.6rem 0.75rem;
+  }
+  .mobile-mis-ventas .summary-box {
+    border-radius: 16px;
+    padding: 0.9rem 0.95rem;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #dbeafe;
+  }
+  .mobile-mis-ventas .summary-box .label {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    font-weight: 800;
+  }
+  .mobile-mis-ventas .summary-box .value {
+    margin-top: 0.35rem;
+    font-size: 1.15rem;
+    line-height: 1.1;
+    color: #0f172a;
+    font-weight: 900;
+  }
+  .mobile-mis-ventas .summary-box .hint {
+    margin-top: 0.2rem;
+    font-size: 0.76rem;
+    color: #64748b;
+  }
+  .mobile-mis-ventas .sales-row {
+    border: 1px solid #e2e8f0;
+    border-radius: 18px;
+    background: #fff;
+    overflow: hidden;
+    margin-bottom: 0.8rem;
+  }
+  .mobile-mis-ventas .sales-row summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 0.95rem 1rem;
+  }
+  .mobile-mis-ventas .sales-row summary::-webkit-details-marker {
+    display: none;
+  }
+  .mobile-mis-ventas .sales-row .head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+  }
+  .mobile-mis-ventas .sales-row .code {
+    font-size: 0.84rem;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #166534;
+  }
+  .mobile-mis-ventas .sales-row .name {
+    margin-top: 0.2rem;
+    font-size: 0.96rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.25;
+  }
+  .mobile-mis-ventas .sales-row .meta {
+    display: grid;
+    grid-template-columns: 1.5fr .7fr .9fr;
+    gap: 0.45rem;
+    margin-top: 0.8rem;
+  }
+  .mobile-mis-ventas .sales-row .meta-item {
+    border-radius: 12px;
+    padding: 0.52rem 0.58rem;
+    background: #f8fafc;
+  }
+  .mobile-mis-ventas .sales-row .meta-item .meta-label {
+    font-size: 0.64rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #64748b;
+    font-weight: 800;
+  }
+  .mobile-mis-ventas .sales-row .meta-item .meta-value {
+    margin-top: 0.18rem;
+    font-size: 0.86rem;
+    color: #0f172a;
+    font-weight: 800;
+  }
+  .mobile-mis-ventas .detail-list {
+    border-top: 1px solid #e2e8f0;
+    padding: 0.05rem 0.5rem 0.45rem;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  }
+  .mobile-mis-ventas .detail-card {
+    border: 1px solid #dbeafe;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0.42rem 0.46rem;
+    margin-top: 0.38rem;
+  }
+  .mobile-mis-ventas .detail-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem;
+  }
+  .mobile-mis-ventas .detail-top .invoice {
+    font-size: 0.72rem;
+    font-weight: 900;
+    color: #0f172a;
+    line-height: 1.1;
+  }
+  .mobile-mis-ventas .detail-top .sold-at {
+    font-size: 0.6rem;
+    color: #64748b;
+    text-align: right;
+    line-height: 1.1;
+  }
+  .mobile-mis-ventas .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.28rem;
+    margin-top: 0.34rem;
+  }
+  .mobile-mis-ventas .detail-grid .cell {
+    border-radius: 8px;
+    padding: 0.28rem 0.34rem;
+    background: #f8fafc;
+  }
+  .mobile-mis-ventas .detail-grid .cell .label {
+    font-size: 0.54rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #64748b;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .mobile-mis-ventas .detail-grid .cell .value {
+    margin-top: 0.08rem;
+    font-size: 0.66rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.1;
+  }
+  @media (max-width: 575.98px) {
+    .mobile-mis-ventas .summary-grid,
+    .mobile-mis-ventas .detail-grid {
+      grid-template-columns: 1fr;
+    }
+    .mobile-mis-ventas .range-form {
+      grid-template-columns: 1fr;
+    }
+    .mobile-mis-ventas .detail-card {
+      padding: 0.38rem 0.4rem;
+    }
+    .mobile-mis-ventas .detail-top .invoice {
+      font-size: 0.68rem;
+    }
+    .mobile-mis-ventas .detail-top .sold-at {
+      font-size: 0.58rem;
+    }
+    .mobile-mis-ventas .detail-grid .cell .value {
+      font-size: 0.64rem;
+    }
+  }
+</style>
+
+<div class="container py-3 mobile-mis-ventas">
+  <div class="app-topbar mb-3">
+    <div class="d-flex align-items-center justify-content-between gap-3">
+      <div>
+        <span class="app-brand-chip">
+          {% if branding.logo_url %}
+          <img src="{{ branding.logo_url }}" alt="Logo">
+          {% endif %}
+          <span>Mis Ventas</span>
+        </span>
+        <h4 class="mt-3 mb-1 fw-bold">Resumen comercial movil</h4>
+        <div class="opacity-75 small">Detalle real del vendedor logeado en la sucursal activa.</div>
+      </div>
+      <a class="btn btn-light btn-sm fw-semibold" href="/home">Inicio</a>
+    </div>
+    <div class="app-meta">
+      <span><i class="bi bi-person-badge"></i> {{ vendor_name or user.full_name or user.username }}</span>
+      <span><i class="bi bi-building"></i> {{ branch.name if branch else '-' }}</span>
+      <span><i class="bi bi-box-seam"></i> {{ bodega.nombre if bodega else '-' }}</span>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header">Rango de fechas</div>
+    <div class="card-body">
+      <form class="range-form" method="get" action="/m/mis-ventas">
+        <div class="field">
+          <label for="start_date">Desde</label>
+          <input id="start_date" name="start_date" type="date" value="{{ start_date }}">
+        </div>
+        <div class="field">
+          <label for="end_date">Hasta</label>
+          <input id="end_date" name="end_date" type="date" value="{{ end_date }}">
+        </div>
+        <button class="btn btn-success fw-semibold" type="submit">Aplicar rango</button>
+        <a class="btn btn-outline-secondary fw-semibold" href="/m/mis-ventas">Hoy</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="summary-grid">
+        <div class="summary-box">
+          <div class="label">Total Bultos</div>
+          <div class="value">{{ summary.total_bultos }}</div>
+          <div class="hint">Cantidad total vendida</div>
+        </div>
+        <div class="summary-box">
+          <div class="label">Total Vendido</div>
+          <div class="value">$ {{ summary.total_vendido_usd }}</div>
+          <div class="hint">Monto vendido acumulado</div>
+        </div>
+        <div class="summary-box">
+          <div class="label">Total Comision</div>
+          <div class="value">$ {{ summary.total_comision_usd }}</div>
+          <div class="hint">Calculado por la regla actual</div>
+        </div>
+        <div class="summary-box">
+          <div class="label">Facturas / Productos</div>
+          <div class="value">{{ summary.total_facturas }} / {{ summary.total_productos }}</div>
+          <div class="hint">Facturas distintas y productos vendidos</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header d-flex align-items-center justify-content-between">
+      <span>Mis ventas por producto</span>
+      <span class="text-muted small">Mas reciente a mas antigua</span>
+    </div>
+    <div class="card-body">
+      {% if product_rows %}
+        {% for row in product_rows %}
+        <details class="sales-row">
+          <summary>
+            <div class="head">
+              <div class="flex-grow-1">
+                <div class="code">{{ row.codigo }}</div>
+                <div class="name">{{ row.descripcion }}</div>
+              </div>
+            </div>
+            <div class="meta">
+              <div class="meta-item">
+                <div class="meta-label">Descripcion</div>
+                <div class="meta-value text-truncate">{{ row.descripcion }}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Cantidad</div>
+                <div class="meta-value">{{ row.cantidad_total }}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Precio / comision</div>
+                <div class="meta-value">$ {{ row.total_vendido_usd }} / $ {{ row.total_comision_usd }}</div>
+              </div>
+            </div>
+          </summary>
+          <div class="detail-list">
+            {% for detail in row.details %}
+            <div class="detail-card">
+              <div class="detail-top">
+                <div class="invoice">Factura {{ detail.factura_numero }}</div>
+                <div class="sold-at">{{ detail.sold_at_label }}</div>
+              </div>
+              <div class="detail-grid">
+                <div class="cell">
+                  <div class="label">Cliente</div>
+                  <div class="value">{{ detail.cliente }}</div>
+                </div>
+                <div class="cell">
+                  <div class="label">Cantidad</div>
+                  <div class="value">{{ detail.cantidad }}</div>
+                </div>
+                <div class="cell">
+                  <div class="label">Vendido</div>
+                  <div class="value">$ {{ detail.subtotal_usd }}</div>
+                </div>
+                <div class="cell">
+                  <div class="label">Comision</div>
+                  <div class="value">$ {{ detail.comision_total_usd }}</div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endfor %}
+      {% else %}
+        <div class="text-center py-4">
+          <div class="fw-semibold text-dark">Aun no hay ventas visibles para este vendedor.</div>
+          <div class="text-muted small mt-1">Cuando el sistema encuentre facturas y comisiones asociadas, aqui se mostraran.</div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

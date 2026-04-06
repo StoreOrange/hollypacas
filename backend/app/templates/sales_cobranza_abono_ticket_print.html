@@ -73,7 +73,6 @@
 
     <script>
       window.addEventListener("load", () => {
-        const returnTo = {{ return_to|tojson }};
         let copies = parseInt({{ copies|tojson }}, 10);
         if (!Number.isFinite(copies) || copies < 1) copies = 1;
         let printed = 0;
@@ -90,12 +89,22 @@
           if (exited) return;
           exited = true;
           if (window.opener && !window.opener.closed) {
-            try { window.opener.location.href = returnTo; } catch (_) {}
+            try { window.opener.focus(); } catch (_) {}
           }
-          window.close();
+          try { window.open("", "_self"); } catch (_) {}
+          try { window.close(); } catch (_) {}
           setTimeout(() => {
-            if (!window.closed) window.location.replace(returnTo);
-          }, 180);
+            if (window.closed) return;
+            document.title = "Impresion enviada";
+            document.body.innerHTML = `
+              <div style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a;">
+                <div style="max-width:320px;padding:24px 22px;border:1px solid #cbd5e1;border-radius:18px;background:#fff;box-shadow:0 18px 40px rgba(15,23,42,.10);text-align:center;">
+                  <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Impresion enviada</div>
+                  <div style="font-size:13px;line-height:1.5;color:#475569;">Esta ventana temporal ya no necesita cargar el sistema. Puedes cerrarla sin afectar la cobranza.</div>
+                </div>
+              </div>
+            `;
+          }, 220);
         };
 
         window.addEventListener("afterprint", () => {

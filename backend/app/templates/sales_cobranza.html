@@ -256,12 +256,16 @@
                 class="btn btn-sm btn-outline-dark"
                 target="_blank"
                 rel="noopener"
-                href="/sales/cobranza/cliente/estado-cuenta/print?cliente={{ selected_cliente.nombre|urlencode }}&return_to={{ ('/sales/cobranza?cliente=' ~ selected_cliente.nombre)|urlencode }}"
+                href="/sales/cobranza/cliente/estado-cuenta/print?cliente={{ selected_cliente.nombre|urlencode }}&return_to={{ estado_cuenta_return_to|urlencode }}"
               >
                 <i class="bi bi-printer me-1"></i>
                 Imprimir estado
               </a>
               {% endif %}
+              <a class="btn btn-sm btn-outline-secondary" href="{{ base_cobranza_url }}">
+                <i class="bi bi-x-circle me-1"></i>
+                Cerrar
+              </a>
             </div>
           </div>
           <div class="row g-2 mb-3">
@@ -367,7 +371,7 @@
                     class="btn btn-sm btn-outline-dark"
                     target="_blank"
                     rel="noopener"
-                    href="/sales/cobranza/cliente/estado-cuenta/print?cliente={{ (factura.cliente.nombre if factura.cliente else 'Consumidor final')|urlencode }}&return_to={{ ('/sales/cobranza?cliente=' ~ (factura.cliente.nombre if factura.cliente else 'Consumidor final'))|urlencode }}"
+                    href="/sales/cobranza/cliente/estado-cuenta/print?cliente={{ (factura.cliente.nombre if factura.cliente else 'Consumidor final')|urlencode }}&return_to={{ (base_cobranza_url ~ ('&' if '?' in base_cobranza_url else '?') ~ 'cliente_estado=' ~ ((factura.cliente.nombre if factura.cliente else 'Consumidor final')|urlencode))|urlencode }}"
                     title="Imprimir estado de cuenta completo"
                   >
                     <i class="bi bi-file-earmark-text"></i>
@@ -376,7 +380,7 @@
                   <button class="btn btn-sm btn-outline-success" type="button" data-abono="{{ factura.id }}" data-moneda="{{ factura.moneda }}" data-saldo="{{ row.saldo_cs if factura.moneda != 'USD' else row.saldo_usd }}" data-estado="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" data-numero="{{ factura.numero }}" data-cliente="{{ factura.cliente.nombre if factura.cliente else 'Consumidor final' }}" data-vendedor="{{ factura.vendedor.nombre if factura.vendedor else '-' }}" title="{% if factura.estado == 'ANULADA' %}Ver abonos aplicados{% elif factura.estado_cobranza == 'PAGADA' %}Ver pagos y abonos{% else %}Registrar abono{% endif %}">
                     <i class="bi bi-plus-circle"></i>
                   </button>
-                  <button class="btn btn-sm btn-outline-secondary" type="button" data-estado="{{ factura.id }}" data-current="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" {% if factura.estado == 'ANULADA' %}disabled title="Factura anulada"{% endif %}>
+                  <button class="btn btn-sm btn-outline-secondary" type="button" data-estado="{{ factura.id }}" data-current="{{ factura.estado_cobranza }}" data-factura-estado="{{ factura.estado }}" data-saldo-pendiente="{{ row.saldo_cs if factura.moneda != 'USD' else row.saldo_usd }}" data-moneda="{{ factura.moneda }}" {% if factura.estado == 'ANULADA' %}disabled title="Factura anulada"{% endif %}>
                     <i class="bi bi-check2-circle"></i>
                   </button>
                 </td>
@@ -526,6 +530,7 @@
 <script>
   document.addEventListener("DOMContentLoaded", () => {
     const disableAbonoPrintPreview = {{ (disable_abono_print_preview or False)|tojson }};
+    const cobranzaRefreshUrl = `${window.location.pathname}${window.location.search || ""}`;
     const cobranzaTable = document.querySelector(".cobranza-table");
     if (cobranzaTable) {
       const rows = Array.from(cobranzaTable.querySelectorAll("tbody tr"));
@@ -850,7 +855,7 @@
             alert(payload?.message || "No se pudo eliminar");
             return;
           }
-          window.location.reload();
+          window.location.href = cobranzaRefreshUrl;
         });
       });
       return;
@@ -865,13 +870,19 @@
         const facturaId = estadoBtn.dataset.estado;
         const current = estadoBtn.dataset.current;
         const next = current === "PAGADA" ? "PENDIENTE" : "PAGADA";
+        const saldoPendiente = parseFloat(estadoBtn.dataset.saldoPendiente || "0") || 0;
+        const monedaEstado = estadoBtn.dataset.moneda === "USD" ? "USD" : "CS";
+        if (next === "PAGADA" && saldoPendiente > 0.0001) {
+          alert(`No puedes marcar esta factura como pagada. Aun tiene saldo pendiente de ${formatMoney(saldoPendiente, monedaEstado)}.`);
+          return;
+        }
         const body = new URLSearchParams({ estado: next });
         const payload = await handleFetchJson(`/sales/cobranza/${facturaId}/estado`, { method: "POST", body });
         if (!payload || !payload.ok) {
           alert(payload?.message || "No se pudo actualizar");
           return;
         }
-        window.location.reload();
+        window.location.href = cobranzaRefreshUrl;
       }
     });
 
@@ -895,17 +906,20 @@
       }
       if (!abonoId && payload.print_url && !disableAbonoPrintPreview) {
         if (window.erpOpenPrintable) {
-          window.erpOpenPrintable(payload.print_url, { fallbackSameTab: true });
+          window.erpOpenPrintable(payload.print_url, { fallbackSameTab: false });
         } else {
           window.open(payload.print_url, "_blank", "noopener");
         }
-        return;
+        if (payload.refresh_url) {
+          window.location.href = payload.refresh_url;
+          return;
+        }
       }
       if (payload.refresh_url) {
         window.location.href = payload.refresh_url;
         return;
       }
-      window.location.reload();
+      window.location.href = cobranzaRefreshUrl;
     });
 
     const layout = document.getElementById("layout");

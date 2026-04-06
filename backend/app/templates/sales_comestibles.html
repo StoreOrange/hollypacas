@@ -1310,9 +1310,23 @@
     }
   };
 
-  const parseQty = (value) => {
+  const parseQty = (value, allowDecimal = false) => {
     const raw = parseFloat(value || 0);
+    if (allowDecimal) {
+      if (!Number.isFinite(raw) || raw <= 0) return 0;
+      return Math.max(0.01, raw);
+    }
     return Math.max(1, Math.round(raw));
+  };
+
+  const formatQtyValue = (value, allowDecimal = true) => {
+    const number = Number(value || 0);
+    if (!Number.isFinite(number)) return "0";
+    if (!allowDecimal) return String(Math.trunc(number));
+    return number.toLocaleString("en-US", {
+      minimumFractionDigits: number % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    });
   };
 
   const promptWeightForItem = async (button, initialValue = "") => {
@@ -1445,38 +1459,22 @@
     const row = button.closest(".product-pick-row");
     if (!row) return false;
     const qtyInput = row.querySelector(".qty-input");
+    const allowDecimal = button.dataset.esPorPeso === "1";
     const weightedQty = await promptWeightForItem(button, qtyInput?.value || "");
-    const qty = weightedQty ?? parseQty(qtyInput.value);
+    const qty = weightedQty ?? parseQty(qtyInput?.value, allowDecimal);
     const maxQty = parseFloat(button.dataset.existencia || 0);
-    let freeQty = parseFloat(button.dataset.freeQty || maxQty || 0);
-    let reservedDetails = parseReservedDetails(button.dataset.reservedDetails || "");
+    const freeQty = parseFloat(button.dataset.existencia || maxQty || 0);
     if (qty <= 0) return false;
     if (!maxQty || maxQty <= 0) {
       pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "No hay saldo disponible." });
       return false;
     }
     if (qty > freeQty) {
-      const action = await askReservedAction({
-        code: button.dataset.code,
-        name: button.dataset.name,
-        requested: qty,
-        available: freeQty,
-        details: reservedDetails,
+      pauseNavForAlert({
+        icon: "warning",
+        title: "Saldo insuficiente",
+        text: `Saldo disponible: ${formatQtyValue(freeQty, allowDecimal)} | Solicitado: ${formatQtyValue(qty, allowDecimal)}`,
       });
-      if (action !== "released") return false;
-      if (action === "released") {
-        const refreshed = await refreshProductAvailability(button.dataset.productId, button.dataset.code || button.dataset.name || "");
-        if (refreshed) {
-          button.dataset.existencia = String(refreshed.existencia || 0);
-          button.dataset.freeQty = String(refreshed.free_qty ?? refreshed.existencia ?? 0);
-          button.dataset.reservedDetails = encodeURIComponent(JSON.stringify(refreshed.reserved_details || []));
-          if (qtyInput) qtyInput.max = String(refreshed.existencia || 0);
-          freeQty = parseFloat(button.dataset.freeQty || button.dataset.existencia || 0);
-        }
-      }
-    }
-    if (qty > freeQty) {
-      pauseNavForAlert({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible libre: ${freeQty}` });
       return false;
     }
     const productId = button.dataset.productId;
@@ -1489,7 +1487,7 @@
         pauseNavForAlert({
           icon: "warning",
           title: "Saldo insuficiente",
-          text: `Disponible libre: ${freeQty} | En factura: ${currentQty}`,
+          text: `Saldo disponible: ${formatQtyValue(freeQty, allowDecimal)} | En factura: ${formatQtyValue(currentQty, allowDecimal)}`,
         });
         return false;
       }
@@ -2176,14 +2174,8 @@
               <div class="mt-1 flex flex-wrap items-center justify-between gap-3 text-sm">
                 <div class="flex items-center gap-2">
                   <span class="text-xs uppercase tracking-[0.18em] text-slate">Saldo</span>
-                  <span class="font-semibold text-red-600">${item.free_qty ?? item.existencia}</span>
+                  <span class="font-semibold text-red-600">${formatQtyValue(item.existencia, Boolean(weighted_sales_enabled && item.es_por_peso))}</span>
                 </div>
-                ${(Number(item.reserved_qty || 0) > 0)
-                  ? `<div class="flex items-center gap-2 text-amber-700">
-                      <span class="text-xs uppercase tracking-[0.18em]">Reservado</span>
-                      <span class="font-semibold">${item.reserved_qty}</span>
-                    </div>`
-                  : ""}
                 <div class="flex flex-wrap items-center gap-3 text-right">
                   <div class="flex items-center gap-2">
                     <span class="text-xs uppercase tracking-[0.18em] text-slate">USD</span>
@@ -2195,7 +2187,7 @@
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="text-xs uppercase tracking-[0.18em] text-slate">Cantidad</span>
-                    <input class="qty-input w-24 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="${weighted_sales_enabled && item.es_por_peso ? "0.01" : "1"}" min="${weighted_sales_enabled && item.es_por_peso ? "0.01" : "1"}" max="${item.free_qty ?? item.existencia}" value="${weighted_sales_enabled && item.es_por_peso ? "0.50" : "1"}" />
+                    <input class="qty-input w-24 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="${weighted_sales_enabled && item.es_por_peso ? "0.01" : "1"}" min="${weighted_sales_enabled && item.es_por_peso ? "0.01" : "1"}" max="${item.existencia}" value="${weighted_sales_enabled && item.es_por_peso ? "0.50" : "1"}" />
                   </div>
                 </div>
               </div>
@@ -2207,8 +2199,6 @@
               data-code="${item.cod_producto}"
               data-name="${item.descripcion}"
               data-existencia="${item.existencia}"
-              data-free-qty="${item.free_qty ?? item.existencia}"
-              data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
               data-price-usd="${item.precio_venta1_usd.toFixed(2)}"
               data-price-cs="${item.precio_venta1.toFixed(2)}"
               data-es-por-peso="${item.es_por_peso ? "1" : "0"}"
@@ -2562,7 +2552,11 @@
           qtyHidden.value = row.dataset.allowDecimal === "1" ? maxQty.toFixed(2) : Math.trunc(maxQty).toFixed(2);
         }
         if (typeof Swal !== "undefined") {
-          Swal.fire({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible: ${maxQty}` });
+          Swal.fire({
+            icon: "warning",
+            title: "Saldo insuficiente",
+            text: `Saldo disponible: ${formatQtyValue(maxQty, row.dataset.allowDecimal === "1")}`,
+          });
         }
       }
       if (qtyHidden && qtyInput) {
@@ -2956,7 +2950,9 @@
     }
     const invoiceCurrency = (monedaField?.value || "USD").toUpperCase();
     initialPreventa.items.forEach((it) => {
-      const qty = Math.max(1, Math.round(Number(it.cantidad || 1)));
+      const qtyRaw = Number(it.cantidad || 1);
+      const allowDecimal = !Number.isInteger(qtyRaw);
+      const qty = allowDecimal ? Math.max(0.01, qtyRaw) : Math.max(1, Math.round(qtyRaw));
       const priceUsd = Number(it.precio_usd || 0);
       const priceCs = Number(it.precio_cs || 0);
       const priceForInvoice = invoiceCurrency === "USD" ? priceUsd : priceCs;
@@ -2967,7 +2963,8 @@
         code: String(it.cod_producto || ""),
         name: String(it.descripcion || ""),
         qtyValue: qty.toFixed(2),
-        qtyValueDisplay: String(qty),
+        qtyValueDisplay: allowDecimal ? qty.toFixed(2) : String(qty),
+        qtyStep: allowDecimal ? "0.01" : "1",
         maxQty: Number(it.existencia || qty || 0),
         priceValue: priceForInvoice.toFixed(2),
         subtotalUsd,
