@@ -1331,7 +1331,10 @@ def _balances_by_bodega(
 
 
 def _default_company_profile_payload() -> dict[str, str]:
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    db_name = _current_db_name().strip().lower()
     shoes_mode = _is_shoes_mode()
+    restaurant_mode = active_company_key == "barrera" or "barrera" in db_name
     multi_branch_enabled = get_active_company_key() != "comestibles"
     if shoes_mode:
         return {
@@ -1343,6 +1346,29 @@ def _default_company_profile_payload() -> dict[str, str]:
             "ruc": "",
             "phone": "",
             "address": "",
+            "email": "",
+            "logo_url": "/static/logo_hollywood.png",
+            "pos_logo_url": "/static/logo_hollywood.png",
+            "favicon_url": "/static/favicon.ico",
+            "inventory_cs_only": False,
+            "recipe_explosion_on_ingreso": False,
+            "weighted_inventory_enabled": False,
+            "weighted_sales_enabled": False,
+            "multi_branch_enabled": multi_branch_enabled,
+            "price_auto_from_cost_enabled": False,
+            "price_margin_percent": 0,
+            "theme_code": "default",
+        }
+    if restaurant_mode:
+        return {
+            "legal_name": "La Barrera Restaurante",
+            "trade_name": "La Barrera",
+            "app_title": "ERP La Barrera",
+            "sidebar_subtitle": "Restaurante & Bar",
+            "website": "",
+            "ruc": "",
+            "phone": "",
+            "address": "Sucursal principal",
             "email": "",
             "logo_url": "/static/logo_hollywood.png",
             "pos_logo_url": "/static/logo_hollywood.png",
@@ -1733,6 +1759,17 @@ def _company_identity(branch: Optional[Branch], profile: dict[str, str]) -> dict
         "direccion": direccion,
         "sucursal": sucursal,
     }
+
+
+def _company_website_label(profile: dict[str, str], identity: Optional[dict[str, str]] = None) -> str:
+    website = (profile.get("website", "") or "").strip()
+    if website:
+        return website
+    if identity:
+        company_name = (identity.get("company_name", "") or "").strip()
+        if company_name:
+            return company_name
+    return (profile.get("trade_name", "") or profile.get("legal_name", "") or "Empresa").strip()
 
 
 def _format_money(value: Decimal | float | int) -> str:
@@ -20834,11 +20871,13 @@ def sales_invoice_pdf(
     info_y = height - 44
     branch = factura.bodega.branch if factura.bodega else None
     identity = _company_identity(branch, company_profile)
+    website_label = _company_website_label(company_profile, identity)
     pdf.setFont("Helvetica-Bold", 11)
     pdf.drawString(info_x, info_y, identity["company_name"])
     pdf.setFont("Helvetica", 9)
     pdf.drawString(info_x, info_y - 14, f"Telf. {identity['telefono']}")
     pdf.drawString(info_x, info_y - 28, f"Direccion: {identity['direccion']}")
+    pdf.drawString(info_x, info_y - 42, website_label)
 
     pdf.setFont("Helvetica-Bold", 14)
     pdf.drawString(margin, height - 120, "Factura de venta")

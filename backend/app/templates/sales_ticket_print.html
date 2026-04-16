@@ -104,7 +104,7 @@
     <div class="ticket{% if compact_ticket %} compact{% endif %}">
       <div class="top-meta">
         <span class="left">{{ factura.numero }} - TICKET</span>
-        <span class="right">{{ branding.get("website", "") }}</span>
+        <span class="right">{{ branding.get("website") or branding.get("trade_name", "Empresa") }}</span>
       </div>
       <img src="{{ branding.get('pos_logo_url') or branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="{{ branding.get('trade_name', 'Empresa') }}" class="logo" />
       <div class="center bold">{{ company_name.upper() }}</div>

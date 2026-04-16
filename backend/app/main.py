@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
+from .config import get_active_company_key
 from .core.init_db import init_db
 from .database import get_session_local
 from .models.sales import CompanyProfileSetting
@@ -32,12 +33,18 @@ app.state.templates = Jinja2Templates(directory="app/templates")
 
 
 def _default_branding() -> dict[str, str]:
+    active_company = ""
     db_name = ""
+    try:
+        active_company = (get_active_company_key() or "").strip().lower()
+    except Exception:
+        active_company = (os.getenv("ACTIVE_COMPANY", "") or "").strip().lower()
     try:
         db_name = (urlparse(os.getenv("DATABASE_URL", "")).path or "").rsplit("/", 1)[-1].strip().lower()
     except Exception:
         db_name = ""
     shoes_mode = db_name == "bdzapatos" or "zapato" in db_name
+    restaurant_mode = active_company == "barrera" or "barrera" in db_name
     if shoes_mode:
         return {
             "legal_name": "Miss Zapatos",
@@ -47,6 +54,22 @@ def _default_branding() -> dict[str, str]:
             "website": "",
             "phone": "",
             "address": "",
+            "email": "",
+            "logo_url": "/static/logo_hollywood.png",
+            "pos_logo_url": "/static/logo_hollywood.png",
+            "favicon_url": "/static/favicon.ico",
+            "inventory_cs_only": False,
+            "theme_code": "default",
+        }
+    if restaurant_mode:
+        return {
+            "legal_name": "La Barrera Restaurante",
+            "trade_name": "La Barrera",
+            "app_title": "ERP La Barrera",
+            "sidebar_subtitle": "Restaurante & Bar",
+            "website": "",
+            "phone": "",
+            "address": "Sucursal principal",
             "email": "",
             "logo_url": "/static/logo_hollywood.png",
             "pos_logo_url": "/static/logo_hollywood.png",
