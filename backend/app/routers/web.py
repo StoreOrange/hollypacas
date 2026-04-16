@@ -10928,6 +10928,116 @@ async def sales_comisiones_sanitize_assignments(
     return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
 
 
+@router.post("/sales/comisiones/asignaciones/restaurar-corte")
+async def sales_comisiones_restore_cutoff_assignments(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    form = await request.form()
+    fecha_raw = str(form.get("fecha") or "")
+    start_raw = str(form.get("start_date") or "")
+    end_raw = str(form.get("end_date") or "")
+    branch_id = str(form.get("branch_id") or "all")
+    vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
+    vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
+    producto_asig_q = str(form.get("producto_asig_q") or "").strip()
+
+    try:
+        fecha_value = date.fromisoformat(fecha_raw)
+    except ValueError:
+        fecha_value = local_today()
+    start_date = fecha_value
+    end_date = fecha_value
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+            if start_raw and not end_raw:
+                end_date = start_date
+            if end_raw and not start_raw:
+                start_date = end_date
+        except ValueError:
+            start_date = fecha_value
+            end_date = fecha_value
+    if end_date < start_date:
+        end_date = start_date
+
+    today = local_today()
+    if fecha_value != today:
+        params = {
+            "tab": "asignacion",
+            "fecha": fecha_value.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "branch_id": branch_id or "all",
+            "vendedor_facturacion_id": vendedor_facturacion_id,
+            "vendedor_asignado_id": vendedor_asignado_id,
+            "producto_asig_q": producto_asig_q,
+            "error": "La recuperacion temporal pre 4 PM solo esta habilitada para el dia actual.",
+        }
+        return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+    scope_branch_id = _commission_branch_scope(branch_id)
+    cutoff_dt = datetime.combine(today, datetime.min.time()).replace(
+        hour=16,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
+    restore_query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha == fecha_value
+    )
+    if scope_branch_id:
+        restore_query = restore_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    temp_rows = restore_query.all()
+
+    removed_after_cutoff = 0
+    touched_item_ids: set[int] = set()
+    for row in temp_rows:
+        created_at = row.created_at or cutoff_dt
+        updated_at = row.updated_at or created_at
+        if created_at >= cutoff_dt or updated_at >= cutoff_dt:
+            touched_item_ids.add(int(row.venta_item_id or 0))
+            db.delete(row)
+            removed_after_cutoff += 1
+    if removed_after_cutoff:
+        db.commit()
+
+    recreated = 0
+    if touched_item_ids:
+        recreated, _updated = _ensure_commission_temp_snapshot(db, fecha_value, branch_id)
+    merged, removed = _normalize_commission_temp_rows(
+        db,
+        start_date=fecha_value,
+        end_date=fecha_value,
+        branch_id=branch_id,
+    )
+
+    params = {
+        "tab": "asignacion",
+        "fecha": fecha_value.isoformat(),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "branch_id": branch_id or "all",
+        "vendedor_facturacion_id": vendedor_facturacion_id,
+        "vendedor_asignado_id": vendedor_asignado_id,
+        "producto_asig_q": producto_asig_q,
+        "success": (
+            "Recuperacion temporal pre 4 PM aplicada. "
+            f"Filas posteriores eliminadas: {removed_after_cutoff}. "
+            f"Filas recreadas desde ventas: {recreated}. "
+            f"Grupos ajustados: {merged}. Filas depuradas: {removed}."
+        ),
+    }
+    return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+
 @router.post("/sales/comisiones/precios")
 async def sales_comisiones_save_prices(
     request: Request,

@@ -511,6 +511,16 @@
                 Depurar asignaciones
               </button>
               <button
+                class="btn btn-outline-info btn-sm"
+                type="submit"
+                formaction="/sales/comisiones/asignaciones/restaurar-corte"
+                formmethod="post"
+                id="restore-cutoff-btn"
+              >
+                <i class="bi bi-clock-history"></i>
+                Recuperar pre 4 PM
+              </button>
+              <button
                 class="btn btn-outline-warning btn-sm"
                 type="submit"
                 formaction="/sales/comisiones/asignaciones/validar-precios"
@@ -1101,6 +1111,7 @@
     const payloadInput = document.getElementById("rows-payload");
     const regenerateBtn = document.getElementById("regenerate-day-btn");
     const sanitizeBtn = document.getElementById("sanitize-day-btn");
+    const restoreCutoffBtn = document.getElementById("restore-cutoff-btn");
     const finalizeBtn = document.getElementById("finalize-day-btn");
     const reopenBtn = document.getElementById("reopen-day-btn");
     const totalBultosEl = document.getElementById("assign-total-bultos");
@@ -1609,6 +1620,18 @@
       });
     }
 
+    if (restoreCutoffBtn) {
+      restoreCutoffBtn.addEventListener("click", (event) => {
+        const ok = window.confirm(
+          "Esto intentara recuperar la tabla temporal al estado previo a las 4:00 PM de hoy, eliminando cambios posteriores y reconstruyendo desde las ventas del dia. Deseas continuar?"
+        );
+        if (!ok) {
+          event.preventDefault();
+          return;
+        }
+      });
+    }
+
     if (finalizeBtn) {
       finalizeBtn.addEventListener("click", (event) => {
         const ok = window.confirm(
@@ -1638,11 +1661,12 @@
           assignmentForm.getAttribute("action") ||
           "";
         const isRegenerate = submitAction.includes("/sales/comisiones/asignaciones/regenerar");
+        const isRestoreCutoff = submitAction.includes("/sales/comisiones/asignaciones/restaurar-corte");
         const isFinalize = submitAction.includes("/sales/comisiones/asignaciones/finalizar");
         const isReopen = submitAction.includes("/sales/comisiones/asignaciones/reabrir");
         const isValidate = submitAction.includes("/sales/comisiones/asignaciones/validar-precios");
 
-        if (isRegenerate || isFinalize || isReopen || isValidate) {
+        if (isRegenerate || isRestoreCutoff || isFinalize || isReopen || isValidate) {
           payloadInput.value = "[]";
           return;
         }
