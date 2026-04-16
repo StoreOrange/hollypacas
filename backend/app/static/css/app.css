@@ -48,6 +48,10 @@ body {
   display: none !important;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .odoo-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -515,6 +519,19 @@ body {
   box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
 }
 
+.odoo-modal-open {
+  overflow: hidden;
+}
+
+.odoo-modal-inventory {
+  width: min(100%, 1280px);
+  max-height: calc(100vh - 24px);
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .odoo-modal-header {
   background: linear-gradient(90deg, #f4e9f1, #f7f2f7);
   border-bottom: 1px solid #e5e7eb;
@@ -530,12 +547,41 @@ body {
   background: #ffffff;
 }
 
+.odoo-modal-inventory .odoo-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  max-height: calc(100vh - 190px);
+  padding-top: 0.85rem !important;
+}
+
 .odoo-modal-section {
   border: 1px solid #eadbe6;
   border-radius: 12px;
-  padding: 0.9rem;
+  padding: 0.8rem;
   background: #ffffff;
   box-shadow: 0 6px 12px rgba(15, 23, 42, 0.04);
+}
+
+#tab-receta:not(.hidden) {
+  display: block !important;
+}
+
+#tab-receta .odoo-modal-section {
+  display: block !important;
+  min-height: 360px;
+}
+
+#tab-receta .form-label,
+#tab-receta .odoo-modal-title,
+#tab-receta .text-slate,
+#tab-receta .text-amber-900,
+#tab-receta .text-sky-900,
+#tab-receta .text-ink {
+  color: inherit;
 }
 
 .odoo-table-wrap {
@@ -702,6 +748,43 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  margin: 0 -0.8rem -0.8rem;
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.odoo-modal-inventory .row.g-3 {
+  --bs-gutter-y: 0.7rem;
+  --bs-gutter-x: 0.9rem;
+}
+
+@media (max-width: 991.98px) {
+  .odoo-modal-inventory {
+    width: 100%;
+    max-height: none;
+    min-height: calc(100vh - 8px);
+    margin: 0;
+    border-radius: 18px;
+  }
+
+  .odoo-modal-inventory .odoo-modal-body {
+    max-height: none;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    padding-bottom: 1.35rem !important;
+  }
+
+  .odoo-modal-inventory .odoo-modal-header {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .odoo-modal-inventory .odoo-action-bar {
+    padding: 0.8rem 1rem;
+  }
 }
 
 .odoo-compact-card {

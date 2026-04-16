@@ -910,7 +910,13 @@
         <div class="odoo-modal-section odoo-compact-card">
           <div class="odoo-modal-title mb-3">Nuevo producto</div>
           <div class="text-muted small mb-2">Creacion rapida: Codigo, Descripcion, Precio y Costo son obligatorios.</div>
-          <form id="ingreso-product-form" class="text-base" method="post" action="/inventory/product" target="ingresos-background-frame">
+          {% if recipe_explosion_on_ingreso %}
+          <div class="alert alert-info py-2 px-3 small mb-3">
+            <strong>Produccion por receta activa.</strong>
+            Si este producto final trabaja con receta, al ingresar existencia se descargaran las materias primas configuradas.
+          </div>
+          {% endif %}
+          <form id="ingreso-product-form" class="text-base" method="post" action="/inventory/product" target="ingresos-background-frame" enctype="multipart/form-data">
             <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
             <div class="row g-3">
               <div class="col-md-6">
@@ -943,6 +949,26 @@
                     <option value="">Selecciona</option>
                     {% for seg in segmentos %}
                     <option value="{{ seg.id }}">{{ seg.segmento }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+              <div class="col-md-6">
+                <label class="block text-sm font-semibold text-ink">
+                  Tipo de producto
+                  <select id="new-product-type" name="tipo_producto" class="mt-2 w-full odoo-input form-select">
+                    {% for option in product_type_options %}
+                    <option value="{{ option.value }}" {% if option.value == 'DIRECTO' %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+              <div class="col-md-6">
+                <label class="block text-sm font-semibold text-ink">
+                  Unidad base
+                  <select id="new-product-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
+                    {% for unidad in unidades_medida %}
+                    <option value="{{ unidad.id }}" {% if unidad.codigo == 'UNIDAD' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
                     {% endfor %}
                   </select>
                 </label>
@@ -985,16 +1011,6 @@
                   Producto por peso
                 </label>
               </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Unidad de medida
-                  <select id="new-product-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
-                    {% for unidad in unidades_medida %}
-                    <option value="{{ unidad.id }}" {% if unidad.codigo == 'LIBRAS' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
-                    {% endfor %}
-                  </select>
-                </label>
-              </div>
               {% endif %}
             </div>
             <button id="create-product-btn" class="w-full btn btn-primary btn-sm mt-3" type="submit">
@@ -1020,6 +1036,7 @@
                   data-desc="{{ p.descripcion }}"
                   data-linea="{{ p.linea_id or '' }}"
                   data-segmento="{{ p.segmento_id or '' }}"
+                  data-tipo-producto="{{ p.tipo_producto or 'DIRECTO' }}"
                   data-precio1="{% if inventory_cs_only %}{{ "%.2f"|format(p.precio_venta1 or 0) }}{% else %}{{ "%.2f"|format(p.precio_venta1_usd or 0) }}{% endif %}"
                   data-precio2="{{ "%.2f"|format(p.precio_venta2_usd or 0) }}"
                   data-precio3="{{ "%.2f"|format(p.precio_venta3_usd or 0) }}"
@@ -1070,6 +1087,26 @@
               </div>
               <div class="col-md-4">
                 <label class="block text-sm font-semibold text-ink">
+                  Tipo de producto
+                  <select id="edit-product-type" name="tipo_producto" class="mt-2 w-full odoo-input form-select">
+                    {% for option in product_type_options %}
+                    <option value="{{ option.value }}" {% if option.value == 'DIRECTO' %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+              <div class="col-md-4">
+                <label class="block text-sm font-semibold text-ink">
+                  Unidad base
+                  <select id="edit-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
+                    {% for unidad in unidades_medida %}
+                    <option value="{{ unidad.id }}" {% if unidad.codigo == 'UNIDAD' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+              <div class="col-md-4">
+                <label class="block text-sm font-semibold text-ink">
                   Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})
                   <input id="edit-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
                 </label>
@@ -1109,16 +1146,6 @@
                 <label class="flex items-center gap-2 text-sm font-semibold text-ink">
                   <input id="edit-weighted" class="accent-brand" type="checkbox" name="es_por_peso" />
                   Producto por peso
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Unidad de medida
-                  <select id="edit-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
-                    {% for unidad in unidades_medida %}
-                    <option value="{{ unidad.id }}" {% if unidad.codigo == 'LIBRAS' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
-                    {% endfor %}
-                  </select>
                 </label>
               </div>
               {% endif %}
@@ -1322,7 +1349,7 @@
       </div>
       <div class="modal-body">
         <div class="text-muted small mb-3">Completa datos basicos y el producto se agrega al ingreso automaticamente.</div>
-        <form id="quick-product-form" class="text-base" method="post" action="/inventory/product">
+        <form id="quick-product-form" class="text-base" method="post" action="/inventory/product" enctype="multipart/form-data">
           <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
           <div class="row g-3">
             <div class="col-md-6">
@@ -1395,6 +1422,26 @@
             </div>
             <div class="col-md-6">
               <label class="block text-sm font-semibold text-ink">
+                Tipo de producto
+                <select id="quick-product-type" name="tipo_producto" class="mt-2 w-full odoo-input form-select">
+                  {% for option in product_type_options %}
+                  <option value="{{ option.value }}" {% if option.value == 'DIRECTO' %}selected{% endif %}>{{ option.label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
+                Unidad base
+                <select id="quick-product-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
+                  {% for unidad in unidades_medida %}
+                  <option value="{{ unidad.id }}" {% if unidad.codigo == 'UNIDAD' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <div class="col-md-6">
+              <label class="block text-sm font-semibold text-ink">
                 Marca
                 <select id="quick-product-marca" name="marca" class="mt-2 w-full odoo-input form-select">
                   <option value="Sin Marca" selected>Sin Marca</option>
@@ -1447,16 +1494,6 @@
               <label class="flex items-center gap-2 text-sm font-semibold text-ink">
                 <input id="quick-product-weighted" class="accent-brand" type="checkbox" name="es_por_peso" />
                 Producto por peso
-              </label>
-            </div>
-            <div class="col-md-6">
-              <label class="block text-sm font-semibold text-ink">
-                Unidad de medida
-                <select id="quick-product-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
-                  {% for unidad in unidades_medida %}
-                  <option value="{{ unidad.id }}" {% if unidad.codigo == 'LIBRAS' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
-                  {% endfor %}
-                </select>
               </label>
             </div>
             {% endif %}
@@ -1522,6 +1559,7 @@
   const editPrecio3 = document.getElementById("edit-precio3");
   const editProductMargin = document.getElementById("edit-product-margin");
   const editCosto = document.getElementById("edit-costo");
+  const editProductType = document.getElementById("edit-product-type");
   const editWeighted = document.getElementById("edit-weighted");
   const editUnit = document.getElementById("edit-unit");
   const editActivo = document.getElementById("edit-activo");
@@ -1563,6 +1601,7 @@
   const quickProductPrecio = document.getElementById("quick-product-precio");
   const quickProductMargin = document.getElementById("quick-product-margin");
   const quickProductCosto = document.getElementById("quick-product-costo");
+  const quickProductType = document.getElementById("quick-product-type");
   const quickProductWeighted = document.getElementById("quick-product-weighted");
   const quickProductUnit = document.getElementById("quick-product-unit");
   const newProductCode = document.getElementById("new-product-code");
@@ -1573,6 +1612,7 @@
   const newProductPrecio = document.getElementById("new-product-precio");
   const newProductMargin = document.getElementById("new-product-margin");
   const newProductCosto = document.getElementById("new-product-costo");
+  const newProductType = document.getElementById("new-product-type");
   const newProductWeighted = document.getElementById("new-product-weighted");
   const newProductUnit = document.getElementById("new-product-unit");
   if (quickProductModalEl) {
@@ -2174,6 +2214,9 @@
       if (editCosto) {
         editCosto.value = inventoryCsOnly ? ((parseFloat(data.costo_usd || 0) * rateToday).toFixed(2)) : (data.costo_usd || "");
       }
+      if (editProductType) {
+        editProductType.value = data.tipo_producto || "DIRECTO";
+      }
       if (editWeighted) {
         editWeighted.checked = data.es_por_peso === true || data.es_por_peso === "1" || data.es_por_peso === 1;
       }
@@ -2212,6 +2255,7 @@
         descripcion: option.dataset.desc || "",
         linea_id: option.dataset.linea || "",
         segmento_id: option.dataset.segmento || "",
+        tipo_producto: option.dataset.tipoProducto || "DIRECTO",
         precio_venta1_usd: option.dataset.precio1 || "",
         precio_venta2_usd: option.dataset.precio2 || "",
         precio_venta3_usd: option.dataset.precio3 || "",
@@ -2429,11 +2473,19 @@
           option.dataset.precio3 = "0.00";
           option.dataset.costo = parseFloat(inventoryCsOnly ? (payload.costo_cs || 0) : (payload.costo_usd || 0)).toFixed(2);
           option.dataset.activo = "1";
+          option.dataset.tipoProducto = payload.tipo_producto || "DIRECTO";
           option.dataset.esPorPeso = payload.es_por_peso ? "1" : "0";
           option.dataset.unidadMedidaId = payload.unidad_medida_id || "";
           editSelect.append(option);
         }
         config.form.reset();
+        if (config.typeInput) {
+          config.typeInput.value = "DIRECTO";
+        }
+        if (config.unitInput) {
+          const defaultUnitOption = Array.from(config.unitInput.options || []).find((option) => option.textContent.includes("(und)") || option.textContent.toLowerCase().includes("unidad"));
+          config.unitInput.value = defaultUnitOption ? defaultUnitOption.value : (config.unitInput.options[0]?.value || "");
+        }
         if (window.$ && $.fn.select2 && config.form.id === "ingreso-product-form") {
           $(newProductLinea).val(null).trigger("change");
           $(newProductSegmento).val(null).trigger("change");
@@ -2480,6 +2532,8 @@
         marcaInput: newProductMarca,
         precioInput: newProductPrecio,
         costoInput: newProductCosto,
+        typeInput: newProductType,
+        unitInput: newProductUnit,
         closeModal: false,
       })
     );
@@ -2496,6 +2550,8 @@
           marcaInput: quickProductMarca,
           precioInput: quickProductPrecio,
           costoInput: quickProductCosto,
+          typeInput: quickProductType,
+          unitInput: quickProductUnit,
           closeModal: true,
         })
       );

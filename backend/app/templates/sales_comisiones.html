@@ -501,6 +501,16 @@
             </div>
             <div class="d-flex gap-2">
               <button
+                class="btn btn-outline-secondary btn-sm"
+                type="submit"
+                formaction="/sales/comisiones/asignaciones/sanear"
+                formmethod="post"
+                id="sanitize-day-btn"
+              >
+                <i class="bi bi-bandaid"></i>
+                Depurar asignaciones
+              </button>
+              <button
                 class="btn btn-outline-warning btn-sm"
                 type="submit"
                 formaction="/sales/comisiones/asignaciones/validar-precios"
@@ -1090,6 +1100,7 @@
     const pricesForm = document.querySelector('form[action="/sales/comisiones/precios"]');
     const payloadInput = document.getElementById("rows-payload");
     const regenerateBtn = document.getElementById("regenerate-day-btn");
+    const sanitizeBtn = document.getElementById("sanitize-day-btn");
     const finalizeBtn = document.getElementById("finalize-day-btn");
     const reopenBtn = document.getElementById("reopen-day-btn");
     const totalBultosEl = document.getElementById("assign-total-bultos");
@@ -1586,6 +1597,18 @@
       });
     }
 
+    if (sanitizeBtn) {
+      sanitizeBtn.addEventListener("click", (event) => {
+        const ok = window.confirm(
+          "Esto depurara filas duplicadas o en cero de la tabla temporal para mostrar solo datos consistentes. Deseas continuar?"
+        );
+        if (!ok) {
+          event.preventDefault();
+          return;
+        }
+      });
+    }
+
     if (finalizeBtn) {
       finalizeBtn.addEventListener("click", (event) => {
         const ok = window.confirm(
@@ -1671,4 +1694,3 @@
   })();
 </script>
 {% endblock %}
-

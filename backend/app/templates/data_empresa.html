@@ -139,6 +139,13 @@
               </div>
               <div class="col-12">
                 <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
+                  <input class="accent-brand" type="checkbox" name="recipe_explosion_on_ingreso" {% if profile.recipe_explosion_on_ingreso %}checked{% endif %} />
+                  Explosion de recetas pre ingreso
+                </label>
+                <div class="text-muted small mt-1">Si esta activo, al ingresar productos finales por receta se descargan automaticamente las materias primas configuradas.</div>
+              </div>
+              <div class="col-12">
+                <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
                   <input class="accent-brand" type="checkbox" name="multi_branch_enabled" {% if profile.multi_branch_enabled %}checked{% endif %} />
                   Activar multi sucursales para este entorno
                 </label>

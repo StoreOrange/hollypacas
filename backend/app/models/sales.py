@@ -166,6 +166,7 @@ class CompanyProfileSetting(Base):
     inventory_cs_only = Column(Boolean, nullable=False, default=False)
     weighted_inventory_enabled = Column(Boolean, nullable=False, default=False)
     weighted_sales_enabled = Column(Boolean, nullable=False, default=False)
+    recipe_explosion_on_ingreso = Column(Boolean, nullable=False, default=False)
     multi_branch_enabled = Column(Boolean, nullable=False, default=True)
     price_auto_from_cost_enabled = Column(Boolean, nullable=False, default=False)
     price_margin_percent = Column(Integer, nullable=False, default=0)
@@ -403,6 +404,83 @@ class VentaPago(Base):
     forma_pago = relationship("FormaPago")
     banco = relationship("Banco")
     cuenta = relationship("CuentaBancaria")
+
+
+class RestaurantOrder(Base):
+    __tablename__ = "restaurant_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    numero = Column(String(24), nullable=False, unique=True)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=False)
+    table_id = Column(Integer, ForeignKey("restaurant_tables.id"), nullable=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
+    vendedor_id = Column(Integer, ForeignKey("vendedores.id"), nullable=True)
+    factura_id = Column(Integer, ForeignKey("ventas_facturas.id"), nullable=True)
+    service_type = Column(String(20), nullable=False, default="MESA")
+    mesa_nombre = Column(String(80), nullable=True)
+    estado = Column(String(20), nullable=False, default="ABIERTA")
+    moneda = Column(String(10), nullable=False, default="CS")
+    observacion = Column(String(400), nullable=True)
+    total_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    total_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    total_items = Column(Numeric(14, 2), nullable=False, default=0)
+    usuario_registro = Column(String(120), nullable=True)
+    opened_at = Column(DateTime, server_default=func.now())
+    closed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+    table = relationship("RestaurantTable")
+    cliente = relationship("Cliente")
+    vendedor = relationship("Vendedor")
+    factura = relationship("VentaFactura")
+    items = relationship("RestaurantOrderItem", back_populates="order", cascade="all, delete-orphan")
+
+
+class RestaurantTable(Base):
+    __tablename__ = "restaurant_tables"
+    __table_args__ = (UniqueConstraint("branch_id", "code", name="uq_restaurant_table_branch_code"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=False)
+    code = Column(String(40), nullable=False)
+    name = Column(String(120), nullable=False)
+    sector = Column(String(80), nullable=True)
+    shape = Column(String(20), nullable=False, default="ROUND")
+    seats = Column(Integer, nullable=False, default=4)
+    sort_order = Column(Integer, nullable=False, default=0)
+    pos_x = Column(Integer, nullable=False, default=10)
+    pos_y = Column(Integer, nullable=False, default=10)
+    width_units = Column(Integer, nullable=False, default=1)
+    height_units = Column(Integer, nullable=False, default=1)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+
+
+class RestaurantOrderItem(Base):
+    __tablename__ = "restaurant_order_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("restaurant_orders.id"), nullable=False)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    cantidad = Column(Numeric(14, 2), nullable=False, default=1)
+    precio_unitario_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    precio_unitario_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal_cs = Column(Numeric(14, 2), nullable=False, default=0)
+    nota = Column(String(240), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    order = relationship("RestaurantOrder", back_populates="items")
+    producto = relationship("Producto")
 
 
 class CobranzaAbono(Base):

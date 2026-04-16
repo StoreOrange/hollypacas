@@ -1,10 +1,27 @@
-from sqlalchemy import inspect, text
+from datetime import date
+from decimal import Decimal
+
+from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 
 from ..config import get_active_company_key, settings
 from ..database import Base, get_engine, get_session_local
 from ..models.user import Branch, Permission, Role, User
-from ..models.inventory import Bodega, EgresoTipo, IngresoTipo, Linea, Marca, Segmento, UnidadMedida
+from ..models.inventory import (
+    Bodega,
+    EgresoTipo,
+    IngresoInventario,
+    IngresoItem,
+    IngresoTipo,
+    Linea,
+    Marca,
+    Producto,
+    ProductoReceta,
+    ProductoRecetaLinea,
+    SaldoProducto,
+    Segmento,
+    UnidadMedida,
+)
 from ..models.sales import (
     AccountingPolicySetting,
     AccountingVoucherType,
@@ -18,6 +35,7 @@ from ..models.sales import (
     FormaPago,
     NotificationRecipient,
     PosPrintSetting,
+    RestaurantTable,
     MobilePushSubscription,
     SalesInterfaceSetting,
     Vendedor,
@@ -151,6 +169,17 @@ def _seed_branches(db: Session) -> None:
                 "Sucursal KGF",
             ),
         ]
+    elif active_company == "barrera":
+        branches = [
+            (
+                "central",
+                "La Barrera",
+                "La Barrera Restaurante",
+                "",
+                "",
+                "Sucursal principal",
+            ),
+        ]
     else:
         branches = [
             (
@@ -197,6 +226,8 @@ def _seed_branches(db: Session) -> None:
             )
         db.query(Branch).filter(Branch.code == code).update({"activo": True})
     if active_company == "bdzapatos":
+        db.query(Branch).filter(Branch.code == "esteli").update({"activo": False})
+    if active_company == "barrera":
         db.query(Branch).filter(Branch.code == "esteli").update({"activo": False})
     db.commit()
 
@@ -320,8 +351,11 @@ def _seed_admin_branch_access(db: Session) -> None:
 
 
 def _seed_lineas(db: Session) -> None:
-    if get_active_company_key() == "comestibles":
+    active_company = (get_active_company_key() or "").strip().lower()
+    if active_company == "comestibles":
         lineas = ["Consumibles"]
+    elif active_company == "barrera":
+        lineas = ["Cocina", "Barra", "Bebidas", "Postres", "Extras"]
     else:
         lineas = [
             "BLUSA",
@@ -362,7 +396,8 @@ def _seed_lineas(db: Session) -> None:
 
 
 def _seed_segmentos(db: Session) -> None:
-    if get_active_company_key() == "comestibles":
+    active_company = (get_active_company_key() or "").strip().lower()
+    if active_company == "comestibles":
         segmentos = [
             "Bebidas",
             "Varios",
@@ -373,6 +408,16 @@ def _seed_segmentos(db: Session) -> None:
             "Cosmeticos",
             "Dulces",
             "Hogar",
+        ]
+    elif active_company == "barrera":
+        segmentos = [
+            "Entradas",
+            "Platos fuertes",
+            "Bebidas",
+            "Cocteles",
+            "Postres",
+            "Delivery",
+            "Para llevar",
         ]
     else:
         segmentos = [
@@ -407,6 +452,10 @@ def _seed_bodegas(db: Session) -> None:
             ("kg", "KG", "kg"),
             ("kgf", "KGF", "kgf"),
         ]
+    elif active_company == "barrera":
+        bodegas = [
+            ("central", "La Barrera", "central"),
+        ]
     else:
         bodegas = [
             ("central", "Central", "central"),
@@ -434,6 +483,9 @@ def _seed_bodegas(db: Session) -> None:
             )
     db.commit()
     if active_company == "bdzapatos":
+        db.query(Bodega).filter(Bodega.code == "esteli").update({"activo": False})
+        db.commit()
+    if active_company == "barrera":
         db.query(Bodega).filter(Bodega.code == "esteli").update({"activo": False})
         db.commit()
     if not multi_branch_enabled:
@@ -515,6 +567,197 @@ def _seed_vendedores(db: Session) -> None:
     for nombre in nombres:
         if nombre not in existing:
             db.add(Vendedor(nombre=nombre, activo=True))
+    db.commit()
+
+
+def _seed_restaurant_tables(db: Session) -> None:
+    active_company = (get_active_company_key() or "").strip().lower()
+    if active_company != "barrera":
+        return
+    branch = db.query(Branch).filter(func.lower(Branch.code) == "central").first()
+    bodega = db.query(Bodega).filter(func.lower(Bodega.code) == "central").first()
+    if not branch or not bodega:
+        return
+    defaults = [
+        ("M-01", "Mesa 1", "Salon principal", "ROUND", 4, 10, 10, 18, 1, 1),
+        ("M-02", "Mesa 2", "Salon principal", "ROUND", 4, 20, 38, 18, 1, 1),
+        ("M-03", "Mesa 3", "Salon principal", "ROUND", 4, 30, 66, 18, 1, 1),
+    ]
+    existing = {
+        (int(item.branch_id), (item.code or "").strip().upper()): item
+        for item in db.query(RestaurantTable).all()
+    }
+    changed = False
+    default_codes = {code.upper() for code, *_ in defaults}
+    for code, name, sector, shape, seats, sort_order, pos_x, pos_y, width_units, height_units in defaults:
+        key = (int(branch.id), code.upper())
+        row = existing.get(key)
+        if not row:
+            db.add(
+                RestaurantTable(
+                    branch_id=branch.id,
+                    bodega_id=bodega.id,
+                    code=code,
+                    name=name,
+                    sector=sector,
+                    shape=shape,
+                    seats=seats,
+                    sort_order=sort_order,
+                    pos_x=pos_x,
+                    pos_y=pos_y,
+                    width_units=width_units,
+                    height_units=height_units,
+                    active=True,
+                )
+            )
+            changed = True
+            continue
+        if row.bodega_id != bodega.id:
+            row.bodega_id = bodega.id
+            changed = True
+        if (row.name or "") != name:
+            row.name = name
+            changed = True
+        if (row.sector or "") != sector:
+            row.sector = sector
+            changed = True
+        if (row.shape or "") != shape:
+            row.shape = shape
+            changed = True
+        if int(row.seats or 0) != int(seats):
+            row.seats = seats
+            changed = True
+        if int(row.sort_order or 0) != int(sort_order):
+            row.sort_order = sort_order
+            changed = True
+        if int(row.pos_x or 0) != int(pos_x):
+            row.pos_x = pos_x
+            changed = True
+        if int(row.pos_y or 0) != int(pos_y):
+            row.pos_y = pos_y
+            changed = True
+        if int(row.width_units or 0) != int(width_units):
+            row.width_units = width_units
+            changed = True
+        if int(row.height_units or 0) != int(height_units):
+            row.height_units = height_units
+            changed = True
+        if row.active is not True:
+            row.active = True
+            changed = True
+    for row in db.query(RestaurantTable).filter(RestaurantTable.branch_id == branch.id).all():
+        if (row.code or "").strip().upper() not in default_codes and row.active:
+            row.active = False
+            changed = True
+    if changed:
+        db.commit()
+
+
+def _seed_restaurant_demo_products(db: Session) -> None:
+    active_company = (get_active_company_key() or "").strip().lower()
+    if active_company != "barrera":
+        return
+    branch = db.query(Branch).filter(func.lower(Branch.code) == "central").first()
+    bodega = db.query(Bodega).filter(func.lower(Bodega.code) == "central").first()
+    ingreso_tipo = db.query(IngresoTipo).filter(IngresoTipo.nombre == "Ajustes de Inventario").first()
+    if not branch or not bodega or not ingreso_tipo:
+        return
+    lineas = {row.linea: row for row in db.query(Linea).all()}
+    segmentos = {row.segmento: row for row in db.query(Segmento).all()}
+    defaults = [
+        ("BAR-001", "Botella de Agua de 500 ml", "Bebidas", "Bebidas", Decimal("45.00"), Decimal("25.00"), Decimal("10.00")),
+        ("BAR-002", "Coctel azul", "Barra", "Cocteles", Decimal("125.00"), Decimal("105.00"), Decimal("10.00")),
+        ("BAR-003", "Enchiladitas", "Cocina", "Entradas", Decimal("60.00"), Decimal("40.00"), Decimal("10.00")),
+        ("BAR-004", "Expresso de caramelo", "Barra", "Bebidas", Decimal("150.00"), Decimal("130.00"), Decimal("10.00")),
+        ("BAR-005", "Capuchino", "Barra", "Bebidas", Decimal("100.00"), Decimal("80.00"), Decimal("10.00")),
+    ]
+    product_ids: list[int] = []
+    changed = False
+    for code, description, linea_name, segmento_name, price_cs, cost_cs, initial_qty in defaults:
+        product = db.query(Producto).filter(func.lower(Producto.cod_producto) == code.lower()).first()
+        if not product:
+            product = Producto(
+                cod_producto=code,
+                descripcion=description,
+                linea_id=lineas.get(linea_name).id if lineas.get(linea_name) else None,
+                segmento_id=segmentos.get(segmento_name).id if segmentos.get(segmento_name) else None,
+                precio_venta1=price_cs,
+                costo_producto=cost_cs,
+                servicio_producto=False,
+                activo=True,
+                usuario_registro="system-barrera-seed",
+            )
+            db.add(product)
+            db.flush()
+            db.add(SaldoProducto(producto_id=product.id, existencia=Decimal("0")))
+            changed = True
+        else:
+            if (product.descripcion or "") != description:
+                product.descripcion = description
+                changed = True
+            if int(product.linea_id or 0) != int(lineas.get(linea_name).id if lineas.get(linea_name) else 0):
+                product.linea_id = lineas.get(linea_name).id if lineas.get(linea_name) else None
+                changed = True
+            if int(product.segmento_id or 0) != int(segmentos.get(segmento_name).id if segmentos.get(segmento_name) else 0):
+                product.segmento_id = segmentos.get(segmento_name).id if segmentos.get(segmento_name) else None
+                changed = True
+            if str(product.precio_venta1 or 0) != str(price_cs):
+                product.precio_venta1 = price_cs
+                changed = True
+            if str(product.costo_producto or 0) != str(cost_cs):
+                product.costo_producto = cost_cs
+                changed = True
+            saldo = db.query(SaldoProducto).filter(SaldoProducto.producto_id == product.id).first()
+            if not saldo:
+                db.add(SaldoProducto(producto_id=product.id, existencia=Decimal("0")))
+                changed = True
+        product_ids.append(int(product.id))
+    if changed:
+        db.commit()
+
+    marker = "SEED-LA-BARRERA-MENU-INITIAL"
+    existing_ingreso = (
+        db.query(IngresoInventario)
+        .filter(IngresoInventario.bodega_id == bodega.id, IngresoInventario.observacion == marker)
+        .first()
+    )
+    if existing_ingreso:
+        return
+
+    ingreso = IngresoInventario(
+        tipo_id=ingreso_tipo.id,
+        bodega_id=bodega.id,
+        proveedor_id=None,
+        fecha=date.today(),
+        moneda="CS",
+        tasa_cambio=None,
+        total_usd=Decimal("0"),
+        total_cs=Decimal("0"),
+        observacion=marker,
+        usuario_registro="system-barrera-seed",
+    )
+    db.add(ingreso)
+    db.flush()
+    total_cs = Decimal("0")
+    for code, _, _, _, _, cost_cs, initial_qty in defaults:
+        product = db.query(Producto).filter(func.lower(Producto.cod_producto) == code.lower()).first()
+        if not product:
+            continue
+        subtotal_cs = (cost_cs * initial_qty).quantize(Decimal("0.01"))
+        db.add(
+            IngresoItem(
+                ingreso_id=ingreso.id,
+                producto_id=product.id,
+                cantidad=initial_qty,
+                costo_unitario_usd=Decimal("0"),
+                costo_unitario_cs=cost_cs,
+                subtotal_usd=Decimal("0"),
+                subtotal_cs=subtotal_cs,
+            )
+        )
+        total_cs += subtotal_cs
+    ingreso.total_cs = total_cs.quantize(Decimal("0.01"))
+    ingreso.total_usd = Decimal("0")
     db.commit()
 
 
@@ -792,7 +1035,13 @@ def _seed_email_recipients(db: Session) -> None:
 
 
 def _seed_sales_interface_settings(db: Session) -> None:
-    interface_default = "zapatos" if get_active_company_key() in {"bdzapatos", "zapatos", "miss_zapatos"} else "ropa"
+    active_company = (get_active_company_key() or "").strip().lower()
+    if active_company in {"bdzapatos", "zapatos", "miss_zapatos"}:
+        interface_default = "zapatos"
+    elif active_company == "barrera":
+        interface_default = "restaurante"
+    else:
+        interface_default = "ropa"
     existing = db.query(SalesInterfaceSetting).first()
     if not existing:
         db.add(SalesInterfaceSetting(interface_code=interface_default))
@@ -801,9 +1050,11 @@ def _seed_sales_interface_settings(db: Session) -> None:
 
 def _seed_unidades_medida(db: Session) -> None:
     defaults = [
+        ("UNIDAD", "Unidad", "und"),
         ("LIBRAS", "Libras", "lb"),
         ("KILOGRAMOS", "Kilogramos", "kg"),
         ("ONZAS", "Onzas", "oz"),
+        ("MILILITROS", "Mililitros", "ml"),
     ]
     existing = {
         (row.codigo or "").strip().upper(): row
@@ -837,8 +1088,10 @@ def _seed_unidades_medida(db: Session) -> None:
 
 
 def _seed_company_profile_settings(db: Session) -> None:
-    is_shoes = get_active_company_key() in {"bdzapatos", "zapatos", "miss_zapatos"}
-    multi_branch_enabled = get_active_company_key() != "comestibles"
+    active_company = (get_active_company_key() or "").strip().lower()
+    is_shoes = active_company in {"bdzapatos", "zapatos", "miss_zapatos"}
+    is_restaurant = active_company == "barrera"
+    multi_branch_enabled = active_company != "comestibles"
     existing = db.query(CompanyProfileSetting).first()
     if existing:
         changed = False
@@ -855,6 +1108,19 @@ def _seed_company_profile_settings(db: Session) -> None:
             if not (existing.sidebar_subtitle or "").strip():
                 existing.sidebar_subtitle = "ERP Zapateria"
                 changed = True
+        if is_restaurant:
+            if not (existing.legal_name or "").strip() or existing.legal_name == "Hollywood Pacas":
+                existing.legal_name = "La Barrera Restaurante"
+                changed = True
+            if not (existing.trade_name or "").strip() or existing.trade_name == "Hollywood Pacas":
+                existing.trade_name = "La Barrera"
+                changed = True
+            if not (existing.app_title or "").strip() or existing.app_title == "ERP Hollywood Pacas":
+                existing.app_title = "ERP La Barrera"
+                changed = True
+            if not (existing.sidebar_subtitle or "").strip() or existing.sidebar_subtitle == "ERP Central":
+                existing.sidebar_subtitle = "Restaurante & Bar"
+                changed = True
         if existing.multi_branch_enabled is None:
             existing.multi_branch_enabled = multi_branch_enabled
             changed = True
@@ -863,6 +1129,9 @@ def _seed_company_profile_settings(db: Session) -> None:
             changed = True
         if getattr(existing, "weighted_sales_enabled", None) is None:
             existing.weighted_sales_enabled = False
+            changed = True
+        if getattr(existing, "recipe_explosion_on_ingreso", None) is None:
+            existing.recipe_explosion_on_ingreso = False
             changed = True
         if existing.price_auto_from_cost_enabled is None:
             existing.price_auto_from_cost_enabled = False
@@ -894,6 +1163,33 @@ def _seed_company_profile_settings(db: Session) -> None:
                 inventory_cs_only=False,
                 weighted_inventory_enabled=False,
                 weighted_sales_enabled=False,
+                recipe_explosion_on_ingreso=False,
+                multi_branch_enabled=multi_branch_enabled,
+                price_auto_from_cost_enabled=False,
+                price_margin_percent=0,
+                theme_code="default",
+                updated_by="system-bootstrap",
+            )
+        )
+    elif is_restaurant:
+        db.add(
+            CompanyProfileSetting(
+                legal_name="La Barrera Restaurante",
+                trade_name="La Barrera",
+                app_title="ERP La Barrera",
+                sidebar_subtitle="Restaurante & Bar",
+                website="",
+                ruc="",
+                phone="",
+                address="Sucursal principal",
+                email="",
+                logo_url="/static/logo_hollywood.png",
+                pos_logo_url="/static/logo_hollywood.png",
+                favicon_url="/static/favicon.ico",
+                inventory_cs_only=False,
+                weighted_inventory_enabled=False,
+                weighted_sales_enabled=False,
+                recipe_explosion_on_ingreso=False,
                 multi_branch_enabled=multi_branch_enabled,
                 price_auto_from_cost_enabled=False,
                 price_margin_percent=0,
@@ -919,6 +1215,7 @@ def _seed_company_profile_settings(db: Session) -> None:
                 inventory_cs_only=False,
                 weighted_inventory_enabled=False,
                 weighted_sales_enabled=False,
+                recipe_explosion_on_ingreso=False,
                 multi_branch_enabled=multi_branch_enabled,
                 price_auto_from_cost_enabled=False,
                 price_margin_percent=0,
@@ -1088,9 +1385,16 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE productos ADD COLUMN es_por_peso BOOLEAN DEFAULT FALSE"))
                 conn.execute(text("UPDATE productos SET es_por_peso = FALSE WHERE es_por_peso IS NULL"))
+        if "tipo_producto" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE productos ADD COLUMN tipo_producto VARCHAR(30) DEFAULT 'DIRECTO'"))
+                conn.execute(text("UPDATE productos SET tipo_producto = 'DIRECTO' WHERE tipo_producto IS NULL OR tipo_producto = ''"))
         if "unidad_medida_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE productos ADD COLUMN unidad_medida_id INTEGER"))
+        if "image_url" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE productos ADD COLUMN image_url VARCHAR(260)"))
     if "unidades_medida" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("unidades_medida")}
         if "abreviatura" not in columns:
@@ -1159,6 +1463,15 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN inventory_cs_only BOOLEAN DEFAULT FALSE"))
                 conn.execute(text("UPDATE company_profile_settings SET inventory_cs_only = FALSE WHERE inventory_cs_only IS NULL"))
+        if "recipe_explosion_on_ingreso" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN recipe_explosion_on_ingreso BOOLEAN DEFAULT FALSE"))
+                conn.execute(
+                    text(
+                        "UPDATE company_profile_settings SET recipe_explosion_on_ingreso = FALSE "
+                        "WHERE recipe_explosion_on_ingreso IS NULL"
+                    )
+                )
         if "weighted_inventory_enabled" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN weighted_inventory_enabled BOOLEAN DEFAULT FALSE"))
@@ -1255,6 +1568,29 @@ def init_db() -> None:
                     """
                 )
             )
+    if "restaurant_orders" in inspector.get_table_names():
+        restaurant_cols = {col["name"] for col in inspector.get_columns("restaurant_orders")}
+        if "table_id" not in restaurant_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE restaurant_orders ADD COLUMN table_id INTEGER NULL REFERENCES restaurant_tables(id)"))
+    if "restaurant_tables" in inspector.get_table_names():
+        restaurant_table_cols = {col["name"] for col in inspector.get_columns("restaurant_tables")}
+        if "pos_x" not in restaurant_table_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE restaurant_tables ADD COLUMN pos_x INTEGER DEFAULT 10"))
+                conn.execute(text("UPDATE restaurant_tables SET pos_x = 10 WHERE pos_x IS NULL"))
+        if "pos_y" not in restaurant_table_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE restaurant_tables ADD COLUMN pos_y INTEGER DEFAULT 10"))
+                conn.execute(text("UPDATE restaurant_tables SET pos_y = 10 WHERE pos_y IS NULL"))
+        if "width_units" not in restaurant_table_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE restaurant_tables ADD COLUMN width_units INTEGER DEFAULT 1"))
+                conn.execute(text("UPDATE restaurant_tables SET width_units = 1 WHERE width_units IS NULL"))
+        if "height_units" not in restaurant_table_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE restaurant_tables ADD COLUMN height_units INTEGER DEFAULT 1"))
+                conn.execute(text("UPDATE restaurant_tables SET height_units = 1 WHERE height_units IS NULL"))
     db = get_session_local()()
     try:
         _seed_unidades_medida(db)
@@ -1284,5 +1620,7 @@ def init_db() -> None:
         _seed_email_recipients(db)
         _seed_sales_interface_settings(db)
         _seed_company_profile_settings(db)
+        _seed_restaurant_tables(db)
+        _seed_restaurant_demo_products(db)
     finally:
         db.close()

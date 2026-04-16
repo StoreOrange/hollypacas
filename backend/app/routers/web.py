@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import String, and_, create_engine, func, or_
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, object_session
 
 from ..config import (
     get_active_company_key,
@@ -64,6 +64,8 @@ from ..models.inventory import (
     Marca,
     Producto,
     ProductoCombo,
+    ProductoReceta,
+    ProductoRecetaLinea,
     Proveedor,
     SaldoProducto,
     Segmento,
@@ -100,6 +102,9 @@ from ..models.sales import (
     ReciboMotivo,
     ReciboRubro,
     ReversionToken,
+    RestaurantOrder,
+    RestaurantOrderItem,
+    RestaurantTable,
     SalesInterfaceSetting,
     ProductoComision,
     Preventa,
@@ -128,6 +133,7 @@ SALES_INTERFACE_OPTIONS = [
     {"code": "farmacia", "label": "Interfaz Farmacia"},
     {"code": "comestibles", "label": "Interfaz Tienda de Comestibles"},
     {"code": "zapatos", "label": "Interfaz Tienda de Zapatos"},
+    {"code": "restaurante", "label": "Interfaz Restaurante / Bar"},
 ]
 
 
@@ -428,6 +434,59 @@ def _send_permission_sms_alert(user: Optional[User], request: Request, perm: str
         "message": message,
         "user": user.email if user else None,
         "perm": perm,
+        "path": request.url.path,
+        "ip": request.client.host if request.client else None,
+    }
+    headers = {"Content-Type": "application/json"}
+    token = (settings.SMS_WEBHOOK_TOKEN or "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    data = json.dumps(payload).encode("utf-8")
+    req = urlrequest.Request(sms_url, data=data, headers=headers, method="POST")
+    with urlrequest.urlopen(req, timeout=3) as response:
+        response.read()
+
+
+def _send_restaurant_order_sms_alert(
+    *,
+    request: Request,
+    user: Optional[User],
+    order: RestaurantOrder,
+    branch: Optional[Branch] = None,
+    bodega: Optional[Bodega] = None,
+) -> None:
+    sms_url = (settings.SMS_WEBHOOK_URL or "").strip()
+    recipients = _permission_sms_recipients()
+    if not sms_url or not recipients:
+        return
+    if (order.service_type or "").upper() != "MESA":
+        return
+    user_label = user.full_name if user and user.full_name else (user.email if user else "desconocido")
+    cliente_label = order.cliente.nombre if getattr(order, "cliente", None) else "Consumidor final"
+    branch_label = branch.name if branch else "-"
+    bodega_label = bodega.name if bodega else "-"
+    mesa_label = (order.mesa_nombre or "Mesa").strip()
+    message = (
+        f"Nueva orden restaurante. Orden: {order.numero}. "
+        f"Mesa: {mesa_label}. "
+        f"Cliente: {cliente_label}. "
+        f"Sucursal: {branch_label}. "
+        f"Bodega: {bodega_label}. "
+        f"Usuario: {user_label}. "
+        f"Hora: {local_now().strftime('%Y-%m-%d %H:%M:%S')}."
+    )
+    payload = {
+        "to": recipients,
+        "message": message,
+        "event": "restaurant_order_created",
+        "order_id": int(order.id),
+        "order_number": order.numero,
+        "service_type": order.service_type,
+        "table_name": mesa_label,
+        "client_name": cliente_label,
+        "branch_name": branch_label,
+        "bodega_name": bodega_label,
+        "user": user.email if user else None,
         "path": request.url.path,
         "ip": request.client.host if request.client else None,
     }
@@ -895,6 +954,8 @@ def _get_or_create_consumidor_final(db: Session) -> Cliente:
 
 def _branch_sales_series_letter(branch_code: Optional[str]) -> str:
     normalized = (branch_code or "").strip().lower()
+    if (get_active_company_key() or "").strip().lower() == "barrera":
+        return "LB"
     if _is_shoes_mode():
         shoes_mapping = {
             "central": "A",
@@ -933,6 +994,117 @@ def _next_preventa_number(db: Session, branch: Branch) -> tuple[int, str]:
     seq = (last.secuencia if last else 0) + 1
     prefix = _branch_sales_series_letter(branch.code)
     return seq, f"PV{prefix}-{seq:06d}"
+
+
+def _next_restaurant_order_number(db: Session, branch: Branch) -> str:
+    last = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.branch_id == branch.id)
+        .order_by(RestaurantOrder.id.desc())
+        .first()
+    )
+    next_id = (last.id if last else 0) + 1
+    prefix = "LB" if (get_active_company_key() or "").strip().lower() == "barrera" else _branch_sales_series_letter(branch.code)
+    return f"ORD-{prefix}-{next_id:06d}"
+
+
+def _recalc_restaurant_order(order: RestaurantOrder) -> None:
+    total_usd = Decimal("0")
+    total_cs = Decimal("0")
+    total_items = Decimal("0")
+    session = object_session(order)
+    items = (
+        session.query(RestaurantOrderItem)
+        .filter(RestaurantOrderItem.order_id == order.id)
+        .order_by(RestaurantOrderItem.id.asc())
+        .all()
+        if session and order.id
+        else (order.items or [])
+    )
+    for item in items:
+        total_usd += Decimal(str(item.subtotal_usd or 0))
+        total_cs += Decimal(str(item.subtotal_cs or 0))
+        total_items += Decimal(str(item.cantidad or 0))
+    order.total_usd = total_usd.quantize(Decimal("0.01"))
+    order.total_cs = total_cs.quantize(Decimal("0.01"))
+    order.total_items = total_items.quantize(Decimal("0.01"))
+
+
+def _restaurant_order_payload(order: RestaurantOrder) -> dict[str, object]:
+    return {
+        "id": order.id,
+        "numero": order.numero,
+        "table_id": order.table_id,
+        "service_type": order.service_type,
+        "mesa_nombre": order.mesa_nombre or "",
+        "estado": order.estado,
+        "moneda": order.moneda,
+        "cliente_id": order.cliente_id,
+        "vendedor_id": order.vendedor_id,
+        "cliente": order.cliente.nombre if order.cliente else "Consumidor final",
+        "vendedor": order.vendedor.nombre if order.vendedor else "-",
+        "total_usd": float(order.total_usd or 0),
+        "total_cs": float(order.total_cs or 0),
+        "total_items": float(order.total_items or 0),
+        "opened_at": order.opened_at.strftime("%d/%m/%Y %H:%M") if order.opened_at else "-",
+        "items": [
+            {
+                "id": item.id,
+                "codigo": item.producto.cod_producto if item.producto else "",
+                "descripcion": item.producto.descripcion if item.producto else "",
+                "cantidad": float(item.cantidad or 0),
+                "precio_cs": float(item.precio_unitario_cs or 0),
+                "precio_usd": float(item.precio_unitario_usd or 0),
+                "subtotal_cs": float(item.subtotal_cs or 0),
+                "subtotal_usd": float(item.subtotal_usd or 0),
+                "nota": item.nota or "",
+            }
+            for item in (order.items or [])
+        ],
+    }
+
+
+def _restaurant_table_payload(table: RestaurantTable, active_order: Optional[RestaurantOrder]) -> dict[str, object]:
+    return {
+        "id": table.id,
+        "code": table.code,
+        "name": table.name,
+        "sector": table.sector or "Salon",
+        "shape": (table.shape or "ROUND").upper(),
+        "seats": int(table.seats or 0),
+        "sort_order": int(table.sort_order or 0),
+        "pos_x": int(table.pos_x or 10),
+        "pos_y": int(table.pos_y or 10),
+        "width_units": max(int(table.width_units or 1), 1),
+        "height_units": max(int(table.height_units or 1), 1),
+        "status": "OCUPADA" if active_order else "LIBRE",
+        "active_order_id": active_order.id if active_order else None,
+        "active_order_number": active_order.numero if active_order else "",
+        "active_order_total_cs": float(active_order.total_cs or 0) if active_order else 0.0,
+        "active_order_total_items": float(active_order.total_items or 0) if active_order else 0.0,
+        "active_order": _restaurant_order_payload(active_order) if active_order else None,
+    }
+
+
+def _restaurant_open_reserved_qty(
+    db: Session,
+    *,
+    bodega_id: int,
+    producto_id: int,
+    exclude_order_id: Optional[int] = None,
+) -> Decimal:
+    query = (
+        db.query(func.coalesce(func.sum(RestaurantOrderItem.cantidad), 0))
+        .join(RestaurantOrder, RestaurantOrder.id == RestaurantOrderItem.order_id)
+        .filter(
+            RestaurantOrder.estado == "ABIERTA",
+            RestaurantOrder.bodega_id == bodega_id,
+            RestaurantOrderItem.producto_id == producto_id,
+        )
+    )
+    if exclude_order_id:
+        query = query.filter(RestaurantOrder.id != exclude_order_id)
+    return Decimal(str(query.scalar() or 0))
 
 
 def _preventa_active_conflict(
@@ -1176,6 +1348,7 @@ def _default_company_profile_payload() -> dict[str, str]:
             "pos_logo_url": "/static/logo_hollywood.png",
             "favicon_url": "/static/favicon.ico",
             "inventory_cs_only": False,
+            "recipe_explosion_on_ingreso": False,
             "weighted_inventory_enabled": False,
             "weighted_sales_enabled": False,
             "multi_branch_enabled": multi_branch_enabled,
@@ -1197,6 +1370,7 @@ def _default_company_profile_payload() -> dict[str, str]:
         "pos_logo_url": "/static/logo_hollywood.png",
         "favicon_url": "/static/favicon.ico",
         "inventory_cs_only": False,
+        "recipe_explosion_on_ingreso": False,
         "weighted_inventory_enabled": False,
         "weighted_sales_enabled": False,
         "multi_branch_enabled": multi_branch_enabled,
@@ -1226,6 +1400,7 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
             "pos_logo_url": row.pos_logo_url or payload["pos_logo_url"],
             "favicon_url": row.favicon_url or payload["favicon_url"],
             "inventory_cs_only": bool(row.inventory_cs_only),
+            "recipe_explosion_on_ingreso": bool(getattr(row, "recipe_explosion_on_ingreso", False)),
             "weighted_inventory_enabled": bool(getattr(row, "weighted_inventory_enabled", False)),
             "weighted_sales_enabled": bool(getattr(row, "weighted_sales_enabled", False)),
             "multi_branch_enabled": bool(row.multi_branch_enabled),
@@ -1242,6 +1417,11 @@ def _inventory_cs_only_mode(db: Session) -> bool:
     return bool(profile.get("inventory_cs_only"))
 
 
+def _recipe_explosion_on_ingreso_mode(db: Session) -> bool:
+    profile = _company_profile_payload(db)
+    return bool(profile.get("recipe_explosion_on_ingreso", False))
+
+
 def _weighted_inventory_enabled_mode(db: Session) -> bool:
     profile = _company_profile_payload(db)
     return bool(profile.get("weighted_inventory_enabled", False))
@@ -1250,6 +1430,29 @@ def _weighted_inventory_enabled_mode(db: Session) -> bool:
 def _weighted_sales_enabled_mode(db: Session) -> bool:
     profile = _company_profile_payload(db)
     return bool(profile.get("weighted_sales_enabled", False))
+
+
+def _product_type_options() -> list[dict[str, str]]:
+    return [
+        {"code": "DIRECTO", "label": "Venta directa"},
+        {"code": "MATERIA_PRIMA", "label": "Materia prima"},
+        {"code": "RECETA", "label": "Producto final por receta"},
+    ]
+
+
+def _sellable_product_query(query):
+    return query.filter(
+        or_(
+            Producto.tipo_producto.is_(None),
+            func.upper(Producto.tipo_producto) != "MATERIA_PRIMA",
+        )
+    )
+
+
+def _is_sellable_product(producto: Optional[Producto]) -> bool:
+    if not producto:
+        return False
+    return (getattr(producto, "tipo_producto", "DIRECTO") or "DIRECTO").strip().upper() != "MATERIA_PRIMA"
 
 
 def _multi_branch_enabled_mode(db: Session) -> bool:
@@ -1448,6 +1651,57 @@ def _resolve_logo_path(logo_url: str, *, prefer_pos: bool = False, pos_logo_url:
 
     fallback = static_dir / "logo_hollywood.png"
     return fallback
+
+
+def _save_company_asset(upload: Optional[UploadFile], *, asset_kind: str, allowed_exts: set[str]) -> Optional[str]:
+    if not upload:
+        return None
+    filename = (upload.filename or "").strip()
+    if not filename:
+        return None
+    ext = Path(filename).suffix.lower()
+    if ext not in allowed_exts:
+        raise ValueError(f"Formato no permitido para {asset_kind}")
+    active_company = (get_active_company_key() or "default").strip().lower() or "default"
+    safe_company = re.sub(r"[^a-z0-9_-]+", "", active_company) or "default"
+    static_dir = Path(__file__).resolve().parents[1] / "static"
+    target_dir = static_dir / "company_assets" / safe_company
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stamp = local_now().strftime("%Y%m%d%H%M%S%f")
+    target_name = f"{asset_kind}_{stamp}{ext}"
+    target_path = target_dir / target_name
+    content = upload.file.read()
+    if not content:
+        return None
+    target_path.write_bytes(content)
+    relative_path = target_path.relative_to(static_dir).as_posix()
+    return f"/static/{relative_path}"
+
+
+def _save_product_asset(upload: Optional[UploadFile], *, asset_kind: str = "product") -> Optional[str]:
+    if not upload:
+        return None
+    filename = (upload.filename or "").strip()
+    if not filename:
+        return None
+    allowed_exts = {".jpg", ".jpeg", ".png", ".webp"}
+    ext = Path(filename).suffix.lower()
+    if ext not in allowed_exts:
+        raise ValueError("Formato de imagen no permitido")
+    active_company = (get_active_company_key() or "default").strip().lower() or "default"
+    safe_company = re.sub(r"[^a-z0-9_-]+", "", active_company) or "default"
+    static_dir = Path(__file__).resolve().parents[1] / "static"
+    target_dir = static_dir / "product_assets" / safe_company
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stamp = local_now().strftime("%Y%m%d%H%M%S%f")
+    target_name = f"{asset_kind}_{stamp}{ext}"
+    target_path = target_dir / target_name
+    content = upload.file.read()
+    if not content:
+        return None
+    target_path.write_bytes(content)
+    relative_path = target_path.relative_to(static_dir).as_posix()
+    return f"/static/{relative_path}"
 
 
 def _company_identity(branch: Optional[Branch], profile: dict[str, str]) -> dict[str, str]:
@@ -2287,11 +2541,14 @@ def _get_company_profile_setting(db: Session) -> CompanyProfileSetting:
     return row
 
 
-def _default_weight_unit(db: Session) -> Optional[UnidadMedida]:
+def _default_unit_by_code(db: Session, code: str) -> Optional[UnidadMedida]:
+    normalized = (code or "").strip().upper()
+    if not normalized:
+        return None
     unit = (
         db.query(UnidadMedida)
         .filter(UnidadMedida.activo.is_(True))
-        .filter(func.upper(UnidadMedida.codigo) == "LIBRAS")
+        .filter(func.upper(UnidadMedida.codigo) == normalized)
         .order_by(UnidadMedida.id.asc())
         .first()
     )
@@ -2303,6 +2560,14 @@ def _default_weight_unit(db: Session) -> Optional[UnidadMedida]:
         .order_by(UnidadMedida.id.asc())
         .first()
     )
+
+
+def _default_product_unit(db: Session) -> Optional[UnidadMedida]:
+    return _default_unit_by_code(db, "UNIDAD")
+
+
+def _default_weight_unit(db: Session) -> Optional[UnidadMedida]:
+    return _default_unit_by_code(db, "LIBRAS")
 
 
 def _resolve_weight_unit(
@@ -6055,6 +6320,7 @@ def inventory_page(
     global_qty = central_qty + esteli_qty
     global_items = len({p.id for p in productos if (balances.get((p.id, bodega_central.id), Decimal("0")) if bodega_central else Decimal("0")) > 0 or (balances.get((p.id, bodega_esteli.id), Decimal("0")) if bodega_esteli else Decimal("0")) > 0})
     inventory_cs_only = _inventory_cs_only_mode(db)
+    recipe_explosion_on_ingreso = _recipe_explosion_on_ingreso_mode(db)
     weighted_inventory_enabled = _weighted_inventory_enabled_mode(db)
     weighted_sales_enabled = _weighted_sales_enabled_mode(db)
     auto_price_margin_enabled, auto_price_margin_pct = _price_margin_mode(db)
@@ -6084,10 +6350,12 @@ def inventory_page(
             "success": success,
             "show_inactive": show_inactive,
             "inventory_cs_only": inventory_cs_only,
+            "recipe_explosion_on_ingreso": recipe_explosion_on_ingreso,
             "weighted_inventory_enabled": weighted_inventory_enabled,
             "weighted_sales_enabled": weighted_sales_enabled,
             "auto_price_margin_enabled": auto_price_margin_enabled,
             "auto_price_margin_pct": auto_price_margin_pct,
+            "product_type_options": _product_type_options(),
             "is_hollpacas_mode": is_hollpacas_mode,
             "version": settings.UI_VERSION,
         },
@@ -7681,8 +7949,7 @@ def inventory_ingresos_page(
     bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     proveedores = db.query(Proveedor).order_by(Proveedor.nombre).all()
     productos = (
-        db.query(Producto)
-        .filter(Producto.activo.is_(True))
+        _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
         .order_by(Producto.descripcion)
         .all()
     )
@@ -7736,6 +8003,7 @@ def inventory_ingresos_page(
         .first()
     )
     inventory_cs_only = _inventory_cs_only_mode(db)
+    recipe_explosion_on_ingreso = _recipe_explosion_on_ingreso_mode(db)
     weighted_inventory_enabled = _weighted_inventory_enabled_mode(db)
     weighted_sales_enabled = _weighted_sales_enabled_mode(db)
     auto_price_margin_enabled, auto_price_margin_pct = _price_margin_mode(db)
@@ -7768,10 +8036,12 @@ def inventory_ingresos_page(
             "print_id": print_id,
             "print_labels_id": print_labels_id,
             "inventory_cs_only": inventory_cs_only,
+            "recipe_explosion_on_ingreso": recipe_explosion_on_ingreso,
             "weighted_inventory_enabled": weighted_inventory_enabled,
             "weighted_sales_enabled": weighted_sales_enabled,
             "auto_price_margin_enabled": auto_price_margin_enabled,
             "auto_price_margin_pct": auto_price_margin_pct,
+            "product_type_options": _product_type_options(),
             "version": settings.UI_VERSION,
         },
     )
@@ -8076,8 +8346,7 @@ def sales_page(
 ):
     _enforce_permission(request, user, "access.sales")
     productos = (
-        db.query(Producto)
-        .filter(Producto.activo.is_(True))
+        _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
         .order_by(Producto.descripcion)
         .all()
     )
@@ -8178,12 +8447,46 @@ def sales_page(
     interface_code = (sales_interface.interface_code or "ropa").strip().lower()
     if _is_shoes_mode() and interface_code == "ropa":
         interface_code = "zapatos"
+    if (get_active_company_key() or "").strip().lower() == "barrera" and interface_code == "ropa":
+        interface_code = "restaurante"
     if interface_code == "comestibles":
         template_name = "sales_comestibles.html"
     elif interface_code == "zapatos":
         template_name = "sales_zapatos.html"
+    elif interface_code == "restaurante":
+        template_name = "sales_restaurante.html"
     else:
         template_name = "sales.html"
+
+    restaurant_orders = []
+    restaurant_tables = []
+    if interface_code == "restaurante" and branch and bodega:
+        open_orders = (
+            db.query(RestaurantOrder)
+            .filter(
+                RestaurantOrder.branch_id == branch.id,
+                RestaurantOrder.bodega_id == bodega.id,
+                RestaurantOrder.estado == "ABIERTA",
+            )
+            .order_by(RestaurantOrder.opened_at.desc(), RestaurantOrder.id.desc())
+            .limit(80)
+            .all()
+        )
+        restaurant_orders = [_restaurant_order_payload(order) for order in open_orders]
+        active_orders_by_table = {int(order.table_id): order for order in open_orders if order.table_id}
+        restaurant_tables = [
+            _restaurant_table_payload(table, active_orders_by_table.get(int(table.id)))
+            for table in (
+                db.query(RestaurantTable)
+                .filter(
+                    RestaurantTable.branch_id == branch.id,
+                    RestaurantTable.bodega_id == bodega.id,
+                    RestaurantTable.active.is_(True),
+                )
+                .order_by(RestaurantTable.sector.asc(), RestaurantTable.sort_order.asc(), RestaurantTable.name.asc())
+                .all()
+            )
+        ]
 
     return request.app.state.templates.TemplateResponse(
         template_name,
@@ -8204,6 +8507,8 @@ def sales_page(
             "pos_print": pos_print,
             "default_vendedor_id": _default_vendedor_id(db, bodega),
             "initial_preventa": initial_preventa,
+            "restaurant_orders": restaurant_orders,
+            "restaurant_tables": restaurant_tables,
             "sales_interface_code": interface_code,
             "weighted_sales_enabled": _weighted_sales_enabled_mode(db),
             "version": settings.UI_VERSION,
@@ -8600,8 +8905,7 @@ def mobile_preventas_products_search(
         return JSONResponse({"ok": False, "message": "Usuario sin bodega asignada"}, status_code=400)
     like = f"%{query.lower()}%"
     productos = (
-        db.query(Producto)
-        .filter(Producto.activo.is_(True))
+        _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
         .filter(
             or_(
                 func.lower(Producto.cod_producto).like(like),
@@ -8656,15 +8960,15 @@ def mobile_preventas_combos_search(
 
     like = f"%{query.lower()}%"
     rows = (
+        _sellable_product_query(
         db.query(
             Producto,
             func.count(ProductoCombo.id).label("combo_count"),
-        )
+        ))
         .join(
             ProductoCombo,
             ProductoCombo.parent_producto_id == Producto.id,
         )
-        .filter(Producto.activo.is_(True))
         .filter(
             or_(
                 func.lower(Producto.cod_producto).like(like),
@@ -9613,6 +9917,84 @@ def _commission_branch_scope(branch_id: str | None) -> Optional[int]:
         return None
 
 
+def _normalize_commission_temp_rows(
+    db: Session,
+    *,
+    start_date: date,
+    end_date: date,
+    branch_id: str | None,
+    venta_item_ids: Optional[list[int]] = None,
+) -> tuple[int, int]:
+    scope_branch_id = _commission_branch_scope(branch_id)
+    query = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.fecha >= start_date,
+        VentaComisionAsignacion.fecha <= end_date,
+    )
+    if scope_branch_id:
+        query = query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
+    if venta_item_ids:
+        query = query.filter(VentaComisionAsignacion.venta_item_id.in_(venta_item_ids))
+    rows = query.order_by(
+        VentaComisionAsignacion.venta_item_id.asc(),
+        VentaComisionAsignacion.vendedor_asignado_id.asc(),
+        VentaComisionAsignacion.id.asc(),
+    ).all()
+    if not rows:
+        return 0, 0
+
+    merged = 0
+    removed = 0
+    by_item: dict[int, list[VentaComisionAsignacion]] = {}
+    by_item_vendor: dict[tuple[int, int], list[VentaComisionAsignacion]] = {}
+    for row in rows:
+        item_id = int(row.venta_item_id or 0)
+        vendor_id = int(row.vendedor_asignado_id or 0)
+        by_item.setdefault(item_id, []).append(row)
+        by_item_vendor.setdefault((item_id, vendor_id), []).append(row)
+
+    for grouped in by_item_vendor.values():
+        if len(grouped) <= 1:
+            continue
+        keeper = grouped[0]
+        total_qty = Decimal("0")
+        latest_price_usd = Decimal(str(keeper.precio_unitario_usd or 0))
+        latest_price_cs = Decimal(str(keeper.precio_unitario_cs or 0))
+        for row in grouped:
+            total_qty += Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            latest_price_usd = Decimal(str(row.precio_unitario_usd or latest_price_usd))
+            latest_price_cs = Decimal(str(row.precio_unitario_cs or latest_price_cs))
+        keeper_qty = total_qty if total_qty > 0 else Decimal("0")
+        keeper.cantidad = keeper_qty
+        keeper.precio_unitario_usd = latest_price_usd
+        keeper.precio_unitario_cs = latest_price_cs
+        keeper.subtotal_usd = latest_price_usd * keeper_qty
+        keeper.subtotal_cs = latest_price_cs * keeper_qty
+        for extra in grouped[1:]:
+            db.delete(extra)
+            removed += 1
+        merged += 1
+
+    for item_id, item_rows in by_item.items():
+        positive_rows = []
+        zero_rows = []
+        for row in item_rows:
+            qty_int = int(
+                Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            )
+            if qty_int > 0:
+                positive_rows.append(row)
+            else:
+                zero_rows.append(row)
+        if positive_rows and zero_rows:
+            for row in zero_rows:
+                db.delete(row)
+                removed += 1
+
+    if merged or removed:
+        db.commit()
+    return merged, removed
+
+
 def _ensure_commission_temp_snapshot(
     db: Session,
     fecha_value: date,
@@ -9741,6 +10123,12 @@ def _build_commission_assignment_rows(
     vendedor_asignado_id: str | None,
     producto_asig_q: str,
 ):
+    _normalize_commission_temp_rows(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+    )
     scope_branch_id = _commission_branch_scope(branch_id)
     temp_query = db.query(VentaComisionAsignacion).filter(
         VentaComisionAsignacion.fecha >= start_date,
@@ -10094,6 +10482,12 @@ def _build_commission_reports_data(
     branch_id: str | None,
     vendedor_id: str | None,
 ) -> dict:
+    _normalize_commission_temp_rows(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+    )
     query = (
         db.query(
             VentaComisionAsignacion,
@@ -10358,6 +10752,18 @@ def sales_comisiones(
         .order_by(Producto.descripcion)
         .all()
     )
+    _normalize_commission_temp_rows(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+    )
+    _normalize_commission_temp_rows(
+        db,
+        start_date=rep_start_date,
+        end_date=rep_end_date,
+        branch_id=rep_branch_id,
+    )
     product_ids = [p.id for p in productos]
     commission_map = {
         row.producto_id: float(row.comision_usd or 0)
@@ -10462,6 +10868,64 @@ def sales_comisiones(
             "version": settings.UI_VERSION,
         },
     )
+
+
+@router.post("/sales/comisiones/asignaciones/sanear")
+async def sales_comisiones_sanitize_assignments(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    form = await request.form()
+    fecha_raw = str(form.get("fecha") or "")
+    start_raw = str(form.get("start_date") or "")
+    end_raw = str(form.get("end_date") or "")
+    branch_id = str(form.get("branch_id") or "all")
+    vendedor_facturacion_id = str(form.get("vendedor_facturacion_id") or "").strip()
+    vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
+    producto_asig_q = str(form.get("producto_asig_q") or "").strip()
+
+    try:
+        fecha_value = date.fromisoformat(fecha_raw)
+    except ValueError:
+        fecha_value = local_today()
+    start_date = fecha_value
+    end_date = fecha_value
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+            if start_raw and not end_raw:
+                end_date = start_date
+            if end_raw and not start_raw:
+                start_date = end_date
+        except ValueError:
+            start_date = fecha_value
+            end_date = fecha_value
+    if end_date < start_date:
+        end_date = start_date
+
+    merged, removed = _normalize_commission_temp_rows(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+    )
+    params = {
+        "tab": "asignacion",
+        "fecha": fecha_value.isoformat(),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "branch_id": branch_id or "all",
+        "vendedor_facturacion_id": vendedor_facturacion_id,
+        "vendedor_asignado_id": vendedor_asignado_id,
+        "producto_asig_q": producto_asig_q,
+        "success": f"Depuracion completada. Grupos corregidos: {merged}. Filas eliminadas: {removed}.",
+    }
+    return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
 
 
 @router.post("/sales/comisiones/precios")
@@ -10582,6 +11046,12 @@ async def sales_comisiones_save_assignments(
 
     for day_value in _commission_dates_in_range(start_date, end_date):
         _ensure_commission_temp_snapshot(db, day_value, branch_id)
+    _normalize_commission_temp_rows(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+    )
     scope_branch_id = _commission_branch_scope(branch_id)
     source_rows = _commission_sales_rows_query_range(
         db,
@@ -17471,9 +17941,173 @@ def data_home(
             "request": request,
             "user": user,
             "menu_items": get_sidebar_menu_layout(db),
+            "active_company": (get_active_company_key() or "").strip().lower(),
             "version": settings.UI_VERSION,
         },
     )
+
+
+@router.get("/data/mesas")
+def data_restaurant_tables(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    active_company = (get_active_company_key() or "").strip().lower()
+    if active_company != "barrera":
+        raise HTTPException(status_code=404, detail="Catalogo no disponible")
+    edit_id = request.query_params.get("edit_id")
+    error = request.query_params.get("error")
+    success = request.query_params.get("success")
+    edit_item = None
+    if edit_id and edit_id.isdigit():
+        edit_item = db.query(RestaurantTable).filter(RestaurantTable.id == int(edit_id)).first()
+    branches = db.query(Branch).filter(Branch.activo.is_(True)).order_by(Branch.name).all()
+    bodegas = db.query(Bodega).filter(Bodega.activo.is_(True)).order_by(Bodega.name).all()
+    items = (
+        db.query(RestaurantTable)
+        .order_by(RestaurantTable.sector.asc(), RestaurantTable.sort_order.asc(), RestaurantTable.name.asc())
+        .all()
+    )
+    return request.app.state.templates.TemplateResponse(
+        "data_restaurant_tables.html",
+        {
+            "request": request,
+            "user": user,
+            "items": items,
+            "branches": branches,
+            "bodegas": bodegas,
+            "edit_item": edit_item,
+            "error": error,
+            "success": success,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/data/mesas")
+def data_restaurant_tables_create(
+    request: Request,
+    code: str = Form(...),
+    name: str = Form(...),
+    branch_id: int = Form(...),
+    bodega_id: int = Form(...),
+    sector: str = Form("Salon principal"),
+    shape: str = Form("ROUND"),
+    seats: int = Form(4),
+    sort_order: int = Form(0),
+    pos_x: int = Form(10),
+    pos_y: int = Form(10),
+    width_units: int = Form(1),
+    height_units: int = Form(1),
+    active: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if (get_active_company_key() or "").strip().lower() != "barrera":
+        raise HTTPException(status_code=404, detail="Catalogo no disponible")
+    code = code.strip().upper()
+    name = name.strip()
+    sector = sector.strip() or "Salon principal"
+    shape = (shape or "ROUND").strip().upper()
+    if shape not in {"ROUND", "SQUARE", "OVAL"}:
+        shape = "ROUND"
+    branch = db.query(Branch).filter(Branch.id == branch_id, Branch.activo.is_(True)).first()
+    bodega = db.query(Bodega).filter(Bodega.id == bodega_id, Bodega.activo.is_(True)).first()
+    if not branch or not bodega or int(bodega.branch_id) != int(branch.id):
+        return RedirectResponse("/data/mesas?error=Selecciona+una+sucursal+y+bodega+validas", status_code=303)
+    exists = (
+        db.query(RestaurantTable)
+        .filter(RestaurantTable.branch_id == branch.id, func.upper(RestaurantTable.code) == code)
+        .first()
+    )
+    if exists:
+        return RedirectResponse("/data/mesas?error=La+mesa+ya+existe+en+esta+sucursal", status_code=303)
+    db.add(
+        RestaurantTable(
+            branch_id=branch.id,
+            bodega_id=bodega.id,
+            code=code,
+            name=name or code,
+            sector=sector,
+            shape=shape,
+            seats=max(int(seats or 0), 1),
+            sort_order=max(int(sort_order or 0), 0),
+            pos_x=max(min(int(pos_x or 10), 90), 0),
+            pos_y=max(min(int(pos_y or 10), 90), 0),
+            width_units=max(int(width_units or 1), 1),
+            height_units=max(int(height_units or 1), 1),
+            active=active == "on",
+        )
+    )
+    db.commit()
+    return RedirectResponse("/data/mesas?success=Mesa+creada", status_code=303)
+
+
+@router.post("/data/mesas/{item_id}/update")
+def data_restaurant_tables_update(
+    request: Request,
+    item_id: int,
+    code: str = Form(...),
+    name: str = Form(...),
+    branch_id: int = Form(...),
+    bodega_id: int = Form(...),
+    sector: str = Form("Salon principal"),
+    shape: str = Form("ROUND"),
+    seats: int = Form(4),
+    sort_order: int = Form(0),
+    pos_x: int = Form(10),
+    pos_y: int = Form(10),
+    width_units: int = Form(1),
+    height_units: int = Form(1),
+    active: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if (get_active_company_key() or "").strip().lower() != "barrera":
+        raise HTTPException(status_code=404, detail="Catalogo no disponible")
+    item = db.query(RestaurantTable).filter(RestaurantTable.id == item_id).first()
+    if not item:
+        return RedirectResponse("/data/mesas?error=Mesa+no+existe", status_code=303)
+    code = code.strip().upper()
+    name = name.strip()
+    sector = sector.strip() or "Salon principal"
+    shape = (shape or "ROUND").strip().upper()
+    if shape not in {"ROUND", "SQUARE", "OVAL"}:
+        shape = "ROUND"
+    branch = db.query(Branch).filter(Branch.id == branch_id, Branch.activo.is_(True)).first()
+    bodega = db.query(Bodega).filter(Bodega.id == bodega_id, Bodega.activo.is_(True)).first()
+    if not branch or not bodega or int(bodega.branch_id) != int(branch.id):
+        return RedirectResponse("/data/mesas?error=Selecciona+una+sucursal+y+bodega+validas", status_code=303)
+    exists = (
+        db.query(RestaurantTable)
+        .filter(
+            RestaurantTable.id != item_id,
+            RestaurantTable.branch_id == branch.id,
+            func.upper(RestaurantTable.code) == code,
+        )
+        .first()
+    )
+    if exists:
+        return RedirectResponse("/data/mesas?error=La+mesa+ya+existe+en+esta+sucursal", status_code=303)
+    item.branch_id = branch.id
+    item.bodega_id = bodega.id
+    item.code = code
+    item.name = name or code
+    item.sector = sector
+    item.shape = shape
+    item.seats = max(int(seats or 0), 1)
+    item.sort_order = max(int(sort_order or 0), 0)
+    item.pos_x = max(min(int(pos_x or 10), 90), 0)
+    item.pos_y = max(min(int(pos_y or 10), 90), 0)
+    item.width_units = max(int(width_units or 1), 1)
+    item.height_units = max(int(height_units or 1), 1)
+    item.active = active == "on"
+    db.commit()
+    return RedirectResponse("/data/mesas?success=Mesa+actualizada", status_code=303)
 
 
 @router.get("/data/menu")
@@ -17723,7 +18357,7 @@ def data_empresa(
 
 
 @router.post("/data/empresa")
-def data_empresa_update(
+async def data_empresa_update(
     request: Request,
     legal_name: str = Form(...),
     trade_name: str = Form(...),
@@ -17737,7 +18371,11 @@ def data_empresa_update(
     logo_url: Optional[str] = Form(None),
     pos_logo_url: Optional[str] = Form(None),
     favicon_url: Optional[str] = Form(None),
+    logo_file: Optional[UploadFile] = File(None),
+    pos_logo_file: Optional[UploadFile] = File(None),
+    favicon_file: Optional[UploadFile] = File(None),
     inventory_cs_only: Optional[str] = Form(None),
+    recipe_explosion_on_ingreso: Optional[str] = Form(None),
     weighted_inventory_enabled: Optional[str] = Form(None),
     weighted_sales_enabled: Optional[str] = Form(None),
     multi_branch_enabled: Optional[str] = Form(None),
@@ -17758,10 +18396,40 @@ def data_empresa_update(
     profile.phone = (phone or "").strip()
     profile.address = (address or "").strip()
     profile.email = (email or "").strip()
-    profile.logo_url = (logo_url or "").strip() or "/static/logo_hollywood.png"
-    profile.pos_logo_url = (pos_logo_url or "").strip() or profile.logo_url
-    profile.favicon_url = (favicon_url or "").strip() or "/static/favicon.ico"
+    next_logo_url = (logo_url or "").strip() or (profile.logo_url or "/static/logo_hollywood.png")
+    next_pos_logo_url = (pos_logo_url or "").strip() or (profile.pos_logo_url or next_logo_url)
+    next_favicon_url = (favicon_url or "").strip() or (profile.favicon_url or "/static/favicon.ico")
+    try:
+        uploaded_logo_url = _save_company_asset(
+            logo_file,
+            asset_kind="logo",
+            allowed_exts={".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"},
+        )
+        uploaded_pos_logo_url = _save_company_asset(
+            pos_logo_file,
+            asset_kind="pos_logo",
+            allowed_exts={".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"},
+        )
+        uploaded_favicon_url = _save_company_asset(
+            favicon_file,
+            asset_kind="favicon",
+            allowed_exts={".ico", ".png", ".svg"},
+        )
+    except ValueError as exc:
+        return RedirectResponse(f"/data/empresa?error={quote_plus(str(exc))}", status_code=303)
+    if uploaded_logo_url:
+        next_logo_url = uploaded_logo_url
+    if uploaded_pos_logo_url:
+        next_pos_logo_url = uploaded_pos_logo_url
+    elif uploaded_logo_url and not (pos_logo_url or "").strip():
+        next_pos_logo_url = uploaded_logo_url
+    if uploaded_favicon_url:
+        next_favicon_url = uploaded_favicon_url
+    profile.logo_url = next_logo_url
+    profile.pos_logo_url = next_pos_logo_url
+    profile.favicon_url = next_favicon_url
     profile.inventory_cs_only = inventory_cs_only == "on"
+    profile.recipe_explosion_on_ingreso = recipe_explosion_on_ingreso == "on"
     profile.weighted_inventory_enabled = weighted_inventory_enabled == "on"
     profile.weighted_sales_enabled = weighted_sales_enabled == "on"
     profile.multi_branch_enabled = multi_branch_enabled == "on"
@@ -19132,8 +19800,7 @@ def sales_products_search(
         return JSONResponse({"ok": True, "items": []})
     like = f"%{query.lower()}%"
     productos = (
-        db.query(Producto)
-        .filter(Producto.activo.is_(True))
+        _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
         .filter(
             or_(
                 func.lower(Producto.cod_producto).like(like),
@@ -19194,6 +19861,7 @@ def sales_products_search(
                 "free_qty": free_qty,
                 "reserved_details": reserved_details.get(producto.id, []),
                 "combo_count": len(producto.combo_children or []),
+                "image_url": producto.image_url or "",
                 "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if getattr(producto, "unidad_medida_id", None) else None,
                 "unidad_medida_nombre": producto.unidad_medida.nombre if getattr(producto, "unidad_medida", None) else "",
@@ -20466,6 +21134,7 @@ def inventory_create_product(
     descripcion: str = Form(...),
     linea_id: Optional[str] = Form(None),
     segmento_id: Optional[str] = Form(None),
+    tipo_producto: Optional[str] = Form("DIRECTO"),
     marca: Optional[str] = Form(None),
     referencia_producto: Optional[str] = Form(None),
     es_por_peso: Optional[str] = Form(None),
@@ -20475,6 +21144,7 @@ def inventory_create_product(
     precio_venta3_usd: float = Form(0),
     costo_producto_usd: float = Form(0),
     existencia: float = Form(0),
+    image_file: Optional[UploadFile] = File(None),
     activo: Optional[str] = Form(None),
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -20507,6 +21177,9 @@ def inventory_create_product(
         return _error("Precio de venta obligatorio")
     if float(costo_producto_usd or 0) <= 0:
         return _error("Costo obligatorio")
+    tipo_producto_normalized = (tipo_producto or "DIRECTO").strip().upper()
+    if tipo_producto_normalized not in {"DIRECTO", "MATERIA_PRIMA", "RECETA"}:
+        tipo_producto_normalized = "DIRECTO"
 
     def _to_int(value: Optional[str]) -> Optional[int]:
         if not value:
@@ -20529,8 +21202,8 @@ def inventory_create_product(
     tasa = float(rate_today.rate)
     weighted_feature_enabled = _weighted_inventory_enabled_mode(db) or _weighted_sales_enabled_mode(db)
     is_weight_product = weighted_feature_enabled and es_por_peso == "on"
-    weight_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=is_weight_product)
-    if is_weight_product and not weight_unit:
+    selected_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=False) or _default_product_unit(db)
+    if not selected_unit:
         return _error("Unidad de medida invalida")
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
@@ -20548,6 +21221,10 @@ def inventory_create_product(
         precio_venta3_cs = precio_venta3_usd * tasa
         costo_producto_cs = costo_producto_usd * tasa
     active_flag = True if activo is None else activo == "on"
+    try:
+        image_url = _save_product_asset(image_file)
+    except ValueError as exc:
+        return _error(str(exc))
     producto = Producto(
         cod_producto=cod_producto,
         descripcion=descripcion,
@@ -20563,8 +21240,10 @@ def inventory_create_product(
         precio_venta3_usd=precio_venta3_usd,
         tasa_cambio=tasa,
         costo_producto=costo_producto_cs,
+        image_url=image_url,
+        tipo_producto=tipo_producto_normalized,
         es_por_peso=is_weight_product,
-        unidad_medida_id=weight_unit.id if is_weight_product and weight_unit else None,
+        unidad_medida_id=selected_unit.id if selected_unit else None,
         activo=active_flag,
 )
     db.add(producto)
@@ -20584,6 +21263,8 @@ def inventory_create_product(
                 "precio_venta1": float(producto.precio_venta1 or 0),
                 "costo_cs": float(producto.costo_producto or 0),
                 "activo": bool(producto.activo),
+                "image_url": producto.image_url or "",
+                "tipo_producto": producto.tipo_producto or "DIRECTO",
                 "es_por_peso": bool(producto.es_por_peso),
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
                 "unidad_medida_nombre": producto.unidad_medida.nombre if producto.unidad_medida else "",
@@ -20600,6 +21281,7 @@ def inventory_update_product(
     descripcion: str = Form(...),
     linea_id: Optional[str] = Form(None),
     segmento_id: Optional[str] = Form(None),
+    tipo_producto: Optional[str] = Form("DIRECTO"),
     es_por_peso: Optional[str] = Form(None),
     unidad_medida_id: Optional[str] = Form(None),
     precio_venta1_usd: float = Form(0),
@@ -20607,6 +21289,7 @@ def inventory_update_product(
     precio_venta3_usd: float = Form(0),
     costo_producto_usd: float = Form(0),
     existencia: Optional[float] = Form(None),
+    image_file: Optional[UploadFile] = File(None),
     activo: Optional[str] = Form(None),
     redirect_to: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -20619,10 +21302,19 @@ def inventory_update_product(
         or "application/json" in accept_header
         or request.headers.get("hx-request") == "true"
     )
+
+    def _error(message: str):
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": message}, status_code=400)
+        target = redirect_to or "/inventory"
+        return RedirectResponse(f"{target}?error={message.replace(' ', '+')}", status_code=303)
+
     descripcion = descripcion.strip()
     if not descripcion:
-        target = redirect_to or "/inventory"
-        return RedirectResponse(f"{target}?error=Faltan+datos+obligatorios", status_code=303)
+        return _error("Faltan datos obligatorios")
+    tipo_producto_normalized = (tipo_producto or "DIRECTO").strip().upper()
+    if tipo_producto_normalized not in {"DIRECTO", "MATERIA_PRIMA", "RECETA"}:
+        tipo_producto_normalized = "DIRECTO"
 
     def _to_int(value: Optional[str]) -> Optional[int]:
         if not value:
@@ -20631,8 +21323,7 @@ def inventory_update_product(
 
     producto = db.query(Producto).filter(Producto.id == product_id).first()
     if not producto:
-        target = redirect_to or "/inventory"
-        return RedirectResponse(f"{target}?error=Producto+no+encontrado", status_code=303)
+        return _error("Producto no encontrado")
 
     rate_today = (
         db.query(ExchangeRate)
@@ -20641,16 +21332,14 @@ def inventory_update_product(
         .first()
     )
     if not rate_today:
-        target = redirect_to or "/inventory"
-        return RedirectResponse(f"{target}?error=Tasa+de+cambio+no+configurada", status_code=303)
+        return _error("Tasa de cambio no configurada")
 
     tasa = float(rate_today.rate)
     weighted_feature_enabled = _weighted_inventory_enabled_mode(db) or _weighted_sales_enabled_mode(db)
     is_weight_product = weighted_feature_enabled and es_por_peso == "on"
-    weight_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=is_weight_product)
-    if is_weight_product and not weight_unit:
-        target = redirect_to or "/inventory"
-        return RedirectResponse(f"{target}?error=Unidad+de+medida+invalida", status_code=303)
+    selected_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=False) or producto.unidad_medida or _default_product_unit(db)
+    if not selected_unit:
+        return _error("Unidad de medida invalida")
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
         precio_venta1_cs = float(precio_venta1_usd or 0)
@@ -20677,8 +21366,15 @@ def inventory_update_product(
     producto.precio_venta3 = precio_venta3_cs
     producto.costo_producto = costo_producto_cs
     producto.tasa_cambio = tasa
+    producto.tipo_producto = tipo_producto_normalized
+    try:
+        uploaded_image_url = _save_product_asset(image_file)
+    except ValueError as exc:
+        return _error(str(exc))
+    if uploaded_image_url:
+        producto.image_url = uploaded_image_url
     producto.es_por_peso = is_weight_product
-    producto.unidad_medida_id = weight_unit.id if is_weight_product and weight_unit else None
+    producto.unidad_medida_id = selected_unit.id if selected_unit else None
     producto.activo = activo == "on"
 
     if existencia is not None:
@@ -20701,6 +21397,8 @@ def inventory_update_product(
                 "precio_venta3_usd": float(producto.precio_venta3_usd or 0),
                 "costo_usd": float(costo_producto_usd or 0),
                 "activo": bool(producto.activo),
+                "image_url": producto.image_url or "",
+                "tipo_producto": producto.tipo_producto or "DIRECTO",
                 "es_por_peso": bool(producto.es_por_peso),
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
                 "unidad_medida_nombre": producto.unidad_medida.nombre if producto.unidad_medida else "",
@@ -20735,10 +21433,131 @@ def inventory_product_json(
             "precio_venta3_usd": float(producto.precio_venta3_usd or 0),
             "costo_usd": costo_usd,
             "activo": bool(producto.activo),
+            "image_url": producto.image_url or "",
+            "tipo_producto": producto.tipo_producto or "DIRECTO",
             "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
             "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
         }
     )
+
+
+@router.get("/inventory/product/{product_id}/recipe")
+def inventory_product_recipe_json(
+    request: Request,
+    product_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.productos")
+    producto = db.query(Producto).filter(Producto.id == product_id).first()
+    if not producto:
+        return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
+    receta = producto.receta
+    items = []
+    for line in (receta.lineas if receta else []):
+        items.append(
+            {
+                "id": int(line.id),
+                "insumo_producto_id": int(line.insumo_producto_id),
+                "codigo": line.insumo.cod_producto if line.insumo else "",
+                "descripcion": line.insumo.descripcion if line.insumo else "",
+                "cantidad": float(line.cantidad or 0),
+                "unidad_medida_id": int(line.unidad_medida_id or 0) if line.unidad_medida_id else None,
+                "unidad_medida_nombre": line.unidad_medida.nombre if line.unidad_medida else (line.insumo.unidad_medida.nombre if line.insumo and line.insumo.unidad_medida else ""),
+                "unidad_medida_abreviatura": line.unidad_medida.abreviatura if line.unidad_medida else (line.insumo.unidad_medida.abreviatura if line.insumo and line.insumo.unidad_medida else ""),
+            }
+        )
+    return JSONResponse({"ok": True, "items": items})
+
+
+@router.post("/inventory/product/{product_id}/recipe")
+async def inventory_product_recipe_save(
+    request: Request,
+    product_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.productos")
+    producto = db.query(Producto).filter(Producto.id == product_id).first()
+    if not producto:
+        return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
+    form = await request.form()
+    insumo_ids = form.getlist("insumo_producto_id")
+    cantidades = form.getlist("cantidad")
+    unidad_ids = form.getlist("unidad_medida_id")
+
+    parsed_lines: list[dict[str, object]] = []
+    seen_ids: set[int] = set()
+    for index, raw_insumo_id in enumerate(insumo_ids):
+        insumo_id_txt = str(raw_insumo_id or "").strip()
+        if not insumo_id_txt.isdigit():
+            continue
+        insumo_id = int(insumo_id_txt)
+        if insumo_id == product_id:
+            return JSONResponse({"ok": False, "message": "El producto final no puede ser insumo de su propia receta"}, status_code=400)
+        if insumo_id in seen_ids:
+            return JSONResponse({"ok": False, "message": "No repitas el mismo insumo en la receta"}, status_code=400)
+        seen_ids.add(insumo_id)
+        qty_raw = str(cantidades[index] if index < len(cantidades) else "0").strip().replace(",", ".")
+        try:
+            qty = Decimal(qty_raw).quantize(Decimal("0.0001"))
+        except Exception:
+            qty = Decimal("0")
+        if qty <= 0:
+            continue
+        insumo = db.query(Producto).filter(Producto.id == insumo_id, Producto.activo.is_(True)).first()
+        if not insumo:
+            return JSONResponse({"ok": False, "message": "Uno de los insumos no existe o esta inactivo"}, status_code=400)
+        unidad_raw = str(unidad_ids[index] if index < len(unidad_ids) else "").strip()
+        unidad = None
+        if unidad_raw.isdigit():
+            unidad = db.query(UnidadMedida).filter(UnidadMedida.id == int(unidad_raw)).first()
+        if not unidad:
+            unidad = insumo.unidad_medida or _default_product_unit(db)
+        parsed_lines.append(
+            {
+                "insumo": insumo,
+                "cantidad": qty,
+                "unidad": unidad,
+            }
+        )
+
+    receta = producto.receta
+    if not parsed_lines:
+        if receta:
+            db.delete(receta)
+            db.commit()
+        return JSONResponse({"ok": True, "message": "Receta limpiada", "items": []})
+
+    if (producto.tipo_producto or "DIRECTO").upper() != "RECETA":
+        return JSONResponse({"ok": False, "message": "Solo los productos finales por receta pueden guardar recetas"}, status_code=400)
+
+    if not receta:
+        receta = ProductoReceta(
+            producto_final_id=producto.id,
+            nombre=f"Receta {producto.descripcion}",
+            activo=True,
+        )
+        db.add(receta)
+        db.flush()
+    else:
+        receta.nombre = f"Receta {producto.descripcion}"
+        receta.activo = True
+        for line in list(receta.lineas or []):
+            db.delete(line)
+        db.flush()
+
+    for row in parsed_lines:
+        db.add(
+            ProductoRecetaLinea(
+                receta_id=receta.id,
+                insumo_producto_id=int(row["insumo"].id),
+                unidad_medida_id=int(row["unidad"].id) if row["unidad"] else None,
+                cantidad=row["cantidad"],
+            )
+        )
+    db.commit()
+    return JSONResponse({"ok": True, "message": "Receta guardada correctamente"})
 
 
 @router.get("/inventory/product/{product_id}/combo")
@@ -21673,8 +22492,129 @@ async def inventory_create_ingreso(
     def to_decimal(value: Optional[float]) -> Decimal:
         return Decimal(str(value or 0))
 
+    def _build_recipe_requirements() -> tuple[dict[int, dict[str, object]], Optional[str]]:
+        if not _recipe_explosion_on_ingreso_mode(db):
+            return {}, None
+        requirements: dict[int, dict[str, object]] = {}
+        for index, product_id in enumerate(item_ids):
+            if not str(product_id or "").isdigit():
+                continue
+            qty = to_float(item_qtys[index] if index < len(item_qtys) else 0)
+            if qty <= 0:
+                continue
+            producto = db.query(Producto).filter(Producto.id == int(product_id)).first()
+            if not producto:
+                return {}, "Producto no encontrado en ingreso"
+            if (producto.tipo_producto or "DIRECTO").upper() != "RECETA":
+                continue
+            receta = producto.receta
+            if not receta or not (receta.lineas or []):
+                return {}, f"El producto {producto.cod_producto} requiere receta configurada antes de ingresar produccion"
+            qty_dec = to_decimal(qty)
+            for line in receta.lineas or []:
+                insumo = line.insumo
+                if not insumo:
+                    return {}, f"La receta de {producto.cod_producto} tiene un insumo invalido"
+                required = qty_dec * Decimal(str(line.cantidad or 0))
+                if required <= 0:
+                    continue
+                bucket = requirements.setdefault(
+                    int(insumo.id),
+                    {
+                        "producto": insumo,
+                        "cantidad": Decimal("0"),
+                        "unidad": line.unidad_medida or insumo.unidad_medida,
+                    },
+                )
+                bucket["cantidad"] = Decimal(str(bucket["cantidad"])) + required
+        return requirements, None
+
+    def _apply_recipe_explosion(
+        *,
+        ingreso_obj: IngresoInventario,
+        bodega_id_value: int,
+        fecha_ref: date,
+        requirements: dict[int, dict[str, object]],
+        tasa_value: float,
+    ) -> Optional[str]:
+        if not requirements:
+            return None
+        ingredient_ids = list(requirements.keys())
+        balances_req = _balances_by_bodega(db, [bodega_id_value], ingredient_ids) if ingredient_ids else {}
+        for ingredient_id, payload in requirements.items():
+            available = Decimal(str(balances_req.get((ingredient_id, bodega_id_value), Decimal("0")) or 0))
+            required_qty = Decimal(str(payload["cantidad"] or 0))
+            if available < required_qty:
+                producto_req = payload["producto"]
+                unidad_req = payload.get("unidad")
+                unit_label = unidad_req.abreviatura if unidad_req else (producto_req.unidad_medida.abreviatura if producto_req.unidad_medida else "und")
+                return (
+                    f"Materia prima insuficiente para {producto_req.cod_producto}. "
+                    f"Disponible {available.quantize(Decimal('0.01'))} {unit_label}, "
+                    f"requerido {required_qty.quantize(Decimal('0.01'))} {unit_label}."
+                )
+
+        egreso_tipo = (
+            db.query(EgresoTipo)
+            .filter(func.lower(EgresoTipo.nombre) == "produccion por receta")
+            .first()
+        )
+        if not egreso_tipo:
+            egreso_tipo = EgresoTipo(nombre="Produccion por receta")
+            db.add(egreso_tipo)
+            db.flush()
+
+        egreso = EgresoInventario(
+            tipo_id=egreso_tipo.id,
+            bodega_id=bodega_id_value,
+            bodega_destino_id=None,
+            fecha=fecha_ref,
+            moneda="CS",
+            tasa_cambio=None,
+            total_usd=0,
+            total_cs=0,
+            observacion=f"Explosion automatica de receta por ingreso #{ingreso_obj.id}"[:300],
+            usuario_registro=user.full_name,
+        )
+        db.add(egreso)
+        db.flush()
+
+        egreso_total_cs = Decimal("0")
+        egreso_total_usd = Decimal("0")
+        for ingredient_id, payload in requirements.items():
+            producto_req = payload["producto"]
+            required_qty = Decimal(str(payload["cantidad"] or 0)).quantize(Decimal("0.0001"))
+            cost_cs = Decimal(str(producto_req.costo_producto or 0)).quantize(Decimal("0.01"))
+            cost_usd = (cost_cs / Decimal(str(tasa_value))).quantize(Decimal("0.01")) if tasa_value else Decimal("0")
+            subtotal_cs = (cost_cs * required_qty).quantize(Decimal("0.01"))
+            subtotal_usd = (cost_usd * required_qty).quantize(Decimal("0.01"))
+            db.add(
+                EgresoItem(
+                    egreso_id=egreso.id,
+                    producto_id=ingredient_id,
+                    cantidad=float(required_qty),
+                    costo_unitario_usd=float(cost_usd),
+                    costo_unitario_cs=float(cost_cs),
+                    subtotal_usd=float(subtotal_usd),
+                    subtotal_cs=float(subtotal_cs),
+                )
+            )
+            if producto_req.saldo:
+                producto_req.saldo.existencia = Decimal(str(producto_req.saldo.existencia or 0)) - required_qty
+            else:
+                producto_req.saldo = SaldoProducto(producto_id=producto_req.id, existencia=Decimal("0") - required_qty)
+                db.add(producto_req.saldo)
+            egreso_total_cs += subtotal_cs
+            egreso_total_usd += subtotal_usd
+        egreso.total_cs = float(egreso_total_cs)
+        egreso.total_usd = float(egreso_total_usd)
+        return None
+
     tasa = float(rate_today.rate) if rate_today else 0
     fecha_value = date.fromisoformat(str(fecha).split("T")[0])
+    recipe_requirements, recipe_error = _build_recipe_requirements()
+    if recipe_error:
+        return RedirectResponse(f"/inventory/ingresos?error={quote_plus(recipe_error)}", status_code=303)
     ingreso = IngresoInventario(
         tipo_id=int(tipo_id),
         bodega_id=int(bodega_id),
@@ -21750,6 +22690,17 @@ async def inventory_create_ingreso(
                 producto.precio_venta1 = precio_cs
                 if precio_usd > 0:
                     producto.precio_venta1_usd = precio_usd
+
+    recipe_apply_error = _apply_recipe_explosion(
+        ingreso_obj=ingreso,
+        bodega_id_value=int(bodega_id),
+        fecha_ref=fecha_value,
+        requirements=recipe_requirements,
+        tasa_value=tasa,
+    )
+    if recipe_apply_error:
+        db.rollback()
+        return RedirectResponse(f"/inventory/ingresos?error={quote_plus(recipe_apply_error)}", status_code=303)
 
     ingreso.total_usd = total_usd
     ingreso.total_cs = total_cs
@@ -22165,6 +23116,702 @@ def sales_update_vendedor(
     return JSONResponse({"ok": True, "id": vendedor.id, "nombre": vendedor.nombre})
 
 
+@router.post("/sales/restaurante/orders")
+async def restaurant_order_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    return RedirectResponse(
+        "/sales?error=La+orden+no+puede+abrirse+vacia.+Agrega+el+primer+producto+para+registrarla",
+        status_code=303,
+    )
+
+
+@router.post("/sales/restaurante/orders/{order_id}/items")
+async def restaurant_order_add_item(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    accept_header = request.headers.get("accept", "")
+    is_fetch = (
+        request.headers.get("x-requested-with") == "fetch"
+        or "application/json" in accept_header
+        or request.headers.get("hx-request") == "true"
+    )
+    form = await request.form()
+    producto_id_raw = str(form.get("producto_id") or "").strip()
+    qty_raw = str(form.get("cantidad") or "1").strip()
+    nota = str(form.get("nota") or "").strip() or None
+
+    def _payload(order_obj: RestaurantOrder) -> dict:
+        items = []
+        for line in order_obj.items or []:
+            producto = line.producto
+            items.append(
+                {
+                    "id": int(line.id),
+                    "descripcion": producto.descripcion if producto else f"Producto {line.producto_id}",
+                    "codigo": producto.cod_producto if producto else str(line.producto_id),
+                    "cantidad": float(line.cantidad or 0),
+                    "precio_cs": float(line.precio_unitario_cs or 0),
+                    "subtotal_cs": float(line.subtotal_cs or 0),
+                }
+            )
+        return {
+            "ok": True,
+            "order": {
+                "id": int(order_obj.id),
+                "numero": order_obj.numero or "",
+                "service_type": order_obj.service_type or "",
+                "mesa_nombre": order_obj.mesa_nombre or "",
+                "cliente": order_obj.cliente.nombre if order_obj.cliente else "Consumidor final",
+                "cliente_id": int(order_obj.cliente_id) if order_obj.cliente_id else None,
+                "vendedor_id": int(order_obj.vendedor_id) if order_obj.vendedor_id else None,
+                "moneda": order_obj.moneda or "CS",
+                "total_cs": float(order_obj.total_cs or 0),
+                "total_usd": float(order_obj.total_usd or 0),
+                "total_items": float(order_obj.total_items or 0),
+                "items": items,
+            },
+        }
+
+    if not producto_id_raw.isdigit():
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Selecciona producto"}, status_code=400)
+        return RedirectResponse(f"/sales?restaurant_order_id={order_id}&error=Selecciona+producto", status_code=303)
+    try:
+        qty = Decimal(qty_raw).quantize(Decimal("0.01"))
+    except Exception:
+        qty = Decimal("0")
+    if qty <= 0:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Cantidad invalida"}, status_code=400)
+        return RedirectResponse(f"/sales?restaurant_order_id={order_id}&error=Cantidad+invalida", status_code=303)
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id, RestaurantOrder.estado == "ABIERTA").first()
+    if not order:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Orden no disponible"}, status_code=404)
+        return RedirectResponse("/sales?error=Orden+no+disponible", status_code=303)
+    producto = db.query(Producto).filter(Producto.id == int(producto_id_raw), Producto.activo.is_(True)).first()
+    if not producto:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
+        return RedirectResponse(f"/sales?restaurant_order_id={order_id}&error=Producto+no+encontrado", status_code=303)
+    if not _is_sellable_product(producto):
+        msg = "Este producto esta configurado como insumo y no puede venderse directamente"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": msg}, status_code=400)
+        return RedirectResponse(f"/sales?restaurant_order_id={order_id}&error={quote_plus(msg)}", status_code=303)
+    balance = _balances_by_bodega(db, [order.bodega_id], [producto.id]).get(
+        (producto.id, order.bodega_id),
+        Decimal("0"),
+    )
+    reserved_other = _restaurant_open_reserved_qty(
+        db,
+        bodega_id=order.bodega_id,
+        producto_id=producto.id,
+        exclude_order_id=order.id,
+    )
+    current_order_qty = sum(
+        (Decimal(str(line.cantidad or 0)) for line in (order.items or []) if int(line.producto_id) == int(producto.id)),
+        Decimal("0"),
+    )
+    available = Decimal(str(balance or 0)) - reserved_other - current_order_qty
+    if not bool(getattr(producto, "servicio_producto", False)) and available < qty:
+        msg = f"Saldo insuficiente para {producto.cod_producto}. Disponible {available.quantize(Decimal('0.01'))}."
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": msg}, status_code=400)
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&{urlencode({'error': msg})}", status_code=303)
+    price_cs = Decimal(str(producto.precio_venta1 or 0)).quantize(Decimal("0.01"))
+    price_usd = Decimal(str(producto.precio_venta1_usd or 0)).quantize(Decimal("0.01"))
+    if price_usd <= 0:
+        rate_today = (
+            db.query(ExchangeRate)
+            .filter(ExchangeRate.effective_date <= local_today())
+            .order_by(ExchangeRate.effective_date.desc())
+            .first()
+        )
+        tasa = Decimal(str(rate_today.rate if rate_today else 0))
+        price_usd = (price_cs / tasa).quantize(Decimal("0.01")) if tasa > 0 else Decimal("0")
+    existing_line = next(
+        (
+            line
+            for line in (order.items or [])
+            if int(line.producto_id) == int(producto.id) and (line.nota or None) == nota
+        ),
+        None,
+    )
+    if existing_line:
+        new_qty = (Decimal(str(existing_line.cantidad or 0)) + qty).quantize(Decimal("0.01"))
+        existing_line.cantidad = new_qty
+        existing_line.precio_unitario_cs = price_cs
+        existing_line.precio_unitario_usd = price_usd
+        existing_line.subtotal_cs = (price_cs * new_qty).quantize(Decimal("0.01"))
+        existing_line.subtotal_usd = (price_usd * new_qty).quantize(Decimal("0.01"))
+        existing_line.nota = nota
+    else:
+        db.add(
+            RestaurantOrderItem(
+                order_id=order.id,
+                producto_id=producto.id,
+                cantidad=qty,
+                precio_unitario_cs=price_cs,
+                precio_unitario_usd=price_usd,
+                subtotal_cs=(price_cs * qty).quantize(Decimal("0.01")),
+                subtotal_usd=(price_usd * qty).quantize(Decimal("0.01")),
+                nota=nota,
+            )
+        )
+    db.flush()
+    _recalc_restaurant_order(order)
+    db.commit()
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order.id).first()
+    if is_fetch:
+        return JSONResponse(_payload(order))
+    return RedirectResponse(f"/sales?success=Item+agregado&restaurant_order_id={order.id}", status_code=303)
+
+
+@router.post("/sales/restaurante/orders/with-item")
+async def restaurant_order_create_with_item(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    accept_header = request.headers.get("accept", "")
+    is_fetch = (
+        request.headers.get("x-requested-with") == "fetch"
+        or "application/json" in accept_header
+        or request.headers.get("hx-request") == "true"
+    )
+    form = await request.form()
+    service_type = str(form.get("service_type") or "MESA").strip().upper()
+    if service_type not in {"MESA", "BARRA", "LLEVAR", "DELIVERY"}:
+        service_type = "MESA"
+    table_id_raw = str(form.get("table_id") or "").strip()
+    mesa_nombre = str(form.get("mesa_nombre") or "").strip()
+    cliente_id = str(form.get("cliente_id") or "").strip()
+    vendedor_id = str(form.get("vendedor_id") or "").strip()
+    observacion = str(form.get("observacion") or "").strip() or None
+    moneda = str(form.get("moneda") or "CS").strip().upper()
+    producto_id_raw = str(form.get("producto_id") or "").strip()
+    qty_raw = str(form.get("cantidad") or "1").strip()
+    nota = str(form.get("nota") or "").strip() or None
+    if moneda not in {"CS", "USD"}:
+        moneda = "CS"
+    if not producto_id_raw.isdigit():
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Selecciona producto"}, status_code=400)
+        return RedirectResponse("/sales?error=Selecciona+producto", status_code=303)
+    try:
+        qty = Decimal(qty_raw).quantize(Decimal("0.01"))
+    except Exception:
+        qty = Decimal("0")
+    if qty <= 0:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Cantidad invalida"}, status_code=400)
+        return RedirectResponse("/sales?error=Cantidad+invalida", status_code=303)
+
+    def _payload(order_obj: RestaurantOrder) -> dict:
+        items = []
+        for line in order_obj.items or []:
+            producto = line.producto
+            items.append(
+                {
+                    "id": int(line.id),
+                    "descripcion": producto.descripcion if producto else f"Producto {line.producto_id}",
+                    "codigo": producto.cod_producto if producto else str(line.producto_id),
+                    "cantidad": float(line.cantidad or 0),
+                    "precio_cs": float(line.precio_unitario_cs or 0),
+                    "subtotal_cs": float(line.subtotal_cs or 0),
+                }
+            )
+        return {
+            "ok": True,
+            "order": {
+                "id": int(order_obj.id),
+                "numero": order_obj.numero or "",
+                "service_type": order_obj.service_type or "",
+                "mesa_nombre": order_obj.mesa_nombre or "",
+                "cliente": order_obj.cliente.nombre if order_obj.cliente else "Consumidor final",
+                "cliente_id": int(order_obj.cliente_id) if order_obj.cliente_id else None,
+                "vendedor_id": int(order_obj.vendedor_id) if order_obj.vendedor_id else None,
+                "moneda": order_obj.moneda or "CS",
+                "total_cs": float(order_obj.total_cs or 0),
+                "total_usd": float(order_obj.total_usd or 0),
+                "total_items": float(order_obj.total_items or 0),
+                "items": items,
+            },
+        }
+
+    table = None
+    created_new_order = False
+    if service_type == "MESA" and table_id_raw.isdigit():
+        table = db.query(RestaurantTable).filter(RestaurantTable.id == int(table_id_raw), RestaurantTable.active.is_(True)).first()
+    if service_type == "MESA" and not table:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Debes seleccionar una mesa para abrir la orden"}, status_code=400)
+        return RedirectResponse("/sales?error=Debes+seleccionar+una+mesa+para+abrir+la+orden", status_code=303)
+    if service_type == "BARRA":
+        mesa_nombre = "Barra"
+    elif service_type == "LLEVAR":
+        mesa_nombre = "Para llevar"
+    elif service_type == "DELIVERY":
+        mesa_nombre = "Delivery"
+    elif table:
+        mesa_nombre = table.name
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Usuario sin sucursal bodega"}, status_code=400)
+        return RedirectResponse("/sales?error=Usuario+sin+sucursal+bodega", status_code=303)
+    if table and (int(table.branch_id) != int(branch.id) or int(table.bodega_id) != int(bodega.id)):
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Mesa fuera de tu sucursal"}, status_code=400)
+        return RedirectResponse("/sales?error=Mesa+fuera+de+tu+sucursal", status_code=303)
+    if table:
+        existing_open = (
+            db.query(RestaurantOrder)
+            .filter(RestaurantOrder.table_id == table.id, RestaurantOrder.estado == "ABIERTA")
+            .order_by(RestaurantOrder.id.desc())
+            .first()
+        )
+        if existing_open:
+            order = existing_open
+        else:
+            if not vendedor_id:
+                default_vendedor_id = _default_vendedor_id(db, bodega)
+                vendedor_id = str(default_vendedor_id or "")
+            order = RestaurantOrder(
+                numero=_next_restaurant_order_number(db, branch),
+                branch_id=branch.id,
+                bodega_id=bodega.id,
+                table_id=table.id if table else None,
+                cliente_id=int(cliente_id) if cliente_id.isdigit() else _get_or_create_consumidor_final(db).id,
+                vendedor_id=int(vendedor_id) if vendedor_id.isdigit() else None,
+                service_type=service_type,
+                mesa_nombre=mesa_nombre,
+                estado="ABIERTA",
+                moneda=moneda,
+                observacion=observacion,
+                usuario_registro=user.full_name,
+                opened_at=local_now_naive(),
+                created_at=local_now_naive(),
+            )
+            db.add(order)
+            db.flush()
+            created_new_order = True
+    else:
+        if not vendedor_id:
+            default_vendedor_id = _default_vendedor_id(db, bodega)
+            vendedor_id = str(default_vendedor_id or "")
+        order = RestaurantOrder(
+            numero=_next_restaurant_order_number(db, branch),
+            branch_id=branch.id,
+            bodega_id=bodega.id,
+            table_id=None,
+            cliente_id=int(cliente_id) if cliente_id.isdigit() else _get_or_create_consumidor_final(db).id,
+            vendedor_id=int(vendedor_id) if vendedor_id.isdigit() else None,
+            service_type=service_type,
+            mesa_nombre=mesa_nombre,
+            estado="ABIERTA",
+            moneda=moneda,
+            observacion=observacion,
+            usuario_registro=user.full_name,
+            opened_at=local_now_naive(),
+            created_at=local_now_naive(),
+        )
+        db.add(order)
+        db.flush()
+        created_new_order = True
+    producto = db.query(Producto).filter(Producto.id == int(producto_id_raw), Producto.activo.is_(True)).first()
+    if not producto:
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
+        return RedirectResponse("/sales?error=Producto+no+encontrado", status_code=303)
+    if not _is_sellable_product(producto):
+        msg = "Este producto esta configurado como insumo y no puede venderse directamente"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": msg}, status_code=400)
+        return RedirectResponse(f"/sales?error={quote_plus(msg)}", status_code=303)
+    balance = _balances_by_bodega(db, [order.bodega_id], [producto.id]).get((producto.id, order.bodega_id), Decimal("0"))
+    reserved_other = _restaurant_open_reserved_qty(db, bodega_id=order.bodega_id, producto_id=producto.id, exclude_order_id=order.id)
+    current_order_qty = sum((Decimal(str(line.cantidad or 0)) for line in (order.items or []) if int(line.producto_id) == int(producto.id)), Decimal("0"))
+    available = Decimal(str(balance or 0)) - reserved_other - current_order_qty
+    if not bool(getattr(producto, "servicio_producto", False)) and available < qty:
+        msg = f"Saldo insuficiente para {producto.cod_producto}. Disponible {available.quantize(Decimal('0.01'))}."
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": msg}, status_code=400)
+        return RedirectResponse(f"/sales?{urlencode({'error': msg})}", status_code=303)
+    price_cs = Decimal(str(producto.precio_venta1 or 0)).quantize(Decimal("0.01"))
+    price_usd = Decimal(str(producto.precio_venta1_usd or 0)).quantize(Decimal("0.01"))
+    if price_usd <= 0:
+        rate_today = (
+            db.query(ExchangeRate)
+            .filter(ExchangeRate.effective_date <= local_today())
+            .order_by(ExchangeRate.effective_date.desc())
+            .first()
+        )
+        tasa = Decimal(str(rate_today.rate if rate_today else 0))
+        price_usd = (price_cs / tasa).quantize(Decimal("0.01")) if tasa > 0 else Decimal("0")
+    existing_line = next(
+        (
+            line
+            for line in (order.items or [])
+            if int(line.producto_id) == int(producto.id) and (line.nota or None) == nota
+        ),
+        None,
+    )
+    if existing_line:
+        new_qty = (Decimal(str(existing_line.cantidad or 0)) + qty).quantize(Decimal("0.01"))
+        existing_line.cantidad = new_qty
+        existing_line.precio_unitario_cs = price_cs
+        existing_line.precio_unitario_usd = price_usd
+        existing_line.subtotal_cs = (price_cs * new_qty).quantize(Decimal("0.01"))
+        existing_line.subtotal_usd = (price_usd * new_qty).quantize(Decimal("0.01"))
+        existing_line.nota = nota
+    else:
+        db.add(
+            RestaurantOrderItem(
+                order_id=order.id,
+                producto_id=producto.id,
+                cantidad=qty,
+                precio_unitario_cs=price_cs,
+                precio_unitario_usd=price_usd,
+                subtotal_cs=(price_cs * qty).quantize(Decimal("0.01")),
+                subtotal_usd=(price_usd * qty).quantize(Decimal("0.01")),
+                nota=nota,
+            )
+        )
+    db.flush()
+    _recalc_restaurant_order(order)
+    db.commit()
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order.id).first()
+    if created_new_order and (service_type == "MESA"):
+        try:
+            _send_restaurant_order_sms_alert(
+                request=request,
+                user=user,
+                order=order,
+                branch=branch,
+                bodega=bodega,
+            )
+        except Exception:
+            pass
+    if is_fetch:
+        return JSONResponse(_payload(order))
+    return RedirectResponse(f"/sales?success=Orden+abierta+y+producto+agregado&restaurant_order_id={order.id}", status_code=303)
+
+
+@router.post("/sales/restaurante/items/{item_id}/delete")
+async def restaurant_order_delete_item(
+    item_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    accept_header = request.headers.get("accept", "")
+    is_fetch = (
+        request.headers.get("x-requested-with") == "fetch"
+        or "application/json" in accept_header
+        or request.headers.get("hx-request") == "true"
+    )
+    item = db.query(RestaurantOrderItem).filter(RestaurantOrderItem.id == item_id).first()
+    if not item or not item.order or item.order.estado != "ABIERTA":
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": "Item no disponible"}, status_code=404)
+        return RedirectResponse("/sales?error=Item+no+disponible", status_code=303)
+    order = item.order
+    db.delete(item)
+    db.flush()
+    remaining_items = list(order.items or [])
+    if not remaining_items:
+        order.estado = "ANULADA"
+        order.closed_at = local_now_naive()
+        db.commit()
+        if is_fetch:
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "order_deleted": True,
+                    "message": "Mesa liberada automaticamente al quedar sin productos"
+                    if (order.service_type or "").upper() == "MESA"
+                    else "La orden quedo sin productos y fue eliminada",
+                    "redirect_url": "/sales?success=Mesa+liberada"
+                    if (order.service_type or "").upper() == "MESA"
+                    else "/sales?success=Orden+eliminada+por+quedar+sin+productos",
+                    "order_id": int(order.id),
+                    "table_id": int(order.table_id) if order.table_id else None,
+                    "table_name": order.mesa_nombre or "",
+                    "service_type": order.service_type or "",
+                }
+            )
+        return RedirectResponse("/sales?success=Orden+eliminada+por+quedar+sin+productos", status_code=303)
+    _recalc_restaurant_order(order)
+    db.commit()
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order.id).first()
+    if is_fetch:
+        items = []
+        for line in order.items or []:
+            producto = line.producto
+            items.append(
+                {
+                    "id": int(line.id),
+                    "descripcion": producto.descripcion if producto else f"Producto {line.producto_id}",
+                    "codigo": producto.cod_producto if producto else str(line.producto_id),
+                    "cantidad": float(line.cantidad or 0),
+                    "precio_cs": float(line.precio_unitario_cs or 0),
+                    "subtotal_cs": float(line.subtotal_cs or 0),
+                }
+            )
+        return JSONResponse(
+            {
+                "ok": True,
+                "order": {
+                    "id": int(order.id),
+                    "numero": order.numero or "",
+                    "service_type": order.service_type or "",
+                    "mesa_nombre": order.mesa_nombre or "",
+                    "cliente": order.cliente.nombre if order.cliente else "Consumidor final",
+                    "cliente_id": int(order.cliente_id) if order.cliente_id else None,
+                    "vendedor_id": int(order.vendedor_id) if order.vendedor_id else None,
+                    "moneda": order.moneda or "CS",
+                    "total_cs": float(order.total_cs or 0),
+                    "total_usd": float(order.total_usd or 0),
+                    "total_items": float(order.total_items or 0),
+                    "items": items,
+                },
+            }
+        )
+    return RedirectResponse(f"/sales?success=Item+retirado&restaurant_order_id={order.id}", status_code=303)
+
+
+@router.post("/sales/restaurante/orders/{order_id}/cancel")
+async def restaurant_order_cancel(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id, RestaurantOrder.estado == "ABIERTA").first()
+    if not order:
+        return RedirectResponse("/sales?error=Orden+no+disponible", status_code=303)
+    order.estado = "ANULADA"
+    order.closed_at = local_now_naive()
+    db.commit()
+    return RedirectResponse("/sales?success=Orden+anulada", status_code=303)
+
+
+@router.post("/sales/restaurante/orders/{order_id}/facturar")
+async def restaurant_order_invoice(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    form = await request.form()
+    forma_pago_id = str(form.get("forma_pago_id") or "").strip()
+    banco_id = str(form.get("banco_id") or "").strip()
+    cuenta_id = str(form.get("cuenta_id") or "").strip()
+    pago_monto = str(form.get("pago_monto") or "").strip()
+    pago_forma_ids = form.getlist("pago_forma_id")
+    pago_monedas = form.getlist("pago_moneda")
+    pago_montos = form.getlist("pago_monto")
+    pago_banco_ids = form.getlist("pago_banco_id")
+    pago_cuenta_ids = form.getlist("pago_cuenta_id")
+    cliente_id_raw = str(form.get("cliente_id") or "").strip()
+    vendedor_id_raw = str(form.get("vendedor_id") or "").strip()
+    moneda = str(form.get("moneda") or "CS").strip().upper()
+    if moneda not in {"CS", "USD"}:
+        moneda = "CS"
+
+    def to_float(value: Optional[str]) -> float:
+        if not value:
+            return 0.0
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id, RestaurantOrder.estado == "ABIERTA").first()
+    if not order:
+        return RedirectResponse("/sales?error=Orden+no+disponible", status_code=303)
+    if not order.items:
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&error=La+orden+no+tiene+items", status_code=303)
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega or int(order.bodega_id or 0) != int(bodega.id):
+        return RedirectResponse("/sales?error=Orden+fuera+de+tu+bodega", status_code=303)
+    if not forma_pago_id.isdigit():
+        forma_pago = db.query(FormaPago).order_by(FormaPago.id.asc()).first()
+        forma_pago_id = str(forma_pago.id) if forma_pago else ""
+    if not forma_pago_id:
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&error=Configura+forma+de+pago", status_code=303)
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    tasa = Decimal(str(rate_today.rate if rate_today else 0))
+    if moneda == "USD" and tasa <= 0:
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&error=Tasa+de+cambio+no+configurada", status_code=303)
+    product_ids = [int(item.producto_id) for item in order.items]
+    balances = _balances_by_bodega(db, [bodega.id], product_ids) if product_ids else {}
+    for item in order.items:
+        existencia = Decimal(str(balances.get((item.producto_id, bodega.id), Decimal("0")) or 0))
+        qty = Decimal(str(item.cantidad or 0))
+        if not bool(getattr(item.producto, "servicio_producto", False)) and existencia < qty:
+            code = item.producto.cod_producto if item.producto else str(item.producto_id)
+            return RedirectResponse(
+                f"/sales?restaurant_order_id={order.id}&error=Saldo+insuficiente+para+{quote_plus(code)}",
+                status_code=303,
+            )
+        balances[(item.producto_id, bodega.id)] = existencia - qty
+    last_factura = (
+        db.query(VentaFactura)
+        .filter(VentaFactura.bodega_id == bodega.id)
+        .order_by(VentaFactura.secuencia.desc())
+        .first()
+    )
+    next_seq = (last_factura.secuencia if last_factura else 0) + 1
+    prefix = _branch_sales_series_letter(branch.code)
+    numero = f"{prefix}-{next_seq:06d}"
+    cliente_id = int(cliente_id_raw) if cliente_id_raw.isdigit() else (order.cliente_id or _get_or_create_consumidor_final(db).id)
+    vendedor_id = int(vendedor_id_raw) if vendedor_id_raw.isdigit() else order.vendedor_id
+    factura = VentaFactura(
+        secuencia=next_seq,
+        numero=numero,
+        bodega_id=bodega.id,
+        cliente_id=cliente_id,
+        vendedor_id=vendedor_id,
+        fecha=local_now_naive(),
+        moneda=moneda,
+        condicion_venta="CONTADO",
+        tasa_cambio=tasa if moneda == "USD" else None,
+        usuario_registro=user.full_name,
+        estado_cobranza="PAGADA",
+        created_at=local_now_naive(),
+    )
+    db.add(factura)
+    db.flush()
+    total_usd = Decimal("0")
+    total_cs = Decimal("0")
+    total_items = Decimal("0")
+    for order_item in order.items:
+        qty = Decimal(str(order_item.cantidad or 0))
+        price_cs = Decimal(str(order_item.precio_unitario_cs or 0))
+        price_usd = Decimal(str(order_item.precio_unitario_usd or 0))
+        if price_usd <= 0 and tasa > 0:
+            price_usd = (price_cs / tasa).quantize(Decimal("0.01"))
+        subtotal_cs = (price_cs * qty).quantize(Decimal("0.01"))
+        subtotal_usd = (price_usd * qty).quantize(Decimal("0.01"))
+        db.add(
+            VentaItem(
+                factura_id=factura.id,
+                producto_id=order_item.producto_id,
+                cantidad=qty,
+                precio_unitario_usd=price_usd,
+                precio_unitario_cs=price_cs,
+                subtotal_usd=subtotal_usd,
+                subtotal_cs=subtotal_cs,
+            )
+        )
+        total_usd += subtotal_usd
+        total_cs += subtotal_cs
+        total_items += qty
+    factura.total_usd = total_usd.quantize(Decimal("0.01"))
+    factura.total_cs = total_cs.quantize(Decimal("0.01"))
+    factura.total_items = total_items.quantize(Decimal("0.01"))
+
+    pagos: list[VentaPago] = []
+    if pago_forma_ids:
+        for index, forma_id_raw in enumerate(pago_forma_ids):
+            forma_id_clean = str(forma_id_raw or "").strip()
+            if not forma_id_clean.isdigit():
+                continue
+            moneda_pago = str(pago_monedas[index] if index < len(pago_monedas) else moneda).strip().upper()
+            if moneda_pago not in {"CS", "USD"}:
+                moneda_pago = moneda
+            monto_pago = to_float(pago_montos[index] if index < len(pago_montos) else 0)
+            banco_pago = str(pago_banco_ids[index] if index < len(pago_banco_ids) else "").strip()
+            cuenta_pago = str(pago_cuenta_ids[index] if index < len(pago_cuenta_ids) else "").strip()
+            if monto_pago <= 0:
+                continue
+            if moneda_pago != moneda and tasa <= 0:
+                db.rollback()
+                return RedirectResponse(f"/sales?restaurant_order_id={order.id}&error=Tasa+de+cambio+no+configurada", status_code=303)
+            pago_usd = monto_pago if moneda_pago == "USD" else (monto_pago / float(tasa) if tasa else 0)
+            pago_cs = monto_pago if moneda_pago == "CS" else monto_pago * float(tasa)
+            pagos.append(
+                VentaPago(
+                    factura_id=factura.id,
+                    forma_pago_id=int(forma_id_clean),
+                    banco_id=int(banco_pago) if banco_pago.isdigit() else None,
+                    cuenta_id=int(cuenta_pago) if cuenta_pago.isdigit() else None,
+                    monto_usd=Decimal(str(pago_usd)).quantize(Decimal("0.01")),
+                    monto_cs=Decimal(str(pago_cs)).quantize(Decimal("0.01")),
+                )
+            )
+    elif forma_pago_id:
+        monto_pago = to_float(pago_monto) if pago_monto else (float(factura.total_usd) if moneda == "USD" else float(factura.total_cs))
+        pago_usd = monto_pago if moneda == "USD" else (monto_pago / float(tasa) if tasa else 0)
+        pago_cs = monto_pago if moneda == "CS" else monto_pago * float(tasa)
+        pagos.append(
+            VentaPago(
+                factura_id=factura.id,
+                forma_pago_id=int(forma_pago_id),
+                banco_id=int(banco_id) if banco_id.isdigit() else None,
+                cuenta_id=int(cuenta_id) if cuenta_id.isdigit() else None,
+                monto_usd=Decimal(str(pago_usd)).quantize(Decimal("0.01")),
+                monto_cs=Decimal(str(pago_cs)).quantize(Decimal("0.01")),
+            )
+        )
+
+    if not pagos:
+        db.rollback()
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&error=Agrega+pagos+para+registrar", status_code=303)
+
+    for pago in pagos:
+        db.add(pago)
+
+    order.estado = "FACTURADA"
+    order.factura_id = factura.id
+    order.closed_at = local_now_naive()
+    order.cliente_id = cliente_id
+    order.vendedor_id = vendedor_id
+    order.moneda = moneda
+    _recalc_restaurant_order(order)
+    auto_amount = Decimal(str(factura.total_usd if moneda == "USD" else factura.total_cs))
+    auto_entry = _build_auto_accounting_entry(
+        db,
+        event_code="SALE",
+        branch_id=bodega.branch_id if bodega else None,
+        entry_date=local_today(),
+        amount=auto_amount,
+        reference=f"AUTO-VTA-{factura.id}",
+        description=f"Asiento automatico por venta {factura.numero}",
+    )
+    if auto_entry:
+        db.add(auto_entry)
+    db.commit()
+    pos_print = db.query(PosPrintSetting).filter(PosPrintSetting.branch_id == branch.id).first()
+    if pos_print and pos_print.auto_print:
+        try:
+            company_profile = _company_profile_payload(db)
+            _print_pos_ticket(factura, pos_print.printer_name, max(int(pos_print.copies or 0), 1), company_profile, pos_print.sumatra_path)
+        except Exception:
+            pass
+    return RedirectResponse(f"/sales?success=Cuenta+facturada&print_id={factura.id}", status_code=303)
+
+
 @router.post("/sales")
 async def sales_create_invoice(
     request: Request,
@@ -22354,6 +24001,12 @@ async def sales_create_invoice(
         if not producto:
             db.rollback()
             return RedirectResponse("/sales?error=Producto+no+encontrado", status_code=303)
+        if not _is_sellable_product(producto):
+            db.rollback()
+            return RedirectResponse(
+                f"/sales?error={quote_plus(f'El producto {producto.cod_producto} esta configurado como insumo y no puede facturarse')}",
+                status_code=303,
+            )
         if weighted_sales_enabled and bool(getattr(producto, "es_por_peso", False)) and qty <= 0:
             db.rollback()
             return RedirectResponse("/sales?error=Debes+definir+el+peso+a+facturar", status_code=303)

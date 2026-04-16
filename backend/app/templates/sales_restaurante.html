@@ -1,0 +1,3147 @@
+{% extends "base.html" %}
+{% block content %}
+{% set selected_id_raw = request.query_params.get('restaurant_order_id') or '' %}
+{% set draft_mode = request.query_params.get('draft_mode') == '1' %}
+{% set draft_service_type = (request.query_params.get('draft_service_type') or 'MESA')|upper %}
+{% set draft_table_id = request.query_params.get('draft_table_id') or '' %}
+{% set draft_cliente_id = request.query_params.get('draft_cliente_id') or '' %}
+{% set draft_vendedor_id = request.query_params.get('draft_vendedor_id') or '' %}
+{% set draft_moneda = (request.query_params.get('draft_moneda') or 'CS')|upper %}
+{% set draft_mesa_nombre = request.query_params.get('draft_mesa_nombre') or '' %}
+{% set draft_observacion = request.query_params.get('draft_observacion') or '' %}
+{% set draft_table_name = request.query_params.get('draft_table_name') or '' %}
+{% set draft_table_meta = request.query_params.get('draft_table_meta') or '' %}
+{% set ns = namespace(selected_order=None) %}
+{% for order in restaurant_orders %}
+  {% if selected_id_raw and order.id|string == selected_id_raw %}
+    {% set ns.selected_order = order %}
+  {% endif %}
+{% endfor %}
+<style>
+  :root {
+    --lb-ink: #251914;
+    --lb-caramel: #7ea7d8;
+    --lb-line: rgba(93, 121, 153, .14);
+    --lb-green: #4d7b58;
+    --lb-red: #8f3444;
+  }
+  .restaurant-shell {
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 12% 10%, rgba(126,167,216,.16), transparent 26rem),
+      radial-gradient(circle at 88% 0%, rgba(163,187,223,.12), transparent 22rem),
+      linear-gradient(135deg, #ffffff 0%, #f6f9ff 46%, #fbfdff 100%);
+    color: var(--lb-ink);
+  }
+  .restaurant-shell .odoo-sidebar.sidebar,
+  .restaurant-shell #mobileSidebar .offcanvas-header,
+  .restaurant-shell #mobileSidebar .offcanvas-body {
+    background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,251,255,.98) 55%, rgba(242,247,255,.99) 100%) !important;
+    border-right: 1px solid var(--lb-line) !important;
+    color: var(--lb-ink) !important;
+  }
+  .restaurant-shell .odoo-sidebar .nav-link,
+  .restaurant-shell #mobileSidebar .nav-link {
+    background: rgba(255,255,255,.74) !important;
+    border: 1px solid rgba(126,167,216,.14);
+    color: #29415f !important;
+  }
+  .restaurant-shell .odoo-sidebar .nav-link:hover,
+  .restaurant-shell #mobileSidebar .nav-link:hover {
+    background: linear-gradient(135deg, rgba(245,250,255,.98), rgba(234,243,255,.98)) !important;
+    border-color: rgba(126,167,216,.28) !important;
+  }
+  .restaurant-shell .odoo-sidebar .nav-link i,
+  .restaurant-shell #mobileSidebar .nav-link i { color: #6e97c9 !important; }
+  .restaurant-shell .odoo-sidebar .text-dark,
+  .restaurant-shell .odoo-sidebar .nav-text,
+  .restaurant-shell .odoo-sidebar .fw-semibold,
+  .restaurant-shell #mobileSidebar .text-dark,
+  .restaurant-shell #mobileSidebar .nav-text,
+  .restaurant-shell #mobileSidebar .fw-semibold { color: #29415f !important; }
+  .restaurant-shell .odoo-sidebar .text-muted,
+  .restaurant-shell .odoo-sidebar .small,
+  .restaurant-shell #mobileSidebar .text-muted,
+  .restaurant-shell #mobileSidebar .small { color: rgba(82,108,140,.72) !important; }
+  .restaurant-shell .odoo-sidebar .badge,
+  .restaurant-shell #mobileSidebar .badge { background: rgba(234,243,255,.96) !important; color: #5f86b7 !important; border: 1px solid rgba(126,167,216,.18); }
+  .restaurant-shell .odoo-sidebar .btn-outline-secondary,
+  .restaurant-shell #mobileSidebar .btn-outline-secondary {
+    border-color: rgba(126,167,216,.22) !important;
+    color: #5f86b7 !important;
+    background: rgba(255,255,255,.86) !important;
+  }
+  .restaurant-shell .odoo-sidebar .btn-outline-secondary:hover,
+  .restaurant-shell #mobileSidebar .btn-outline-secondary:hover {
+    background: rgba(238,245,255,.96) !important;
+    border-color: rgba(126,167,216,.32) !important;
+    color: #456d9d !important;
+  }
+  .restaurant-shell .odoo-sidebar .border-primary-subtle,
+  .restaurant-shell #mobileSidebar .border-primary-subtle {
+    border-color: rgba(126,167,216,.24) !important;
+  }
+  .restaurant-card,
+  .restaurant-glass {
+    border: 1px solid var(--lb-line);
+    background: rgba(255, 255, 255, .96);
+    color: var(--lb-ink);
+    border-radius: 28px;
+    box-shadow: 0 20px 60px rgba(56, 86, 122, .10);
+  }
+  .restaurant-glass {
+    background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(245,249,255,.97) 100%);
+    backdrop-filter: blur(18px);
+  }
+  .restaurant-shell main { padding-bottom: 2rem; }
+  .restaurant-topbar {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(245,249,255,.96));
+    box-shadow: 0 14px 30px rgba(56,86,122,.08);
+  }
+  .restaurant-topbar-stat {
+    min-width: 120px;
+    padding: .8rem 1rem;
+    border-radius: 18px;
+    background: rgba(239,246,255,.88);
+    border: 1px solid rgba(126,167,216,.14);
+  }
+  .lb-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    border-radius: 999px;
+    padding: .42rem .86rem;
+    background: rgba(126,167,216,.16);
+    color: #5177a9;
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  .lb-section-title {
+    font-size: .73rem;
+    font-weight: 900;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: rgba(73,99,133,.68);
+  }
+  .lb-input {
+    border-radius: 16px;
+    border-color: rgba(126,167,216,.20);
+    background-color: #ffffff;
+  }
+  .lb-input.no-spinner::-webkit-outer-spin-button,
+  .lb-input.no-spinner::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .lb-input.no-spinner[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .btn-lb-primary {
+    background: linear-gradient(135deg, #88b2ea, #d8e8ff);
+    border: 0;
+    color: #1e3554;
+    font-weight: 900;
+    border-radius: 999px;
+    padding: .72rem 1rem;
+  }
+  .btn-lb-primary:hover { color: #18324f; filter: brightness(.99); }
+  .btn-lb-soft {
+    background: rgba(126,167,216,.12);
+    color: #466d9a;
+    border: 1px solid rgba(126,167,216,.24);
+    border-radius: 999px;
+    font-weight: 800;
+  }
+  .btn-lb-danger {
+    background: rgba(143,52,68,.08);
+    color: var(--lb-red);
+    border: 1px solid rgba(143,52,68,.18);
+    border-radius: 999px;
+    font-weight: 800;
+  }
+  .restaurant-stat {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 22px;
+    padding: 1rem 1.1rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(243,248,255,.95));
+  }
+  .table-sector {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    padding: 1rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(244,248,255,.94));
+  }
+  .floor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: .9rem;
+  }
+  .service-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  .service-card {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    padding: 1.1rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(243,247,255,.95));
+    text-decoration: none;
+    color: var(--lb-ink);
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  }
+  .service-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 32px rgba(56,86,122,.08);
+    border-color: rgba(126,167,216,.30);
+  }
+  .service-card.active {
+    border-color: rgba(126,167,216,.42);
+    background: linear-gradient(180deg, rgba(245,250,255,.99), rgba(232,241,255,.96));
+    box-shadow: 0 16px 36px rgba(56,86,122,.12);
+  }
+  .service-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(126,167,216,.14);
+    color: #678fbe;
+    font-size: 1.4rem;
+    margin-bottom: .85rem;
+  }
+  .mesa-card {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    padding: 1rem;
+    min-height: 150px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(243,247,255,.95));
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: .75rem;
+  }
+  .mesa-card.ocupada {
+    border-color: rgba(143,52,68,.18);
+    background: linear-gradient(180deg, rgba(255,248,247,.98), rgba(253,239,236,.96));
+  }
+  .mesa-shape {
+    width: 68px;
+    height: 68px;
+    margin: 0 auto;
+    border: 1px solid rgba(126,167,216,.14);
+    background: linear-gradient(180deg, #ffffff, #e7f1ff);
+    box-shadow: inset 0 10px 16px rgba(255,255,255,.65);
+  }
+  .mesa-shape.round { border-radius: 999px; }
+  .mesa-shape.square { border-radius: 18px; }
+  .mesa-shape.oval { width: 88px; border-radius: 999px; }
+  .mesa-status {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    border-radius: 999px;
+    padding: .28rem .58rem;
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .mesa-status.libre { background: rgba(77,123,88,.12); color: var(--lb-green); }
+  .mesa-status.ocupada { background: rgba(143,52,68,.10); color: var(--lb-red); }
+  .order-pill {
+    display: block;
+    border-radius: 22px;
+    padding: .8rem .95rem;
+    color: var(--lb-ink);
+    text-decoration: none;
+    border: 1px solid rgba(126,167,216,.14);
+    background: rgba(255,255,255,.74);
+    transition: transform .15s ease, background .15s ease, border .15s ease;
+  }
+  .order-pill:hover, .order-pill.active {
+    color: var(--lb-ink);
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, rgba(242,248,255,.98), rgba(230,240,255,.98));
+    border-color: rgba(126,167,216,.28);
+  }
+  .order-pill.active {
+    box-shadow: 0 0 0 1px rgba(126,167,216,.28), 0 0 0 0 rgba(126,167,216,.16);
+    animation: orderPulse 1.75s ease-in-out infinite;
+  }
+  .mesa-card.ocupada {
+    animation: occupiedGlow 1.9s ease-in-out infinite;
+  }
+  .menu-card {
+    border: 1px solid rgba(126,167,216,.14);
+    background: linear-gradient(180deg, #ffffff, #f3f8ff);
+    border-radius: 22px;
+    padding: 1rem;
+    min-height: 150px;
+  }
+  .order-line {
+    border-bottom: 1px dashed rgba(126,167,216,.18);
+    padding: .65rem 0;
+  }
+  .order-line:last-child { border-bottom: 0; }
+  .account-summary {
+    background: linear-gradient(180deg, #f8fbff, #eaf2ff);
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 22px;
+    padding: 1rem;
+  }
+  .compact-panel {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    padding: 1rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(243,248,255,.94));
+  }
+  .menu-launcher {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 26px;
+    padding: 1.25rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(243,248,255,.95));
+  }
+  .menu-highlight {
+    border-radius: 22px;
+    padding: .95rem 1rem;
+    background: rgba(126,167,216,.10);
+    border: 1px solid rgba(126,167,216,.16);
+  }
+  .menu-modal .modal-content {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 30px;
+    background: linear-gradient(180deg, rgba(255,255,255,.99), rgba(245,249,255,.98));
+    box-shadow: 0 32px 70px rgba(56,86,122,.18);
+  }
+  .menu-modal .modal-header,
+  .menu-modal .modal-footer {
+    border-color: rgba(126,167,216,.12);
+  }
+  .menu-modal .modal-body {
+    max-height: calc(100vh - 220px);
+    overflow: auto;
+  }
+  .table-modal-layout {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 1rem;
+  }
+  .table-board {
+    min-height: 100%;
+    border-radius: 28px;
+    overflow: hidden;
+    border: 1px solid rgba(126,167,216,.14);
+    background:
+      radial-gradient(circle at top left, rgba(126,167,216,.16), transparent 26rem),
+      linear-gradient(180deg, #ffffff, #f3f8ff);
+    padding: 1rem;
+  }
+  .table-board-bar {
+    border-radius: 999px;
+    padding: .65rem 1rem;
+    background: linear-gradient(135deg, #ffffff, #eef5ff);
+    border: 1px solid rgba(126,167,216,.18);
+    color: #587bab;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+  }
+  .table-legend {
+    display: grid;
+    gap: .6rem;
+    margin-top: 1rem;
+  }
+  .table-legend-item {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    font-size: .88rem;
+    color: #5b7392;
+  }
+  .table-legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+  }
+  .table-sector-panel {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    padding: 1rem;
+    background:
+      radial-gradient(circle at top right, rgba(126,167,216,.12), transparent 26%),
+      linear-gradient(180deg, rgba(255,255,255,.99), rgba(243,248,255,.95));
+    box-shadow: 0 16px 30px rgba(56,86,122,.08);
+  }
+  .table-sector-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, rgba(255,255,255,.28), transparent 30%, transparent 70%, rgba(255,255,255,.14));
+    pointer-events: none;
+  }
+  .table-sector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+  .table-node {
+    position: relative;
+    overflow: hidden;
+    border-radius: 24px;
+    border: 1px solid rgba(126,167,216,.14);
+    background: rgba(255,255,255,.96);
+    box-shadow: 0 18px 34px rgba(56,86,122,.10);
+    padding: .9rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: .65rem;
+    min-height: 190px;
+  }
+  .table-node::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(130deg, rgba(255,255,255,.35), transparent 32%, transparent 72%, rgba(255,255,255,.18));
+    pointer-events: none;
+  }
+  .table-node.ocupada {
+    background: linear-gradient(180deg, rgba(255,244,244,.99), rgba(255,232,236,.97));
+    border-color: rgba(143,52,68,.24);
+    box-shadow: 0 18px 34px rgba(143,52,68,.12);
+  }
+  .table-node.free {
+    background: linear-gradient(180deg, rgba(250,253,255,.99), rgba(229,240,255,.96));
+    border-color: rgba(126,167,216,.22);
+  }
+  .table-node-admin {
+    cursor: pointer;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .22s ease, opacity .22s ease;
+  }
+  .table-node-admin:hover {
+    transform: translateY(-3px) scale(1.01);
+  }
+  .table-node-admin.state-transition {
+    animation: tableNodeSwap .42s ease;
+  }
+  .table-node-alert {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(143,52,68,.10);
+    color: var(--lb-red);
+    border: 1px solid rgba(143,52,68,.18);
+  }
+  .table-node-alert.pulse {
+    animation: occupiedBlink 1.1s ease-in-out infinite;
+  }
+  .table-admin-launch {
+    border-radius: 24px;
+    padding: 1rem 1.2rem;
+    border: 1px solid rgba(126,167,216,.18);
+    background: linear-gradient(135deg, rgba(255,255,255,.99), rgba(235,244,255,.97));
+    box-shadow: 0 16px 32px rgba(56,86,122,.10);
+  }
+  .table-modal-layout {
+    gap: 1.25rem;
+  }
+  .table-board {
+    position: relative;
+    overflow: hidden;
+    border-radius: 28px;
+    border: 1px solid rgba(126,167,216,.16);
+    background:
+      radial-gradient(circle at top right, rgba(126,167,216,.16), transparent 24%),
+      linear-gradient(145deg, rgba(255,255,255,.99), rgba(241,247,255,.96));
+    box-shadow: 0 22px 48px rgba(56,86,122,.11);
+    padding: 1.2rem 1.25rem;
+  }
+  .table-board::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(255,255,255,.26), transparent 38%, transparent 70%, rgba(255,255,255,.12));
+    pointer-events: none;
+  }
+  .table-board-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: .55rem;
+    padding: .55rem .9rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,.84);
+    border: 1px solid rgba(126,167,216,.14);
+    color: #5278a8;
+    font-size: .76rem;
+    font-weight: 900;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .mesa-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 78px;
+    padding: .3rem .7rem;
+    border-radius: 999px;
+    font-size: .7rem;
+    font-weight: 900;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .mesa-status.libre {
+    background: rgba(220,236,255,.88);
+    color: #5278a8;
+    border: 1px solid rgba(126,167,216,.22);
+  }
+  .mesa-status.ocupada {
+    background: rgba(255,228,233,.92);
+    color: #8f3444;
+    border: 1px solid rgba(143,52,68,.18);
+  }
+  .table-admin-stat {
+    border-radius: 18px;
+    padding: .85rem .95rem;
+    border: 1px solid rgba(126,167,216,.16);
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(243,248,255,.95));
+  }
+  .table-admin-detail-list {
+    display: grid;
+    gap: .65rem;
+  }
+  .table-admin-detail-item {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 18px;
+    padding: .8rem .9rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(244,249,255,.95));
+  }
+  .service-note {
+    display: none;
+  }
+  .service-note.active {
+    display: block;
+  }
+  .restaurant-client-box {
+    min-height: 58px;
+    border-radius: 16px;
+    border: 1px solid rgba(126,167,216,.14);
+    background: #ffffff;
+    padding: .8rem .95rem;
+  }
+  .table-selection-box {
+    min-height: 58px;
+    border-radius: 16px;
+    border: 1px dashed rgba(126,167,216,.22);
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(242,247,255,.95));
+    padding: .8rem .95rem;
+  }
+  .service-stage {
+    display: none;
+  }
+  .service-stage.active {
+    display: block;
+  }
+  .flow-stage-card {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    padding: 1.1rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.97), rgba(242,247,255,.95));
+  }
+  .order-start-card {
+    border: 1px solid rgba(126,167,216,.16);
+    border-radius: 24px;
+    padding: 1rem 1.15rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.99), rgba(245,249,255,.96));
+  }
+  .order-extra-details {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(244,248,255,.95));
+    overflow: hidden;
+  }
+  .order-extra-details summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 1rem 1.1rem;
+    font-weight: 800;
+    color: #355579;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .order-extra-details summary::-webkit-details-marker {
+    display: none;
+  }
+  .order-extra-details[open] summary {
+    border-bottom: 1px solid rgba(126,167,216,.14);
+  }
+  .order-extra-details-body {
+    padding: 1rem 1.1rem 1.1rem;
+  }
+  .service-launch-card {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    padding: 1rem 1.1rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(243,248,255,.95));
+  }
+  .restaurant-empty-state {
+    border: 1px dashed rgba(126,167,216,.24);
+    border-radius: 24px;
+    padding: 1.2rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(243,248,255,.94));
+  }
+  .restaurant-empty-state.premium {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(126,167,216,.18);
+    background:
+      radial-gradient(circle at top right, rgba(126,167,216,.16), transparent 28%),
+      radial-gradient(circle at bottom left, rgba(182,205,234,.16), transparent 26%),
+      linear-gradient(145deg, rgba(255,255,255,.99), rgba(241,247,255,.96) 52%, rgba(248,251,255,.99));
+    box-shadow:
+      0 22px 52px rgba(56,86,122,.10),
+      inset 0 1px 0 rgba(255,255,255,.9);
+  }
+  .restaurant-empty-state.premium::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(120deg, rgba(255,255,255,.62), transparent 32%, transparent 68%, rgba(255,255,255,.4));
+    pointer-events: none;
+  }
+  .restaurant-empty-state-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .55rem;
+    padding: .5rem .82rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,.82);
+    border: 1px solid rgba(126,167,216,.16);
+    color: #587dab;
+    font-size: .72rem;
+    font-weight: 900;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .restaurant-empty-state-badge i {
+    font-size: .92rem;
+  }
+  .restaurant-empty-state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .65rem;
+  }
+  .restaurant-empty-state-copy {
+    max-width: 560px;
+  }
+  .restaurant-empty-state-copy .display-line {
+    font-size: clamp(1.15rem, 2vw, 1.55rem);
+    font-weight: 900;
+    letter-spacing: -.02em;
+    color: #27415f;
+  }
+  .restaurant-empty-state-copy .support-line {
+    color: rgba(73,99,133,.78);
+    line-height: 1.65;
+    font-size: .97rem;
+  }
+  .restaurant-empty-state-kpis {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .8rem;
+    margin-top: 1.05rem;
+  }
+  .restaurant-empty-kpi {
+    border-radius: 18px;
+    padding: .95rem 1rem;
+    background: rgba(255,255,255,.78);
+    border: 1px solid rgba(126,167,216,.14);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.95);
+  }
+  .restaurant-empty-kpi .kpi-label {
+    font-size: .7rem;
+    font-weight: 900;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: rgba(73,99,133,.68);
+  }
+  .restaurant-empty-kpi .kpi-value {
+    margin-top: .25rem;
+    font-size: 1.18rem;
+    font-weight: 900;
+    color: #27415f;
+  }
+  .restaurant-smooth-fade-out {
+    animation: restaurantFadeOut .26s ease forwards;
+  }
+  .restaurant-smooth-fade-in {
+    animation: restaurantFadeIn .36s ease forwards;
+  }
+  .pos-order-sheet {
+    border: 1px solid rgba(126,167,216,.16);
+    border-radius: 28px;
+    background: linear-gradient(180deg, rgba(255,255,255,.99), rgba(246,250,255,.96));
+    box-shadow: 0 18px 42px rgba(56,86,122,.10);
+    overflow: hidden;
+  }
+  .pos-order-sheet-inner {
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    min-height: 78vh;
+  }
+  .pos-order-header {
+    border-bottom: 1px solid rgba(126,167,216,.14);
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+  }
+  .pos-order-lines {
+    max-height: none;
+    overflow: auto;
+    padding-right: .35rem;
+  }
+  .pos-order-item {
+    border: 1px solid rgba(126,167,216,.12);
+    border-radius: 18px;
+    padding: .85rem .95rem;
+    background: linear-gradient(180deg, #fbfffc, #f1fff5);
+  }
+  .pos-order-service {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    border-radius: 999px;
+    padding: .35rem .75rem;
+    font-size: .74rem;
+    font-weight: 900;
+    letter-spacing: .10em;
+    text-transform: uppercase;
+    background: rgba(88, 133, 196, .10);
+    color: #557baa;
+    border: 1px solid rgba(126,167,216,.18);
+  }
+  .pos-order-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .7rem;
+  }
+  .pos-order-action {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(242,247,255,.96));
+    padding: .85rem .9rem;
+    text-align: left;
+    color: #29415f;
+    font-weight: 800;
+  }
+  .pos-order-action small {
+    display: block;
+    margin-top: .18rem;
+    color: #6b83a2;
+    font-size: .72rem;
+    font-weight: 700;
+  }
+  .pos-order-footer {
+    border-top: 1px solid rgba(126,167,216,.14);
+    background: linear-gradient(180deg, rgba(244,249,255,.92), rgba(235,244,255,.98));
+    border-radius: 22px;
+    padding: 1rem;
+  }
+  .pos-order-total {
+    font-size: 2.2rem;
+    font-weight: 950;
+    letter-spacing: -.04em;
+  }
+  .pos-line-remove {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgba(126,167,216,.18);
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(238,245,255,.96));
+    color: #6d89ad;
+    transition: transform .15s ease, border-color .15s ease, color .15s ease, background .15s ease;
+  }
+  .pos-line-remove:hover {
+    transform: translateY(-1px);
+    color: #3f628d;
+    border-color: rgba(126,167,216,.34);
+    background: linear-gradient(180deg, rgba(245,250,255,.99), rgba(229,239,255,.98));
+  }
+  .pos-side-card {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(243,248,255,.95));
+    padding: 1rem;
+  }
+  .pos-menu-browser {
+    border: 1px solid rgba(126,167,216,.16);
+    border-radius: 28px;
+    background: linear-gradient(180deg, rgba(255,255,255,.99), rgba(246,250,255,.96));
+    box-shadow: 0 18px 42px rgba(56,86,122,.10);
+    overflow: hidden;
+  }
+  .pos-menu-browser-inner {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    min-height: 78vh;
+  }
+  .pos-menu-grid {
+    max-height: none;
+    overflow: auto;
+    padding: 0 .35rem .25rem 0;
+  }
+  .menu-card-thumb {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    object-fit: cover;
+    border: 1px solid rgba(126,167,216,.16);
+    background: linear-gradient(180deg, #fff, #eef5ff);
+    flex-shrink: 0;
+  }
+  .menu-category-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .55rem;
+    margin-bottom: 1rem;
+  }
+  .menu-browser-header {
+    border-bottom: 1px solid rgba(126,167,216,.14);
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+  }
+  .menu-browser-subnav {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    color: #6b83a2;
+    font-size: .8rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .menu-card {
+    min-height: 174px;
+  }
+  .menu-category-btn {
+    border: 1px solid rgba(126,167,216,.18);
+    background: rgba(255,255,255,.92);
+    color: #5c80ae;
+    border-radius: 999px;
+    padding: .45rem .8rem;
+    font-size: .82rem;
+    font-weight: 800;
+  }
+  .menu-category-btn.active {
+    background: linear-gradient(135deg, #88b2ea, #d8e8ff);
+    color: #1e3554;
+    border-color: rgba(126,167,216,.30);
+  }
+  .step-badge {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(126,167,216,.16);
+    color: #557baa;
+    font-size: .82rem;
+    font-weight: 900;
+    margin-right: .6rem;
+  }
+  @keyframes orderPulse {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(126,167,216,.24), 0 0 0 0 rgba(126,167,216,.12); }
+    50% { box-shadow: 0 0 0 1px rgba(126,167,216,.28), 0 0 0 10px rgba(126,167,216,.08); }
+  }
+  @keyframes occupiedGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(143,52,68,.00); }
+    50% { box-shadow: 0 0 0 6px rgba(143,52,68,.06); }
+  }
+  @keyframes occupiedBlink {
+    0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(143,52,68,.14); }
+    50% { transform: scale(1.08); opacity: .88; box-shadow: 0 0 0 8px rgba(143,52,68,0); }
+  }
+  @keyframes tableNodeSwap {
+    0% { opacity: .72; transform: scale(.98) translateY(10px); }
+    55% { opacity: 1; transform: scale(1.02) translateY(-3px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  @keyframes restaurantFadeOut {
+    from { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+    to { opacity: 0; transform: translateY(14px) scale(.985); filter: blur(3px); }
+  }
+  @keyframes restaurantFadeIn {
+    from { opacity: 0; transform: translateY(16px) scale(.985); filter: blur(3px); }
+    to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  }
+  @media (max-width: 991.98px) {
+    .restaurant-shell main { padding: 1rem !important; }
+    .restaurant-card, .restaurant-glass, .table-sector { border-radius: 22px; }
+    .floor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .service-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .table-modal-layout { grid-template-columns: 1fr; }
+    .table-sector-grid { grid-template-columns: 1fr; }
+    .restaurant-empty-state-kpis { grid-template-columns: 1fr; }
+  }
+</style>
+<div id="layout" class="restaurant-shell grid lg:grid-cols-[260px_1fr]">
+  {% include "partials/sidebar.html" %}
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <section class="restaurant-topbar p-3 p-lg-4 mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div class="d-flex align-items-center gap-3">
+            <div class="lb-chip"><i class="bi bi-stars"></i> Restaurante / Bar</div>
+            <div>
+              <h1 class="h3 mb-1" style="font-weight:950;letter-spacing:-.03em;">La Barrera</h1>
+              <div class="small" style="color:#617a9a;">{{ user.default_branch.name if user.default_branch else 'Sucursal' }} · {{ user.default_bodega.name if user.default_bodega else 'Bodega' }}</div>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center justify-content-end gap-2">
+            <div class="restaurant-topbar-stat">
+              <div class="small text-uppercase fw-bold" style="color:#6b8fbe;letter-spacing:.14em;">Factura siguiente</div>
+              <div class="fw-bold">{{ next_invoice or 'Auto' }}</div>
+            </div>
+            <div class="restaurant-topbar-stat">
+              <div class="small text-uppercase fw-bold" style="color:#6b8fbe;letter-spacing:.14em;">Cuentas abiertas</div>
+              <div class="fw-bold">{{ restaurant_orders|length }}</div>
+            </div>
+            <a class="btn btn-sm btn-lb-soft" href="/data/mesas"><i class="bi bi-grid-3x3-gap"></i> Mesas</a>
+          </div>
+        </div>
+      </section>
+
+      {% if error %}<div class="alert alert-danger rounded-4">{{ error }}</div>{% endif %}
+      {% if success %}
+      <div class="alert alert-success rounded-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span>{{ success }}</span>
+        {% if print_id %}<a id="restaurant-print-ticket" class="btn btn-sm btn-success rounded-pill" href="/sales/{{ print_id }}/ticket/print?copies=1&return_to=/sales" target="_blank" rel="noopener">Imprimir ticket</a>{% endif %}
+      </div>
+      {% endif %}
+
+      <div class="restaurant-card p-4 p-lg-5 mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+          <div>
+            <div class="lb-section-title">Atencion</div>
+            <h2 class="h3 mb-1" style="font-weight:900;">Elegimos como atender y luego comandamos</h2>
+            <div class="text-muted">Las opciones de servicio quedan siempre visibles. La mesa y los datos extra viven en modal para no cargar la pantalla.</div>
+          </div>
+          <div class="small text-muted">Orden primero. Factura despues.</div>
+        </div>
+        <div class="service-grid mb-4">
+          <button class="service-card text-start" type="button" data-service-card="MESA">
+            <span class="service-icon"><i class="bi bi-grid-3x3-gap"></i></span>
+            <div class="fw-bold mb-1">Comer en el local</div>
+            <div class="small text-muted">Mesa abierta para agregar o quitar productos antes de facturar.</div>
+          </button>
+          <button class="service-card text-start" type="button" data-service-card="BARRA">
+            <span class="service-icon"><i class="bi bi-cup-straw"></i></span>
+            <div class="fw-bold mb-1">Barra</div>
+            <div class="small text-muted">Orden rapida sin mesa para consumo inmediato.</div>
+          </button>
+          <button class="service-card text-start" type="button" data-service-card="LLEVAR">
+            <span class="service-icon"><i class="bi bi-bag"></i></span>
+            <div class="fw-bold mb-1">Para llevar</div>
+            <div class="small text-muted">Pedido sin mesa, listo para cargar articulos y luego cobrar.</div>
+          </button>
+          <button class="service-card text-start" type="button" data-service-card="DELIVERY">
+            <span class="service-icon"><i class="bi bi-scooter"></i></span>
+            <div class="fw-bold mb-1">Delivery</div>
+            <div class="small text-muted">Pedido a domicilio con cliente y referencia como soporte.</div>
+          </button>
+        </div>
+
+        <form method="post" action="/sales/restaurante/orders" id="restaurant-order-form">
+          <input type="hidden" name="service_type" id="service-type-select" value="{{ draft_service_type if draft_mode else 'MESA' }}">
+          <input type="hidden" name="table_id" id="table-id-select" value="{{ draft_table_id }}">
+          <input type="hidden" name="cliente_id" id="restaurant-cliente-id" value="{{ draft_cliente_id }}">
+
+          <div class="modal fade menu-modal" id="restaurantOrderDetailsModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-centered">
+              <div class="modal-content">
+                <div class="modal-header px-4 py-3">
+                  <div>
+                    <div class="lb-section-title mb-1">Datos de la orden</div>
+                    <h3 class="h4 mb-0" style="font-weight:900;">Informacion complementaria del pedido</h3>
+                  </div>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body px-4 py-3">
+                  <div class="row g-3">
+                    <div class="col-lg-6">
+                      <label class="small text-muted mb-1">Cliente</label>
+                      <div class="restaurant-client-box d-flex justify-content-between align-items-center gap-3">
+                        <div>
+                        <div class="fw-bold" id="restaurant-cliente-name">Consumidor final</div>
+                          <div class="small text-muted" id="restaurant-cliente-meta">Puedes dejarlo asi o buscar/crear un cliente si el servicio lo necesita.</div>
+                        </div>
+                        <div class="d-flex gap-2">
+                          <button class="btn btn-lb-soft" type="button" data-bs-toggle="modal" data-bs-target="#restaurantClientSearchModal">Elegir</button>
+                          <button class="btn btn-lb-soft" type="button" data-bs-toggle="modal" data-bs-target="#restaurantClientCreateModal">Nuevo</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-lg-3">
+                      <label class="small text-muted mb-1">Ejecutivo</label>
+                      <select class="form-select lb-input" name="vendedor_id" form="restaurant-order-form">
+                        {% for v in vendedores %}<option value="{{ v.id }}" {% if (draft_vendedor_id and draft_vendedor_id|string == v.id|string) or (not draft_vendedor_id and default_vendedor_id == v.id) %}selected{% endif %}>{{ v.nombre }}</option>{% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-lg-3">
+                      <label class="small text-muted mb-1">Moneda</label>
+                      <select class="form-select lb-input" name="moneda" form="restaurant-order-form">
+                        <option value="CS" {% if draft_moneda == 'CS' %}selected{% endif %}>C$</option>
+                        <option value="USD" {% if draft_moneda == 'USD' %}selected{% endif %}>$</option>
+                      </select>
+                    </div>
+                    <div class="col-lg-6">
+                      <label class="small text-muted mb-1">Referencia visible</label>
+                      <input class="form-control lb-input" name="mesa_nombre" id="mesa-nombre-input" value="{{ draft_mesa_nombre }}" placeholder="Mesa, barra, delivery o referencia del pedido" form="restaurant-order-form">
+                    </div>
+                    <div class="col-lg-6">
+                      <label class="small text-muted mb-1">Observacion</label>
+                      <input class="form-control lb-input" name="observacion" value="{{ draft_observacion }}" placeholder="Notas de atencion, punto de entrega o detalle del servicio" form="restaurant-order-form">
+                    </div>
+                  </div>
+                </div>
+                <div class="modal-footer px-4 py-3">
+                  <div class="small text-muted me-auto">Esto apoya la orden. Comandar y alterar la cuenta se hace despues en el POS.</div>
+                  <button type="button" class="btn btn-lb-soft" data-bs-dismiss="modal">Listo</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div class="modal fade menu-modal" id="restaurantPaymentModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header px-4 py-3">
+                <div>
+                  <div class="lb-section-title mb-1">Pago final</div>
+                  <h3 class="h4 mb-0" style="font-weight:900;">Resumen y formas de pago</h3>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+              </div>
+              <form id="restaurant-payment-modal-form" method="post" action="/sales/restaurante/orders/0/facturar">
+                <div class="modal-body px-4 py-3">
+                  <div class="row g-4">
+                    <div class="col-lg-5">
+                      <div class="rounded-4 h-100 px-3 py-3" style="background:linear-gradient(135deg,#f7fbff,#eef5ff);border:1px solid rgba(126,167,216,.22);">
+                        <div class="small text-uppercase fw-bold mb-3" style="color:#6b8fbe;letter-spacing:.14em;">Resumen de venta</div>
+                        <div class="d-flex justify-content-between text-sm mb-2">
+                          <span class="text-muted">Cuenta</span>
+                          <strong id="restaurant-payment-modal-title">Pedido activo</strong>
+                        </div>
+                        <div class="d-flex justify-content-between text-sm mb-2">
+                          <span class="text-muted">Cliente</span>
+                          <strong id="restaurant-payment-modal-cliente-name">Consumidor final</strong>
+                        </div>
+                        <div class="d-flex justify-content-between text-sm mb-2">
+                          <span class="text-muted">Vendedor</span>
+                          <strong id="restaurant-payment-modal-vendedor-name">-</strong>
+                        </div>
+                        <div class="d-flex justify-content-between text-sm mb-2">
+                          <span class="text-muted">Orden</span>
+                          <strong id="restaurant-payment-modal-order-number">-</strong>
+                        </div>
+                        <div class="d-flex justify-content-between text-sm mb-3">
+                          <span class="text-muted">Fecha / hora</span>
+                          <strong id="restaurant-payment-modal-opened-at">-</strong>
+                        </div>
+                        <div class="rounded-4 px-3 py-3 mb-3" style="background:#fff;border:1px solid rgba(126,167,216,.18);">
+                          <div class="d-flex justify-content-between align-items-start gap-3">
+                            <div>
+                              <div class="small text-muted">Cuenta seleccionada</div>
+                              <div id="restaurant-payment-modal-meta" class="small text-muted">Orden lista para cobro</div>
+                            </div>
+                            <div class="text-end">
+                              <div class="small text-muted">Total a cobrar</div>
+                              <div id="restaurant-payment-modal-total-cs" class="fw-bold fs-3" style="color:#365984;">C$ 0.00</div>
+                              <div id="restaurant-payment-modal-total-usd" class="small text-muted">$ 0.00</div>
+                            </div>
+                          </div>
+                        </div>
+                        <input type="hidden" name="cliente_id" id="restaurant-payment-modal-cliente-id" value="">
+                        <input type="hidden" name="vendedor_id" id="restaurant-payment-modal-vendedor-id" value="">
+                        <div class="mb-3">
+                          <label class="small text-muted mb-1">Moneda de la factura</label>
+                          <select class="form-select lb-input" name="moneda" id="restaurant-payment-modal-moneda">
+                            <option value="CS">Cobrar en C$</option>
+                            <option value="USD">Cobrar en USD</option>
+                          </select>
+                        </div>
+                        <div class="rounded-4 px-3 py-3" style="background:#fff;border:1px solid rgba(126,167,216,.18);">
+                          <div class="small text-uppercase fw-bold mb-2" style="color:#6b8fbe;letter-spacing:.14em;">Balance</div>
+                          <div class="d-flex justify-content-between text-sm mb-2">
+                            <span class="text-muted">Total venta</span>
+                            <strong id="restaurant-payment-total-invoice">C$ 0.00</strong>
+                          </div>
+                          <div class="d-flex justify-content-between text-sm mb-2">
+                            <span class="text-muted">Pagado</span>
+                            <strong id="restaurant-payment-total-aplicado">C$ 0.00</strong>
+                          </div>
+                          <div class="d-flex justify-content-between text-sm">
+                            <span class="text-muted">Saldo / vuelto</span>
+                            <strong id="restaurant-payment-balance">C$ 0.00</strong>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-lg-7">
+                      <div class="rounded-4 px-3 py-3 mb-3" style="background:#fff;border:1px solid rgba(126,167,216,.18);">
+                        <div class="small text-uppercase fw-bold mb-3" style="color:#6b8fbe;letter-spacing:.14em;">Agregar pago</div>
+                        <div class="mb-3">
+                          <label class="small text-muted mb-2">Metodos rapidos</label>
+                          <div class="d-flex flex-wrap gap-2">
+                            {% for fp in formas_pago %}
+                            <button type="button" class="btn btn-lb-soft restaurant-pay-method-btn" data-forma-id="{{ fp.id }}">
+                              {% set nombre_forma = fp.nombre|lower %}
+                              {% if "efectivo" in nombre_forma %}
+                              <i class="bi bi-cash-coin"></i>
+                              {% elif "tarjeta" in nombre_forma %}
+                              <i class="bi bi-credit-card"></i>
+                              {% elif "banco" in nombre_forma or "transferencia" in nombre_forma or "deposito" in nombre_forma %}
+                              <i class="bi bi-bank"></i>
+                              {% else %}
+                              <i class="bi bi-wallet2"></i>
+                              {% endif %}
+                              <span class="ms-1">{{ fp.nombre }}</span>
+                            </button>
+                            {% endfor %}
+                          </div>
+                        </div>
+                        <div class="row g-3">
+                          <div class="col-md-3">
+                            <label class="small text-muted mb-1">Moneda</label>
+                            <select class="form-select lb-input" id="restaurant-pago-moneda">
+                              <option value="CS">C$</option>
+                              <option value="USD">USD</option>
+                            </select>
+                          </div>
+                          <div class="col-md-3">
+                            <label class="small text-muted mb-1">Monto</label>
+                            <input class="form-control lb-input" id="restaurant-pago-monto" type="text" inputmode="decimal" placeholder="0.00">
+                          </div>
+                          <div class="col-md-3">
+                            <label class="small text-muted mb-1">Banco</label>
+                            <select class="form-select lb-input" id="restaurant-banco-select">
+                              <option value="">Selecciona</option>
+                              {% for banco in bancos %}
+                              <option value="{{ banco.id }}">{{ banco.nombre }}</option>
+                              {% endfor %}
+                            </select>
+                          </div>
+                          <div class="col-md-3">
+                            <label class="small text-muted mb-1">Cuenta</label>
+                            <select class="form-select lb-input" id="restaurant-cuenta-select">
+                              <option value="">Selecciona</option>
+                              {% for cuenta in cuentas %}
+                              <option value="{{ cuenta.id }}" data-banco="{{ cuenta.banco_id }}" data-moneda="{{ cuenta.moneda }}">{{ cuenta.banco.nombre }} - {{ cuenta.moneda }} {{ cuenta.cuenta or 'Pendiente' }}</option>
+                              {% endfor %}
+                            </select>
+                          </div>
+                          <div class="col-12 text-end">
+                            <button id="restaurant-add-payment" class="btn btn-lb-primary" type="button">
+                              <i class="bi bi-plus-lg"></i>
+                              Agregar pago
+                            </button>
+                          </div>
+                        </div>
+                        <div class="d-none">
+                          <select name="forma_pago_id" id="restaurant-payment-modal-forma-pago" class="form-select">
+                            <option value="">Selecciona</option>
+                            {% for fp in formas_pago %}
+                            <option value="{{ fp.id }}" data-cash="{% if 'efectivo' in fp.nombre|lower %}1{% else %}0{% endif %}">{{ fp.nombre }}</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                      </div>
+                      <div class="rounded-4 px-3 py-3" style="background:#fff;border:1px solid rgba(126,167,216,.18);">
+                        <div class="small text-uppercase fw-bold mb-3" style="color:#6b8fbe;letter-spacing:.14em;">Pagos aplicados</div>
+                        <div class="table-responsive">
+                          <table class="table table-sm align-middle mb-0">
+                            <thead>
+                              <tr>
+                                <th>Forma</th>
+                                <th>Moneda</th>
+                                <th class="text-end">Monto</th>
+                                <th class="text-end">Banco</th>
+                                <th class="text-end">Accion</th>
+                              </tr>
+                            </thead>
+                            <tbody id="restaurant-payment-list">
+                              <tr id="restaurant-payment-empty">
+                                <td colspan="5" class="text-center text-muted py-3">Sin pagos agregados</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                      <div id="restaurant-payment-hidden" class="d-none"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="modal-footer px-4 py-3">
+                  <div class="small text-muted me-auto">Confirmas la forma de pago y luego el sistema emite la factura.</div>
+                  <button type="button" class="btn btn-lb-soft" data-bs-dismiss="modal">Volver</button>
+                  <button id="restaurant-payment-modal-submit" class="btn btn-lb-primary btn-lg" type="submit">Facturar ahora</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% if not ns.selected_order and not draft_mode %}
+      <div class="row g-4 mb-4" id="restaurant-empty-state-shell">
+        <div class="col-12 col-xl-7">
+          <div class="restaurant-empty-state premium h-100 restaurant-smooth-fade-in" id="restaurant-empty-state-card">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+              <div class="restaurant-empty-state-copy">
+                <div class="restaurant-empty-state-badge mb-3"><i class="bi bi-stars"></i> Sala en espera</div>
+                <div class="display-line">Lista para una nueva orden</div>
+                <div class="support-line mt-2">Escoge el tipo de servicio, asigna mesa si aplica y empieza a cargar productos. Cuando quieras retomar una cuenta ocupada, entra desde mesas u ordenes abiertas.</div>
+                <div class="restaurant-empty-state-kpis">
+                  <div class="restaurant-empty-kpi">
+                    <div class="kpi-label">Cuentas abiertas</div>
+                    <div class="kpi-value">{{ restaurant_orders|length }}</div>
+                  </div>
+                  <div class="restaurant-empty-kpi">
+                    <div class="kpi-label">Modo operativo</div>
+                    <div class="kpi-value">Listo para comandar</div>
+                  </div>
+                </div>
+              </div>
+              <div class="restaurant-empty-state-actions">
+                <button class="btn btn-lb-soft" type="button" onclick="document.querySelector('[data-service-card]')?.scrollIntoView({behavior:'smooth', block:'center'});">Nueva orden</button>
+                <button class="btn btn-lb-soft" type="button" data-bs-toggle="modal" data-bs-target="#restaurantTableModal">Ver mesas</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-xl-5">
+          <div class="pos-side-card h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <div class="lb-section-title">Ordenes abiertas</div>
+                <div class="small text-muted">Retoma una cuenta ocupada y continua agregando o quitando items.</div>
+              </div>
+              <span class="badge rounded-pill" style="background:#eef5ff;color:#587bab;border:1px solid rgba(126,167,216,.22);">{{ restaurant_orders|length }}</span>
+            </div>
+            <div class="d-grid gap-2" style="max-height: 280px; overflow:auto;">
+              {% for order in restaurant_orders %}
+              <a class="order-pill" href="/sales?restaurant_order_id={{ order.id }}">
+                <div class="d-flex justify-content-between align-items-center gap-2">
+                  <strong>{{ order.mesa_nombre or order.service_type }}</strong>
+                  <span class="small">C$ {{ '%.2f'|format(order.total_cs) }}</span>
+                </div>
+                <div class="small mt-1" style="color:#617a9a;">{{ order.numero }} · {{ order.service_type }} · {{ order.opened_at }}</div>
+              </a>
+              {% else %}
+              <div class="text-center small py-4 text-muted">Sin cuentas abiertas.</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% elif draft_mode and not ns.selected_order %}
+      <div class="row g-4 align-items-start" id="restaurant-active-order-shell">
+        <div class="col-12 col-xxl-4">
+          <div class="pos-order-sheet p-3 p-lg-4">
+            <div class="pos-order-sheet-inner">
+              <div class="pos-order-header d-flex flex-wrap justify-content-between align-items-start gap-3">
+                <div>
+                  <div class="lb-section-title" id="restaurant-order-state-label">Orden en preparacion</div>
+                  <h2 class="h4 mb-1" id="restaurant-order-title" style="font-weight:950;">{{ draft_table_name or draft_mesa_nombre or 'Nueva orden' }}</h2>
+                  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <span class="pos-order-service" id="restaurant-order-service-badge">{{ draft_service_type }}</span>
+                    <span class="small text-muted" id="restaurant-order-number-note">Aun no guardada</span>
+                  </div>
+                  <div class="small text-muted" id="restaurant-order-client-name">Consumidor final</div>
+                  <div class="small text-muted" id="restaurant-order-helper-note">Agrega el primer producto para crear la orden real.</div>
+                </div>
+                <div class="text-lg-end">
+                  <div class="small text-muted">Items</div>
+                  <div id="restaurant-header-total-items" class="h5 mb-0">0.00</div>
+                </div>
+              </div>
+              <div class="pos-order-lines d-grid gap-3" id="restaurant-order-lines">
+                <div class="text-center text-muted small py-5">La orden se registrara al agregar el primer producto.</div>
+              </div>
+              <div class="d-grid gap-2 pt-3">
+                <button class="btn btn-lb-primary restaurant-register-order-btn" type="button" onclick="document.getElementById('restaurant-inline-menu')?.scrollIntoView({behavior:'smooth', block:'start'}); document.getElementById('menu-search')?.focus();">
+                  Registrar orden
+                </button>
+                <div class="small text-muted text-center" id="restaurant-register-order-help">Para registrar la orden, agrega el primer producto del pedido.</div>
+              </div>
+              <div class="pt-3">
+                <div class="pos-order-actions">
+                  <button class="pos-order-action" type="button" onclick="document.getElementById('restaurant-inline-menu')?.scrollIntoView({behavior:'smooth', block:'start'}); document.getElementById('menu-search')?.focus();">
+                    Agregar productos
+                    <small>Ir al menu y cargar el pedido</small>
+                  </button>
+                  <a class="pos-order-action text-decoration-none" href="/sales">
+                    Nueva orden
+                    <small>Limpiar vista y volver al inicio</small>
+                  </a>
+                  <button class="pos-order-action" type="button" data-bs-toggle="modal" data-bs-target="#restaurantTableModal">
+                    Mesas
+                    <small>Elegir o cambiar</small>
+                  </button>
+                  <button class="pos-order-action" type="button" data-bs-toggle="modal" data-bs-target="#restaurantOrderDetailsModal">
+                    Datos
+                    <small>Cliente y referencia</small>
+                  </button>
+                </div>
+              </div>
+              <div class="pos-order-footer mt-3">
+                <div class="rounded-4 px-3 py-3 mb-3" style="background:linear-gradient(135deg,#f5f9ff,#eef5ff);border:1px solid rgba(126,167,216,.24);">
+                  <div class="small text-muted">Monto a cobrar</div>
+                  <div id="restaurant-live-total-cs" class="pos-order-total">C$ 0.00</div>
+                  <div id="restaurant-live-total-usd" class="small text-muted">$ 0.00</div>
+                </div>
+                <div class="d-flex justify-content-end align-items-end gap-3">
+                  <div class="text-end small text-muted">
+                    <div id="restaurant-footer-service">{{ draft_service_type }}</div>
+                    <div id="restaurant-footer-cliente">Consumidor final</div>
+                  </div>
+                </div>
+              </div>
+              <div id="restaurant-direct-payment-panel" class="pt-3 d-none">
+                <div class="account-summary mb-3">
+                  <div class="d-flex justify-content-between"><span>Total C$</span><strong id="restaurant-direct-summary-cs" class="h4 mb-0">0.00</strong></div>
+                  <div class="d-flex justify-content-between small text-muted mt-1"><span>Total $</span><span id="restaurant-direct-summary-usd">0.00</span></div>
+                  <div class="d-flex justify-content-between small text-muted"><span>Items</span><span id="restaurant-direct-summary-items">0.00</span></div>
+                  <div class="d-flex justify-content-between small text-muted"><span>Cliente</span><span id="restaurant-direct-summary-cliente">Consumidor final</span></div>
+                </div>
+                <button
+                  id="restaurant-direct-pay-btn"
+                  class="btn btn-lb-primary btn-lg w-100"
+                  type="button"
+                  disabled
+                >
+                  Cobrar y facturar
+                </button>
+                <form id="restaurant-direct-cancel-form" method="post" action="/sales/restaurante/orders/0/cancel" class="mt-2 restaurant-cancel-order-form">
+                  <button class="btn btn-lb-danger w-100" type="submit">Anular cuenta</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-xxl-8" id="restaurant-inline-menu">
+          <div class="pos-menu-browser p-3 p-lg-4">
+            <div class="pos-menu-browser-inner">
+              <div class="menu-browser-header d-flex flex-wrap justify-content-between align-items-end gap-3">
+                <div>
+                  <div class="menu-browser-subnav">
+                    <span><i class="bi bi-house-door"></i></span>
+                    <span>Menu</span>
+                    <span>›</span>
+                    <span>{{ draft_service_type }}</span>
+                  </div>
+                  <div class="fw-bold fs-4 mt-2 mb-1">Elige el primer producto</div>
+                  <div class="small text-muted">Con el primer producto se abrira la orden real y luego podras seguir agregando o quitando items.</div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                  <input id="menu-search" class="form-control lb-input" style="width:280px;" placeholder="Buscar producto...">
+                </div>
+              </div>
+              <div class="menu-category-strip">
+                <button class="menu-category-btn active" type="button" data-menu-category="">Todo</button>
+                {% set seen_categories = [] %}
+                {% for producto in productos %}
+                  {% set category_name = (producto.segmento.segmento if producto.segmento else (producto.linea.linea if producto.linea else 'Menu')) %}
+                  {% if category_name not in seen_categories %}
+                    {% set _ = seen_categories.append(category_name) %}
+                    <button class="menu-category-btn" type="button" data-menu-category="{{ category_name|lower }}">{{ category_name }}</button>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              <div class="row g-3 pos-menu-grid" id="menu-grid">
+                {% for producto in productos %}
+                {% set category_name = (producto.segmento.segmento if producto.segmento else (producto.linea.linea if producto.linea else 'Menu')) %}
+                <div class="col-sm-6 col-lg-4 col-xl-3 menu-product" data-search="{{ (producto.cod_producto ~ ' ' ~ producto.descripcion)|lower }}" data-category="{{ category_name|lower }}">
+                  <div class="menu-card h-100 d-flex flex-column justify-content-between gap-3">
+                    <div class="restaurant-product-pick" role="button" tabindex="0" aria-label="Agregar {{ producto.descripcion }}" style="cursor:pointer;">
+                      {% if producto.image_url %}
+                      <div class="w-100 mb-3 d-flex align-items-center justify-content-center p-2" style="height:150px;border-radius:18px;border:1px solid rgba(126,167,216,.16);background:linear-gradient(180deg,#fff,#f1f6ff);">
+                        <img class="w-100 h-100" src="{{ producto.image_url }}" alt="{{ producto.descripcion }}" style="object-fit:contain;border-radius:14px;background:#fff;">
+                      </div>
+                      {% else %}
+                      <div class="w-100 mb-3 d-flex align-items-center justify-content-center text-muted" style="height:150px;border-radius:18px;border:1px dashed rgba(126,167,216,.22);background:linear-gradient(180deg,#fff,#eef5ff);">
+                        <i class="bi bi-image fs-2"></i>
+                      </div>
+                      {% endif %}
+                      <div class="small fw-bold text-uppercase text-muted">{{ producto.cod_producto }}</div>
+                      <div class="fw-bold" style="font-size:1.04rem;line-height:1.2;">{{ producto.descripcion }}</div>
+                      <div class="mt-1 small text-muted">{{ category_name }}</div>
+                      <div class="mt-2 fw-bold" style="color:#365984;">C$ {{ '%.2f'|format(producto.precio_venta1 or 0) }}</div>
+                    </div>
+                    <form method="post" action="/sales/restaurante/orders/with-item" class="d-flex align-items-center gap-2 restaurant-draft-add-item-form">
+                      <input type="hidden" name="service_type" value="{{ draft_service_type }}">
+                      <input type="hidden" name="table_id" value="{{ draft_table_id }}">
+                      <input type="hidden" name="cliente_id" value="{{ draft_cliente_id }}">
+                      <input type="hidden" name="vendedor_id" value="{{ draft_vendedor_id }}">
+                      <input type="hidden" name="moneda" value="{{ draft_moneda }}">
+                      <input type="hidden" name="mesa_nombre" value="{{ draft_mesa_nombre }}">
+                      <input type="hidden" name="observacion" value="{{ draft_observacion }}">
+                      <input type="hidden" name="producto_id" value="{{ producto.id }}">
+                      <input class="form-control form-control-sm lb-input no-spinner restaurant-qty-input" name="cantidad" type="text" value="1" inputmode="decimal" autocomplete="off" style="max-width:78px;">
+                      <button class="btn btn-sm btn-lb-primary flex-grow-1" type="submit">Agregar</button>
+                    </form>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="row g-4 align-items-start" id="restaurant-active-order-shell">
+        <div class="col-12 col-xxl-4">
+          <div class="pos-order-sheet p-3 p-lg-4">
+            <div class="pos-order-sheet-inner">
+              <div class="pos-order-header d-flex flex-wrap justify-content-between align-items-start gap-3">
+                <div>
+                  <div class="lb-section-title" id="restaurant-order-state-label">Orden activa</div>
+                  <h2 class="h4 mb-1" id="restaurant-order-title" style="font-weight:950;">{{ ns.selected_order.mesa_nombre }}</h2>
+                  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <span class="pos-order-service" id="restaurant-order-service-badge">{{ ns.selected_order.service_type }}</span>
+                    <span class="small text-muted" id="restaurant-order-number-note">{{ ns.selected_order.numero }}</span>
+                  </div>
+                  <div class="small text-muted" id="restaurant-order-client-name">{{ ns.selected_order.cliente }}</div>
+                </div>
+                <div class="text-lg-end">
+                  <div class="small text-muted">Items</div>
+                  <div id="restaurant-header-total-items" class="h5 mb-0">{{ '%.2f'|format(ns.selected_order.total_items) }}</div>
+                </div>
+              </div>
+              <div class="pos-order-lines d-grid gap-3" id="restaurant-order-lines">
+                {% for item in ns.selected_order["items"] %}
+                <div class="pos-order-item">
+                  <div class="d-flex justify-content-between align-items-start gap-3">
+                    <div class="flex-grow-1">
+                      <div class="fw-bold">{{ item.descripcion }}</div>
+                      <div class="small text-muted">{{ '%.2f'|format(item.cantidad) }} x C$ {{ '%.2f'|format(item.precio_cs) }}</div>
+                      <div class="small" style="color:#6d89ad;">{{ item.codigo }}</div>
+                    </div>
+                    <div class="text-end">
+                      <div class="fw-bold">C$ {{ '%.2f'|format(item.subtotal_cs) }}</div>
+                      <form method="post" action="/sales/restaurante/items/{{ item.id }}/delete" class="restaurant-delete-item-form">
+                        <button class="pos-line-remove" type="submit" title="Quitar item" aria-label="Quitar item">
+                          <i class="bi bi-x-lg"></i>
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+                {% else %}
+                <div class="text-center text-muted small py-5">Todavia no hay consumos en esta cuenta.</div>
+                {% endfor %}
+              </div>
+              <div class="pt-3">
+                <div class="pos-order-actions">
+                  <button class="pos-order-action" type="button" data-bs-toggle="modal" data-bs-target="#restaurantTableModal">
+                    Mesas
+                    <small>Cambiar o retomar</small>
+                  </button>
+                  <a class="pos-order-action text-decoration-none" href="/sales">
+                    Nueva orden
+                    <small>Salir de esta cuenta</small>
+                  </a>
+                  <button class="pos-order-action" type="button" data-bs-toggle="modal" data-bs-target="#restaurantClientSearchModal">
+                    Cliente
+                    <small>Buscar existente</small>
+                  </button>
+                  <button class="pos-order-action" type="button" data-bs-toggle="modal" data-bs-target="#restaurantClientCreateModal">
+                    Nuevo cliente
+                    <small>Registro rapido</small>
+                  </button>
+                  <button class="pos-order-action restaurant-update-order-btn" type="button">
+                    Actualizar orden
+                    <small>Cerrar edicion y volver al inicio</small>
+                  </button>
+                  <button class="pos-order-action" type="button" onclick="document.getElementById('restaurant-inline-menu')?.scrollIntoView({behavior:'smooth', block:'start'});">
+                    Agregar productos
+                    <small>Seguir cargando esta cuenta</small>
+                  </button>
+                </div>
+              </div>
+              <div class="pos-order-footer mt-3">
+                <div class="rounded-4 px-3 py-3 mb-3" style="background:linear-gradient(135deg,#f5f9ff,#eef5ff);border:1px solid rgba(126,167,216,.24);">
+                  <div class="small text-muted">Monto a cobrar</div>
+                  <div id="restaurant-live-total-cs" class="pos-order-total">C$ {{ '%.2f'|format(ns.selected_order.total_cs) }}</div>
+                  <div id="restaurant-live-total-usd" class="small text-muted">$ {{ '%.2f'|format(ns.selected_order.total_usd) }}</div>
+                </div>
+                <div class="d-flex justify-content-end align-items-end gap-3">
+                  <div class="text-end small text-muted">
+                    <div id="restaurant-footer-service">{{ ns.selected_order.service_type }}</div>
+                    <div id="restaurant-footer-cliente">{{ ns.selected_order.cliente }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-xxl-8" id="restaurant-inline-menu">
+          <div class="pos-menu-browser p-3 p-lg-4">
+            <div class="pos-menu-browser-inner">
+              <div class="menu-browser-header d-flex flex-wrap justify-content-between align-items-end gap-3">
+                <div>
+                  <div class="menu-browser-subnav">
+                    <span><i class="bi bi-house-door"></i></span>
+                    <span>Menu</span>
+                    <span>›</span>
+                    <span>{{ ns.selected_order.service_type }}</span>
+                  </div>
+                  <div class="fw-bold fs-4 mt-2 mb-1">Catalogo visual del menu</div>
+                  <div class="small text-muted">Selecciona categorias y agrega productos como en una terminal de pedido.</div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                  <input id="menu-search" class="form-control lb-input" style="width:280px;" placeholder="Buscar producto...">
+                  <a class="btn btn-lb-soft" href="/sales?restaurant_order_id={{ ns.selected_order.id }}"><i class="bi bi-arrow-clockwise"></i></a>
+                </div>
+              </div>
+              <div class="menu-category-strip">
+                <button class="menu-category-btn active" type="button" data-menu-category="">Todo</button>
+                {% set seen_categories = [] %}
+                {% for producto in productos %}
+                  {% set category_name = (producto.segmento.segmento if producto.segmento else (producto.linea.linea if producto.linea else 'Menu')) %}
+                  {% if category_name not in seen_categories %}
+                    {% set _ = seen_categories.append(category_name) %}
+                    <button class="menu-category-btn" type="button" data-menu-category="{{ category_name|lower }}">{{ category_name }}</button>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              <div class="row g-3 pos-menu-grid" id="menu-grid">
+                {% for producto in productos %}
+                {% set category_name = (producto.segmento.segmento if producto.segmento else (producto.linea.linea if producto.linea else 'Menu')) %}
+                <div class="col-sm-6 col-lg-4 col-xl-3 menu-product" data-search="{{ (producto.cod_producto ~ ' ' ~ producto.descripcion)|lower }}" data-category="{{ category_name|lower }}">
+                  <div class="menu-card h-100 d-flex flex-column justify-content-between gap-3">
+                    <div class="restaurant-product-pick" role="button" tabindex="0" aria-label="Agregar {{ producto.descripcion }}" style="cursor:pointer;">
+                      {% if producto.image_url %}
+                      <div class="w-100 mb-3 d-flex align-items-center justify-content-center p-2" style="height:150px;border-radius:18px;border:1px solid rgba(126,167,216,.16);background:linear-gradient(180deg,#fff,#f1f6ff);">
+                        <img class="w-100 h-100" src="{{ producto.image_url }}" alt="{{ producto.descripcion }}" style="object-fit:contain;border-radius:14px;background:#fff;">
+                      </div>
+                      {% else %}
+                      <div class="w-100 mb-3 d-flex align-items-center justify-content-center text-muted" style="height:150px;border-radius:18px;border:1px dashed rgba(126,167,216,.22);background:linear-gradient(180deg,#fff,#eef5ff);">
+                        <i class="bi bi-image fs-2"></i>
+                      </div>
+                      {% endif %}
+                      <div class="small fw-bold text-uppercase text-muted">{{ producto.cod_producto }}</div>
+                      <div class="fw-bold" style="font-size:1.04rem;line-height:1.2;">{{ producto.descripcion }}</div>
+                      <div class="mt-1 small text-muted">{{ category_name }}</div>
+                      <div class="mt-2 fw-bold" style="color:#365984;">C$ {{ '%.2f'|format(producto.precio_venta1 or 0) }}</div>
+                    </div>
+                    <form method="post" action="/sales/restaurante/orders/{{ ns.selected_order.id }}/items" class="d-flex align-items-center gap-2 restaurant-add-item-form">
+                      <input type="hidden" name="producto_id" value="{{ producto.id }}">
+                      <input class="form-control form-control-sm lb-input no-spinner restaurant-qty-input" name="cantidad" type="text" value="1" inputmode="decimal" autocomplete="off" style="max-width:78px;">
+                      <button class="btn btn-sm btn-lb-primary flex-grow-1" type="submit">Agregar</button>
+                    </form>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="d-grid gap-4 position-sticky" style="top: 1rem;">
+            <div class="row g-4">
+            <div class="col-lg-4">
+            <div class="pos-side-card h-100">
+              <div class="lb-section-title mb-2">Resumen</div>
+              <div class="account-summary mb-3">
+              <div class="d-flex justify-content-between"><span>Total C$</span><strong id="restaurant-summary-total-cs" class="h4 mb-0">{{ '%.2f'|format(ns.selected_order.total_cs) }}</strong></div>
+              <div class="d-flex justify-content-between small text-muted mt-1"><span>Total $</span><span id="restaurant-summary-total-usd">{{ '%.2f'|format(ns.selected_order.total_usd) }}</span></div>
+              <div class="d-flex justify-content-between small text-muted"><span>Items</span><span id="restaurant-summary-total-items">{{ '%.2f'|format(ns.selected_order.total_items) }}</span></div>
+              <div class="d-flex justify-content-between small text-muted"><span>Cliente</span><span id="restaurant-summary-cliente">{{ ns.selected_order.cliente }}</span></div>
+            </div>
+            <button class="btn btn-lb-primary w-100 mb-3 restaurant-update-order-btn" type="button">
+              Actualizar orden
+            </button>
+            <button
+              id="restaurant-open-payment-modal-btn"
+              class="btn btn-lb-primary btn-lg w-100"
+              type="button"
+              {% if not ns.selected_order["items"] %}disabled{% endif %}
+            >
+              Cobrar y facturar
+            </button>
+            <form method="post" action="/sales/restaurante/orders/{{ ns.selected_order.id }}/cancel" class="mt-2 restaurant-cancel-order-form">
+              <button class="btn btn-lb-danger w-100" type="submit">Anular cuenta</button>
+            </form>
+            </div>
+            </div>
+            <div class="col-lg-8">
+            <div class="pos-side-card h-100">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                  <div class="lb-section-title">Cuentas abiertas</div>
+                  <div class="small text-muted">Retoma otra orden sin salir del POS</div>
+                </div>
+                <span class="badge rounded-pill" style="background:#eef5ff;color:#587bab;border:1px solid rgba(126,167,216,.22);">{{ restaurant_orders|length }}</span>
+              </div>
+              <div class="d-grid gap-2" style="max-height: 280px; overflow:auto;">
+                {% for order in restaurant_orders %}
+                <a class="order-pill {% if ns.selected_order and ns.selected_order.id == order.id %}active{% endif %}" href="/sales?restaurant_order_id={{ order.id }}">
+                  <div class="d-flex justify-content-between align-items-center gap-2">
+                    <strong>{{ order.mesa_nombre or order.service_type }}</strong>
+                    <span class="small">C$ {{ '%.2f'|format(order.total_cs) }}</span>
+                  </div>
+                  <div class="small mt-1" style="color:#617a9a;">{{ order.numero }} · {{ order.service_type }} · {{ order.opened_at }}</div>
+                </a>
+                {% else %}
+                <div class="text-center small py-4 text-muted">Sin cuentas abiertas.</div>
+                {% endfor %}
+              </div>
+            </div>
+            </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <template id="restaurant-empty-state-template">
+        <div class="row g-4 mb-4">
+          <div class="col-12 col-xl-7">
+            <div class="restaurant-empty-state premium h-100 restaurant-smooth-fade-in">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                <div class="restaurant-empty-state-copy">
+                  <div class="restaurant-empty-state-badge mb-3"><i class="bi bi-stars"></i> Sala en espera</div>
+                  <div class="display-line">Lista para una nueva orden</div>
+                  <div class="support-line mt-2">La cuenta anterior ya se cerro. Elige servicio, asigna mesa si aplica o retoma otra orden abierta desde el plano.</div>
+                  <div class="restaurant-empty-state-kpis">
+                    <div class="restaurant-empty-kpi">
+                      <div class="kpi-label">Cuentas abiertas</div>
+                      <div class="kpi-value" data-empty-open-orders-count>0</div>
+                    </div>
+                    <div class="restaurant-empty-kpi">
+                      <div class="kpi-label">Estado del salon</div>
+                      <div class="kpi-value">Mesas listas para operar</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="restaurant-empty-state-actions">
+                  <button class="btn btn-lb-soft restaurant-empty-new-order-btn" type="button">Nueva orden</button>
+                  <button class="btn btn-lb-soft" type="button" data-bs-toggle="modal" data-bs-target="#restaurantTableModal">Ver mesas</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-12 col-xl-5">
+            <div class="pos-side-card h-100">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                  <div class="lb-section-title">Ordenes abiertas</div>
+                  <div class="small text-muted">Retoma una cuenta ocupada y continua agregando o quitando items.</div>
+                </div>
+                <span class="badge rounded-pill" style="background:#eef5ff;color:#587bab;border:1px solid rgba(126,167,216,.22);">0</span>
+              </div>
+              <div id="restaurant-empty-open-orders" class="d-grid gap-2" style="max-height: 280px; overflow:auto;">
+                <div class="text-center small py-4 text-muted">Sin cuentas abiertas.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <div class="order-start-card mt-4">
+        <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+          <div>
+            <div class="lb-section-title mb-1">Preparacion de la orden</div>
+            <div class="fw-bold">Servicio seleccionado: <span id="selected-service-name">{% if draft_service_type == 'BARRA' %}Barra{% elif draft_service_type == 'LLEVAR' %}Para llevar{% elif draft_service_type == 'DELIVERY' %}Delivery{% else %}Comer en el local{% endif %}</span></div>
+            <div class="small text-muted service-note active" data-service-note="MESA">Si es salon, elige la mesa y empieza a cargar productos para registrar la cuenta de esa mesa.</div>
+            <div class="small text-muted service-note" data-service-note="BARRA">Barra abre una orden directa, sin mesa.</div>
+            <div class="small text-muted service-note" data-service-note="LLEVAR">Para llevar trabaja como facturacion directa: agregas productos y pasas a cobro final.</div>
+            <div class="small text-muted service-note" data-service-note="DELIVERY">Delivery trabaja como facturacion directa: agregas productos, completas datos y cobras sin registrar orden aparte.</div>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <button id="choose-table-btn" class="btn btn-lb-soft" type="button" data-bs-toggle="modal" data-bs-target="#restaurantTableModal">Elegir mesa</button>
+            <button class="btn btn-lb-soft" type="button" data-bs-toggle="modal" data-bs-target="#restaurantOrderDetailsModal">Datos de la orden</button>
+            <button id="restaurant-order-submit" class="btn btn-lb-primary px-4 restaurant-register-order-btn" type="button">Levantar orden</button>
+          </div>
+        </div>
+        <div id="table-selection-panel" class="table-selection-box d-flex justify-content-between align-items-center gap-3 mt-3">
+          <div>
+            <div class="fw-bold" id="selected-table-name">{{ draft_table_name or 'Sin mesa seleccionada' }}</div>
+            <div class="small text-muted" id="selected-table-meta">{{ draft_table_meta or 'Elige una mesa disponible para abrir la cuenta del salon.' }}</div>
+          </div>
+          <button class="btn btn-lb-soft" type="button" data-bs-toggle="modal" data-bs-target="#restaurantTableModal">Cambiar mesa</button>
+        </div>
+      </div>
+      <div class="table-admin-launch mt-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div>
+            <div class="lb-section-title mb-1">Administrador operativo</div>
+            <div class="fw-bold fs-5">Plano de mesas</div>
+            <div class="small text-muted">Controla mesas ocupadas y libres, revisa cuentas, entra al detalle y gestiona cobro final desde un solo punto.</div>
+          </div>
+          <button class="btn btn-lb-primary px-4" type="button" data-bs-toggle="modal" data-bs-target="#restaurantTableModal">
+            <i class="bi bi-grid-3x3-gap"></i> Plano de mesas
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="modal fade menu-modal" id="restaurantTableModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header px-4 py-3">
+        <div>
+          <div class="lb-section-title mb-1">Plano del local</div>
+          <h3 class="h4 mb-0" style="font-weight:900;">Mesas y estatus del salon</h3>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body px-4 py-3">
+        {% if restaurant_tables %}
+        <div class="table-modal-layout">
+          <div class="table-board">
+            <div class="table-board-bar"><i class="bi bi-cup-straw"></i> Barra · Facturacion directa</div>
+            <div class="small text-muted mt-3">Selecciona una mesa libre para abrir una nueva orden. Si ya esta ocupada, retoma la cuenta desde aqui sin salir del modal.</div>
+            <div class="table-legend">
+              <div class="table-legend-item"><span class="table-legend-dot" style="background:#d6e8ff;border:1px solid rgba(126,167,216,.35);"></span> Mesa libre para nueva orden</div>
+              <div class="table-legend-item"><span class="table-legend-dot" style="background:#ffe4e8;border:1px solid rgba(143,52,68,.24);"></span> Mesa ocupada con cuenta abierta</div>
+              <div class="table-legend-item"><span class="table-legend-dot" style="background:#eef5ff;border:1px solid rgba(126,167,216,.22);"></span> Vista organizada por sector</div>
+            </div>
+          </div>
+          <div class="d-grid gap-3">
+            {% set sector_ns = namespace(current='') %}
+            {% for table in restaurant_tables %}
+              {% if sector_ns.current != table.sector %}
+                {% if not loop.first %}</div></section>{% endif %}
+                {% set sector_ns.current = table.sector %}
+                <section class="table-sector-panel">
+                  <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                      <div class="lb-section-title mb-1">Sector</div>
+                      <div class="fw-bold">{{ table.sector }}</div>
+                    </div>
+                    <span class="small text-muted">Mesas listas para operar</span>
+                  </div>
+                  <div class="table-sector-grid">
+              {% endif %}
+              <div
+                class="table-node table-node-admin {{ 'ocupada' if table.status == 'OCUPADA' else 'free' }}"
+                data-table-id="{{ table.id }}"
+                data-table-name="{{ table.name }}"
+                data-table-code="{{ table.code }}"
+                data-table-sector="{{ table.sector }}"
+                data-table-seats="{{ table.seats }}"
+                {% if table.active_order %}
+                data-order='{{ table.active_order|tojson }}'
+                {% endif %}
+              >
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div>
+                    <div class="fw-bold">{{ table.name }}</div>
+                    <div class="small text-muted">{{ table.code }} · {{ table.seats }} puestos</div>
+                  </div>
+                  <div class="d-flex align-items-center gap-2">
+                    {% if table.status == 'OCUPADA' %}
+                    <span class="table-node-alert pulse"><i class="bi bi-broadcast-pin"></i></span>
+                    {% endif %}
+                    <span class="mesa-status {{ 'ocupada' if table.status == 'OCUPADA' else 'libre' }}">{{ table.status }}</span>
+                  </div>
+                </div>
+                <div class="small text-muted">{{ table.sector }}</div>
+                <div>
+                  {% if table.active_order_id %}
+                  <div class="small mb-2" style="color:#617a9a;">{{ table.active_order_number }} · C$ {{ '%.2f'|format(table.active_order_total_cs) }}</div>
+                  <div class="d-grid gap-2">
+                    <button class="btn btn-sm btn-lb-soft w-100 restaurant-table-detail-trigger" type="button">Ver detalle</button>
+                    <a class="btn btn-sm btn-lb-soft w-100" href="/sales?restaurant_order_id={{ table.active_order_id }}">Editar orden</a>
+                    <a class="btn btn-sm btn-lb-primary w-100" href="/sales?restaurant_order_id={{ table.active_order_id }}&focus_payment=1">Gestionar pago final</a>
+                  </div>
+                  {% else %}
+                  <button
+                    class="btn btn-sm btn-lb-primary w-100 restaurant-table-select"
+                    type="button"
+                    data-table-id="{{ table.id }}"
+                    data-table-name="{{ table.name }}"
+                    data-table-meta="{{ table.code }} · {{ table.sector }} · {{ table.seats }} puestos"
+                  >
+                    Elegir mesa
+                  </button>
+                  {% endif %}
+                </div>
+              </div>
+              {% if loop.last %}</div></section>{% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% else %}
+        <div class="alert alert-warning rounded-4 mb-0">Aun no hay mesas activas registradas en el catalogo.</div>
+        {% endif %}
+      </div>
+      <div class="modal-footer px-4 py-3">
+        <div class="small text-muted me-auto">Las mesas ocupadas se retoman desde aqui. Las libres se asignan a la nueva cuenta del salon.</div>
+        <a class="btn btn-lb-soft" href="/data/mesas">Configurar mesas</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade menu-modal" id="restaurantTableDetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header px-4 py-3">
+        <div>
+          <div class="lb-section-title mb-1">Estatus de cuenta</div>
+          <h3 class="h4 mb-0" id="table-detail-title" style="font-weight:900;">Detalle de mesa</h3>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body px-4 py-3">
+        <div class="row g-3 mb-3">
+          <div class="col-md-4"><div class="table-admin-stat"><div class="small text-muted">Cuenta</div><div class="fw-bold" id="table-detail-number">-</div></div></div>
+          <div class="col-md-4"><div class="table-admin-stat"><div class="small text-muted">Monto total</div><div class="fw-bold" id="table-detail-total">C$ 0.00</div></div></div>
+          <div class="col-md-4"><div class="table-admin-stat"><div class="small text-muted">Items</div><div class="fw-bold" id="table-detail-items">0.00</div></div></div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6"><div class="table-admin-stat"><div class="small text-muted">Servicio</div><div class="fw-bold" id="table-detail-service">-</div></div></div>
+          <div class="col-md-6"><div class="table-admin-stat"><div class="small text-muted">Cliente</div><div class="fw-bold" id="table-detail-client">Consumidor final</div></div></div>
+        </div>
+        <div class="small text-muted mb-2">Doble clic sobre una mesa ocupada para abrir este detalle rápidamente.</div>
+        <div id="table-detail-lines" class="table-admin-detail-list"></div>
+      </div>
+      <div class="modal-footer px-4 py-3">
+        <div class="small text-muted me-auto">Desde aqui puedes revisar lo ordenado, entrar a editar la cuenta o ir directo al cobro final.</div>
+        <a id="table-detail-edit-link" class="btn btn-lb-soft" href="/sales">Editar orden</a>
+        <a id="table-detail-payment-link" class="btn btn-lb-primary" href="/sales">Gestionar pago final</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade menu-modal" id="restaurantTableDetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header px-4 py-3">
+        <div>
+          <div class="lb-section-title mb-1">Administrador de cuentas</div>
+          <h3 class="h4 mb-0" id="table-detail-title" style="font-weight:900;">Detalle de mesa</h3>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body px-4 py-3">
+        <div class="row g-3 mb-3">
+          <div class="col-md-4"><div class="table-admin-stat"><div class="small text-muted">Cuenta</div><div class="fw-bold" id="table-detail-number">-</div></div></div>
+          <div class="col-md-4"><div class="table-admin-stat"><div class="small text-muted">Monto total</div><div class="fw-bold" id="table-detail-total">C$ 0.00</div></div></div>
+          <div class="col-md-4"><div class="table-admin-stat"><div class="small text-muted">Items</div><div class="fw-bold" id="table-detail-items">0.00</div></div></div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6"><div class="table-admin-stat"><div class="small text-muted">Servicio</div><div class="fw-bold" id="table-detail-service">-</div></div></div>
+          <div class="col-md-6"><div class="table-admin-stat"><div class="small text-muted">Cliente</div><div class="fw-bold" id="table-detail-client">Consumidor final</div></div></div>
+        </div>
+        <div class="small text-muted mb-2">Doble clic sobre una mesa ocupada para abrir este detalle con todo lo ordenado.</div>
+        <div id="table-detail-lines" class="table-admin-detail-list"></div>
+      </div>
+      <div class="modal-footer px-4 py-3">
+        <div class="small text-muted me-auto">Puedes entrar directo a editar la cuenta o ir al cobro final e imprimir factura.</div>
+        <a id="table-detail-edit-link" class="btn btn-lb-soft" href="/sales">Editar orden</a>
+        <a id="table-detail-payment-link" class="btn btn-lb-primary" href="/sales">Gestionar pago final</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade menu-modal" id="restaurantClientSearchModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header px-4 py-3">
+        <div>
+          <div class="lb-section-title mb-1">Clientes</div>
+          <h3 class="h4 mb-0" style="font-weight:900;">Elegir cliente existente</h3>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body px-4 py-3">
+        <input id="restaurant-client-search-input" type="text" class="form-control lb-input mb-3" placeholder="Escribe para buscar cliente..." autocomplete="off">
+        <div id="restaurant-client-search-status" class="small text-muted mb-2">Escribe para buscar.</div>
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <tbody id="restaurant-client-search-body">
+              {% for c in clientes_preview[:20] %}
+              <tr>
+                <td>{{ c.nombre }}</td>
+                <td class="text-end"><button class="btn btn-sm btn-lb-soft restaurant-client-pick" type="button" data-cliente-id="{{ c.id }}" data-cliente-nombre="{{ c.nombre }}">Usar</button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade menu-modal" id="restaurantClientCreateModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header px-4 py-3">
+        <div>
+          <div class="lb-section-title mb-1">Clientes</div>
+          <h3 class="h4 mb-0" style="font-weight:900;">Crear cliente rapido</h3>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body px-4 py-3">
+        <form id="restaurant-client-create-form" class="row g-3">
+          <div class="col-md-6">
+            <label class="small text-muted mb-1">Nombre</label>
+            <input class="form-control lb-input" name="nombre" required>
+          </div>
+          <div class="col-md-6">
+            <label class="small text-muted mb-1">Telefono</label>
+            <input class="form-control lb-input" name="telefono">
+          </div>
+          <div class="col-md-6">
+            <label class="small text-muted mb-1">Email</label>
+            <input class="form-control lb-input" name="email">
+          </div>
+          <div class="col-md-6">
+            <label class="small text-muted mb-1">Identificacion</label>
+            <input class="form-control lb-input" name="identificacion">
+          </div>
+          <div class="col-12">
+            <label class="small text-muted mb-1">Direccion</label>
+            <input class="form-control lb-input" name="direccion">
+          </div>
+          <div class="col-12 d-flex justify-content-between align-items-center gap-3">
+            <div id="restaurant-client-create-status" class="small text-muted">Crealo aqui y quedara seleccionado para la cuenta actual.</div>
+            <button class="btn btn-lb-primary" type="submit">Guardar cliente</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  const restaurantClienteId = document.getElementById('restaurant-cliente-id');
+  const restaurantClienteName = document.getElementById('restaurant-cliente-name');
+  const restaurantClienteMeta = document.getElementById('restaurant-cliente-meta');
+  function setRestaurantClientSelection(id, nombre) {
+    if (restaurantClienteId) restaurantClienteId.value = id || '';
+    if (restaurantClienteName) restaurantClienteName.textContent = nombre || 'Consumidor final';
+    if (restaurantClienteMeta) {
+      restaurantClienteMeta.textContent = id ? 'Cliente asignado a la nueva cuenta.' : 'Puedes dejarlo asi o buscar/crear un cliente para delivery, llevar o salon.';
+    }
+  }
+
+  const selectedTableName = document.getElementById('selected-table-name');
+  const selectedTableMeta = document.getElementById('selected-table-meta');
+  const selectedServiceName = document.getElementById('selected-service-name');
+  const chooseTableBtn = document.getElementById('choose-table-btn');
+  const tableSelectionPanel = document.getElementById('table-selection-panel');
+  const orderStartButton = document.getElementById('restaurant-order-submit');
+  function setRestaurantTableSelection(id, name, meta) {
+    if (tableIdSelect) tableIdSelect.value = id || '';
+    if (selectedTableName) selectedTableName.textContent = name || 'Sin mesa seleccionada';
+    if (selectedTableMeta) selectedTableMeta.textContent = meta || 'Elige una mesa disponible para abrir la cuenta del salon.';
+    if (mesaNombreInput && id) mesaNombreInput.value = name || '';
+  }
+
+  const menuSearch = document.getElementById('menu-search');
+  let activeMenuCategory = '';
+  function filterRestaurantMenu() {
+    const term = (menuSearch?.value || '').trim().toLowerCase();
+    document.querySelectorAll('.menu-product').forEach((card) => {
+      const matchesSearch = !term || (card.dataset.search || '').includes(term);
+      const matchesCategory = !activeMenuCategory || (card.dataset.category || '') === activeMenuCategory;
+      card.style.display = matchesSearch && matchesCategory ? '' : 'none';
+    });
+  }
+  if (menuSearch) {
+    menuSearch.addEventListener('input', () => {
+      filterRestaurantMenu();
+    });
+  }
+  document.querySelectorAll('[data-menu-category]').forEach((button) => {
+    button.addEventListener('click', () => {
+      activeMenuCategory = button.dataset.menuCategory || '';
+      document.querySelectorAll('[data-menu-category]').forEach((item) => {
+        item.classList.toggle('active', item === button);
+      });
+      filterRestaurantMenu();
+    });
+  });
+
+  const serviceTypeSelect = document.getElementById('service-type-select');
+  const tableIdSelect = document.getElementById('table-id-select');
+  const mesaNombreInput = document.getElementById('mesa-nombre-input');
+  const restaurantOrderForm = document.getElementById('restaurant-order-form');
+  const hasSelectedOrderPage = {{ 'true' if ns.selected_order else 'false' }};
+  const isDraftModePage = {{ 'true' if draft_mode else 'false' }};
+  const restaurantRegisterOrderHelp = document.getElementById('restaurant-register-order-help');
+
+  function isDirectBillingMode(mode) {
+    return ['LLEVAR', 'DELIVERY'].includes(String(mode || '').toUpperCase());
+  }
+
+  function syncDirectBillingUi(mode) {
+    const direct = isDirectBillingMode(mode);
+    document.querySelectorAll('.restaurant-register-order-btn, .restaurant-update-order-btn').forEach((el) => {
+      el.classList.toggle('d-none', direct);
+    });
+    if (restaurantRegisterOrderHelp) {
+      restaurantRegisterOrderHelp.textContent = direct
+        ? 'Facturacion directa: agrega productos y pasa al cobro final.'
+        : 'Para registrar la orden, agrega el primer producto del pedido.';
+      restaurantRegisterOrderHelp.classList.toggle('d-none', direct);
+    }
+  }
+
+  function buildRestaurantDraftUrl(serviceValue, extras = {}) {
+    const params = new URLSearchParams();
+    params.set('draft_mode', '1');
+    params.set('draft_service_type', serviceValue || serviceTypeSelect?.value || 'MESA');
+
+    const clienteId = extras.clienteId ?? restaurantClienteId?.value;
+    const vendedorSelect = restaurantOrderForm?.querySelector('select[name="vendedor_id"]');
+    const monedaSelect = restaurantOrderForm?.querySelector('select[name="moneda"]');
+    const mesaNombreField = restaurantOrderForm?.querySelector('input[name="mesa_nombre"]');
+    const observacionField = restaurantOrderForm?.querySelector('input[name="observacion"]');
+    const vendedorId = extras.vendedorId ?? vendedorSelect?.value;
+    const moneda = extras.moneda ?? monedaSelect?.value;
+    const mesaNombre = extras.mesaNombre ?? mesaNombreField?.value;
+    const observacion = extras.observacion ?? observacionField?.value;
+    const tableId = extras.tableId ?? tableIdSelect?.value;
+    const tableName = extras.tableName ?? selectedTableName?.textContent;
+    const tableMeta = extras.tableMeta ?? selectedTableMeta?.textContent;
+
+    if (clienteId) params.set('draft_cliente_id', clienteId);
+    if (vendedorId) params.set('draft_vendedor_id', vendedorId);
+    if (moneda) params.set('draft_moneda', moneda);
+    if (mesaNombre) params.set('draft_mesa_nombre', mesaNombre);
+    if (observacion) params.set('draft_observacion', observacion);
+    if (tableId) params.set('draft_table_id', tableId);
+    if (tableName && tableName !== 'Sin mesa seleccionada') params.set('draft_table_name', tableName);
+    if (tableMeta && !tableMeta.includes('Elige una mesa disponible') && !tableMeta.includes('La cuenta no usara mesa')) {
+      params.set('draft_table_meta', tableMeta);
+    }
+    return `/sales?${params.toString()}`;
+  }
+
+  function syncRestaurantServiceMode() {
+    if (!serviceTypeSelect) return;
+    const mode = serviceTypeSelect.value;
+    const isMesa = mode === 'MESA';
+    const modeLabelMap = {
+      MESA: 'Comer en el local',
+      BARRA: 'Barra',
+      LLEVAR: 'Para llevar',
+      DELIVERY: 'Delivery',
+    };
+    if (tableIdSelect) tableIdSelect.required = isMesa;
+    document.querySelectorAll('.service-card').forEach((card) => {
+      card.classList.toggle('active', (card.dataset.serviceCard || '') === mode);
+    });
+    if (selectedServiceName) selectedServiceName.textContent = modeLabelMap[mode] || mode;
+    syncDirectBillingUi(mode);
+    if (chooseTableBtn) chooseTableBtn.classList.toggle('d-none', !isMesa);
+    if (tableSelectionPanel) tableSelectionPanel.classList.toggle('d-none', !isMesa);
+    if (!isMesa) {
+      setRestaurantTableSelection('', 'Sin mesa seleccionada', 'La cuenta no usara mesa en este modo de servicio.');
+    }
+    if (mesaNombreInput) {
+      mesaNombreInput.readOnly = isMesa;
+      mesaNombreInput.placeholder = isMesa ? 'La referencia saldra de la mesa elegida' : (mode === 'BARRA' ? 'Barra principal' : (mode === 'DELIVERY' ? 'Cliente / referencia delivery' : 'Referencia para llevar'));
+      if (!isMesa) {
+        mesaNombreInput.value = mode === 'BARRA' ? 'Barra' : (mode === 'DELIVERY' ? 'Delivery' : 'Para llevar');
+      } else if (!tableIdSelect?.value) {
+        mesaNombreInput.value = '';
+      }
+    }
+    document.querySelectorAll('[data-service-note]').forEach((note) => {
+      note.classList.toggle('active', note.dataset.serviceNote === mode);
+    });
+  }
+
+  if (serviceTypeSelect) {
+    syncRestaurantServiceMode();
+  }
+  syncDirectBillingUi({% if ns.selected_order %}'{{ ns.selected_order.service_type }}'{% else %}(serviceTypeSelect?.value || '{{ draft_service_type if draft_mode else "MESA" }}'){% endif %});
+
+  document.querySelectorAll('[data-service-card]').forEach((card) => {
+    card.addEventListener('click', () => {
+      if (!serviceTypeSelect) return;
+      serviceTypeSelect.value = card.dataset.serviceCard || 'MESA';
+      syncRestaurantServiceMode();
+      if (serviceTypeSelect.value === 'MESA') {
+        if (hasSelectedOrderPage || isDraftModePage) {
+          window.location.href = '/sales?open_table_modal=1';
+          return;
+        }
+        const modal = document.getElementById('restaurantTableModal');
+        if (modal && window.bootstrap) {
+          window.bootstrap.Modal.getOrCreateInstance(modal).show();
+        }
+        return;
+      }
+      window.location.href = buildRestaurantDraftUrl(serviceTypeSelect.value);
+    });
+  });
+
+  document.querySelectorAll('.restaurant-table-select').forEach((button) => {
+    button.addEventListener('click', () => {
+      setRestaurantTableSelection(button.dataset.tableId || '', button.dataset.tableName || '', button.dataset.tableMeta || '');
+      const modal = document.getElementById('restaurantTableModal');
+      if (modal && window.bootstrap) {
+        window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+      }
+      const currentMode = serviceTypeSelect?.value || 'MESA';
+      if (!hasSelectedOrderPage && !isDraftModePage && currentMode === 'MESA') {
+        window.location.href = buildRestaurantDraftUrl('MESA', {
+          tableId: button.dataset.tableId || '',
+          tableName: button.dataset.tableName || '',
+          tableMeta: button.dataset.tableMeta || '',
+          mesaNombre: button.dataset.tableName || '',
+        });
+        return;
+      }
+      window.setTimeout(() => {
+        restaurantInlineMenu?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        menuSearch?.focus();
+      }, 180);
+    });
+  });
+
+  document.querySelectorAll('.restaurant-client-pick').forEach((button) => {
+    button.addEventListener('click', () => {
+      setRestaurantClientSelection(button.dataset.clienteId || '', button.dataset.clienteNombre || '');
+      const modal = document.getElementById('restaurantClientSearchModal');
+      if (modal && window.bootstrap) {
+        window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+      }
+    });
+  });
+
+  const restaurantClientSearchInput = document.getElementById('restaurant-client-search-input');
+  const restaurantClientSearchStatus = document.getElementById('restaurant-client-search-status');
+  const restaurantClientSearchBody = document.getElementById('restaurant-client-search-body');
+  let restaurantClientSearchTimer = null;
+
+  function renderRestaurantClientRows(items) {
+    if (!restaurantClientSearchBody) return;
+    if (!items.length) {
+      restaurantClientSearchBody.innerHTML = '<tr><td colspan="2" class="text-muted small">Sin resultados.</td></tr>';
+      return;
+    }
+    restaurantClientSearchBody.innerHTML = items.map((item) => `
+      <tr>
+        <td>${item.nombre}</td>
+        <td class="text-end"><button class="btn btn-sm btn-lb-soft restaurant-client-pick-dynamic" type="button" data-cliente-id="${item.id}" data-cliente-nombre="${item.nombre}">Usar</button></td>
+      </tr>
+    `).join('');
+    restaurantClientSearchBody.querySelectorAll('.restaurant-client-pick-dynamic').forEach((button) => {
+      button.addEventListener('click', () => {
+        setRestaurantClientSelection(button.dataset.clienteId || '', button.dataset.clienteNombre || '');
+        const modal = document.getElementById('restaurantClientSearchModal');
+        if (modal && window.bootstrap) {
+          window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+        }
+      });
+    });
+  }
+
+  if (restaurantClientSearchInput) {
+    restaurantClientSearchInput.addEventListener('input', () => {
+      clearTimeout(restaurantClientSearchTimer);
+      const q = restaurantClientSearchInput.value.trim();
+      if (!q) {
+        if (restaurantClientSearchStatus) restaurantClientSearchStatus.textContent = 'Escribe para buscar.';
+        return;
+      }
+      restaurantClientSearchTimer = window.setTimeout(async () => {
+        try {
+          if (restaurantClientSearchStatus) restaurantClientSearchStatus.textContent = 'Buscando...';
+          const resp = await fetch(`/sales/clientes/search?q=${encodeURIComponent(q)}`, { headers: { 'X-Requested-With': 'fetch' } });
+          const data = await resp.json();
+          renderRestaurantClientRows(Array.isArray(data.items) ? data.items : []);
+          if (restaurantClientSearchStatus) restaurantClientSearchStatus.textContent = data.items?.length ? `${data.items.length} cliente(s)` : 'Sin coincidencias.';
+        } catch (error) {
+          if (restaurantClientSearchStatus) restaurantClientSearchStatus.textContent = 'No se pudo buscar clientes.';
+        }
+      }, 220);
+    });
+  }
+
+  const restaurantClientCreateForm = document.getElementById('restaurant-client-create-form');
+  const restaurantClientCreateStatus = document.getElementById('restaurant-client-create-status');
+  if (restaurantClientCreateForm) {
+    restaurantClientCreateForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(restaurantClientCreateForm);
+      try {
+        if (restaurantClientCreateStatus) restaurantClientCreateStatus.textContent = 'Guardando cliente...';
+        const resp = await fetch('/sales/cliente', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) {
+          throw new Error(data.message || 'No se pudo guardar');
+        }
+        setRestaurantClientSelection(String(data.id || ''), data.nombre || 'Cliente');
+        if (restaurantClientCreateStatus) restaurantClientCreateStatus.textContent = 'Cliente creado y seleccionado.';
+        restaurantClientCreateForm.reset();
+        const modal = document.getElementById('restaurantClientCreateModal');
+        if (modal && window.bootstrap) {
+          window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+        }
+      } catch (error) {
+        if (restaurantClientCreateStatus) restaurantClientCreateStatus.textContent = error.message || 'No se pudo guardar el cliente.';
+      }
+    });
+  }
+
+  if (restaurantOrderForm) {
+    restaurantOrderForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if ((serviceTypeSelect?.value || 'MESA') === 'MESA' && !String(tableIdSelect?.value || '').trim()) {
+        const modal = document.getElementById('restaurantTableModal');
+        if (modal && window.bootstrap) {
+          window.bootstrap.Modal.getOrCreateInstance(modal).show();
+        }
+        return;
+      }
+      if (!hasSelectedOrderPage) {
+        window.location.href = buildRestaurantDraftUrl(serviceTypeSelect?.value || 'MESA');
+        return;
+      }
+      document.getElementById('restaurant-inline-menu')?.scrollIntoView({behavior:'smooth', block:'start'});
+      document.getElementById('menu-search')?.focus();
+    });
+  }
+
+  if (orderStartButton) {
+    orderStartButton.addEventListener('click', () => {
+      if (restaurantOrderForm) {
+        restaurantOrderForm.requestSubmit();
+      }
+    });
+  }
+
+  const restaurantOrderLines = document.getElementById('restaurant-order-lines');
+  const restaurantHeaderTotalItems = document.getElementById('restaurant-header-total-items');
+  const restaurantSummaryTotalCs = document.getElementById('restaurant-summary-total-cs');
+  const restaurantSummaryTotalUsd = document.getElementById('restaurant-summary-total-usd');
+  const restaurantSummaryTotalItems = document.getElementById('restaurant-summary-total-items');
+  const restaurantSummaryCliente = document.getElementById('restaurant-summary-cliente');
+  const restaurantFooterTotalCs = document.getElementById('restaurant-footer-total-cs');
+  const restaurantFooterTotalUsd = document.getElementById('restaurant-footer-total-usd');
+  const restaurantLiveTotalCs = document.getElementById('restaurant-live-total-cs');
+  const restaurantLiveTotalUsd = document.getElementById('restaurant-live-total-usd');
+  const restaurantFooterService = document.getElementById('restaurant-footer-service');
+  const restaurantFooterCliente = document.getElementById('restaurant-footer-cliente');
+  const restaurantInlineMenu = document.getElementById('restaurant-inline-menu');
+  const restaurantOrderStateLabel = document.getElementById('restaurant-order-state-label');
+  const restaurantOrderTitle = document.getElementById('restaurant-order-title');
+  const restaurantOrderServiceBadge = document.getElementById('restaurant-order-service-badge');
+  const restaurantOrderNumberNote = document.getElementById('restaurant-order-number-note');
+  const restaurantOrderClientName = document.getElementById('restaurant-order-client-name');
+  const restaurantOrderHelperNote = document.getElementById('restaurant-order-helper-note');
+  const restaurantDirectPaymentPanel = document.getElementById('restaurant-direct-payment-panel');
+  const restaurantDirectCancelForm = document.getElementById('restaurant-direct-cancel-form');
+  const restaurantDirectPayBtn = document.getElementById('restaurant-direct-pay-btn');
+  const restaurantDirectSummaryCs = document.getElementById('restaurant-direct-summary-cs');
+  const restaurantDirectSummaryUsd = document.getElementById('restaurant-direct-summary-usd');
+  const restaurantDirectSummaryItems = document.getElementById('restaurant-direct-summary-items');
+  const restaurantDirectSummaryCliente = document.getElementById('restaurant-direct-summary-cliente');
+  const restaurantOpenPaymentModalBtn = document.getElementById('restaurant-open-payment-modal-btn');
+  const restaurantPaymentModal = document.getElementById('restaurantPaymentModal');
+  const restaurantPaymentModalForm = document.getElementById('restaurant-payment-modal-form');
+  const restaurantPaymentModalTitle = document.getElementById('restaurant-payment-modal-title');
+  const restaurantPaymentModalMeta = document.getElementById('restaurant-payment-modal-meta');
+  const restaurantPaymentModalTotalCs = document.getElementById('restaurant-payment-modal-total-cs');
+  const restaurantPaymentModalTotalUsd = document.getElementById('restaurant-payment-modal-total-usd');
+  const restaurantPaymentModalClienteName = document.getElementById('restaurant-payment-modal-cliente-name');
+  const restaurantPaymentModalVendedorName = document.getElementById('restaurant-payment-modal-vendedor-name');
+  const restaurantPaymentModalOrderNumber = document.getElementById('restaurant-payment-modal-order-number');
+  const restaurantPaymentModalOpenedAt = document.getElementById('restaurant-payment-modal-opened-at');
+  const restaurantPaymentModalClienteId = document.getElementById('restaurant-payment-modal-cliente-id');
+  const restaurantPaymentModalVendedorId = document.getElementById('restaurant-payment-modal-vendedor-id');
+  const restaurantPaymentModalMoneda = document.getElementById('restaurant-payment-modal-moneda');
+  const restaurantPaymentModalFormaPago = document.getElementById('restaurant-payment-modal-forma-pago');
+  const restaurantPaymentTotalInvoice = document.getElementById('restaurant-payment-total-invoice');
+  const restaurantPaymentTotalAplicado = document.getElementById('restaurant-payment-total-aplicado');
+  const restaurantPaymentBalance = document.getElementById('restaurant-payment-balance');
+  const restaurantPagoMoneda = document.getElementById('restaurant-pago-moneda');
+  const restaurantPagoMonto = document.getElementById('restaurant-pago-monto');
+  const restaurantBancoSelect = document.getElementById('restaurant-banco-select');
+  const restaurantCuentaSelect = document.getElementById('restaurant-cuenta-select');
+  const restaurantAddPayment = document.getElementById('restaurant-add-payment');
+  const restaurantPaymentList = document.getElementById('restaurant-payment-list');
+  const restaurantPaymentHidden = document.getElementById('restaurant-payment-hidden');
+  const restaurantPaymentModalSubmit = document.getElementById('restaurant-payment-modal-submit');
+  const tableDetailTitle = document.getElementById('table-detail-title');
+  const tableDetailNumber = document.getElementById('table-detail-number');
+  const tableDetailTotal = document.getElementById('table-detail-total');
+  const tableDetailItems = document.getElementById('table-detail-items');
+  const tableDetailService = document.getElementById('table-detail-service');
+  const tableDetailClient = document.getElementById('table-detail-client');
+  const tableDetailLines = document.getElementById('table-detail-lines');
+  const tableDetailEditLink = document.getElementById('table-detail-edit-link');
+  const tableDetailPaymentLink = document.getElementById('table-detail-payment-link');
+  const restaurantActiveOrderShell = document.getElementById('restaurant-active-order-shell');
+  const restaurantEmptyStateShell = document.getElementById('restaurant-empty-state-shell');
+  const restaurantEmptyStateTemplate = document.getElementById('restaurant-empty-state-template');
+
+  const fmtMoney = (value) => Number(value || 0).toFixed(2);
+  const restaurantRateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
+  let restaurantCurrentOrder = {% if ns.selected_order %}{{ ns.selected_order|tojson }}{% else %}null{% endif %};
+  let restaurantPaymentItems = [];
+
+  function restaurantFormatMoney(value, currency) {
+    const amount = Number(value || 0);
+    return `${currency === 'USD' ? '$' : 'C$'} ${fmtMoney(amount)}`;
+  }
+
+  function restaurantToUsd(monto, moneda) {
+    const amount = Number(monto || 0);
+    if (moneda === 'USD') return amount;
+    return restaurantRateToday > 0 ? amount / restaurantRateToday : 0;
+  }
+
+  function restaurantToCs(monto, moneda) {
+    const amount = Number(monto || 0);
+    if (moneda === 'CS') return amount;
+    return restaurantRateToday > 0 ? amount * restaurantRateToday : 0;
+  }
+
+  function restaurantParseMoneyInput(value) {
+    const cleaned = String(value || '').replace(',', '.').replace(/[^0-9.\-]/g, '');
+    const parsed = Number.parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function restaurantGetRemainingByCurrency(currency) {
+    if (!restaurantCurrentOrder) return 0;
+    const invoiceCurrency = restaurantPaymentModalMoneda?.value || restaurantCurrentOrder.moneda || 'CS';
+    const due = invoiceCurrency === 'USD' ? Number(restaurantCurrentOrder.total_usd || 0) : Number(restaurantCurrentOrder.total_cs || 0);
+    const totalPaidUsd = restaurantPaymentItems.reduce((acc, item) => acc + restaurantToUsd(item.monto, item.moneda), 0);
+    const totalPaidCs = restaurantPaymentItems.reduce((acc, item) => acc + restaurantToCs(item.monto, item.moneda), 0);
+    const paid = invoiceCurrency === 'USD' ? totalPaidUsd : totalPaidCs;
+    const remaining = Math.max(due - paid, 0);
+    if (currency === invoiceCurrency) return remaining;
+    if (currency === 'USD') return restaurantRateToday > 0 ? remaining / restaurantRateToday : 0;
+    return restaurantRateToday > 0 ? remaining * restaurantRateToday : 0;
+  }
+
+  function restaurantSetPaymentAmountDefault() {
+    if (!restaurantPagoMonto) return;
+    const currency = restaurantPagoMoneda?.value || 'CS';
+    restaurantPagoMonto.value = fmtMoney(restaurantGetRemainingByCurrency(currency));
+  }
+
+  function restaurantUpdatePaymentMethodButtons(selectedId) {
+    document.querySelectorAll('.restaurant-pay-method-btn').forEach((button) => {
+      button.classList.toggle('btn-lb-primary', button.dataset.formaId === String(selectedId || ''));
+      button.classList.toggle('btn-lb-soft', button.dataset.formaId !== String(selectedId || ''));
+    });
+  }
+
+  function restaurantSyncPaymentHidden() {
+    if (!restaurantPaymentHidden) return;
+    restaurantPaymentHidden.innerHTML = restaurantPaymentItems.map((item) => `
+      <input type="hidden" name="pago_forma_id" value="${item.formaId}">
+      <input type="hidden" name="pago_moneda" value="${item.moneda}">
+      <input type="hidden" name="pago_monto" value="${Number(item.monto || 0).toFixed(2)}">
+      <input type="hidden" name="pago_banco_id" value="${item.bancoId || ''}">
+      <input type="hidden" name="pago_cuenta_id" value="${item.cuentaId || ''}">
+    `).join('');
+    if (restaurantPaymentModalFormaPago) {
+      restaurantPaymentModalFormaPago.value = restaurantPaymentItems[0]?.formaId || '';
+    }
+  }
+
+  function restaurantUpdatePaymentSummary() {
+    if (!restaurantCurrentOrder) return;
+    const invoiceCurrency = restaurantPaymentModalMoneda?.value || restaurantCurrentOrder.moneda || 'CS';
+    const due = invoiceCurrency === 'USD' ? Number(restaurantCurrentOrder.total_usd || 0) : Number(restaurantCurrentOrder.total_cs || 0);
+    const totalPaidUsd = restaurantPaymentItems.reduce((acc, item) => acc + restaurantToUsd(item.monto, item.moneda), 0);
+    const totalPaidCs = restaurantPaymentItems.reduce((acc, item) => acc + restaurantToCs(item.monto, item.moneda), 0);
+    const paid = invoiceCurrency === 'USD' ? totalPaidUsd : totalPaidCs;
+    const balance = paid - due;
+    if (restaurantPaymentTotalInvoice) restaurantPaymentTotalInvoice.textContent = restaurantFormatMoney(due, invoiceCurrency);
+    if (restaurantPaymentTotalAplicado) restaurantPaymentTotalAplicado.textContent = restaurantFormatMoney(paid, invoiceCurrency);
+    if (restaurantPaymentBalance) restaurantPaymentBalance.textContent = restaurantFormatMoney(Math.abs(balance), invoiceCurrency);
+    if (restaurantPaymentModalSubmit) restaurantPaymentModalSubmit.disabled = !restaurantPaymentItems.length;
+  }
+
+  function restaurantRenderPaymentList() {
+    if (!restaurantPaymentList) return;
+    if (!restaurantPaymentItems.length) {
+      restaurantPaymentList.innerHTML = '<tr id="restaurant-payment-empty"><td colspan="5" class="text-center text-muted py-3">Sin pagos agregados</td></tr>';
+      restaurantSyncPaymentHidden();
+      restaurantUpdatePaymentSummary();
+      return;
+    }
+    restaurantPaymentList.innerHTML = restaurantPaymentItems.map((item, index) => `
+      <tr>
+        <td>${item.formaLabel}</td>
+        <td>${item.moneda}</td>
+        <td class="text-end">${restaurantFormatMoney(item.monto, item.moneda)}</td>
+        <td class="text-end">${item.bancoLabel || '-'}</td>
+        <td class="text-end">
+          <button class="btn btn-sm btn-outline-secondary restaurant-remove-payment" type="button" data-index="${index}">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+    restaurantPaymentList.querySelectorAll('.restaurant-remove-payment').forEach((button) => {
+      button.addEventListener('click', () => {
+        const index = Number(button.dataset.index || -1);
+        if (index < 0) return;
+        restaurantPaymentItems.splice(index, 1);
+        restaurantRenderPaymentList();
+        restaurantSetPaymentAmountDefault();
+      });
+    });
+    restaurantSyncPaymentHidden();
+    restaurantUpdatePaymentSummary();
+  }
+
+  function restaurantRefreshOpenOrdersCount() {
+    const count = document.querySelectorAll('.order-pill[href*="restaurant_order_id="]').length;
+    document.querySelectorAll('.badge.rounded-pill').forEach((badge) => {
+      if (badge.textContent.trim().match(/^\\d+$/)) {
+        badge.textContent = String(count);
+      }
+    });
+  }
+
+  function restaurantBindEmptyStateActions(scope) {
+    scope?.querySelectorAll('.restaurant-empty-new-order-btn').forEach((button) => {
+      button.addEventListener('click', () => {
+        document.querySelector('[data-service-card]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+  }
+
+  function restaurantRenderOpenOrdersInto(container) {
+    if (!container) return;
+    const liveOrders = Array.from(document.querySelectorAll('.order-pill[href*="restaurant_order_id="]'))
+      .map((link) => link.cloneNode(true));
+    const targetShell = container.closest('#restaurant-empty-state-shell');
+    const countNode = targetShell?.querySelector('[data-empty-open-orders-count]');
+    if (countNode) countNode.textContent = String(liveOrders.length);
+    if (!liveOrders.length) {
+      container.innerHTML = '<div class="text-center small py-4 text-muted">Sin cuentas abiertas.</div>';
+      return;
+    }
+    container.innerHTML = '';
+    liveOrders.forEach((link) => container.appendChild(link));
+  }
+
+  function restaurantShowEmptyStateCard() {
+    if (restaurantEmptyStateShell) {
+      restaurantEmptyStateShell.classList.remove('d-none');
+      restaurantEmptyStateShell.classList.remove('restaurant-smooth-fade-out');
+      restaurantEmptyStateShell.classList.add('restaurant-smooth-fade-in');
+      restaurantBindEmptyStateActions(restaurantEmptyStateShell);
+      restaurantRenderOpenOrdersInto(restaurantEmptyStateShell.querySelector('#restaurant-empty-open-orders, .d-grid.gap-2'));
+      return;
+    }
+    if (!restaurantActiveOrderShell || !restaurantEmptyStateTemplate) return;
+    const fragment = restaurantEmptyStateTemplate.content.cloneNode(true);
+    const newShell = document.createElement('div');
+    newShell.id = 'restaurant-empty-state-shell';
+    newShell.classList.add('restaurant-smooth-fade-in');
+    newShell.appendChild(fragment);
+    restaurantActiveOrderShell.insertAdjacentElement('afterend', newShell);
+    restaurantBindEmptyStateActions(newShell);
+    restaurantRenderOpenOrdersInto(newShell.querySelector('#restaurant-empty-open-orders'));
+  }
+
+  function restaurantMarkTableAsFree(tableId) {
+    if (!tableId) return;
+    const node = document.querySelector(`.table-node-admin[data-table-id="${tableId}"]`);
+    if (!node) return;
+    const tableName = node.dataset.tableName || 'Mesa';
+    const tableCode = node.dataset.tableCode || '';
+    const tableSector = node.dataset.tableSector || 'Salon';
+    const tableSeats = node.dataset.tableSeats || '0';
+    node.classList.remove('ocupada');
+    node.classList.add('free');
+    node.classList.add('state-transition');
+    node.removeAttribute('data-order');
+    node.innerHTML = `
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <div class="fw-bold">${tableName}</div>
+          <div class="small text-muted">${tableCode} · ${tableSeats} puestos</div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="mesa-status libre">LIBRE</span>
+        </div>
+      </div>
+      <div class="small text-muted">${tableSector}</div>
+      <div>
+        <button
+          class="btn btn-sm btn-lb-primary w-100 restaurant-table-select"
+          type="button"
+          data-table-id="${tableId}"
+          data-table-name="${tableName}"
+          data-table-meta="${tableCode} · ${tableSector} · ${tableSeats} puestos"
+        >
+          Elegir mesa
+        </button>
+      </div>
+    `;
+    window.setTimeout(() => node.classList.remove('state-transition'), 460);
+    node.querySelectorAll('.restaurant-table-select').forEach((button) => {
+      button.addEventListener('click', () => {
+        updateSelectedTable(button.dataset.tableId || '', button.dataset.tableName || '', button.dataset.tableMeta || '');
+        const modal = document.getElementById('restaurantTableModal');
+        if (modal && window.bootstrap) {
+          window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+        }
+      });
+    });
+  }
+
+  function restaurantHandleDeletedOrder(payload) {
+    if (!payload) return;
+    restaurantCurrentOrder = null;
+    if (payload.table_id) {
+      restaurantMarkTableAsFree(payload.table_id);
+    }
+    document.querySelectorAll(`.order-pill[href="/sales?restaurant_order_id=${payload.order_id}"]`).forEach((link) => {
+      link.remove();
+    });
+    restaurantRefreshOpenOrdersCount();
+    const finalizeEmptyStateTransition = () => {
+      if (restaurantActiveOrderShell) {
+        restaurantActiveOrderShell.classList.add('d-none');
+        restaurantActiveOrderShell.classList.remove('restaurant-smooth-fade-out');
+      }
+      restaurantShowEmptyStateCard();
+    };
+    if (restaurantActiveOrderShell) {
+      restaurantActiveOrderShell.classList.add('restaurant-smooth-fade-out');
+      window.setTimeout(finalizeEmptyStateTransition, 240);
+    } else {
+      finalizeEmptyStateTransition();
+    }
+    if (window.bootstrap) {
+      const detailModal = document.getElementById('restaurantTableDetailModal');
+      const paymentModal = document.getElementById('restaurantPaymentModal');
+      if (detailModal) {
+        const instance = window.bootstrap.Modal.getInstance(detailModal);
+        if (instance) instance.hide();
+      }
+      if (paymentModal) {
+        const instance = window.bootstrap.Modal.getInstance(paymentModal);
+        if (instance) instance.hide();
+      }
+      const tableModal = document.getElementById('restaurantTableModal');
+      if (tableModal && payload.table_id) {
+        window.bootstrap.Modal.getOrCreateInstance(tableModal).show();
+      }
+    }
+    window.history.replaceState({}, '', '/sales');
+  }
+
+  function openRestaurantPaymentModal(order) {
+    if (!order || !restaurantPaymentModal || !restaurantPaymentModalForm) return;
+    const items = Array.isArray(order.items) ? order.items : [];
+    if (!items.length) {
+      if (typeof Swal !== 'undefined') {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Orden sin consumos',
+          text: 'Primero agrega productos a la cuenta antes de facturar.',
+          confirmButtonColor: '#7ea7d8',
+          background: '#ffffff',
+        });
+      }
+      return;
+    }
+    if (restaurantPaymentModalTitle) {
+      restaurantPaymentModalTitle.textContent = order.mesa_nombre || order.service_type || 'Pedido activo';
+    }
+    if (restaurantPaymentModalMeta) {
+      restaurantPaymentModalMeta.textContent = `${order.numero || 'Sin numero'} · ${order.cliente || 'Consumidor final'}`;
+    }
+    if (restaurantPaymentModalClienteName) restaurantPaymentModalClienteName.textContent = order.cliente || 'Consumidor final';
+    if (restaurantPaymentModalVendedorName) restaurantPaymentModalVendedorName.textContent = order.vendedor || '-';
+    if (restaurantPaymentModalOrderNumber) restaurantPaymentModalOrderNumber.textContent = order.numero || '-';
+    if (restaurantPaymentModalOpenedAt) restaurantPaymentModalOpenedAt.textContent = order.opened_at || '-';
+    if (restaurantPaymentModalTotalCs) restaurantPaymentModalTotalCs.textContent = `C$ ${fmtMoney(order.total_cs)}`;
+    if (restaurantPaymentModalTotalUsd) restaurantPaymentModalTotalUsd.textContent = `$ ${fmtMoney(order.total_usd)}`;
+    if (restaurantPaymentModalClienteId) restaurantPaymentModalClienteId.value = order.cliente_id || '';
+    if (restaurantPaymentModalVendedorId) restaurantPaymentModalVendedorId.value = order.vendedor_id || '';
+    if (restaurantPaymentModalMoneda) restaurantPaymentModalMoneda.value = order.moneda || 'CS';
+    if (restaurantPagoMoneda) restaurantPagoMoneda.value = order.moneda || 'CS';
+    restaurantPaymentItems = [];
+    restaurantSyncPaymentHidden();
+    restaurantRenderPaymentList();
+    restaurantSetPaymentAmountDefault();
+    restaurantPaymentModalForm.action = `/sales/restaurante/orders/${order.id}/facturar`;
+    if (restaurantPaymentModalSubmit) restaurantPaymentModalSubmit.disabled = true;
+    if (window.bootstrap) {
+      window.bootstrap.Modal.getOrCreateInstance(restaurantPaymentModal).show();
+    }
+  }
+
+  function bindRestaurantDeleteForms() {
+    document.querySelectorAll('.restaurant-delete-item-form').forEach((form) => {
+      if (form.dataset.bound === '1') return;
+      form.dataset.bound = '1';
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (typeof Swal !== 'undefined') {
+          const result = await Swal.fire({
+            icon: 'question',
+            title: 'Retirar item',
+            text: 'Se quitara este producto de la orden activa.',
+            showCancelButton: true,
+            confirmButtonText: 'Si, retirar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#7ea7d8',
+            cancelButtonColor: '#c4d4e8',
+            background: '#ffffff',
+          });
+          if (!result.isConfirmed) return;
+        } else if (!window.confirm('Retirar este item de la cuenta?')) {
+          return;
+        }
+        try {
+          const resp = await fetch(form.action, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+          });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) throw new Error(data.message || 'No se pudo retirar');
+          if (data.order_deleted) {
+            restaurantHandleDeletedOrder(data);
+            if (typeof Swal !== 'undefined') {
+              await Swal.fire({
+                icon: 'success',
+                title: data.service_type === 'MESA' ? 'Mesa liberada' : 'Orden eliminada',
+                text: data.message || 'La orden quedo vacia y fue eliminada automaticamente.',
+                timer: 1800,
+                showConfirmButton: false,
+                background: '#ffffff',
+              });
+            }
+            return;
+          }
+          renderRestaurantOrder(data.order);
+        } catch (error) {
+          if (typeof Swal !== 'undefined') {
+            Swal.fire({ icon: 'error', title: 'Error', text: error.message || 'No se pudo retirar el item' });
+          }
+        }
+      });
+    });
+  }
+
+  function renderRestaurantOrder(order) {
+    if (!restaurantOrderLines || !order) return;
+    restaurantCurrentOrder = order;
+    syncDirectBillingUi(order.service_type || '');
+    if (restaurantOrderStateLabel) restaurantOrderStateLabel.textContent = 'Orden activa';
+    if (restaurantOrderTitle) restaurantOrderTitle.textContent = order.mesa_nombre || 'Orden activa';
+    if (restaurantOrderServiceBadge) restaurantOrderServiceBadge.textContent = order.service_type || '';
+    if (restaurantOrderNumberNote) restaurantOrderNumberNote.textContent = order.numero || '';
+    if (restaurantOrderClientName) restaurantOrderClientName.textContent = order.cliente || 'Consumidor final';
+    if (restaurantOrderHelperNote) {
+      restaurantOrderHelperNote.textContent = 'Cuenta abierta. Puedes seguir agregando o quitando productos antes de facturar.';
+    }
+    if (!order.items || !order.items.length) {
+      restaurantOrderLines.innerHTML = '<div class="text-center text-muted small py-5">Todavia no hay consumos en esta cuenta.</div>';
+    } else {
+      restaurantOrderLines.innerHTML = order.items.map((item) => `
+        <div class="pos-order-item">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div class="flex-grow-1">
+              <div class="fw-bold">${item.descripcion}</div>
+              <div class="small text-muted">${fmtMoney(item.cantidad)} x C$ ${fmtMoney(item.precio_cs)}</div>
+              <div class="small" style="color:#6d89ad;">${item.codigo}</div>
+            </div>
+            <div class="text-end">
+              <div class="fw-bold">C$ ${fmtMoney(item.subtotal_cs)}</div>
+              <form method="post" action="/sales/restaurante/items/${item.id}/delete" class="restaurant-delete-item-form">
+                <button class="pos-line-remove" type="submit" title="Quitar item" aria-label="Quitar item">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      `).join('');
+      bindRestaurantDeleteForms();
+    }
+    if (restaurantSummaryTotalCs) restaurantSummaryTotalCs.textContent = fmtMoney(order.total_cs);
+    if (restaurantSummaryTotalUsd) restaurantSummaryTotalUsd.textContent = fmtMoney(order.total_usd);
+    if (restaurantHeaderTotalItems) restaurantHeaderTotalItems.textContent = fmtMoney(order.total_items);
+    if (restaurantSummaryTotalItems) restaurantSummaryTotalItems.textContent = fmtMoney(order.total_items);
+    if (restaurantSummaryCliente) restaurantSummaryCliente.textContent = order.cliente || 'Consumidor final';
+    if (restaurantFooterTotalCs) restaurantFooterTotalCs.textContent = `C$ ${fmtMoney(order.total_cs)}`;
+    if (restaurantFooterTotalUsd) restaurantFooterTotalUsd.textContent = `$ ${fmtMoney(order.total_usd)}`;
+    if (restaurantLiveTotalCs) restaurantLiveTotalCs.textContent = `C$ ${fmtMoney(order.total_cs)}`;
+    if (restaurantLiveTotalUsd) restaurantLiveTotalUsd.textContent = `$ ${fmtMoney(order.total_usd)}`;
+    if (restaurantFooterService) restaurantFooterService.textContent = order.service_type || '';
+    if (restaurantFooterCliente) restaurantFooterCliente.textContent = order.cliente || 'Consumidor final';
+    if (restaurantDirectPaymentPanel) {
+      const directMode = isDirectBillingMode(order.service_type || '');
+      restaurantDirectPaymentPanel.classList.toggle('d-none', !directMode);
+      if (directMode) {
+        if (restaurantDirectSummaryCs) restaurantDirectSummaryCs.textContent = fmtMoney(order.total_cs);
+        if (restaurantDirectSummaryUsd) restaurantDirectSummaryUsd.textContent = fmtMoney(order.total_usd);
+        if (restaurantDirectSummaryItems) restaurantDirectSummaryItems.textContent = fmtMoney(order.total_items);
+        if (restaurantDirectSummaryCliente) restaurantDirectSummaryCliente.textContent = order.cliente || 'Consumidor final';
+        if (restaurantDirectCancelForm) restaurantDirectCancelForm.action = `/sales/restaurante/orders/${order.id}/cancel`;
+        if (restaurantDirectPayBtn) restaurantDirectPayBtn.disabled = !(Array.isArray(order.items) && order.items.length);
+      }
+    }
+    if (restaurantOpenPaymentModalBtn) {
+      restaurantOpenPaymentModalBtn.disabled = !(Array.isArray(order.items) && order.items.length);
+    }
+  }
+
+  function openRestaurantTableDetail(order) {
+    if (!order) return;
+    if (tableDetailTitle) tableDetailTitle.textContent = order.mesa_nombre || 'Detalle de mesa';
+    if (tableDetailNumber) tableDetailNumber.textContent = order.numero || '-';
+    if (tableDetailTotal) tableDetailTotal.textContent = `C$ ${fmtMoney(order.total_cs)}`;
+    if (tableDetailItems) tableDetailItems.textContent = fmtMoney(order.total_items);
+    if (tableDetailService) tableDetailService.textContent = order.service_type || '-';
+    if (tableDetailClient) tableDetailClient.textContent = order.cliente || 'Consumidor final';
+    if (tableDetailEditLink) tableDetailEditLink.href = `/sales?restaurant_order_id=${order.id}`;
+    if (tableDetailPaymentLink) tableDetailPaymentLink.href = `/sales?restaurant_order_id=${order.id}&focus_payment=1`;
+    if (tableDetailLines) {
+      const items = Array.isArray(order.items) ? order.items : [];
+      tableDetailLines.innerHTML = items.length
+        ? items.map((item) => `
+            <div class="table-admin-detail-item">
+              <div class="d-flex justify-content-between align-items-start gap-3">
+                <div>
+                  <div class="fw-bold">${item.descripcion || item.codigo || 'Producto'}</div>
+                  <div class="small text-muted">${fmtMoney(item.cantidad)} x C$ ${fmtMoney(item.precio_cs)}</div>
+                  <div class="small" style="color:#6d89ad;">${item.codigo || ''}</div>
+                </div>
+                <div class="fw-bold">C$ ${fmtMoney(item.subtotal_cs)}</div>
+              </div>
+            </div>
+          `).join('')
+        : '<div class="text-center text-muted small py-4">La cuenta aun no tiene items cargados.</div>';
+    }
+    const modal = document.getElementById('restaurantTableDetailModal');
+    if (modal && window.bootstrap) {
+      window.bootstrap.Modal.getOrCreateInstance(modal).show();
+    }
+  }
+
+  function bindRestaurantAddForms() {
+    document.querySelectorAll('.restaurant-add-item-form').forEach((form) => {
+      if (form.dataset.bound === '1') return;
+      form.dataset.bound = '1';
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        try {
+          const resp = await fetch(form.action, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+            body: new FormData(form),
+          });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) throw new Error(data.message || 'No se pudo agregar');
+          renderRestaurantOrder(data.order);
+          const qtyInput = form.querySelector('input[name="cantidad"]');
+          if (qtyInput) qtyInput.value = '1';
+        } catch (error) {
+          if (typeof Swal !== 'undefined') {
+            Swal.fire({ icon: 'error', title: 'Error', text: error.message || 'No se pudo agregar el producto' });
+          }
+        }
+      });
+    });
+  }
+
+  function activateDraftOrder(order) {
+    if (!order?.id) return;
+    window.history.replaceState({}, '', `/sales?restaurant_order_id=${order.id}`);
+    document.querySelectorAll('.restaurant-draft-add-item-form').forEach((form) => {
+      form.action = `/sales/restaurante/orders/${order.id}/items`;
+      form.classList.add('restaurant-add-item-form');
+      form.classList.remove('restaurant-draft-add-item-form');
+      delete form.dataset.bound;
+    });
+    bindRestaurantAddForms();
+    renderRestaurantOrder(order);
+    if (isDirectBillingMode(order.service_type || '')) {
+      if (restaurantOrderStateLabel) restaurantOrderStateLabel.textContent = 'Facturacion directa';
+      if (restaurantOrderHelperNote) {
+        restaurantOrderHelperNote.textContent = 'Sigue agregando productos sin recargar la pagina y cobra cuando el pedido este listo.';
+      }
+    }
+  }
+
+  document.querySelectorAll('.restaurant-draft-add-item-form').forEach((form) => {
+    if (form.dataset.bound === '1') return;
+    form.dataset.bound = '1';
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const resp = await fetch(form.action, {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+          body: new FormData(form),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) throw new Error(data.message || 'No se pudo agregar');
+        activateDraftOrder(data.order);
+        const qtyInput = form.querySelector('input[name="cantidad"]');
+        if (qtyInput) qtyInput.value = '1';
+      } catch (error) {
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({ icon: 'error', title: 'Error', text: error.message || 'No se pudo agregar el producto' });
+        }
+      }
+    });
+  });
+  bindRestaurantAddForms();
+  bindRestaurantDeleteForms();
+
+  document.querySelectorAll('.restaurant-qty-input').forEach((input) => {
+    input.addEventListener('focus', () => input.select());
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+      }
+    });
+    input.addEventListener('input', () => {
+      const sanitized = input.value.replace(',', '.').replace(/[^0-9.]/g, '');
+      const parts = sanitized.split('.');
+      input.value = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : sanitized;
+    });
+  });
+
+  document.querySelectorAll('.restaurant-product-pick').forEach((picker) => {
+    const submitProductPick = () => {
+      const card = picker.closest('.menu-card');
+      const form = card?.querySelector('.restaurant-draft-add-item-form, .restaurant-add-item-form');
+      if (!form) return;
+      form.requestSubmit();
+    };
+    picker.addEventListener('click', (event) => {
+      if (event.target.closest('button, input, select, textarea, a')) return;
+      submitProductPick();
+    });
+    picker.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      submitProductPick();
+    });
+  });
+
+  document.querySelectorAll('.table-node-admin').forEach((node) => {
+    const orderJson = node.dataset.order;
+    if (!orderJson) return;
+    const openDetail = () => {
+      node.classList.add('state-transition');
+      window.setTimeout(() => node.classList.remove('state-transition'), 420);
+      try {
+        openRestaurantTableDetail(JSON.parse(orderJson));
+      } catch (error) {
+        /* no-op */
+      }
+    };
+    node.addEventListener('dblclick', openDetail);
+    node.querySelectorAll('.restaurant-table-detail-trigger').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openDetail();
+      });
+    });
+  });
+
+  document.querySelectorAll('.restaurant-update-order-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (typeof Swal !== 'undefined') {
+        await Swal.fire({
+          icon: 'success',
+          title: 'Orden actualizada',
+          text: 'La edicion de la cuenta fue cerrada correctamente.',
+          timer: 3000,
+          timerProgressBar: true,
+          showConfirmButton: false,
+          background: '#ffffff',
+        });
+      }
+      window.location.href = '/sales?success=Orden+actualizada';
+    });
+  });
+
+  document.querySelectorAll('.restaurant-cancel-order-form').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      if (typeof Swal === 'undefined') return;
+      event.preventDefault();
+      const result = await Swal.fire({
+        icon: 'warning',
+        title: 'Anular cuenta abierta',
+        text: 'La cuenta se cerrara sin facturarse. Puedes retomar otra orden luego.',
+        showCancelButton: true,
+        confirmButtonText: 'Si, anular',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#7ea7d8',
+        cancelButtonColor: '#c4d4e8',
+        background: '#ffffff',
+      });
+      if (result.isConfirmed) {
+        form.submit();
+      }
+    });
+  });
+
+  document.querySelectorAll('.restaurant-pay-method-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      const formaId = button.dataset.formaId || '';
+      if (restaurantPaymentModalFormaPago) {
+        restaurantPaymentModalFormaPago.value = formaId;
+      }
+      restaurantUpdatePaymentMethodButtons(formaId);
+      restaurantSetPaymentAmountDefault();
+      restaurantPagoMonto?.focus();
+      restaurantPagoMonto?.select();
+    });
+  });
+
+  if (restaurantPagoMoneda) {
+    restaurantPagoMoneda.addEventListener('change', () => {
+      restaurantSetPaymentAmountDefault();
+      const selectedCurrency = restaurantPagoMoneda.value || '';
+      if (restaurantCuentaSelect) {
+        Array.from(restaurantCuentaSelect.options).forEach((option) => {
+          if (!option.value) {
+            option.hidden = false;
+            return;
+          }
+          const optionCurrency = String(option.dataset.moneda || '').toUpperCase();
+          option.hidden = optionCurrency && optionCurrency !== selectedCurrency;
+        });
+      }
+    });
+  }
+
+  if (restaurantBancoSelect) {
+    restaurantBancoSelect.addEventListener('change', () => {
+      const bancoId = restaurantBancoSelect.value || '';
+      if (restaurantCuentaSelect) {
+        restaurantCuentaSelect.value = '';
+        Array.from(restaurantCuentaSelect.options).forEach((option) => {
+          if (!option.value) {
+            option.hidden = false;
+            return;
+          }
+          const matchesBank = !bancoId || String(option.dataset.banco || '') === bancoId;
+          const matchesCurrency = !restaurantPagoMoneda?.value || String(option.dataset.moneda || '').toUpperCase() === String(restaurantPagoMoneda.value || '').toUpperCase();
+          option.hidden = !(matchesBank && matchesCurrency);
+        });
+      }
+    });
+  }
+
+  if (restaurantAddPayment) {
+    restaurantAddPayment.addEventListener('click', async () => {
+      const formaId = restaurantPaymentModalFormaPago?.value || '';
+      const formaOption = Array.from(restaurantPaymentModalFormaPago?.options || []).find((option) => option.value === formaId);
+      const formaLabel = (formaOption?.textContent || '').trim();
+      const monedaPago = (restaurantPagoMoneda?.value || 'CS').toUpperCase();
+      const montoPago = restaurantParseMoneyInput(restaurantPagoMonto?.value || '0');
+      const bancoId = restaurantBancoSelect?.value || '';
+      const bancoLabel = restaurantBancoSelect?.selectedOptions?.[0]?.textContent?.trim() || '';
+      const cuentaId = restaurantCuentaSelect?.value || '';
+      const lowerLabel = formaLabel.toLowerCase();
+      const isCash = lowerLabel.includes('efectivo') || formaOption?.dataset.cash === '1';
+      const needsBank = lowerLabel.includes('tarjeta') || lowerLabel.includes('banco') || lowerLabel.includes('transferencia') || lowerLabel.includes('deposito');
+
+      if (!formaId) {
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({ icon: 'warning', title: 'Forma de pago requerida', text: 'Selecciona primero una forma de pago.' });
+        }
+        return;
+      }
+      if (montoPago <= 0) {
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({ icon: 'warning', title: 'Monto invalido', text: 'Ingresa un monto mayor que cero.' });
+        }
+        return;
+      }
+      if (needsBank && !bancoId) {
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({ icon: 'warning', title: 'Banco requerido', text: 'Selecciona el banco para esta forma de pago.' });
+        }
+        return;
+      }
+      const dueInPaymentCurrency = restaurantPagoMoneda?.value === 'USD'
+        ? Number(restaurantCurrentOrder?.total_usd || 0)
+        : Number(restaurantCurrentOrder?.total_cs || 0);
+      const totalAppliedInCurrency = restaurantPaymentItems.reduce((acc, item) => {
+        return acc + (monedaPago === 'USD' ? restaurantToUsd(item.monto, item.moneda) : restaurantToCs(item.monto, item.moneda));
+      }, 0);
+      if (!isCash && totalAppliedInCurrency + montoPago > dueInPaymentCurrency + 0.0001) {
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({ icon: 'warning', title: 'Pago excede el saldo', text: 'Solo efectivo permite vuelto.' });
+        }
+        return;
+      }
+
+      restaurantPaymentItems.push({
+        formaId,
+        formaLabel,
+        moneda: monedaPago,
+        monto: montoPago,
+        bancoId,
+        bancoLabel: bancoId ? bancoLabel : '',
+        cuentaId,
+      });
+      restaurantRenderPaymentList();
+      restaurantSetPaymentAmountDefault();
+    });
+  }
+
+  if (restaurantPaymentModalForm) {
+    restaurantPaymentModalForm.addEventListener('submit', async (event) => {
+      if (restaurantPaymentItems.length) return;
+      event.preventDefault();
+      if (typeof Swal !== 'undefined') {
+        await Swal.fire({
+          icon: 'warning',
+          title: 'Agrega pagos',
+          text: 'Debes aplicar al menos una forma de pago antes de facturar.',
+          confirmButtonColor: '#7ea7d8',
+          background: '#ffffff',
+        });
+      }
+    });
+  }
+
+  if (restaurantDirectPayBtn) {
+    restaurantDirectPayBtn.addEventListener('click', () => {
+      openRestaurantPaymentModal(restaurantCurrentOrder);
+    });
+  }
+
+  if (restaurantOpenPaymentModalBtn) {
+    restaurantOpenPaymentModalBtn.addEventListener('click', () => {
+      openRestaurantPaymentModal(restaurantCurrentOrder);
+    });
+  }
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const shouldOpenMenu = urlParams.get('open_menu') === '1';
+  const shouldFocusPayment = urlParams.get('focus_payment') === '1';
+  const shouldOpenTableModal = urlParams.get('open_table_modal') === '1';
+  if (shouldOpenMenu) {
+    const inlineMenu = document.getElementById('restaurant-inline-menu');
+    if (inlineMenu) {
+      window.setTimeout(() => {
+        inlineMenu.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const search = document.getElementById('menu-search');
+        if (search) search.focus();
+      }, 240);
+    }
+  }
+
+  if (isDraftModePage && !hasSelectedOrderPage && restaurantInlineMenu) {
+    window.setTimeout(() => {
+      restaurantInlineMenu.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const search = document.getElementById('menu-search');
+      if (search) search.focus();
+    }, 260);
+  }
+  if (shouldOpenTableModal) {
+    const tableModal = document.getElementById('restaurantTableModal');
+    if (tableModal && window.bootstrap) {
+      window.setTimeout(() => {
+        window.bootstrap.Modal.getOrCreateInstance(tableModal).show();
+      }, 220);
+    }
+  }
+  if (shouldFocusPayment) {
+    if (restaurantCurrentOrder?.id) {
+      window.setTimeout(() => {
+        openRestaurantPaymentModal(restaurantCurrentOrder);
+      }, 240);
+    }
+  }
+
+  {% if success %}
+  if (typeof Swal !== 'undefined') {
+    Swal.fire({
+      icon: 'success',
+      title: 'Venta registrada',
+      text: '{{ success }}',
+      timer: 1800,
+      showConfirmButton: false,
+      background: '#ffffff',
+    });
+  }
+  (function () {
+    const printLink = document.getElementById('restaurant-print-ticket');
+    if (!printLink) {
+      setTimeout(() => {
+        window.location.replace('/sales');
+      }, 1900);
+      return;
+    }
+    const printUrl = printLink.getAttribute('href');
+    const reloadAfterPrint = () => {
+      window.removeEventListener('focus', reloadAfterPrint);
+      setTimeout(() => {
+        window.location.replace('/sales');
+      }, 180);
+    };
+    const openPrint = () => {
+      if (!printUrl) return;
+      window.addEventListener('focus', reloadAfterPrint, { once: true });
+      if (window.erpOpenPrintable) {
+        window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
+      } else {
+        window.open(printUrl, 'erp_print_window', 'width=520,height=780,resizable=yes,scrollbars=yes');
+      }
+      setTimeout(() => {
+        window.location.replace('/sales');
+      }, 12000);
+    };
+
+    printLink.addEventListener('click', (event) => {
+      event.preventDefault();
+      openPrint();
+    });
+
+    setTimeout(() => {
+      openPrint();
+    }, 350);
+  })();
+  {% endif %}
+</script>
+{% endblock %}

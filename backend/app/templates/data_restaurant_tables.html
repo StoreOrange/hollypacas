@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .mesa-config-shell {
+    background:
+      radial-gradient(circle at top right, rgba(126,167,216,.10), transparent 24rem),
+      linear-gradient(180deg, #ffffff, #f6f9ff);
+  }
+  .mesa-config-card {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(244,248,255,.96));
+    box-shadow: 0 18px 34px rgba(56,86,122,.08);
+  }
+  .mesa-quick-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 1rem;
+  }
+  .mesa-mini-card {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 20px;
+    background: #fff;
+    padding: 1rem;
+  }
+  .mesa-preview-board {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 24px;
+    background:
+      radial-gradient(circle at top, rgba(126,167,216,.12), transparent 34rem),
+      linear-gradient(180deg, #ffffff, #f5f9ff);
+    min-height: 280px;
+    overflow: hidden;
+  }
+  .mesa-preview-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    min-width: 82px;
+    min-height: 82px;
+    border-radius: 20px;
+    border: 1px solid rgba(126,167,216,.18);
+    background: linear-gradient(180deg, #ffffff, #edf5ff);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 20px rgba(56,86,122,.08);
+    padding: .5rem;
+    text-align: center;
+  }
+  .mesa-form-advanced {
+    border-top: 1px dashed rgba(126,167,216,.20);
+    margin-top: 1rem;
+    padding-top: 1rem;
+  }
+</style>
+<div id="layout" class="mesa-config-shell min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+              <li class="breadcrumb-item"><a href="/data">Datos</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Mesas</li>
+            </ol>
+          </nav>
+          <h1 class="h5 mb-1">Catalogo de mesas</h1>
+          <p class="text-muted mb-0">Controla nombres, numeracion, sectores y capacidad del salon de La Barrera.</p>
+        </div>
+        <div class="d-none d-md-block">
+          <a class="btn btn-outline-secondary btn-sm" href="/sales">
+            <i class="bi bi-cup-hot"></i>
+            Volver a restaurante
+          </a>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-2">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2">{{ success }}</div>
+      {% endif %}
+
+      <div class="row g-4">
+        <div class="col-lg-8">
+          <div class="mesa-config-card p-4 mb-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+              <div>
+                <div class="odoo-section-title mb-1">{{ "Editar mesa" if edit_item else "Nueva mesa" }}</div>
+                <div class="text-muted small">Configura lo esencial rapido. Lo tecnico queda en opciones avanzadas.</div>
+              </div>
+              {% if edit_item %}
+              <a class="btn btn-outline-secondary btn-sm" href="/data/mesas">Nueva mesa</a>
+              {% endif %}
+            </div>
+            {% if not edit_item %}
+            <div class="mb-3">
+              <div class="small text-muted mb-2">Presets rapidos</div>
+              <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary mesa-preset" data-code="M-01" data-name="Mesa 1" data-sector="Salon principal" data-seats="4" data-shape="ROUND">Mesa 4 puestos</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary mesa-preset" data-code="M-02" data-name="Mesa 2" data-sector="Salon principal" data-seats="2" data-shape="SQUARE">Mesa 2 puestos</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary mesa-preset" data-code="VIP-1" data-name="VIP 1" data-sector="VIP" data-seats="6" data-shape="OVAL">Mesa VIP</button>
+              </div>
+            </div>
+            {% endif %}
+            <form class="row g-3" method="post" action="{{ '/data/mesas/' ~ edit_item.id ~ '/update' if edit_item else '/data/mesas' }}">
+              <div class="col-md-3">
+                <label class="odoo-field-label">Codigo *</label>
+                <input class="form-control odoo-input" name="code" id="mesa-code" required value="{{ edit_item.code if edit_item else '' }}" placeholder="M-01" />
+              </div>
+              <div class="col-md-5">
+                <label class="odoo-field-label">Nombre visible *</label>
+                <input class="form-control odoo-input" name="name" id="mesa-name" required value="{{ edit_item.name if edit_item else '' }}" placeholder="Mesa 1, Terraza 2, Lounge 1" />
+              </div>
+              <div class="col-md-4">
+                <label class="odoo-field-label">Sector</label>
+                <input class="form-control odoo-input" name="sector" id="mesa-sector" value="{{ edit_item.sector if edit_item else 'Salon principal' }}" placeholder="Salon principal, Terraza, Lounge" />
+              </div>
+              <div class="col-md-2">
+                <label class="odoo-field-label">Capacidad</label>
+                <input class="form-control odoo-input" type="number" min="1" name="seats" id="mesa-seats" value="{{ edit_item.seats if edit_item else 4 }}" />
+              </div>
+              <div class="col-md-3">
+                <label class="odoo-field-label">Forma visual</label>
+                <select class="form-select odoo-input" name="shape" id="mesa-shape">
+                  {% set current_shape = edit_item.shape if edit_item else 'ROUND' %}
+                  <option value="ROUND" {% if current_shape == 'ROUND' %}selected{% endif %}>Redonda</option>
+                  <option value="SQUARE" {% if current_shape == 'SQUARE' %}selected{% endif %}>Cuadrada</option>
+                  <option value="OVAL" {% if current_shape == 'OVAL' %}selected{% endif %}>Ovalada</option>
+                </select>
+              </div>
+              <div class="col-md-12">
+                <details class="mesa-form-advanced">
+                  <summary class="fw-semibold text-primary" style="cursor:pointer;">Opciones avanzadas</summary>
+                  <div class="row g-3 mt-1">
+                    {% if branches|length > 1 %}
+                    <div class="col-md-4">
+                <label class="odoo-field-label">Sucursal *</label>
+                <select class="form-select odoo-input" name="branch_id" required>
+                  {% for branch in branches %}
+                  <option value="{{ branch.id }}" {% if edit_item and edit_item.branch_id == branch.id %}selected{% endif %}>{{ branch.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+                    {% else %}
+                    <input type="hidden" name="branch_id" value="{{ edit_item.branch_id if edit_item else branches[0].id }}">
+                    <div class="col-md-4">
+                      <label class="odoo-field-label">Sucursal</label>
+                      <div class="form-control odoo-input bg-light">{{ branches[0].name }}</div>
+                    </div>
+                    {% endif %}
+                    {% if bodegas|length > 1 %}
+                    <div class="col-md-4">
+                <label class="odoo-field-label">Bodega *</label>
+                <select class="form-select odoo-input" name="bodega_id" required>
+                  {% for bodega in bodegas %}
+                  <option value="{{ bodega.id }}" {% if edit_item and edit_item.bodega_id == bodega.id %}selected{% endif %}>{{ bodega.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+                    {% else %}
+                    <input type="hidden" name="bodega_id" value="{{ edit_item.bodega_id if edit_item else bodegas[0].id }}">
+                    <div class="col-md-4">
+                      <label class="odoo-field-label">Bodega</label>
+                      <div class="form-control odoo-input bg-light">{{ bodegas[0].name }}</div>
+                    </div>
+                    {% endif %}
+                    <div class="col-md-2">
+                <label class="odoo-field-label">Orden</label>
+                <input class="form-control odoo-input" type="number" min="0" name="sort_order" value="{{ edit_item.sort_order if edit_item else 0 }}" />
+              </div>
+                    <div class="col-md-2">
+                <label class="odoo-field-label">Pos X %</label>
+                <input class="form-control odoo-input" type="number" min="0" max="90" name="pos_x" value="{{ edit_item.pos_x if edit_item else 10 }}" />
+              </div>
+                    <div class="col-md-2">
+                <label class="odoo-field-label">Pos Y %</label>
+                <input class="form-control odoo-input" type="number" min="0" max="90" name="pos_y" value="{{ edit_item.pos_y if edit_item else 10 }}" />
+              </div>
+                    <div class="col-md-2">
+                <label class="odoo-field-label">Ancho</label>
+                <input class="form-control odoo-input" type="number" min="1" max="3" name="width_units" value="{{ edit_item.width_units if edit_item else 1 }}" />
+              </div>
+                    <div class="col-md-2">
+                <label class="odoo-field-label">Alto</label>
+                <input class="form-control odoo-input" type="number" min="1" max="2" name="height_units" value="{{ edit_item.height_units if edit_item else 1 }}" />
+              </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="active" id="active" {% if edit_item %}{% if edit_item.active %}checked{% endif %}{% else %}checked{% endif %} />
+                  <label class="form-check-label" for="active">Activa</label>
+                </div>
+              </div>
+                  </div>
+                </details>
+              </div>
+              <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary">Guardar</button>
+                {% if edit_item %}
+                <a class="btn btn-outline-secondary" href="/data/mesas">Cancelar</a>
+                {% endif %}
+              </div>
+            </form>
+          </div>
+
+          <div class="mesa-config-card p-4">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <div class="odoo-section-title mb-0">Vista rapida</div>
+              <span class="text-muted small">{{ items|length }} mesas registradas</span>
+            </div>
+            <div class="mesa-preview-board position-relative p-3 mb-4">
+              <div class="small text-muted mb-2">Plano resumido del local</div>
+              <div class="position-relative rounded-4 overflow-hidden" style="min-height:220px;">
+                <div class="position-absolute top-0 start-0 m-3 px-3 py-2 rounded-pill border bg-white text-muted small">Barra</div>
+                {% for item in items if item.active %}
+                <div
+                  class="mesa-preview-node"
+                  style="
+                    left: {{ item.pos_x or 10 }}%;
+                    top: {{ item.pos_y or 10 }}%;
+                    width: {{ 74 * (item.width_units or 1) }}px;
+                    min-height: {{ 74 * (item.height_units or 1) }}px;
+                  "
+                >
+                  <div class="fw-bold">{{ item.name }}</div>
+                  <div class="small text-muted">{{ item.code }}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="mesa-quick-grid">
+              {% for item in items %}
+                <div class="mesa-mini-card">
+                  <div class="d-flex align-items-start justify-content-between gap-2">
+                    <div>
+                      <div class="fw-bold">{{ item.name }}</div>
+                      <div class="text-muted small">{{ item.code }} · {{ item.sector or 'Salon principal' }}</div>
+                    </div>
+                    <span class="odoo-pill {{ 'success' if item.active else '' }}">{{ 'Activa' if item.active else 'Inactiva' }}</span>
+                  </div>
+                  <div class="small mt-3 text-muted">{{ item.branch.name if item.branch else '-' }} · {{ item.bodega.name if item.bodega else '-' }}</div>
+                  <div class="small text-muted">Capacidad {{ item.seats }} · {{ item.shape }}</div>
+                  <div class="mt-3 text-end">
+                    <a class="btn btn-sm btn-outline-secondary" href="/data/mesas?edit_id={{ item.id }}">Editar</a>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-4">
+          <div class="mesa-config-card p-4">
+            <div class="odoo-section-title mb-3">Guia rapida</div>
+            <div class="d-grid gap-2 text-muted small">
+              <div>Usa codigos simples como <strong>M-01</strong>, <strong>M-02</strong> o <strong>VIP-1</strong>.</div>
+              <div>En el dia a dia basta con: nombre, sector, capacidad y forma.</div>
+              <div>Las posiciones y tamanos solo se tocan si quieres acomodar el plano visual.</div>
+              <div>Si una mesa no opera, desactvala y desaparece del flujo principal.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+<script>
+  document.querySelectorAll('.mesa-preset').forEach((button) => {
+    button.addEventListener('click', () => {
+      const code = document.getElementById('mesa-code');
+      const name = document.getElementById('mesa-name');
+      const sector = document.getElementById('mesa-sector');
+      const seats = document.getElementById('mesa-seats');
+      const shape = document.getElementById('mesa-shape');
+      if (code && !code.value) code.value = button.dataset.code || '';
+      if (name && !name.value) name.value = button.dataset.name || '';
+      if (sector) sector.value = button.dataset.sector || 'Salon principal';
+      if (seats) seats.value = button.dataset.seats || '4';
+      if (shape) shape.value = button.dataset.shape || 'ROUND';
+    });
+  });
+</script>

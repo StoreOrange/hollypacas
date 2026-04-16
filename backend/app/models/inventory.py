@@ -159,6 +159,8 @@ class Producto(Base):
     servicio_producto = Column(Boolean, default=False)
     costo_producto = Column(Numeric(12, 2), default=0)
     referencia_producto = Column(String(120), nullable=True)
+    image_url = Column(String(260), nullable=True)
+    tipo_producto = Column(String(30), nullable=False, default="DIRECTO")
     es_por_peso = Column(Boolean, default=False)
     unidad_medida_id = Column(Integer, ForeignKey("unidades_medida.id"), nullable=True)
     usuario_registro = Column(String(80), nullable=True)
@@ -176,6 +178,18 @@ class Producto(Base):
         cascade="all, delete-orphan",
         foreign_keys="ProductoCombo.parent_producto_id",
     )
+    receta = relationship(
+        "ProductoReceta",
+        back_populates="producto_final",
+        uselist=False,
+        cascade="all, delete-orphan",
+        foreign_keys="ProductoReceta.producto_final_id",
+    )
+    receta_insumo = relationship(
+        "ProductoRecetaLinea",
+        back_populates="insumo",
+        foreign_keys="ProductoRecetaLinea.insumo_producto_id",
+    )
 
 
 class ProductoCombo(Base):
@@ -190,6 +204,44 @@ class ProductoCombo(Base):
 
     parent = relationship("Producto", foreign_keys=[parent_producto_id], back_populates="combo_children")
     child = relationship("Producto", foreign_keys=[child_producto_id])
+
+
+class ProductoReceta(Base):
+    __tablename__ = "productos_recetas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_final_id = Column(Integer, ForeignKey("productos.id"), nullable=False, unique=True)
+    nombre = Column(String(160), nullable=True)
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    producto_final = relationship("Producto", back_populates="receta", foreign_keys=[producto_final_id])
+    lineas = relationship(
+        "ProductoRecetaLinea",
+        back_populates="receta",
+        cascade="all, delete-orphan",
+        order_by="ProductoRecetaLinea.id",
+    )
+
+
+class ProductoRecetaLinea(Base):
+    __tablename__ = "productos_receta_lineas"
+    __table_args__ = (
+        UniqueConstraint("receta_id", "insumo_producto_id", name="uq_producto_receta_insumo"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    receta_id = Column(Integer, ForeignKey("productos_recetas.id"), nullable=False)
+    insumo_producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    unidad_medida_id = Column(Integer, ForeignKey("unidades_medida.id"), nullable=True)
+    cantidad = Column(Numeric(14, 4), nullable=False, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    receta = relationship("ProductoReceta", back_populates="lineas")
+    insumo = relationship("Producto", back_populates="receta_insumo", foreign_keys=[insumo_producto_id])
+    unidad_medida = relationship("UnidadMedida")
 
 
 class SaldoProducto(Base):

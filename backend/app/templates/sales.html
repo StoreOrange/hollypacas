@@ -2124,9 +2124,22 @@
     }
     productList.innerHTML = visibleItems
       .map((item) => {
+        const imageBlock = item.image_url
+          ? `
+              <div class="d-flex align-items-center justify-content-center flex-shrink-0 p-2" style="width:92px;height:92px;border-radius:18px;border:1px solid rgba(148,163,184,.22);background:linear-gradient(180deg,#ffffff,#f7fafc);">
+                <img src="${item.image_url}" alt="${item.descripcion}" style="width:100%;height:100%;object-fit:contain;border-radius:14px;background:#fff;" />
+              </div>
+            `
+          : `
+              <div class="d-flex align-items-center justify-content-center flex-shrink-0 text-slate p-2" style="width:92px;height:92px;border-radius:18px;border:1px dashed rgba(148,163,184,.28);background:linear-gradient(180deg,#ffffff,#f8fafc);">
+                <i class="bi bi-image fs-3"></i>
+              </div>
+            `;
         return `
           <div class="product-pick-row px-3 py-2 flex items-center justify-between gap-3" data-name="${item.descripcion}" data-code="${item.cod_producto}" role="option">
-            <div class="flex-1">
+            <div class="d-flex align-items-start gap-3 flex-1 min-w-0">
+              ${imageBlock}
+              <div class="flex-1 min-w-0">
               <div class="text-xs uppercase tracking-[0.2em] text-brand font-semibold">${item.cod_producto}</div>
               <div class="font-semibold text-ink text-base">${item.descripcion}</div>
               <div class="mt-1 flex flex-wrap items-center justify-between gap-3 text-sm">
@@ -2154,6 +2167,7 @@
                     <input class="qty-input w-24 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="${weighted_sales_enabled && item.es_por_peso ? "0.01" : "1"}" min="${weighted_sales_enabled && item.es_por_peso ? "0.01" : "1"}" max="${item.free_qty ?? item.existencia}" value="${weighted_sales_enabled && item.es_por_peso ? "0.50" : "1"}" />
                   </div>
                 </div>
+              </div>
               </div>
             </div>
             <button
