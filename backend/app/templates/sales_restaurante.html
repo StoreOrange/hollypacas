@@ -971,9 +971,9 @@
         </div>
 
         <form method="post" action="/sales/restaurante/orders" id="restaurant-order-form">
-          <input type="hidden" name="service_type" id="service-type-select" value="{{ draft_service_type if draft_mode else 'MESA' }}">
-          <input type="hidden" name="table_id" id="table-id-select" value="{{ draft_table_id }}">
-          <input type="hidden" name="cliente_id" id="restaurant-cliente-id" value="{{ draft_cliente_id }}">
+          <input type="hidden" name="service_type" id="service-type-select" value="{% if ns.selected_order %}{{ ns.selected_order.service_type }}{% elif draft_mode %}{{ draft_service_type }}{% else %}MESA{% endif %}">
+          <input type="hidden" name="table_id" id="table-id-select" value="{% if ns.selected_order and ns.selected_order.table_id %}{{ ns.selected_order.table_id }}{% else %}{{ draft_table_id }}{% endif %}">
+          <input type="hidden" name="cliente_id" id="restaurant-cliente-id" value="{% if ns.selected_order and ns.selected_order.cliente_id %}{{ ns.selected_order.cliente_id }}{% else %}{{ draft_cliente_id }}{% endif %}">
 
           <div class="modal fade menu-modal" id="restaurantOrderDetailsModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -991,8 +991,8 @@
                       <label class="small text-muted mb-1">Cliente</label>
                       <div class="restaurant-client-box d-flex justify-content-between align-items-center gap-3">
                         <div>
-                        <div class="fw-bold" id="restaurant-cliente-name">Consumidor final</div>
-                          <div class="small text-muted" id="restaurant-cliente-meta">Puedes dejarlo asi o buscar/crear un cliente si el servicio lo necesita.</div>
+                        <div class="fw-bold" id="restaurant-cliente-name">{{ ns.selected_order.cliente if ns.selected_order else 'Consumidor final' }}</div>
+                          <div class="small text-muted" id="restaurant-cliente-meta">{% if ns.selected_order and ns.selected_order.cliente_id %}Cliente asignado a la cuenta activa.{% else %}Puedes dejarlo asi o buscar/crear un cliente si el servicio lo necesita.{% endif %}</div>
                         </div>
                         <div class="d-flex gap-2">
                           <button class="btn btn-lb-soft" type="button" data-bs-toggle="modal" data-bs-target="#restaurantClientSearchModal">Elegir</button>
@@ -1003,23 +1003,23 @@
                     <div class="col-lg-3">
                       <label class="small text-muted mb-1">Ejecutivo</label>
                       <select class="form-select lb-input" name="vendedor_id" form="restaurant-order-form">
-                        {% for v in vendedores %}<option value="{{ v.id }}" {% if (draft_vendedor_id and draft_vendedor_id|string == v.id|string) or (not draft_vendedor_id and default_vendedor_id == v.id) %}selected{% endif %}>{{ v.nombre }}</option>{% endfor %}
+                        {% for v in vendedores %}<option value="{{ v.id }}" {% if (ns.selected_order and ns.selected_order.vendedor_id and ns.selected_order.vendedor_id|string == v.id|string) or ((not ns.selected_order) and ((draft_vendedor_id and draft_vendedor_id|string == v.id|string) or (not draft_vendedor_id and default_vendedor_id == v.id))) %}selected{% endif %}>{{ v.nombre }}</option>{% endfor %}
                       </select>
                     </div>
                     <div class="col-lg-3">
                       <label class="small text-muted mb-1">Moneda</label>
                       <select class="form-select lb-input" name="moneda" form="restaurant-order-form">
-                        <option value="CS" {% if draft_moneda == 'CS' %}selected{% endif %}>C$</option>
-                        <option value="USD" {% if draft_moneda == 'USD' %}selected{% endif %}>$</option>
+                        <option value="CS" {% if (ns.selected_order and ns.selected_order.moneda == 'CS') or ((not ns.selected_order) and draft_moneda == 'CS') %}selected{% endif %}>C$</option>
+                        <option value="USD" {% if (ns.selected_order and ns.selected_order.moneda == 'USD') or ((not ns.selected_order) and draft_moneda == 'USD') %}selected{% endif %}>$</option>
                       </select>
                     </div>
                     <div class="col-lg-6">
                       <label class="small text-muted mb-1">Referencia visible</label>
-                      <input class="form-control lb-input" name="mesa_nombre" id="mesa-nombre-input" value="{{ draft_mesa_nombre }}" placeholder="Mesa, barra, delivery o referencia del pedido" form="restaurant-order-form">
+                      <input class="form-control lb-input" name="mesa_nombre" id="mesa-nombre-input" value="{% if ns.selected_order %}{{ ns.selected_order.mesa_nombre }}{% else %}{{ draft_mesa_nombre }}{% endif %}" placeholder="Mesa, barra, delivery o referencia del pedido" form="restaurant-order-form">
                     </div>
                     <div class="col-lg-6">
                       <label class="small text-muted mb-1">Observacion</label>
-                      <input class="form-control lb-input" name="observacion" value="{{ draft_observacion }}" placeholder="Notas de atencion, punto de entrega o detalle del servicio" form="restaurant-order-form">
+                      <input class="form-control lb-input" name="observacion" value="{% if ns.selected_order and ns.selected_order.observacion %}{{ ns.selected_order.observacion }}{% else %}{{ draft_observacion }}{% endif %}" placeholder="Notas de atencion, punto de entrega o detalle del servicio" form="restaurant-order-form">
                     </div>
                   </div>
                 </div>
@@ -1673,7 +1673,7 @@
         <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
           <div>
             <div class="lb-section-title mb-1">Preparacion de la orden</div>
-            <div class="fw-bold">Servicio seleccionado: <span id="selected-service-name">{% if draft_service_type == 'BARRA' %}Barra{% elif draft_service_type == 'LLEVAR' %}Para llevar{% elif draft_service_type == 'DELIVERY' %}Delivery{% else %}Comer en el local{% endif %}</span></div>
+            <div class="fw-bold">Servicio seleccionado: <span id="selected-service-name">{% set active_service_type = ns.selected_order.service_type if ns.selected_order else draft_service_type %}{% if active_service_type == 'BARRA' %}Barra{% elif active_service_type == 'LLEVAR' %}Para llevar{% elif active_service_type == 'DELIVERY' %}Delivery{% else %}Comer en el local{% endif %}</span></div>
             <div class="small text-muted service-note active" data-service-note="MESA">Si es salon, elige la mesa y empieza a cargar productos para registrar la cuenta de esa mesa.</div>
             <div class="small text-muted service-note" data-service-note="BARRA">Barra abre una orden directa, sin mesa.</div>
             <div class="small text-muted service-note" data-service-note="LLEVAR">Para llevar trabaja como facturacion directa: agregas productos y pasas a cobro final.</div>
@@ -1687,8 +1687,8 @@
         </div>
         <div id="table-selection-panel" class="table-selection-box d-flex justify-content-between align-items-center gap-3 mt-3">
           <div>
-            <div class="fw-bold" id="selected-table-name">{{ draft_table_name or 'Sin mesa seleccionada' }}</div>
-            <div class="small text-muted" id="selected-table-meta">{{ draft_table_meta or 'Elige una mesa disponible para abrir la cuenta del salon.' }}</div>
+            <div class="fw-bold" id="selected-table-name">{% if ns.selected_order and ns.selected_order.mesa_nombre %}{{ ns.selected_order.mesa_nombre }}{% else %}{{ draft_table_name or 'Sin mesa seleccionada' }}{% endif %}</div>
+            <div class="small text-muted" id="selected-table-meta">{% if ns.selected_order and ns.selected_order.table_id %}Mesa activa asignada a esta cuenta.{% else %}{{ draft_table_meta or 'Elige una mesa disponible para abrir la cuenta del salon.' }}{% endif %}</div>
           </div>
           <button class="btn btn-lb-soft" type="button" data-bs-toggle="modal" data-bs-target="#restaurantTableModal">Cambiar mesa</button>
         </div>
@@ -1964,7 +1964,82 @@
     if (tableIdSelect) tableIdSelect.value = id || '';
     if (selectedTableName) selectedTableName.textContent = name || 'Sin mesa seleccionada';
     if (selectedTableMeta) selectedTableMeta.textContent = meta || 'Elige una mesa disponible para abrir la cuenta del salon.';
-    if (mesaNombreInput && id) mesaNombreInput.value = name || '';
+    if (mesaNombreInput) {
+      mesaNombreInput.value = id ? (name || '') : '';
+    }
+  }
+
+  function bindRestaurantTableSelectButtons(scope = document) {
+    scope.querySelectorAll('.restaurant-table-select').forEach((button) => {
+      if (button.dataset.bound === '1') return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', async () => {
+        const tableId = button.dataset.tableId || '';
+        const tableName = button.dataset.tableName || '';
+        const tableMeta = button.dataset.tableMeta || '';
+        const modal = document.getElementById('restaurantTableModal');
+        const currentMode = serviceTypeSelect?.value || 'MESA';
+
+        if (restaurantCurrentOrder?.id && String(restaurantCurrentOrder.service_type || '').toUpperCase() === 'MESA') {
+          try {
+            const body = new FormData();
+            body.append('table_id', tableId);
+            const resp = await fetch(`/sales/restaurante/orders/${restaurantCurrentOrder.id}/change-table`, {
+              method: 'POST',
+              headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+              body,
+            });
+            const data = await resp.json();
+            if (!resp.ok || !data.ok) throw new Error(data.message || 'No se pudo cambiar la mesa');
+            if (data.old_table?.id) {
+              restaurantMarkTableAsFree(data.old_table.id);
+            }
+            if (data.new_table && data.order) {
+              restaurantMarkTableAsOccupied(data.new_table, data.order);
+            }
+            setRestaurantTableSelection(tableId, tableName, tableMeta);
+            renderRestaurantOrder(data.order);
+            if (modal && window.bootstrap) {
+              window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+            }
+            window.history.replaceState({}, '', `/sales?restaurant_order_id=${data.order.id}`);
+            if (typeof Swal !== 'undefined') {
+              Swal.fire({
+                icon: 'success',
+                title: 'Mesa actualizada',
+                text: data.message || 'La orden fue movida a la nueva mesa.',
+                timer: 1600,
+                showConfirmButton: false,
+                background: '#ffffff',
+              });
+            }
+          } catch (error) {
+            if (typeof Swal !== 'undefined') {
+              Swal.fire({ icon: 'error', title: 'Error', text: error.message || 'No se pudo cambiar la mesa' });
+            }
+          }
+          return;
+        }
+
+        setRestaurantTableSelection(tableId, tableName, tableMeta);
+        if (modal && window.bootstrap) {
+          window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+        }
+        if (!hasSelectedOrderPage && !isDraftModePage && currentMode === 'MESA') {
+          window.location.href = buildRestaurantDraftUrl('MESA', {
+            tableId,
+            tableName,
+            tableMeta,
+            mesaNombre: tableName,
+          });
+          return;
+        }
+        window.setTimeout(() => {
+          restaurantInlineMenu?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          menuSearch?.focus();
+        }, 180);
+      });
+    });
   }
 
   const menuSearch = document.getElementById('menu-search');
@@ -2108,29 +2183,7 @@
     });
   });
 
-  document.querySelectorAll('.restaurant-table-select').forEach((button) => {
-    button.addEventListener('click', () => {
-      setRestaurantTableSelection(button.dataset.tableId || '', button.dataset.tableName || '', button.dataset.tableMeta || '');
-      const modal = document.getElementById('restaurantTableModal');
-      if (modal && window.bootstrap) {
-        window.bootstrap.Modal.getOrCreateInstance(modal).hide();
-      }
-      const currentMode = serviceTypeSelect?.value || 'MESA';
-      if (!hasSelectedOrderPage && !isDraftModePage && currentMode === 'MESA') {
-        window.location.href = buildRestaurantDraftUrl('MESA', {
-          tableId: button.dataset.tableId || '',
-          tableName: button.dataset.tableName || '',
-          tableMeta: button.dataset.tableMeta || '',
-          mesaNombre: button.dataset.tableName || '',
-        });
-        return;
-      }
-      window.setTimeout(() => {
-        restaurantInlineMenu?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        menuSearch?.focus();
-      }, 180);
-    });
-  });
+  bindRestaurantTableSelectButtons();
 
   document.querySelectorAll('.restaurant-client-pick').forEach((button) => {
     button.addEventListener('click', () => {
@@ -2514,14 +2567,59 @@
       </div>
     `;
     window.setTimeout(() => node.classList.remove('state-transition'), 460);
-    node.querySelectorAll('.restaurant-table-select').forEach((button) => {
-      button.addEventListener('click', () => {
-        updateSelectedTable(button.dataset.tableId || '', button.dataset.tableName || '', button.dataset.tableMeta || '');
-        const modal = document.getElementById('restaurantTableModal');
-        if (modal && window.bootstrap) {
-          window.bootstrap.Modal.getOrCreateInstance(modal).hide();
-        }
+    bindRestaurantTableSelectButtons(node);
+  }
+
+  function restaurantMarkTableAsOccupied(table, order) {
+    if (!table?.id || !order?.id) return;
+    const node = document.querySelector(`.table-node-admin[data-table-id="${table.id}"]`);
+    if (!node) return;
+    node.classList.remove('free');
+    node.classList.add('ocupada');
+    node.classList.add('state-transition');
+    node.dataset.order = JSON.stringify(order);
+    node.innerHTML = `
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <div class="fw-bold">${table.name || order.mesa_nombre || 'Mesa'}</div>
+          <div class="small text-muted">${table.code || ''} · ${table.seats || 0} puestos</div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="table-node-alert pulse"><i class="bi bi-broadcast-pin"></i></span>
+          <span class="mesa-status ocupada">OCUPADA</span>
+        </div>
+      </div>
+      <div class="small text-muted">${table.sector || 'Salon'}</div>
+      <div>
+        <div class="small mb-2" style="color:#617a9a;">${order.numero || ''} · C$ ${fmtMoney(order.total_cs || 0)}</div>
+        <div class="d-grid gap-2">
+          <button class="btn btn-sm btn-lb-soft w-100 restaurant-table-detail-trigger" type="button">Ver detalle</button>
+          <a class="btn btn-sm btn-lb-soft w-100" href="/sales?restaurant_order_id=${order.id}">Editar orden</a>
+          <a class="btn btn-sm btn-lb-primary w-100" href="/sales?restaurant_order_id=${order.id}&focus_payment=1">Gestionar pago final</a>
+        </div>
+      </div>
+    `;
+    window.setTimeout(() => node.classList.remove('state-transition'), 460);
+    const openDetail = () => {
+      node.classList.add('state-transition');
+      window.setTimeout(() => node.classList.remove('state-transition'), 420);
+      openRestaurantTableDetail(order);
+    };
+    node.addEventListener('dblclick', openDetail);
+    node.querySelectorAll('.restaurant-table-detail-trigger').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openDetail();
       });
+    });
+    document.querySelectorAll(`.order-pill[href="/sales?restaurant_order_id=${order.id}"]`).forEach((link) => {
+      link.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center gap-2">
+          <strong>${order.mesa_nombre || order.service_type || 'Orden'}</strong>
+          <span class="small">C$ ${fmtMoney(order.total_cs || 0)}</span>
+        </div>
+        <div class="small mt-1" style="color:#617a9a;">${order.numero || ''} · ${order.service_type || ''} · ${order.opened_at || ''}</div>
+      `;
     });
   }
 
@@ -2666,6 +2764,41 @@
     if (!restaurantOrderLines || !order) return;
     restaurantCurrentOrder = order;
     syncDirectBillingUi(order.service_type || '');
+    if (serviceTypeSelect && order.service_type) {
+      serviceTypeSelect.value = order.service_type;
+    }
+    if (selectedServiceName) {
+      const modeLabelMap = {
+        MESA: 'Comer en el local',
+        BARRA: 'Barra',
+        LLEVAR: 'Para llevar',
+        DELIVERY: 'Delivery',
+      };
+      selectedServiceName.textContent = modeLabelMap[order.service_type] || order.service_type || '';
+    }
+    if ((order.service_type || '').toUpperCase() === 'MESA') {
+      const activeTableNode = order.table_id
+        ? document.querySelector(`.table-node-admin[data-table-id="${order.table_id}"]`)
+        : null;
+      const tableCode = activeTableNode?.dataset.tableCode || '';
+      const tableSector = activeTableNode?.dataset.tableSector || 'Salon';
+      const tableSeats = activeTableNode?.dataset.tableSeats || '';
+      const tableMeta = tableCode
+        ? `${tableCode} · ${tableSector} · ${tableSeats} puestos`
+        : 'Mesa activa asignada a esta cuenta.';
+      setRestaurantTableSelection(order.table_id || '', order.mesa_nombre || 'Mesa activa', tableMeta);
+    } else {
+      setRestaurantTableSelection('', 'Sin mesa seleccionada', 'La cuenta no usara mesa en este modo de servicio.');
+    }
+    if (mesaNombreInput) {
+      mesaNombreInput.value = order.mesa_nombre || '';
+    }
+    if (restaurantOrderForm) {
+      const hiddenMesaNombre = restaurantOrderForm.querySelector('input[name="mesa_nombre"]');
+      const hiddenTableId = restaurantOrderForm.querySelector('input[name="table_id"]');
+      if (hiddenMesaNombre) hiddenMesaNombre.value = order.mesa_nombre || '';
+      if (hiddenTableId) hiddenTableId.value = order.table_id || '';
+    }
     if (restaurantOrderStateLabel) restaurantOrderStateLabel.textContent = 'Orden activa';
     if (restaurantOrderTitle) restaurantOrderTitle.textContent = order.mesa_nombre || 'Orden activa';
     if (restaurantOrderServiceBadge) restaurantOrderServiceBadge.textContent = order.service_type || '';
@@ -2724,6 +2857,10 @@
     if (restaurantOpenPaymentModalBtn) {
       restaurantOpenPaymentModalBtn.disabled = !(Array.isArray(order.items) && order.items.length);
     }
+  }
+
+  if (restaurantCurrentOrder?.id) {
+    renderRestaurantOrder(restaurantCurrentOrder);
   }
 
   function openRestaurantTableDetail(order) {

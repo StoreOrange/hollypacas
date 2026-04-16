@@ -727,6 +727,31 @@ def _default_vendedor_id(db: Session, bodega: Optional[Bodega]) -> Optional[int]
 
 
 def _vendedor_id_for_user(db: Session, user: User, bodega: Optional[Bodega]) -> Optional[int]:
+    explicit_vendedor_id = int(getattr(user, "vendedor_id", 0) or 0)
+    if explicit_vendedor_id > 0:
+        vendedor_query = db.query(Vendedor).filter(
+            Vendedor.id == explicit_vendedor_id,
+            Vendedor.activo.is_(True),
+        )
+        vendedor = vendedor_query.first()
+        if vendedor:
+            if not bodega:
+                return vendedor.id
+            has_matching_assignment = (
+                db.query(VendedorBodega)
+                .filter(
+                    VendedorBodega.vendedor_id == vendedor.id,
+                    VendedorBodega.bodega_id == bodega.id,
+                )
+                .first()
+            )
+            has_any_assignment = (
+                db.query(VendedorBodega)
+                .filter(VendedorBodega.vendedor_id == vendedor.id)
+                .first()
+            )
+            if has_matching_assignment or not has_any_assignment:
+                return vendedor.id
     user_name = (user.full_name or "").strip().lower()
     if not user_name:
         return None
@@ -6320,6 +6345,15 @@ def inventory_page(
     segmentos = db.query(Segmento).order_by(Segmento.segmento).all()
     marcas = db.query(Marca).filter(Marca.activo.is_(True)).order_by(Marca.nombre).all()
     unidades_medida = db.query(UnidadMedida).filter(UnidadMedida.activo.is_(True)).order_by(UnidadMedida.id.asc()).all()
+    recipe_supply_products = (
+        db.query(Producto)
+        .filter(
+            Producto.activo.is_(True),
+            func.upper(func.coalesce(Producto.tipo_producto, "DIRECTO")) == "MATERIA_PRIMA",
+        )
+        .order_by(Producto.descripcion)
+        .all()
+    )
     error = request.query_params.get("error")
     success = request.query_params.get("success")
     rate_today = (
@@ -6387,6 +6421,7 @@ def inventory_page(
             "segmentos": segmentos,
             "marcas": marcas,
             "unidades_medida": unidades_medida,
+            "recipe_supply_products": recipe_supply_products,
             "edit_product": edit_product,
             "rate_today": rate_today,
             "error": error,
@@ -19749,6 +19784,11 @@ def data_usuarios(
     roles = db.query(Role).order_by(Role.name).all()
     branches = _scoped_branches_query(db).order_by(Branch.name).all()
     bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
+    vendedores = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre).all()
+    vendedores_scope = {
+        int(vendedor.id): sorted({int(asig.bodega_id) for asig in (vendedor.assignments or []) if asig.bodega_id})
+        for vendedor in vendedores
+    }
     return request.app.state.templates.TemplateResponse(
         "data_usuarios.html",
         {
@@ -19758,6 +19798,8 @@ def data_usuarios(
             "roles": roles,
             "branches": branches,
             "bodegas": bodegas,
+            "vendedores": vendedores,
+            "vendedores_scope": vendedores_scope,
             "edit_item": edit_item,
             "error": error,
             "success": success,
@@ -19775,6 +19817,7 @@ def data_create_usuario(
     role_ids: Optional[list[int]] = Form(None),
     branch_id: Optional[int] = Form(None),
     bodega_id: Optional[int] = Form(None),
+    vendedor_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -19797,6 +19840,19 @@ def data_create_usuario(
     bodega = db.query(Bodega).filter(Bodega.id == bodega_id).first()
     if not bodega or bodega.branch_id != branch.id:
         return RedirectResponse("/data/usuarios?error=Bodega+no+corresponde+a+la+sucursal", status_code=303)
+    vendedor = None
+    if vendedor_id:
+        vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first()
+        if not vendedor:
+            return RedirectResponse("/data/usuarios?error=Vendedor+no+valido", status_code=303)
+        assignment_exists = (
+            db.query(VendedorBodega)
+            .filter(VendedorBodega.vendedor_id == vendedor.id, VendedorBodega.bodega_id == bodega.id)
+            .first()
+        )
+        any_assignment = db.query(VendedorBodega).filter(VendedorBodega.vendedor_id == vendedor.id).first()
+        if any_assignment and not assignment_exists:
+            return RedirectResponse("/data/usuarios?error=Vendedor+fuera+de+la+bodega+operativa", status_code=303)
     new_user = User(
         full_name=full_name,
         email=email,
@@ -19806,6 +19862,7 @@ def data_create_usuario(
         branches=[branch],
         default_branch_id=branch.id,
         default_bodega_id=bodega.id,
+        vendedor_id=vendedor.id if vendedor else None,
     )
     db.add(new_user)
     db.commit()
@@ -19823,6 +19880,7 @@ def data_update_usuario(
     is_active: Optional[str] = Form(None),
     branch_id: Optional[int] = Form(None),
     bodega_id: Optional[int] = Form(None),
+    vendedor_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -19847,9 +19905,23 @@ def data_update_usuario(
     bodega = db.query(Bodega).filter(Bodega.id == bodega_id).first()
     if not bodega or bodega.branch_id != branch.id:
         return RedirectResponse("/data/usuarios?error=Bodega+no+corresponde+a+la+sucursal", status_code=303)
+    vendedor = None
+    if vendedor_id:
+        vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first()
+        if not vendedor:
+            return RedirectResponse("/data/usuarios?error=Vendedor+no+valido", status_code=303)
+        assignment_exists = (
+            db.query(VendedorBodega)
+            .filter(VendedorBodega.vendedor_id == vendedor.id, VendedorBodega.bodega_id == bodega.id)
+            .first()
+        )
+        any_assignment = db.query(VendedorBodega).filter(VendedorBodega.vendedor_id == vendedor.id).first()
+        if any_assignment and not assignment_exists:
+            return RedirectResponse("/data/usuarios?error=Vendedor+fuera+de+la+bodega+operativa", status_code=303)
     edit_user.branches = [branch]
     edit_user.default_branch_id = branch.id
     edit_user.default_bodega_id = bodega.id
+    edit_user.vendedor_id = vendedor.id if vendedor else None
     db.commit()
     return RedirectResponse("/data/usuarios?success=Usuario+actualizado", status_code=303)
 
@@ -21668,10 +21740,19 @@ async def inventory_product_recipe_save(
         insumo = db.query(Producto).filter(Producto.id == insumo_id, Producto.activo.is_(True)).first()
         if not insumo:
             return JSONResponse({"ok": False, "message": "Uno de los insumos no existe o esta inactivo"}, status_code=400)
+        if ((insumo.tipo_producto or "DIRECTO").strip().upper() != "MATERIA_PRIMA"):
+            return JSONResponse(
+                {"ok": False, "message": f"El producto {insumo.cod_producto} no esta configurado como materia prima"},
+                status_code=400,
+            )
         unidad_raw = str(unidad_ids[index] if index < len(unidad_ids) else "").strip()
         unidad = None
         if unidad_raw.isdigit():
-            unidad = db.query(UnidadMedida).filter(UnidadMedida.id == int(unidad_raw)).first()
+            unidad = (
+                db.query(UnidadMedida)
+                .filter(UnidadMedida.id == int(unidad_raw), UnidadMedida.activo.is_(True))
+                .first()
+            )
         if not unidad:
             unidad = insumo.unidad_medida or _default_product_unit(db)
         parsed_lines.append(
@@ -23767,6 +23848,114 @@ async def restaurant_order_cancel(
     order.closed_at = local_now_naive()
     db.commit()
     return RedirectResponse("/sales?success=Orden+anulada", status_code=303)
+
+
+@router.post("/sales/restaurante/orders/{order_id}/change-table")
+async def restaurant_order_change_table(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    accept_header = request.headers.get("accept", "")
+    is_fetch = (
+        request.headers.get("x-requested-with") == "fetch"
+        or "application/json" in accept_header
+        or request.headers.get("hx-request") == "true"
+    )
+    form = await request.form()
+    table_id_raw = str(form.get("table_id") or "").strip()
+    if not table_id_raw.isdigit():
+        message = "Selecciona una mesa valida"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": message}, status_code=400)
+        return RedirectResponse(f"/sales?restaurant_order_id={order_id}&error={quote_plus(message)}", status_code=303)
+
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id, RestaurantOrder.estado == "ABIERTA").first()
+    if not order:
+        message = "Orden no disponible"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": message}, status_code=404)
+        return RedirectResponse(f"/sales?error={quote_plus(message)}", status_code=303)
+    if (order.service_type or "").upper() != "MESA":
+        message = "Solo las ordenes de salon permiten cambiar de mesa"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": message}, status_code=400)
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&error={quote_plus(message)}", status_code=303)
+
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega or int(order.bodega_id or 0) != int(bodega.id):
+        message = "Orden fuera de tu bodega"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": message}, status_code=403)
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&error={quote_plus(message)}", status_code=303)
+
+    target_table = (
+        db.query(RestaurantTable)
+        .filter(
+            RestaurantTable.id == int(table_id_raw),
+            RestaurantTable.active.is_(True),
+        )
+        .first()
+    )
+    if not target_table:
+        message = "La mesa destino no esta disponible"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": message}, status_code=404)
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&error={quote_plus(message)}", status_code=303)
+    if int(target_table.branch_id or 0) != int(branch.id) or int(target_table.bodega_id or 0) != int(bodega.id):
+        message = "La mesa seleccionada pertenece a otra sucursal"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": message}, status_code=400)
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&error={quote_plus(message)}", status_code=303)
+
+    previous_table = order.table
+    if previous_table and int(previous_table.id) == int(target_table.id):
+        order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order.id).first()
+        payload = {
+            "ok": True,
+            "message": "La orden ya estaba asignada a esa mesa",
+            "order": _restaurant_order_payload(order),
+            "old_table": _restaurant_table_payload(previous_table, None) if previous_table else None,
+            "new_table": _restaurant_table_payload(target_table, order),
+        }
+        if is_fetch:
+            return JSONResponse(payload)
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&success={quote_plus(payload['message'])}", status_code=303)
+
+    occupied_order = (
+        db.query(RestaurantOrder)
+        .filter(
+            RestaurantOrder.table_id == target_table.id,
+            RestaurantOrder.estado == "ABIERTA",
+            RestaurantOrder.id != order.id,
+        )
+        .order_by(RestaurantOrder.id.desc())
+        .first()
+    )
+    if occupied_order:
+        message = "La mesa seleccionada ya tiene una cuenta abierta"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": message}, status_code=400)
+        return RedirectResponse(f"/sales?restaurant_order_id={order.id}&error={quote_plus(message)}", status_code=303)
+
+    old_table_payload = _restaurant_table_payload(previous_table, None) if previous_table else None
+    order.table_id = target_table.id
+    order.mesa_nombre = target_table.name
+    db.flush()
+    db.commit()
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order.id).first()
+    payload = {
+        "ok": True,
+        "message": "Mesa actualizada correctamente",
+        "order": _restaurant_order_payload(order),
+        "old_table": old_table_payload,
+        "new_table": _restaurant_table_payload(target_table, order),
+    }
+    if is_fetch:
+        return JSONResponse(payload)
+    return RedirectResponse(f"/sales?restaurant_order_id={order.id}&success={quote_plus(payload['message'])}", status_code=303)
 
 
 @router.post("/sales/restaurante/orders/{order_id}/facturar")

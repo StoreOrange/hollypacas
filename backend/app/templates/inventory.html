@@ -582,19 +582,28 @@
                 <div id="recipe-editor" class="hidden">
                   <div class="row g-3">
                     <div class="col-md-6">
-                      <label class="form-label odoo-field-label">Insumo</label>
+                      <label class="form-label odoo-field-label">Materia prima</label>
                       <select id="recipe-insumo-select" class="form-select odoo-input select2">
                         <option value="">Selecciona insumo</option>
-                        {% for p in productos %}
+                        {% for p in recipe_supply_products %}
                         <option value="{{ p.id }}" data-code="{{ p.cod_producto }}" data-desc="{{ p.descripcion }}" data-unit-id="{{ p.unidad_medida_id or '' }}" data-unit-name="{{ p.unidad_medida.nombre if p.unidad_medida else '' }}" data-unit-abbr="{{ p.unidad_medida.abreviatura if p.unidad_medida else 'und' }}">{{ p.cod_producto }} - {{ p.descripcion }}</option>
                         {% endfor %}
                       </select>
                     </div>
                     <div class="col-md-3">
+                      <label class="form-label odoo-field-label">Unidad de medida</label>
+                      <select id="recipe-unidad-select" class="form-select odoo-input select2">
+                        <option value="">Selecciona unidad</option>
+                        {% for unidad in unidades_medida %}
+                        <option value="{{ unidad.id }}" data-name="{{ unidad.nombre }}" data-abbr="{{ unidad.abreviatura }}">{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-2">
                       <label class="form-label odoo-field-label">Cantidad</label>
                       <input id="recipe-insumo-cantidad" type="number" min="0.0001" step="0.0001" class="form-control odoo-input" value="1" />
                     </div>
-                    <div class="col-md-3 d-flex align-items-end">
+                    <div class="col-md-1 d-flex align-items-end">
                       <button id="recipe-add-btn" class="btn btn-outline-primary btn-sm w-100" type="button">
                         <i class="bi bi-plus-circle"></i>
                         Agregar
@@ -843,6 +852,7 @@
   const recipeWarning = document.getElementById("recipe-warning");
   const recipeEditor = document.getElementById("recipe-editor");
   const recipeInsumoSelect = document.getElementById("recipe-insumo-select");
+  const recipeUnidadSelect = document.getElementById("recipe-unidad-select");
   const recipeInsumoCantidad = document.getElementById("recipe-insumo-cantidad");
   const recipeAddBtn = document.getElementById("recipe-add-btn");
   const recipeList = document.getElementById("recipe-list");
@@ -1191,14 +1201,28 @@
     });
   }
 
+  if (recipeInsumoSelect) {
+    recipeInsumoSelect.addEventListener("change", () => {
+      const selectedOption = recipeInsumoSelect.selectedOptions?.[0];
+      const unitId = selectedOption?.dataset?.unitId || "";
+      if (!recipeUnidadSelect) return;
+      recipeUnidadSelect.value = unitId;
+      if (window.$ && $.fn.select2) {
+        $(recipeUnidadSelect).val(unitId || null).trigger("change");
+      }
+    });
+  }
+
   if (recipeAddBtn) {
     recipeAddBtn.addEventListener("click", () => {
       const selectedOption = recipeInsumoSelect?.selectedOptions?.[0];
       const insumoId = recipeInsumoSelect?.value;
+      const unitOption = recipeUnidadSelect?.selectedOptions?.[0];
+      const unidadId = recipeUnidadSelect?.value;
       const cantidad = parseFloat(String(recipeInsumoCantidad?.value || 0).replace(",", "."));
-      if (!insumoId || !selectedOption || !(cantidad > 0)) {
+      if (!insumoId || !selectedOption || !unidadId || !unitOption || !(cantidad > 0)) {
         if (typeof Swal !== "undefined") {
-          Swal.fire({ icon: "warning", title: "Datos incompletos", text: "Selecciona insumo y cantidad." });
+          Swal.fire({ icon: "warning", title: "Datos incompletos", text: "Selecciona materia prima, unidad y cantidad." });
         }
         return;
       }
@@ -1219,15 +1243,19 @@
         codigo: selectedOption.dataset.code || "",
         descripcion: selectedOption.dataset.desc || "",
         cantidad,
-        unidad_medida_id: selectedOption.dataset.unitId ? Number(selectedOption.dataset.unitId) : null,
-        unidad_medida_nombre: selectedOption.dataset.unitName || "",
-        unidad_medida_abreviatura: selectedOption.dataset.unitAbbr || "und",
+        unidad_medida_id: Number(unidadId),
+        unidad_medida_nombre: unitOption.dataset.name || "",
+        unidad_medida_abreviatura: unitOption.dataset.abbr || "und",
       });
       renderRecipeList();
       if (recipeInsumoSelect) recipeInsumoSelect.value = "";
+      if (recipeUnidadSelect) recipeUnidadSelect.value = "";
       if (recipeInsumoCantidad) recipeInsumoCantidad.value = "1";
       if (window.$ && $.fn.select2 && recipeInsumoSelect) {
         $(recipeInsumoSelect).val(null).trigger("change");
+      }
+      if (window.$ && $.fn.select2 && recipeUnidadSelect) {
+        $(recipeUnidadSelect).val(null).trigger("change");
       }
     });
   }

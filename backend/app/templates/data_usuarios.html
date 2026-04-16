@@ -63,7 +63,7 @@
               {% endif %}
               <div class="col-md-6">
                 <label class="odoo-field-label">Sucursal *</label>
-                <select class="form-select odoo-input" name="branch_id" required>
+                <select class="form-select odoo-input" name="branch_id" id="usuario-branch-select" required>
                   <option value="">Selecciona</option>
                   {% for branch in branches %}
                   <option value="{{ branch.id }}" {% if edit_item and edit_item.default_branch_id == branch.id %}selected{% endif %}>
@@ -74,7 +74,7 @@
               </div>
               <div class="col-md-6">
                 <label class="odoo-field-label">Bodega operativa *</label>
-                <select class="form-select odoo-input" name="bodega_id" required>
+                <select class="form-select odoo-input" name="bodega_id" id="usuario-bodega-select" required>
                   <option value="">Selecciona</option>
                   {% for bodega in bodegas %}
                   <option value="{{ bodega.id }}" {% if edit_item and edit_item.default_bodega_id == bodega.id %}selected{% endif %}>
@@ -83,6 +83,22 @@
                   {% endfor %}
                 </select>
                 <div class="text-xs text-slate mt-1">La bodega debe pertenecer a la sucursal seleccionada.</div>
+              </div>
+              <div class="col-md-6">
+                <label class="odoo-field-label">Vendedor asociado</label>
+                <select class="form-select odoo-input" name="vendedor_id" id="usuario-vendedor-select">
+                  <option value="">Sin asociar</option>
+                  {% for vendedor in vendedores %}
+                  <option
+                    value="{{ vendedor.id }}"
+                    data-bodegas="{{ (vendedores_scope.get(vendedor.id, [])|join(',')) }}"
+                    {% if edit_item and edit_item.vendedor_id == vendedor.id %}selected{% endif %}
+                  >
+                    {{ vendedor.nombre }}
+                  </option>
+                  {% endfor %}
+                </select>
+                <div class="text-xs text-slate mt-1">Esta asociacion alimenta preventa movil y Mis Ventas del usuario logeado.</div>
               </div>
               <div class="col-12">
                 <label class="odoo-field-label">Roles *</label>
@@ -117,6 +133,7 @@
                     <th>Email</th>
                     <th>Sucursal</th>
                     <th>Bodega</th>
+                    <th>Vendedor asociado</th>
                     <th>Roles</th>
                     <th>Estado</th>
                     <th class="text-end">Acciones</th>
@@ -129,6 +146,7 @@
                     <td>{{ item.email }}</td>
                     <td>{{ item.default_branch.name if item.default_branch else "-" }}</td>
                     <td>{{ item.default_bodega.name if item.default_bodega else "-" }}</td>
+                    <td>{{ item.vendedor.nombre if item.vendedor else "-" }}</td>
                     <td>
                       {% for role in item.roles %}
                       <span class="odoo-pill">{{ role.name }}</span>
@@ -174,5 +192,44 @@
     </div>
   </main>
 </div>
-{% endblock %}
+<script>
+  (function () {
+    const branchSelect = document.getElementById('usuario-branch-select');
+    const bodegaSelect = document.getElementById('usuario-bodega-select');
+    const vendedorSelect = document.getElementById('usuario-vendedor-select');
+    if (!bodegaSelect || !vendedorSelect) return;
 
+    const applyVendedorScope = () => {
+      const selectedBodega = String(bodegaSelect.value || '').trim();
+      const currentValue = String(vendedorSelect.value || '').trim();
+      let keepCurrent = !currentValue;
+
+      Array.from(vendedorSelect.options).forEach((option, index) => {
+        if (index === 0 || !option.value) {
+          option.hidden = false;
+          option.disabled = false;
+          return;
+        }
+        const scopedBodegas = String(option.dataset.bodegas || '')
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean);
+        const visible = !selectedBodega || !scopedBodegas.length || scopedBodegas.includes(selectedBodega);
+        option.hidden = !visible;
+        option.disabled = !visible;
+        if (visible && option.value === currentValue) {
+          keepCurrent = true;
+        }
+      });
+
+      if (!keepCurrent) {
+        vendedorSelect.value = '';
+      }
+    };
+
+    branchSelect?.addEventListener('change', applyVendedorScope);
+    bodegaSelect.addEventListener('change', applyVendedorScope);
+    applyVendedorScope();
+  })();
+</script>
+{% endblock %}

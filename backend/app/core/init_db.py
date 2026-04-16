@@ -1445,6 +1445,11 @@ def init_db() -> None:
         if "updated_at" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE mobile_push_subscriptions ADD COLUMN updated_at TIMESTAMP DEFAULT NOW()"))
+    if "users" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("users")}
+        if "vendedor_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN vendedor_id INTEGER"))
     if "company_profile_settings" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("company_profile_settings")}
         if "ruc" not in columns:

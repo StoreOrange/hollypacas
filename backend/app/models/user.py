@@ -73,11 +73,13 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     default_branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
     default_bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
+    vendedor_id = Column(Integer, ForeignKey("vendedores.id"), nullable=True)
 
     roles = relationship("Role", secondary=user_roles, back_populates="users")
     branches = relationship("Branch", secondary=user_branches, back_populates="users")
     default_branch = relationship("Branch", foreign_keys=[default_branch_id])
     default_bodega = relationship("Bodega", foreign_keys=[default_bodega_id])
+    vendedor = relationship("Vendedor", foreign_keys=[vendedor_id])
 
     @property
     def permissions(self):

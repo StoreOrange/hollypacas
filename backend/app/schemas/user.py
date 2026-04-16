@@ -42,6 +42,7 @@ class UserCreate(UserBase):
 class UserResponse(UserBase):
     id: int
     is_active: bool
+    vendedor_id: Optional[int] = None
     roles: List[RoleResponse] = []
     branches: List[BranchResponse] = []
     permissions: List[PermissionResponse] = []
