@@ -198,12 +198,14 @@
         <table id="products-table" class="table table-striped table-sm align-middle inventory-table odoo-table" style="font-size: 13px;">
             <thead class="text-xs uppercase tracking-[0.15em] text-slate bg-slate-50">
               <tr>
+                {% if product_images_enabled %}
                 <th class="text-center px-4 py-3">
                   <span class="inline-flex items-center gap-2">
                     <i class="bi bi-image text-sky-600"></i>
                     Imagen
                   </span>
                 </th>
+                {% endif %}
                 <th class="text-left px-4 py-3">
                   <span class="inline-flex items-center gap-2">
                     <i class="bi bi-upc-scan text-brand"></i>
@@ -280,11 +282,12 @@
                 data-costo-usd="{% if inventory_cs_only %}{{ "%.2f"|format(p.costo_producto or 0) }}{% elif p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0{% endif %}"
                 data-existencia="{{ current_bodega_saldos.get(p.id, 0) }}"
                 data-activo="{{ 1 if p.activo else 0 }}"
-                data-image-url="{{ p.image_url or '' }}"
+                data-image-url="{% if product_images_enabled %}{{ p.image_url or '' }}{% endif %}"
                 data-tipo-producto="{{ p.tipo_producto or 'DIRECTO' }}"
                 data-es-por-peso="{{ 1 if p.es_por_peso else 0 }}"
                 data-unidad-medida-id="{{ p.unidad_medida_id or '' }}"
               >
+                {% if product_images_enabled %}
                 <td class="px-4 py-3 text-center">
                   {% if p.image_url %}
                   <span class="d-inline-flex align-items-center justify-content-center p-1" style="width:64px;height:64px;border-radius:16px;border:1px solid #dbe6f4;background:linear-gradient(180deg,#ffffff,#f6faff);box-shadow:inset 0 1px 0 rgba(255,255,255,.9);">
@@ -296,6 +299,7 @@
                   </span>
                   {% endif %}
                 </td>
+                {% endif %}
                 <td class="px-4 py-3 font-semibold text-ink">{{ p.cod_producto }}</td>
                 <td class="px-4 py-3 text-slate">{{ p.descripcion }}</td>
                 <td class="px-4 py-3 text-slate">{{ p.linea.linea if p.linea else "-" }}</td>
@@ -342,7 +346,7 @@
               {% endfor %}
             {% if productos|length == 0 %}
             <tr>
-              <td colspan="{% if inventory_cs_only %}9{% else %}10{% endif %}" class="text-center text-slate py-4">Sin productos registrados</td>
+              <td colspan="{% if product_images_enabled %}{% if inventory_cs_only %}9{% else %}10{% endif %}{% else %}{% if inventory_cs_only %}8{% else %}9{% endif %}{% endif %}" class="text-center text-slate py-4">Sin productos registrados</td>
             </tr>
             {% endif %}
             </tbody>
@@ -411,6 +415,7 @@
               <label class="form-label odoo-field-label">Descripcion *</label>
               <input id="field-descripcion" name="descripcion" class="form-control odoo-input" required />
             </div>
+            {% if product_images_enabled %}
             <div class="col-md-6">
               <label class="form-label odoo-field-label">Imagen del producto</label>
               <input id="field-image-file" name="image_file" type="file" accept=".jpg,.jpeg,.png,.webp" class="form-control odoo-input" />
@@ -427,6 +432,7 @@
                 </div>
               </div>
             </div>
+            {% endif %}
             <div class="col-md-6">
               <label class="form-label odoo-field-label">Linea</label>
               <select id="field-linea" name="linea_id" class="form-select odoo-input select2">

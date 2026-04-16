@@ -2530,6 +2530,11 @@ def _get_sales_interface_setting(db: Session) -> SalesInterfaceSetting:
     return setting
 
 
+def _product_images_enabled(db: Session) -> bool:
+    setting = _get_sales_interface_setting(db)
+    return (setting.interface_code or "ropa").strip().lower() == "restaurante"
+
+
 def _get_company_profile_setting(db: Session) -> CompanyProfileSetting:
     row = db.query(CompanyProfileSetting).order_by(CompanyProfileSetting.id.asc()).first()
     if row:
@@ -6325,6 +6330,7 @@ def inventory_page(
     weighted_sales_enabled = _weighted_sales_enabled_mode(db)
     auto_price_margin_enabled, auto_price_margin_pct = _price_margin_mode(db)
     is_hollpacas_mode = _is_hollpacas_mode()
+    product_images_enabled = _product_images_enabled(db)
     return request.app.state.templates.TemplateResponse(
         "inventory.html",
         {
@@ -6357,6 +6363,7 @@ def inventory_page(
             "auto_price_margin_pct": auto_price_margin_pct,
             "product_type_options": _product_type_options(),
             "is_hollpacas_mode": is_hollpacas_mode,
+            "product_images_enabled": product_images_enabled,
             "version": settings.UI_VERSION,
         },
     )
@@ -19905,6 +19912,7 @@ def sales_products_search(
     user: User = Depends(_require_admin_web),
 ):
     price_tier = _normalize_price_tier(price_list, default=1)
+    product_images_enabled = _product_images_enabled(db)
     query = q.strip()
     if len(query) < 2:
         return JSONResponse({"ok": True, "items": []})
@@ -19971,7 +19979,7 @@ def sales_products_search(
                 "free_qty": free_qty,
                 "reserved_details": reserved_details.get(producto.id, []),
                 "combo_count": len(producto.combo_children or []),
-                "image_url": producto.image_url or "",
+                "image_url": (producto.image_url or "") if product_images_enabled else "",
                 "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if getattr(producto, "unidad_medida_id", None) else None,
                 "unidad_medida_nombre": producto.unidad_medida.nombre if getattr(producto, "unidad_medida", None) else "",
@@ -21315,6 +21323,7 @@ def inventory_create_product(
     selected_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=False) or _default_product_unit(db)
     if not selected_unit:
         return _error("Unidad de medida invalida")
+    product_images_enabled = _product_images_enabled(db)
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
         precio_venta1_cs = float(precio_venta1_usd or 0)
@@ -21332,7 +21341,7 @@ def inventory_create_product(
         costo_producto_cs = costo_producto_usd * tasa
     active_flag = True if activo is None else activo == "on"
     try:
-        image_url = _save_product_asset(image_file)
+        image_url = _save_product_asset(image_file) if product_images_enabled else None
     except ValueError as exc:
         return _error(str(exc))
     producto = Producto(
@@ -21350,7 +21359,7 @@ def inventory_create_product(
         precio_venta3_usd=precio_venta3_usd,
         tasa_cambio=tasa,
         costo_producto=costo_producto_cs,
-        image_url=image_url,
+        image_url=image_url if product_images_enabled else None,
         tipo_producto=tipo_producto_normalized,
         es_por_peso=is_weight_product,
         unidad_medida_id=selected_unit.id if selected_unit else None,
@@ -21373,7 +21382,7 @@ def inventory_create_product(
                 "precio_venta1": float(producto.precio_venta1 or 0),
                 "costo_cs": float(producto.costo_producto or 0),
                 "activo": bool(producto.activo),
-                "image_url": producto.image_url or "",
+                "image_url": (producto.image_url or "") if product_images_enabled else "",
                 "tipo_producto": producto.tipo_producto or "DIRECTO",
                 "es_por_peso": bool(producto.es_por_peso),
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
@@ -21450,6 +21459,7 @@ def inventory_update_product(
     selected_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=False) or producto.unidad_medida or _default_product_unit(db)
     if not selected_unit:
         return _error("Unidad de medida invalida")
+    product_images_enabled = _product_images_enabled(db)
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
         precio_venta1_cs = float(precio_venta1_usd or 0)
@@ -21478,10 +21488,10 @@ def inventory_update_product(
     producto.tasa_cambio = tasa
     producto.tipo_producto = tipo_producto_normalized
     try:
-        uploaded_image_url = _save_product_asset(image_file)
+        uploaded_image_url = _save_product_asset(image_file) if product_images_enabled else None
     except ValueError as exc:
         return _error(str(exc))
-    if uploaded_image_url:
+    if product_images_enabled and uploaded_image_url:
         producto.image_url = uploaded_image_url
     producto.es_por_peso = is_weight_product
     producto.unidad_medida_id = selected_unit.id if selected_unit else None
@@ -21507,7 +21517,7 @@ def inventory_update_product(
                 "precio_venta3_usd": float(producto.precio_venta3_usd or 0),
                 "costo_usd": float(costo_producto_usd or 0),
                 "activo": bool(producto.activo),
-                "image_url": producto.image_url or "",
+                "image_url": (producto.image_url or "") if product_images_enabled else "",
                 "tipo_producto": producto.tipo_producto or "DIRECTO",
                 "es_por_peso": bool(producto.es_por_peso),
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
@@ -21525,6 +21535,7 @@ def inventory_product_json(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.inventory.productos")
+    product_images_enabled = _product_images_enabled(db)
     producto = db.query(Producto).filter(Producto.id == product_id).first()
     if not producto:
         return JSONResponse({"ok": False, "message": "Producto no encontrado"}, status_code=404)
@@ -21543,7 +21554,7 @@ def inventory_product_json(
             "precio_venta3_usd": float(producto.precio_venta3_usd or 0),
             "costo_usd": costo_usd,
             "activo": bool(producto.activo),
-            "image_url": producto.image_url or "",
+            "image_url": (producto.image_url or "") if product_images_enabled else "",
             "tipo_producto": producto.tipo_producto or "DIRECTO",
             "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
             "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
