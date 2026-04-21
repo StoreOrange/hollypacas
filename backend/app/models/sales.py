@@ -162,6 +162,7 @@ class CompanyProfileSetting(Base):
     email = Column(String(180), nullable=True, default="")
     logo_url = Column(String(260), nullable=False, default="/static/logo_hollywood.png")
     pos_logo_url = Column(String(260), nullable=False, default="/static/logo_hollywood.png")
+    login_logo_url = Column(String(260), nullable=False, default="/static/logo_hollywood.png")
     favicon_url = Column(String(260), nullable=False, default="/static/favicon.ico")
     inventory_cs_only = Column(Boolean, nullable=False, default=False)
     weighted_inventory_enabled = Column(Boolean, nullable=False, default=False)

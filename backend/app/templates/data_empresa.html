@@ -103,6 +103,19 @@
                 </div>
               </div>
               <div class="col-md-6">
+                <label class="odoo-field-label">Logo Login URL / ruta *</label>
+                <input class="form-control odoo-input" name="login_logo_url" value="{{ profile.login_logo_url or profile.pos_logo_url or profile.logo_url }}" required />
+                <div class="text-muted small mt-1">Logo especifico para la pantalla de login en este entorno.</div>
+                <div class="mt-2">
+                  <label class="odoo-field-label">Subir logo Login desde archivo</label>
+                  <input class="form-control odoo-input" type="file" name="login_logo_file" accept=".png,.jpg,.jpeg,.webp,.svg,.ico" />
+                </div>
+                <div class="mt-2 p-2 border rounded bg-light">
+                  <div class="text-muted small mb-1">Vista actual Login</div>
+                  <img src="{{ (profile.login_logo_url or profile.pos_logo_url or profile.logo_url) }}?v={{ version }}" alt="Logo Login actual" style="max-height:72px; max-width:100%; object-fit:contain;">
+                </div>
+              </div>
+              <div class="col-md-6">
                 <label class="odoo-field-label">Favicon URL / ruta *</label>
                 <input class="form-control odoo-input" name="favicon_url" value="{{ profile.favicon_url }}" required />
                 <div class="text-muted small mt-1">Ejemplo: <code>/static/favicon.ico</code></div>

@@ -1124,6 +1124,9 @@ def _seed_company_profile_settings(db: Session) -> None:
             if not (existing.sidebar_subtitle or "").strip() or existing.sidebar_subtitle == "ERP Central":
                 existing.sidebar_subtitle = "Restaurante & Bar"
                 changed = True
+        if not (getattr(existing, "login_logo_url", "") or "").strip():
+            existing.login_logo_url = (existing.pos_logo_url or "").strip() or (existing.logo_url or "").strip() or "/static/logo_hollywood.png"
+            changed = True
         if (not is_shoes) and (not is_restaurant):
             if not (existing.legal_name or "").strip() or existing.legal_name == "Hollywood Pacas":
                 existing.legal_name = "Pacas Global"
@@ -1178,6 +1181,7 @@ def _seed_company_profile_settings(db: Session) -> None:
                 email="",
                 logo_url="/static/logo_hollywood.png",
                 pos_logo_url="/static/logo_hollywood.png",
+                login_logo_url="/static/logo_hollywood.png",
                 favicon_url="/static/favicon.ico",
                 inventory_cs_only=False,
                 weighted_inventory_enabled=False,
@@ -1204,6 +1208,7 @@ def _seed_company_profile_settings(db: Session) -> None:
                 email="",
                 logo_url="/static/logo_hollywood.png",
                 pos_logo_url="/static/logo_hollywood.png",
+                login_logo_url="/static/logo_hollywood.png",
                 favicon_url="/static/favicon.ico",
                 inventory_cs_only=False,
                 weighted_inventory_enabled=False,
@@ -1230,6 +1235,7 @@ def _seed_company_profile_settings(db: Session) -> None:
                 email="admin@pacasglobal.com",
                 logo_url="/static/logo_hollywood.png",
                 pos_logo_url="/static/logo_hollywood.png",
+                login_logo_url="/static/logo_hollywood.png",
                 favicon_url="/static/favicon.ico",
                 inventory_cs_only=False,
                 weighted_inventory_enabled=False,
@@ -1481,6 +1487,16 @@ def init_db() -> None:
                 conn.execute(
                     text(
                         "UPDATE company_profile_settings SET pos_logo_url = COALESCE(NULLIF(logo_url, ''), '/static/logo_hollywood.png')"
+                    )
+                )
+        if "login_logo_url" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN login_logo_url VARCHAR(260)"))
+                conn.execute(
+                    text(
+                        "UPDATE company_profile_settings "
+                        "SET login_logo_url = COALESCE(NULLIF(pos_logo_url, ''), NULLIF(logo_url, ''), '/static/logo_hollywood.png') "
+                        "WHERE login_logo_url IS NULL OR login_logo_url = ''"
                     )
                 )
         if "inventory_cs_only" not in columns:

@@ -2777,6 +2777,8 @@ def _resolve_login_logo_url(db: Session, request: Request) -> str:
     row = db.query(CompanyProfileSetting).order_by(CompanyProfileSetting.id.asc()).first()
     if row:
         return (
+            (getattr(row, "login_logo_url", "") or "").strip()
+            or
             (row.pos_logo_url or "").strip()
             or (row.logo_url or "").strip()
             or (branding.get("pos_logo_url") or "").strip()
@@ -18893,9 +18895,11 @@ async def data_empresa_update(
     email: Optional[str] = Form(None),
     logo_url: Optional[str] = Form(None),
     pos_logo_url: Optional[str] = Form(None),
+    login_logo_url: Optional[str] = Form(None),
     favicon_url: Optional[str] = Form(None),
     logo_file: Optional[UploadFile] = File(None),
     pos_logo_file: Optional[UploadFile] = File(None),
+    login_logo_file: Optional[UploadFile] = File(None),
     favicon_file: Optional[UploadFile] = File(None),
     inventory_cs_only: Optional[str] = Form(None),
     recipe_explosion_on_ingreso: Optional[str] = Form(None),
@@ -18921,6 +18925,7 @@ async def data_empresa_update(
     profile.email = (email or "").strip()
     next_logo_url = (logo_url or "").strip() or (profile.logo_url or "/static/logo_hollywood.png")
     next_pos_logo_url = (pos_logo_url or "").strip() or (profile.pos_logo_url or next_logo_url)
+    next_login_logo_url = (login_logo_url or "").strip() or (getattr(profile, "login_logo_url", "") or next_pos_logo_url or next_logo_url)
     next_favicon_url = (favicon_url or "").strip() or (profile.favicon_url or "/static/favicon.ico")
     try:
         uploaded_logo_url = _save_company_asset(
@@ -18931,6 +18936,11 @@ async def data_empresa_update(
         uploaded_pos_logo_url = _save_company_asset(
             pos_logo_file,
             asset_kind="pos_logo",
+            allowed_exts={".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"},
+        )
+        uploaded_login_logo_url = _save_company_asset(
+            login_logo_file,
+            asset_kind="login_logo",
             allowed_exts={".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"},
         )
         uploaded_favicon_url = _save_company_asset(
@@ -18946,10 +18956,17 @@ async def data_empresa_update(
         next_pos_logo_url = uploaded_pos_logo_url
     elif uploaded_logo_url and not (pos_logo_url or "").strip():
         next_pos_logo_url = uploaded_logo_url
+    if uploaded_login_logo_url:
+        next_login_logo_url = uploaded_login_logo_url
+    elif uploaded_pos_logo_url and not (login_logo_url or "").strip():
+        next_login_logo_url = uploaded_pos_logo_url
+    elif uploaded_logo_url and not (login_logo_url or "").strip():
+        next_login_logo_url = uploaded_logo_url
     if uploaded_favicon_url:
         next_favicon_url = uploaded_favicon_url
     profile.logo_url = next_logo_url
     profile.pos_logo_url = next_pos_logo_url
+    profile.login_logo_url = next_login_logo_url
     profile.favicon_url = next_favicon_url
     profile.inventory_cs_only = inventory_cs_only == "on"
     profile.recipe_explosion_on_ingreso = recipe_explosion_on_ingreso == "on"
