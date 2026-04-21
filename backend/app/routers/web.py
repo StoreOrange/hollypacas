@@ -1375,6 +1375,8 @@ def _default_company_profile_payload() -> dict[str, str]:
     active_company_key = (get_active_company_key() or "").strip().lower()
     db_name = _current_db_name().strip().lower()
     shoes_mode = _is_shoes_mode()
+    comestibles_mode = active_company_key == "comestibles" or "comestibles" in db_name or "amajo" in db_name
+    global_mode = active_company_key == "bdtrend" or "bdtrend" in db_name
     restaurant_mode = active_company_key == "barrera" or "barrera" in db_name
     multi_branch_enabled = active_company_key not in {"comestibles", "barrera", "bdtrend"}
     if shoes_mode:
@@ -1423,16 +1425,62 @@ def _default_company_profile_payload() -> dict[str, str]:
             "price_margin_percent": 0,
             "theme_code": "default",
         }
+    if comestibles_mode:
+        return {
+            "legal_name": "Tienda de Conveniencia AMAJO",
+            "trade_name": "AMAJO",
+            "app_title": "ERP AMAJO",
+            "sidebar_subtitle": "Tienda de Conveniencia",
+            "website": "",
+            "ruc": "",
+            "phone": "",
+            "address": "Sucursal principal",
+            "email": "",
+            "logo_url": "/static/logo_hollywood.png",
+            "pos_logo_url": "/static/logo_hollywood.png",
+            "favicon_url": "/static/favicon.ico",
+            "inventory_cs_only": False,
+            "recipe_explosion_on_ingreso": False,
+            "weighted_inventory_enabled": False,
+            "weighted_sales_enabled": False,
+            "multi_branch_enabled": multi_branch_enabled,
+            "price_auto_from_cost_enabled": False,
+            "price_margin_percent": 0,
+            "theme_code": "default",
+        }
+    if global_mode:
+        return {
+            "legal_name": "Pacas Global",
+            "trade_name": "Pacas Global",
+            "app_title": "ERP Pacas Global",
+            "sidebar_subtitle": "ERP Central",
+            "website": "",
+            "ruc": "",
+            "phone": "8900-0300",
+            "address": "Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
+            "email": "admin@pacasglobal.com",
+            "logo_url": "/static/logo_hollywood.png",
+            "pos_logo_url": "/static/logo_hollywood.png",
+            "favicon_url": "/static/favicon.ico",
+            "inventory_cs_only": False,
+            "recipe_explosion_on_ingreso": False,
+            "weighted_inventory_enabled": False,
+            "weighted_sales_enabled": False,
+            "multi_branch_enabled": multi_branch_enabled,
+            "price_auto_from_cost_enabled": False,
+            "price_margin_percent": 0,
+            "theme_code": "default",
+        }
     return {
-        "legal_name": "Pacas Global",
-        "trade_name": "Pacas Global",
-        "app_title": "ERP Pacas Global",
+        "legal_name": "Hollywood Pacas",
+        "trade_name": "Hollywood Pacas",
+        "app_title": "ERP Hollywood Pacas",
         "sidebar_subtitle": "ERP Central",
-        "website": "",
+        "website": "http://hollywoodpacas.com.ni",
         "ruc": "",
         "phone": "8900-0300",
-        "address": "",
-        "email": "admin@pacasglobal.com",
+        "address": "Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
+        "email": "admin@hollywoodpacas.com",
         "logo_url": "/static/logo_hollywood.png",
         "pos_logo_url": "/static/logo_hollywood.png",
         "favicon_url": "/static/favicon.ico",
@@ -1452,20 +1500,49 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
     row = db.query(CompanyProfileSetting).order_by(CompanyProfileSetting.id.asc()).first()
     if not row:
         return payload
+    legal_name = (row.legal_name or "").strip() or payload["legal_name"]
+    trade_name = (row.trade_name or "").strip() or payload["trade_name"]
+    app_title = (row.app_title or "").strip() or payload["app_title"]
+    sidebar_subtitle = (row.sidebar_subtitle or "").strip() or payload["sidebar_subtitle"]
+    website = (row.website or "").strip() or payload["website"]
+    ruc = (row.ruc or "").strip() or payload["ruc"]
+    phone = (row.phone or "").strip() or payload["phone"]
+    address = (row.address or "").strip() or payload["address"]
+    email = (row.email or "").strip() or payload["email"]
+    logo_url = (row.logo_url or "").strip() or payload["logo_url"]
+    pos_logo_url = (row.pos_logo_url or "").strip() or payload["pos_logo_url"]
+    favicon_url = (row.favicon_url or "").strip() or payload["favicon_url"]
+    central_branch = (
+        db.query(Branch)
+        .filter(func.lower(Branch.code) == "central")
+        .order_by(Branch.id.asc())
+        .first()
+    )
+    if central_branch:
+        if not phone and (central_branch.telefono or "").strip():
+            phone = (central_branch.telefono or "").strip()
+        if not address and (central_branch.direccion or "").strip():
+            address = (central_branch.direccion or "").strip()
+        if not legal_name and (central_branch.company_name or "").strip():
+            legal_name = (central_branch.company_name or "").strip()
+        if not trade_name and (central_branch.company_name or "").strip():
+            trade_name = (central_branch.company_name or "").strip()
+        if not ruc and (central_branch.ruc or "").strip():
+            ruc = (central_branch.ruc or "").strip()
     payload.update(
         {
-            "legal_name": row.legal_name or payload["legal_name"],
-            "trade_name": row.trade_name or payload["trade_name"],
-            "app_title": row.app_title or payload["app_title"],
-            "sidebar_subtitle": row.sidebar_subtitle or payload["sidebar_subtitle"],
-            "website": row.website or payload["website"],
-            "ruc": row.ruc or payload["ruc"],
-            "phone": row.phone or payload["phone"],
-            "address": row.address or payload["address"],
-            "email": row.email or payload["email"],
-            "logo_url": row.logo_url or payload["logo_url"],
-            "pos_logo_url": row.pos_logo_url or payload["pos_logo_url"],
-            "favicon_url": row.favicon_url or payload["favicon_url"],
+            "legal_name": legal_name,
+            "trade_name": trade_name,
+            "app_title": app_title,
+            "sidebar_subtitle": sidebar_subtitle,
+            "website": website,
+            "ruc": ruc,
+            "phone": phone,
+            "address": address,
+            "email": email,
+            "logo_url": logo_url,
+            "pos_logo_url": pos_logo_url,
+            "favicon_url": favicon_url,
             "inventory_cs_only": bool(row.inventory_cs_only),
             "recipe_explosion_on_ingreso": bool(getattr(row, "recipe_explosion_on_ingreso", False)),
             "weighted_inventory_enabled": bool(getattr(row, "weighted_inventory_enabled", False)),

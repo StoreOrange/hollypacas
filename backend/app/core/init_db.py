@@ -1094,6 +1094,8 @@ def _seed_company_profile_settings(db: Session) -> None:
     active_company = (get_active_company_key() or "").strip().lower()
     is_shoes = active_company in {"bdzapatos", "zapatos", "miss_zapatos"}
     is_restaurant = active_company == "barrera"
+    is_comestibles = active_company == "comestibles"
+    is_global = active_company == "bdtrend"
     multi_branch_enabled = active_company not in {"comestibles", "barrera", "bdtrend"}
     existing = db.query(CompanyProfileSetting).first()
     if existing:
@@ -1127,7 +1129,7 @@ def _seed_company_profile_settings(db: Session) -> None:
         if not (getattr(existing, "login_logo_url", "") or "").strip():
             existing.login_logo_url = (existing.pos_logo_url or "").strip() or (existing.logo_url or "").strip() or "/static/logo_hollywood.png"
             changed = True
-        if (not is_shoes) and (not is_restaurant):
+        if (not is_shoes) and (not is_restaurant) and is_global:
             if not (existing.legal_name or "").strip() or existing.legal_name == "Hollywood Pacas":
                 existing.legal_name = "Pacas Global"
                 changed = True
@@ -1142,6 +1144,38 @@ def _seed_company_profile_settings(db: Session) -> None:
                 changed = True
             if (existing.website or "").strip() == "http://hollywoodpacas.com.ni":
                 existing.website = ""
+                changed = True
+        if (not is_shoes) and (not is_restaurant) and is_comestibles:
+            if not (existing.legal_name or "").strip() or existing.legal_name in {"Hollywood Pacas", "Pacas Global"}:
+                existing.legal_name = "Tienda de Conveniencia AMAJO"
+                changed = True
+            if not (existing.trade_name or "").strip() or existing.trade_name in {"Hollywood Pacas", "Pacas Global"}:
+                existing.trade_name = "AMAJO"
+                changed = True
+            if not (existing.app_title or "").strip() or existing.app_title in {"ERP Hollywood Pacas", "ERP Pacas Global"}:
+                existing.app_title = "ERP AMAJO"
+                changed = True
+            if not (existing.sidebar_subtitle or "").strip() or existing.sidebar_subtitle in {"ERP Central", "ERP Pacas Global"}:
+                existing.sidebar_subtitle = "Tienda de Conveniencia"
+                changed = True
+        if (not is_shoes) and (not is_restaurant) and (not is_comestibles) and (not is_global):
+            if not (existing.legal_name or "").strip() or existing.legal_name == "Pacas Global":
+                existing.legal_name = "Hollywood Pacas"
+                changed = True
+            if not (existing.trade_name or "").strip() or existing.trade_name == "Pacas Global":
+                existing.trade_name = "Hollywood Pacas"
+                changed = True
+            if not (existing.app_title or "").strip() or existing.app_title == "ERP Pacas Global":
+                existing.app_title = "ERP Hollywood Pacas"
+                changed = True
+            if not (existing.sidebar_subtitle or "").strip():
+                existing.sidebar_subtitle = "ERP Central"
+                changed = True
+            if not (existing.website or "").strip():
+                existing.website = "http://hollywoodpacas.com.ni"
+                changed = True
+            if not (existing.email or "").strip() or existing.email == "admin@pacasglobal.com":
+                existing.email = "admin@hollywoodpacas.com"
                 changed = True
         if existing.multi_branch_enabled is None or bool(existing.multi_branch_enabled) != bool(multi_branch_enabled):
             existing.multi_branch_enabled = multi_branch_enabled
@@ -1221,7 +1255,34 @@ def _seed_company_profile_settings(db: Session) -> None:
                 updated_by="system-bootstrap",
             )
         )
-    else:
+    elif is_comestibles:
+        db.add(
+            CompanyProfileSetting(
+                legal_name="Tienda de Conveniencia AMAJO",
+                trade_name="AMAJO",
+                app_title="ERP AMAJO",
+                sidebar_subtitle="Tienda de Conveniencia",
+                website="",
+                ruc="",
+                phone="8900-0300",
+                address="Sucursal principal",
+                email="",
+                logo_url="/static/logo_hollywood.png",
+                pos_logo_url="/static/logo_hollywood.png",
+                login_logo_url="/static/logo_hollywood.png",
+                favicon_url="/static/favicon.ico",
+                inventory_cs_only=False,
+                weighted_inventory_enabled=False,
+                weighted_sales_enabled=False,
+                recipe_explosion_on_ingreso=False,
+                multi_branch_enabled=multi_branch_enabled,
+                price_auto_from_cost_enabled=False,
+                price_margin_percent=0,
+                theme_code="default",
+                updated_by="system-bootstrap",
+            )
+        )
+    elif is_global:
         db.add(
             CompanyProfileSetting(
                 legal_name="Pacas Global",
@@ -1233,6 +1294,33 @@ def _seed_company_profile_settings(db: Session) -> None:
                 phone="8900-0300",
                 address="Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
                 email="admin@pacasglobal.com",
+                logo_url="/static/logo_hollywood.png",
+                pos_logo_url="/static/logo_hollywood.png",
+                login_logo_url="/static/logo_hollywood.png",
+                favicon_url="/static/favicon.ico",
+                inventory_cs_only=False,
+                weighted_inventory_enabled=False,
+                weighted_sales_enabled=False,
+                recipe_explosion_on_ingreso=False,
+                multi_branch_enabled=multi_branch_enabled,
+                price_auto_from_cost_enabled=False,
+                price_margin_percent=0,
+                theme_code="default",
+                updated_by="system-bootstrap",
+            )
+        )
+    else:
+        db.add(
+            CompanyProfileSetting(
+                legal_name="Hollywood Pacas",
+                trade_name="Hollywood Pacas",
+                app_title="ERP Hollywood Pacas",
+                sidebar_subtitle="ERP Central",
+                website="http://hollywoodpacas.com.ni",
+                ruc="",
+                phone="8900-0300",
+                address="Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
+                email="admin@hollywoodpacas.com",
                 logo_url="/static/logo_hollywood.png",
                 pos_logo_url="/static/logo_hollywood.png",
                 login_logo_url="/static/logo_hollywood.png",
