@@ -1,4 +1,6 @@
 import os
+import re
+from pathlib import Path
 from urllib.parse import urlparse
 
 from fastapi import FastAPI
@@ -30,6 +32,7 @@ app.include_router(web.router)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.state.templates = Jinja2Templates(directory="app/templates")
+_DEFAULT_LOGO_URL = "/static/logo_hollywood.png"
 
 
 def _default_branding() -> dict[str, str]:
@@ -94,6 +97,40 @@ def _default_branding() -> dict[str, str]:
     }
 
 
+def _apply_company_logo_fallback(branding: dict[str, str]) -> dict[str, str]:
+    logo_url = (branding.get("logo_url") or "").strip()
+    pos_logo_url = (branding.get("pos_logo_url") or "").strip()
+    needs_logo_fallback = (not logo_url) or (logo_url == _DEFAULT_LOGO_URL)
+    needs_pos_fallback = (not pos_logo_url) or (pos_logo_url == _DEFAULT_LOGO_URL)
+    if not (needs_logo_fallback or needs_pos_fallback):
+        return branding
+
+    try:
+        active_company = (get_active_company_key() or "").strip().lower() or "default"
+    except Exception:
+        active_company = (os.getenv("ACTIVE_COMPANY", "") or "").strip().lower() or "default"
+
+    safe_company = re.sub(r"[^a-z0-9_-]+", "", active_company) or "default"
+    static_dir = Path(__file__).resolve().parent / "static"
+    company_dir = static_dir / "company_assets" / safe_company
+    if not company_dir.exists():
+        return branding
+
+    logo_candidates = sorted(company_dir.glob("logo_*.*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    pos_logo_candidates = sorted(company_dir.glob("pos_logo_*.*"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+    if needs_logo_fallback and logo_candidates:
+        relative_logo = logo_candidates[0].relative_to(static_dir).as_posix()
+        branding["logo_url"] = f"/static/{relative_logo}"
+    if needs_pos_fallback:
+        if pos_logo_candidates:
+            relative_pos_logo = pos_logo_candidates[0].relative_to(static_dir).as_posix()
+            branding["pos_logo_url"] = f"/static/{relative_pos_logo}"
+        elif branding.get("logo_url"):
+            branding["pos_logo_url"] = branding["logo_url"]
+    return branding
+
+
 @app.middleware("http")
 async def attach_branding(request, call_next):
     branding = _default_branding()
@@ -129,6 +166,7 @@ async def attach_branding(request, call_next):
         if db is not None:
             db.close()
 
+    branding = _apply_company_logo_fallback(branding)
     request.state.branding = branding
     request.state.menu_links = menu_links
     return await call_next(request)
