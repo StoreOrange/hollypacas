@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
+{% set login_logo = login_logo_url if login_logo_url is defined and login_logo_url else (branding.get('pos_logo_url') or branding.get('logo_url') or branding.get('favicon_url', '/static/favicon.ico')) %}
 {% set brand_name = branding.get("trade_name", "Empresa") %}
 {% set brand_words = brand_name.split() %}
 {% set brand_initials = ((brand_words[0][0] if brand_words else "E") ~ (brand_words[1][0] if brand_words|length > 1 else ""))|upper %}
@@ -42,7 +43,7 @@
         <div class="bg-white/90 backdrop-blur rounded-3xl shadow-2xl border border-slate-200/60 p-6 md:p-8">
           <div class="text-center">
             <div class="mx-auto w-44 h-44 md:w-56 md:h-56 bg-white rounded-3xl flex items-center justify-center shadow-lg ring-1 ring-slate-200/60">
-              <img src="{{ branding.get('pos_logo_url') or branding.get('logo_url') or branding.get('favicon_url', '/static/favicon.ico') }}" alt="{{ brand_name }}" class="max-h-[85%] max-w-[85%] object-contain" />
+              <img src="{{ login_logo }}" alt="{{ brand_name }}" class="max-h-[85%] max-w-[85%] object-contain" />
             </div>
             <div class="mt-4 text-sm uppercase tracking-[0.2em] text-brand font-semibold">Acceso seguro</div>
             <h2 class="mt-2 text-3xl font-semibold text-ink">Inicia sesion</h2>

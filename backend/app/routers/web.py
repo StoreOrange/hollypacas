@@ -2767,12 +2767,38 @@ def _send_html_email(
         return f"Error SMTP: {exc.__class__.__name__}"
     return None
 
+
+def _resolve_login_logo_url(db: Session, request: Request) -> str:
+    branding = (
+        request.state.branding
+        if request and getattr(request, "state", None) and getattr(request.state, "branding", None)
+        else {}
+    )
+    row = db.query(CompanyProfileSetting).order_by(CompanyProfileSetting.id.asc()).first()
+    if row:
+        return (
+            (row.pos_logo_url or "").strip()
+            or (row.logo_url or "").strip()
+            or (branding.get("pos_logo_url") or "").strip()
+            or (branding.get("logo_url") or "").strip()
+            or (branding.get("favicon_url") or "").strip()
+            or "/static/favicon.ico"
+        )
+    return (
+        (branding.get("pos_logo_url") or "").strip()
+        or (branding.get("logo_url") or "").strip()
+        or (branding.get("favicon_url") or "").strip()
+        or "/static/favicon.ico"
+    )
+
+
 @router.get("/login")
-def login_page(request: Request):
+def login_page(request: Request, db: Session = Depends(get_db)):
     return request.app.state.templates.TemplateResponse(
         "login.html",
         {
             "request": request,
+            "login_logo_url": _resolve_login_logo_url(db, request),
             "version": settings.UI_VERSION,
         },
     )
@@ -2797,6 +2823,7 @@ def login_action(
             {
                 "request": request,
                 "error": "Credenciales incorrectas",
+                "login_logo_url": _resolve_login_logo_url(db, request),
                 "version": settings.UI_VERSION,
             },
             status_code=401,
@@ -2807,6 +2834,7 @@ def login_action(
             {
                 "request": request,
                 "error": "Usuario inactivo",
+                "login_logo_url": _resolve_login_logo_url(db, request),
                 "version": settings.UI_VERSION,
             },
             status_code=403,
