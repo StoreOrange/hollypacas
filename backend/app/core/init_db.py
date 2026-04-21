@@ -141,7 +141,7 @@ def _seed_permissions(db: Session) -> None:
 
 def _seed_branches(db: Session) -> None:
     active_company = (get_active_company_key() or "").strip().lower()
-    multi_branch_enabled = active_company != "comestibles"
+    multi_branch_enabled = active_company not in {"comestibles", "barrera", "bdtrend"}
     if active_company == "bdzapatos":
         branches = [
             (
@@ -181,11 +181,12 @@ def _seed_branches(db: Session) -> None:
             ),
         ]
     else:
+        default_company_name = "Pacas Global" if active_company == "bdtrend" else "Hollywood Pacas"
         branches = [
             (
                 "central",
                 "Central",
-                "Hollywood Pacas",
+                default_company_name,
                 "0012202910068H",
                 "8900-0300",
                 "Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
@@ -196,7 +197,7 @@ def _seed_branches(db: Session) -> None:
                 (
                     "esteli",
                     "Sucursal Esteli",
-                    "Hollywood Pacas",
+                    default_company_name,
                     "0012202910068H",
                     "8900-0300",
                     "Esteli, De auto lote del Norte 7 cuadras al este.",
@@ -228,6 +229,8 @@ def _seed_branches(db: Session) -> None:
     if active_company == "bdzapatos":
         db.query(Branch).filter(Branch.code == "esteli").update({"activo": False})
     if active_company == "barrera":
+        db.query(Branch).filter(Branch.code == "esteli").update({"activo": False})
+    if not multi_branch_enabled:
         db.query(Branch).filter(Branch.code == "esteli").update({"activo": False})
     db.commit()
 
@@ -444,7 +447,7 @@ def _seed_marcas(db: Session) -> None:
 
 def _seed_bodegas(db: Session) -> None:
     active_company = (get_active_company_key() or "").strip().lower()
-    multi_branch_enabled = active_company != "comestibles"
+    multi_branch_enabled = active_company not in {"comestibles", "barrera", "bdtrend"}
     branches = {branch.code: branch for branch in db.query(Branch).all()}
     if active_company == "bdzapatos":
         bodegas = [
@@ -1021,7 +1024,7 @@ def _seed_pos_print_settings(db: Session) -> None:
 def _seed_email_config(db: Session) -> None:
     existing = db.query(EmailConfig).first()
     if not existing:
-        db.add(EmailConfig(sender_email="orangetectec@zohomail.com", sender_name="Hollywood Pacas"))
+        db.add(EmailConfig(sender_email="orangetectec@zohomail.com", sender_name="Pacas Global"))
         db.commit()
 
 
@@ -1091,7 +1094,7 @@ def _seed_company_profile_settings(db: Session) -> None:
     active_company = (get_active_company_key() or "").strip().lower()
     is_shoes = active_company in {"bdzapatos", "zapatos", "miss_zapatos"}
     is_restaurant = active_company == "barrera"
-    multi_branch_enabled = active_company != "comestibles"
+    multi_branch_enabled = active_company not in {"comestibles", "barrera", "bdtrend"}
     existing = db.query(CompanyProfileSetting).first()
     if existing:
         changed = False
@@ -1121,7 +1124,23 @@ def _seed_company_profile_settings(db: Session) -> None:
             if not (existing.sidebar_subtitle or "").strip() or existing.sidebar_subtitle == "ERP Central":
                 existing.sidebar_subtitle = "Restaurante & Bar"
                 changed = True
-        if existing.multi_branch_enabled is None:
+        if (not is_shoes) and (not is_restaurant):
+            if not (existing.legal_name or "").strip() or existing.legal_name == "Hollywood Pacas":
+                existing.legal_name = "Pacas Global"
+                changed = True
+            if not (existing.trade_name or "").strip() or existing.trade_name == "Hollywood Pacas":
+                existing.trade_name = "Pacas Global"
+                changed = True
+            if not (existing.app_title or "").strip() or existing.app_title == "ERP Hollywood Pacas":
+                existing.app_title = "ERP Pacas Global"
+                changed = True
+            if not (existing.email or "").strip() or existing.email == "admin@hollywoodpacas.com":
+                existing.email = "admin@pacasglobal.com"
+                changed = True
+            if (existing.website or "").strip() == "http://hollywoodpacas.com.ni":
+                existing.website = ""
+                changed = True
+        if existing.multi_branch_enabled is None or bool(existing.multi_branch_enabled) != bool(multi_branch_enabled):
             existing.multi_branch_enabled = multi_branch_enabled
             changed = True
         if getattr(existing, "weighted_inventory_enabled", None) is None:
@@ -1200,15 +1219,15 @@ def _seed_company_profile_settings(db: Session) -> None:
     else:
         db.add(
             CompanyProfileSetting(
-                legal_name="Hollywood Pacas",
-                trade_name="Hollywood Pacas",
-                app_title="ERP Hollywood Pacas",
+                legal_name="Pacas Global",
+                trade_name="Pacas Global",
+                app_title="ERP Pacas Global",
                 sidebar_subtitle="ERP Central",
-                website="http://hollywoodpacas.com.ni",
+                website="",
                 ruc="",
                 phone="8900-0300",
                 address="Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
-                email="admin@hollywoodpacas.com",
+                email="admin@pacasglobal.com",
                 logo_url="/static/logo_hollywood.png",
                 pos_logo_url="/static/logo_hollywood.png",
                 favicon_url="/static/favicon.ico",
@@ -1498,7 +1517,7 @@ def init_db() -> None:
         if "multi_branch_enabled" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN multi_branch_enabled BOOLEAN DEFAULT TRUE"))
-                default_multi = "FALSE" if get_active_company_key() == "comestibles" else "TRUE"
+                default_multi = "FALSE" if get_active_company_key() in {"comestibles", "barrera", "bdtrend"} else "TRUE"
                 conn.execute(text(f"UPDATE company_profile_settings SET multi_branch_enabled = {default_multi} WHERE multi_branch_enabled IS NULL"))
         if "price_auto_from_cost_enabled" not in columns:
             with engine.begin() as conn:

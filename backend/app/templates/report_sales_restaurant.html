@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Informes</li>
+                <li class="breadcrumb-item active" aria-current="page">Ventas restaurante</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Reporte operativo de ventas restaurante</div>
+            <div class="odoo-subtitle mt-1 text-sm">Resultado total y detalle vendido por servicio: Mesa, Barra, Llevar y Delivery.</div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="odoo-pill primary"><i class="bi bi-receipt"></i> Facturas: {{ total_facturas or 0 }}</div>
+            <div class="odoo-pill"><i class="bi bi-box-seam"></i> Items: {{ "%.2f"|format(total_items or 0) }}</div>
+            <div class="odoo-pill primary"><i class="bi bi-cash-stack"></i> Total C$: C$ {{ "{:,.2f}".format(total_cs or 0) }}</div>
+            <div class="odoo-pill"><i class="bi bi-currency-dollar"></i> Total USD: $ {{ "{:,.2f}".format(total_usd or 0) }}</div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/reports">Informes</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/reports/ventas-restaurante">Ventas restaurante</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/ventas">Ventas detallado</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/reports/ventas-productos">Ventas por producto</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="odoo-card">
+        <form class="row g-2 align-items-end" method="get" action="/reports/ventas-restaurante">
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+            <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+            <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Tipo de servicio</label>
+            <select name="service_type" class="form-select form-select-sm">
+              {% for option in service_options %}
+              <option value="{{ option.value }}" {% if selected_service_type == option.value %}selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto</label>
+            <input name="producto" class="form-control form-control-sm" placeholder="Codigo o descripcion" value="{{ producto_q or '' }}">
+          </div>
+          <div class="col-12 col-md-auto">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">
+              <i class="bi bi-search"></i>
+              Filtrar
+            </button>
+            <a class="btn btn-outline-secondary btn-sm" href="/reports/ventas-restaurante">
+              <i class="bi bi-eraser"></i>
+              Hoy
+            </a>
+          </div>
+        </form>
+      </div>
+
+      <div class="row g-3 mt-2">
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Ventas totales C$</div>
+            <div class="mt-2 text-lg fw-semibold text-ink">C$ {{ "{:,.2f}".format(total_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Ticket promedio C$</div>
+            <div class="mt-2 text-lg fw-semibold text-ink">C$ {{ "{:,.2f}".format(average_ticket_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Ticket maximo C$</div>
+            <div class="mt-2 text-lg fw-semibold text-ink">C$ {{ "{:,.2f}".format(max_ticket_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Facturas procesadas</div>
+            <div class="mt-2 text-lg fw-semibold text-ink">{{ total_facturas or 0 }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="odoo-section-title mb-3 text-base">Resultado por tipo de servicio</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Servicio</th>
+                <th class="text-end">Facturas</th>
+                <th class="text-end">Items</th>
+                <th class="text-end">Venta C$</th>
+                <th class="text-end">Venta USD</th>
+                <th class="text-end">Ticket promedio C$</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in service_summary_rows %}
+              <tr>
+                <td class="fw-semibold">{{ row.service_label }}</td>
+                <td class="text-end">{{ row.facturas or 0 }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.total_items or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                <td class="text-end">$ {{ "{:,.2f}".format(row.venta_usd or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.ticket_promedio_cs or 0) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="odoo-section-title mb-3 text-base">Top productos vendidos</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Codigo</th>
+                <th>Producto</th>
+                <th class="text-end">Cantidad</th>
+                <th class="text-end">Venta C$</th>
+                <th class="text-end">Venta USD</th>
+                <th class="text-end">Lineas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in top_product_rows %}
+              <tr>
+                <td class="fw-semibold">{{ row.codigo }}</td>
+                <td>{{ row.producto }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                <td class="text-end">$ {{ "{:,.2f}".format(row.venta_usd or 0) }}</td>
+                <td class="text-end">{{ row.lineas or 0 }}</td>
+              </tr>
+              {% endfor %}
+              {% if top_product_rows|length == 0 %}
+              <tr>
+                <td colspan="6" class="text-center text-slate py-3">Sin resultados.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="odoo-section-title mb-3 text-base">Resumen por factura</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Fecha</th>
+                <th>Factura</th>
+                <th>Servicio</th>
+                <th>Cliente</th>
+                <th>Vendedor</th>
+                <th>Sucursal</th>
+                <th class="text-end">Items</th>
+                <th class="text-end">Lineas</th>
+                <th class="text-end">Venta C$</th>
+                <th class="text-end">Venta USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in invoice_rows %}
+              <tr>
+                <td>{{ row.fecha }}</td>
+                <td class="fw-semibold">{{ row.factura }}</td>
+                <td>{{ row.service_label }}</td>
+                <td>{{ row.cliente }}</td>
+                <td>{{ row.vendedor }}</td>
+                <td>{{ row.sucursal }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.items_factura or 0) }}</td>
+                <td class="text-end">{{ row.lineas or 0 }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                <td class="text-end">$ {{ "{:,.2f}".format(row.venta_usd or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if invoice_rows|length == 0 %}
+              <tr>
+                <td colspan="10" class="text-center text-slate py-3">Sin resultados.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="odoo-section-title mb-3 text-base">Detalle de lo vendido</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Fecha</th>
+                <th>Factura</th>
+                <th>Servicio</th>
+                <th>Codigo</th>
+                <th>Producto</th>
+                <th class="text-end">Cantidad</th>
+                <th class="text-end">Precio C$</th>
+                <th class="text-end">Subtotal C$</th>
+                <th class="text-end">Subtotal USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in detail_rows %}
+              <tr>
+                <td>{{ row.fecha }}</td>
+                <td class="fw-semibold">{{ row.factura }}</td>
+                <td>{{ row.service_label }}</td>
+                <td class="fw-semibold">{{ row.codigo }}</td>
+                <td>{{ row.producto }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.precio_cs or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.2f}".format(row.subtotal_cs or 0) }}</td>
+                <td class="text-end">$ {{ "{:,.2f}".format(row.subtotal_usd or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if detail_rows|length == 0 %}
+              <tr>
+                <td colspan="9" class="text-center text-slate py-3">Sin resultados.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

@@ -151,9 +151,9 @@ class CompanyProfileSetting(Base):
     __tablename__ = "company_profile_settings"
 
     id = Column(Integer, primary_key=True, index=True)
-    legal_name = Column(String(180), nullable=False, default="Hollywood Pacas")
-    trade_name = Column(String(120), nullable=False, default="Hollywood Pacas")
-    app_title = Column(String(180), nullable=False, default="ERP Hollywood Pacas")
+    legal_name = Column(String(180), nullable=False, default="Pacas Global")
+    trade_name = Column(String(120), nullable=False, default="Pacas Global")
+    app_title = Column(String(180), nullable=False, default="ERP Pacas Global")
     sidebar_subtitle = Column(String(80), nullable=False, default="ERP Central")
     website = Column(String(180), nullable=True, default="")
     ruc = Column(String(40), nullable=True, default="")

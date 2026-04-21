@@ -73,9 +73,9 @@ def _update_env_file(path: Path, updates: dict[str, str]) -> None:
 def _bootstrap_companies_env_if_missing() -> None:
     if COMPANIES_ENV_PATH.exists():
         return
-    initial_key = _normalize_company_key(os.getenv("ACTIVE_COMPANY", "hollywood_pacas")) or "hollywood_pacas"
-    initial_name = os.getenv("PROJECT_NAME", "Hollywood Pacas ERP").strip() or "Hollywood Pacas ERP"
-    initial_db_url = os.getenv("DATABASE_URL", "postgresql://user:1234@localhost:5432/hollpacas").strip()
+    initial_key = _normalize_company_key(os.getenv("ACTIVE_COMPANY", "bdtrend")) or "bdtrend"
+    initial_name = os.getenv("PROJECT_NAME", "Pacas Global ERP").strip() or "Pacas Global ERP"
+    initial_db_url = os.getenv("DATABASE_URL", "postgresql://user:1234@localhost:5432/bdtrend").strip()
     env_key = _to_company_env_key(initial_key)
     content = [
         "# Perfiles de empresa / base de datos",
@@ -106,14 +106,14 @@ def get_company_profiles() -> list[dict[str, str]]:
 
     # Fallback: si el archivo no estaba poblado, usar DATABASE_URL actual.
     if not profiles:
-        fallback_key = active_key or "hollywood_pacas"
+        fallback_key = active_key or "bdtrend"
         profiles.append(
             {
                 "key": fallback_key,
                 "name": os.getenv("PROJECT_NAME", "ERP System"),
                 "database_url": os.getenv(
                     "DATABASE_URL",
-                    "postgresql://user:1234@localhost:5432/hollpacas",
+                    "postgresql://user:1234@localhost:5432/bdtrend",
                 ),
             }
         )
@@ -127,7 +127,7 @@ def get_active_company_key() -> str:
     if key:
         return key
     profiles = get_company_profiles()
-    return profiles[0]["key"] if profiles else "hollywood_pacas"
+    return profiles[0]["key"] if profiles else "bdtrend"
 
 
 def get_active_company_profile() -> dict[str, str]:
@@ -136,7 +136,7 @@ def get_active_company_profile() -> dict[str, str]:
     for profile in profiles:
         if profile["key"] == active_key:
             return profile
-    return profiles[0] if profiles else {"key": "hollywood_pacas", "name": "ERP System", "database_url": ""}
+    return profiles[0] if profiles else {"key": "bdtrend", "name": "ERP System", "database_url": ""}
 
 
 def get_active_database_url() -> str:
@@ -144,7 +144,7 @@ def get_active_database_url() -> str:
     db_url = (profile.get("database_url") or "").strip()
     if db_url:
         return db_url
-    return os.getenv("DATABASE_URL", "postgresql://user:1234@localhost:5432/hollpacas")
+    return os.getenv("DATABASE_URL", "postgresql://user:1234@localhost:5432/bdtrend")
 
 
 def upsert_company_profile(*, key: str, name: str, database_url: str, activate: bool = False) -> dict[str, str]:
@@ -205,10 +205,10 @@ class Settings:
     PROJECT_NAME: str = os.getenv("PROJECT_NAME", "ERP System")
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        "postgresql://user:1234@localhost:5432/hollpacas",
+        "postgresql://user:1234@localhost:5432/bdtrend",
     )
     ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")
-    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@hollywoodpacas.com")
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@pacasglobal.com")
     ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "020416")
     ADMIN_FULL_NAME: str = os.getenv("ADMIN_FULL_NAME", "Administrador")
     UI_VERSION: str = os.getenv("UI_VERSION", "02.009.2026")
@@ -218,7 +218,7 @@ class Settings:
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
     WEBPUSH_VAPID_PUBLIC_KEY: str = os.getenv("WEBPUSH_VAPID_PUBLIC_KEY", "")
     WEBPUSH_VAPID_PRIVATE_KEY: str = os.getenv("WEBPUSH_VAPID_PRIVATE_KEY", "")
-    WEBPUSH_VAPID_SUBJECT: str = os.getenv("WEBPUSH_VAPID_SUBJECT", "mailto:admin@hollywoodpacas.com")
+    WEBPUSH_VAPID_SUBJECT: str = os.getenv("WEBPUSH_VAPID_SUBJECT", "mailto:admin@pacasglobal.com")
     SMS_WEBHOOK_URL: str = os.getenv("SMS_WEBHOOK_URL", "")
     SMS_WEBHOOK_TOKEN: str = os.getenv("SMS_WEBHOOK_TOKEN", "")
     SMS_ALERT_RECIPIENTS: str = os.getenv("SMS_ALERT_RECIPIENTS", "")

@@ -136,6 +136,22 @@ SALES_INTERFACE_OPTIONS = [
     {"code": "restaurante", "label": "Interfaz Restaurante / Bar"},
 ]
 
+RESTAURANT_SERVICE_REPORT_OPTIONS = [
+    {"value": "ALL", "label": "Todos los servicios"},
+    {"value": "MESA", "label": "Comer en local (Mesa)"},
+    {"value": "BARRA", "label": "Barra"},
+    {"value": "LLEVAR", "label": "Para llevar"},
+    {"value": "DELIVERY", "label": "Delivery"},
+]
+
+RESTAURANT_SERVICE_LABELS = {
+    "MESA": "Comer en local",
+    "BARRA": "Barra",
+    "LLEVAR": "Para llevar",
+    "DELIVERY": "Delivery",
+    "OTRO": "Otro",
+}
+
 
 def _webpush_enabled() -> bool:
     return bool(
@@ -1360,7 +1376,7 @@ def _default_company_profile_payload() -> dict[str, str]:
     db_name = _current_db_name().strip().lower()
     shoes_mode = _is_shoes_mode()
     restaurant_mode = active_company_key == "barrera" or "barrera" in db_name
-    multi_branch_enabled = get_active_company_key() != "comestibles"
+    multi_branch_enabled = active_company_key not in {"comestibles", "barrera", "bdtrend"}
     if shoes_mode:
         return {
             "legal_name": "Miss Zapatos",
@@ -1408,15 +1424,15 @@ def _default_company_profile_payload() -> dict[str, str]:
             "theme_code": "default",
         }
     return {
-        "legal_name": "Hollywood Pacas",
-        "trade_name": "Hollywood Pacas",
-        "app_title": "ERP Hollywood Pacas",
+        "legal_name": "Pacas Global",
+        "trade_name": "Pacas Global",
+        "app_title": "ERP Pacas Global",
         "sidebar_subtitle": "ERP Central",
-        "website": "http://hollywoodpacas.com.ni",
+        "website": "",
         "ruc": "",
         "phone": "8900-0300",
         "address": "",
-        "email": "admin@hollywoodpacas.com",
+        "email": "admin@pacasglobal.com",
         "logo_url": "/static/logo_hollywood.png",
         "pos_logo_url": "/static/logo_hollywood.png",
         "favicon_url": "/static/favicon.ico",
@@ -1572,6 +1588,12 @@ def _current_db_name() -> str:
 def _is_shoes_mode() -> bool:
     active_company_key = (get_active_company_key() or "").strip().lower()
     return active_company_key == "bdzapatos"
+
+
+def _is_restaurant_business_mode() -> bool:
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    db_name = _current_db_name().strip().lower()
+    return ("barrera" in active_company_key) or ("barrera" in db_name)
 
 
 def _is_hollpacas_mode() -> bool:
@@ -13140,11 +13162,13 @@ def reports_index(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
+    restaurant_reports_enabled = _is_restaurant_business_mode()
     return request.app.state.templates.TemplateResponse(
         "reports_index.html",
         {
             "request": request,
             "user": user,
+            "restaurant_reports_enabled": restaurant_reports_enabled,
             "version": settings.UI_VERSION,
         },
     )
@@ -13174,6 +13198,248 @@ def _sales_report_filters(request: Request):
         branch_id = "all"
 
     return start_date, end_date, branch_id, vendedor_id, producto_q
+
+
+def _restaurant_sales_report_filters(request: Request):
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    branch_id = request.query_params.get("branch_id") or "all"
+    service_type = (request.query_params.get("service_type") or "ALL").strip().upper()
+    producto_q = (request.query_params.get("producto") or "").strip()
+
+    today = local_today()
+    start_date = today
+    end_date = today
+    if start_raw or end_raw:
+        try:
+            if start_raw:
+                start_date = date.fromisoformat(start_raw)
+            if end_raw:
+                end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            start_date = today
+            end_date = today
+    if end_date < start_date:
+        end_date = start_date
+
+    allowed_service_types = {item["value"] for item in RESTAURANT_SERVICE_REPORT_OPTIONS}
+    if service_type not in allowed_service_types:
+        service_type = "ALL"
+    return start_date, end_date, branch_id, service_type, producto_q
+
+
+def _build_restaurant_sales_report(
+    db: Session,
+    user: User,
+    start_date: date,
+    end_date: date,
+    branch_id: str,
+    service_type: str,
+    producto_q: str,
+):
+    allowed_codes = _allowed_branch_codes(db)
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+
+    query = (
+        db.query(RestaurantOrder, VentaFactura, VentaItem, Producto, Cliente, Vendedor, Branch)
+        .join(VentaFactura, VentaFactura.id == RestaurantOrder.factura_id)
+        .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+        .join(Producto, Producto.id == VentaItem.producto_id)
+        .join(Bodega, Bodega.id == RestaurantOrder.bodega_id, isouter=True)
+        .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+        .join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True)
+        .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
+        .filter(RestaurantOrder.factura_id.isnot(None))
+        .filter(RestaurantOrder.estado == "FACTURADA")
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+        .filter(func.lower(Branch.code).in_(allowed_codes))
+        .filter(Branch.id.in_(scoped_branch_ids))
+    )
+    if branch_id and branch_id != "all":
+        try:
+            branch_id_int = int(branch_id)
+            if branch_id_int not in scoped_branch_ids:
+                query = query.filter(Branch.id == -1)
+            else:
+                query = query.filter(Branch.id == branch_id_int)
+        except ValueError:
+            pass
+    if service_type and service_type != "ALL":
+        query = query.filter(func.upper(RestaurantOrder.service_type) == service_type)
+    if producto_q:
+        like = f"%{producto_q.lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+            )
+        )
+
+    rows = query.order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc(), VentaItem.id.asc()).all()
+
+    def _normalize_service(value: Optional[str]) -> str:
+        normalized = (value or "").strip().upper()
+        if normalized in {"MESA", "BARRA", "LLEVAR", "DELIVERY"}:
+            return normalized
+        return "OTRO"
+
+    invoice_map: dict[int, dict[str, object]] = {}
+    product_map: dict[int, dict[str, object]] = {}
+    detail_rows: list[dict[str, object]] = []
+
+    service_summary_map: dict[str, dict[str, object]] = {
+        key: {
+            "service_type": key,
+            "service_label": RESTAURANT_SERVICE_LABELS.get(key, key),
+            "facturas": set(),
+            "total_items": Decimal("0"),
+            "venta_cs": Decimal("0"),
+            "venta_usd": Decimal("0"),
+        }
+        for key in ["MESA", "BARRA", "LLEVAR", "DELIVERY", "OTRO"]
+    }
+
+    total_items = Decimal("0")
+    total_cs = Decimal("0")
+    total_usd = Decimal("0")
+    max_ticket_cs = Decimal("0")
+
+    for order, factura, item, producto, cliente, vendedor, branch in rows:
+        service_key = _normalize_service(order.service_type)
+        cantidad = Decimal(str(item.cantidad or 0))
+        subtotal_cs = Decimal(str(item.subtotal_cs or 0))
+        subtotal_usd = Decimal(str(item.subtotal_usd or 0))
+        total_items += cantidad
+        total_cs += subtotal_cs
+        total_usd += subtotal_usd
+
+        service_row = service_summary_map[service_key]
+        service_row["facturas"].add(int(factura.id))
+        service_row["total_items"] += cantidad
+        service_row["venta_cs"] += subtotal_cs
+        service_row["venta_usd"] += subtotal_usd
+
+        if int(factura.id) not in invoice_map:
+            invoice_map[int(factura.id)] = {
+                "fecha": factura.fecha.strftime("%d/%m/%Y %H:%M") if factura.fecha else "",
+                "factura": factura.numero or f"FAC-{factura.id}",
+                "service_type": service_key,
+                "service_label": RESTAURANT_SERVICE_LABELS.get(service_key, service_key),
+                "cliente": cliente.nombre if cliente else "Consumidor final",
+                "vendedor": vendedor.nombre if vendedor else "-",
+                "sucursal": branch.name if branch else "-",
+                "items_factura": Decimal("0"),
+                "venta_cs": Decimal("0"),
+                "venta_usd": Decimal("0"),
+                "lineas": 0,
+            }
+        invoice_row = invoice_map[int(factura.id)]
+        invoice_row["items_factura"] += cantidad
+        invoice_row["venta_cs"] += subtotal_cs
+        invoice_row["venta_usd"] += subtotal_usd
+        invoice_row["lineas"] += 1
+        if invoice_row["venta_cs"] > max_ticket_cs:
+            max_ticket_cs = invoice_row["venta_cs"]
+
+        if int(producto.id) not in product_map:
+            product_map[int(producto.id)] = {
+                "codigo": producto.cod_producto or "-",
+                "producto": producto.descripcion or "-",
+                "cantidad": Decimal("0"),
+                "venta_cs": Decimal("0"),
+                "venta_usd": Decimal("0"),
+                "lineas": 0,
+            }
+        product_row = product_map[int(producto.id)]
+        product_row["cantidad"] += cantidad
+        product_row["venta_cs"] += subtotal_cs
+        product_row["venta_usd"] += subtotal_usd
+        product_row["lineas"] += 1
+
+        detail_rows.append(
+            {
+                "fecha": factura.fecha.strftime("%d/%m/%Y %H:%M") if factura.fecha else "",
+                "factura": factura.numero or f"FAC-{factura.id}",
+                "service_type": service_key,
+                "service_label": RESTAURANT_SERVICE_LABELS.get(service_key, service_key),
+                "cliente": cliente.nombre if cliente else "Consumidor final",
+                "vendedor": vendedor.nombre if vendedor else "-",
+                "sucursal": branch.name if branch else "-",
+                "codigo": producto.cod_producto or "-",
+                "producto": producto.descripcion or "-",
+                "cantidad": float(cantidad),
+                "precio_cs": float(item.precio_unitario_cs or 0),
+                "precio_usd": float(item.precio_unitario_usd or 0),
+                "subtotal_cs": float(subtotal_cs),
+                "subtotal_usd": float(subtotal_usd),
+            }
+        )
+
+    service_summary_rows: list[dict[str, object]] = []
+    for key in ["MESA", "BARRA", "LLEVAR", "DELIVERY", "OTRO"]:
+        row = service_summary_map[key]
+        facturas = len(row["facturas"])
+        venta_cs = Decimal(str(row["venta_cs"] or 0))
+        venta_usd = Decimal(str(row["venta_usd"] or 0))
+        service_summary_rows.append(
+            {
+                "service_type": key,
+                "service_label": row["service_label"],
+                "facturas": facturas,
+                "total_items": float(row["total_items"]),
+                "venta_cs": float(venta_cs),
+                "venta_usd": float(venta_usd),
+                "ticket_promedio_cs": float((venta_cs / facturas) if facturas else Decimal("0")),
+            }
+        )
+
+    invoice_rows = [
+        {
+            **row,
+            "items_factura": float(row["items_factura"]),
+            "venta_cs": float(row["venta_cs"]),
+            "venta_usd": float(row["venta_usd"]),
+        }
+        for row in sorted(
+            invoice_map.values(),
+            key=lambda value: (value["fecha"], value["factura"]),
+            reverse=True,
+        )
+    ]
+
+    top_product_rows = [
+        {
+            "codigo": row["codigo"],
+            "producto": row["producto"],
+            "cantidad": float(row["cantidad"]),
+            "venta_cs": float(row["venta_cs"]),
+            "venta_usd": float(row["venta_usd"]),
+            "lineas": int(row["lineas"]),
+        }
+        for row in sorted(
+            product_map.values(),
+            key=lambda value: (value["venta_cs"], value["cantidad"]),
+            reverse=True,
+        )
+    ]
+
+    total_facturas = len(invoice_map)
+    average_ticket_cs = (total_cs / total_facturas) if total_facturas else Decimal("0")
+    return {
+        "service_summary_rows": service_summary_rows,
+        "invoice_rows": invoice_rows,
+        "top_product_rows": top_product_rows,
+        "detail_rows": detail_rows,
+        "total_facturas": total_facturas,
+        "total_items": float(total_items),
+        "total_cs": float(total_cs),
+        "total_usd": float(total_usd),
+        "average_ticket_cs": float(average_ticket_cs),
+        "max_ticket_cs": float(max_ticket_cs),
+    }
 
 
 def _sales_products_report_filters(request: Request):
@@ -15679,6 +15945,46 @@ def report_sales_detailed(
             "version": settings.UI_VERSION,
         },
       )
+
+
+@router.get("/reports/ventas-restaurante")
+def report_sales_restaurant(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    if not _is_restaurant_business_mode():
+        return RedirectResponse("/reports", status_code=303)
+
+    start_date, end_date, branch_id, service_type, producto_q = _restaurant_sales_report_filters(request)
+    payload = _build_restaurant_sales_report(
+        db,
+        user,
+        start_date,
+        end_date,
+        branch_id,
+        service_type,
+        producto_q,
+    )
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
+
+    return request.app.state.templates.TemplateResponse(
+        "report_sales_restaurant.html",
+        {
+            "request": request,
+            "user": user,
+            "branches": branches,
+            "service_options": RESTAURANT_SERVICE_REPORT_OPTIONS,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "selected_branch": branch_id or "all",
+            "selected_service_type": service_type,
+            "producto_q": producto_q,
+            **payload,
+            "version": settings.UI_VERSION,
+        },
+    )
 
 
 @router.get("/reports/depositos")

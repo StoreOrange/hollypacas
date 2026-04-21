@@ -87,16 +87,16 @@
       {% set ui_btn_radius = "11px" %}
       {% set ui_card_shadow = "0 12px 26px rgba(139, 66, 18, 0.14)" %}
     {% elif theme_code == "rose_elegant" %}
-      {% set theme_primary = "#8e2a6a" %}
-      {% set theme_primary_600 = "#742255" %}
-      {% set theme_primary_100 = "#f8eaf2" %}
-      {% set ui_body_bg = "#f8f2f7" %}
+      {% set theme_primary = "#7c245c" %}
+      {% set theme_primary_600 = "#641d4a" %}
+      {% set theme_primary_100 = "#f7eaf2" %}
+      {% set ui_body_bg = "#f4edf2" %}
       {% set ui_card_radius = "16px" %}
       {% set ui_header_radius = "16px" %}
       {% set ui_btn_radius = "12px" %}
       {% set ui_tab_radius = "12px" %}
-      {% set ui_card_shadow = "0 16px 32px rgba(142, 42, 106, 0.18)" %}
-      {% set ui_header_shadow = "0 14px 30px rgba(142, 42, 106, 0.16)" %}
+      {% set ui_card_shadow = "0 16px 34px rgba(86, 28, 66, 0.16)" %}
+      {% set ui_header_shadow = "0 14px 30px rgba(86, 28, 66, 0.14)" %}
     {% endif %}
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -137,6 +137,11 @@
     <link rel="stylesheet" href="/static/vendor/select2.min.css?v={{ version }}" />
     <link rel="stylesheet" href="/static/vendor/sweetalert2.min.css?v={{ version }}" />
     <link rel="stylesheet" href="/static/css/app.css?v={{ version }}" />
+    {% if theme_code == "rose_elegant" %}
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
+    {% endif %}
     <style>
       :root {
         --hp-primary: {{ theme_primary }};
@@ -182,38 +187,116 @@
       }
 
       {% if theme_code == "rose_elegant" %}
+      :root {
+        --rose-ink: #241722;
+        --rose-muted: #665161;
+        --rose-surface: #fffafd;
+      }
+
+      body,
+      .btn,
+      .form-control,
+      .form-select,
+      .table,
+      .odoo-subtitle,
+      .text-slate {
+        font-family: "Manrope", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif !important;
+      }
+
+      .odoo-title,
+      .odoo-section-title,
+      h1,
+      h2,
+      h3,
+      h4,
+      .mobile-global-nav__brand .trade {
+        font-family: "Playfair Display", "Times New Roman", Georgia, serif !important;
+        letter-spacing: 0.01em;
+        color: var(--rose-ink) !important;
+      }
+
+      body {
+        background:
+          radial-gradient(1000px 420px at 100% -8%, rgba(124, 36, 92, 0.11), transparent 56%),
+          radial-gradient(760px 360px at 0% 0%, rgba(165, 87, 134, 0.08), transparent 48%),
+          var(--ui-body-bg) !important;
+        color: var(--rose-ink);
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+      }
+
       .odoo-header,
       .odoo-card {
         position: relative;
         overflow: hidden;
+        background: linear-gradient(
+          170deg,
+          rgba(255, 255, 255, 0.96) 0%,
+          color-mix(in srgb, var(--hp-primary) 5%, #ffffff) 100%
+        ) !important;
+        border-color: color-mix(in srgb, var(--hp-primary) 18%, #ded3db) !important;
       }
 
       .odoo-header::before,
       .odoo-card::before {
         content: "";
         position: absolute;
-        width: 220px;
-        height: 220px;
-        right: -80px;
-        top: -90px;
-        background: radial-gradient(circle at center, rgba(255, 182, 225, 0.42), rgba(255, 182, 225, 0));
+        width: 260px;
+        height: 260px;
+        right: -92px;
+        top: -128px;
+        background: radial-gradient(circle at center, rgba(196, 120, 168, 0.24), rgba(196, 120, 168, 0));
         pointer-events: none;
       }
 
       .btn-primary {
-        background-image: linear-gradient(135deg, #a03578, #742255) !important;
-        border-color: #742255 !important;
-        box-shadow: 0 8px 18px rgba(142, 42, 106, 0.28) !important;
+        background-image: linear-gradient(135deg, #8a2d68, #641d4a) !important;
+        border-color: #5a1a42 !important;
+        color: #fff6fb !important;
+        box-shadow: 0 10px 20px rgba(100, 29, 74, 0.30) !important;
       }
 
       .btn-primary:hover,
       .btn-primary:focus {
-        background-image: linear-gradient(135deg, #b63f87, #8e2a6a) !important;
-        border-color: #8e2a6a !important;
+        background-image: linear-gradient(135deg, #9a3675, #722252) !important;
+        border-color: #722252 !important;
+        transform: translateY(-1px);
       }
 
       .nav-tabs .nav-link.active {
-        box-shadow: 0 4px 14px rgba(142, 42, 106, 0.22) !important;
+        box-shadow: 0 6px 16px rgba(124, 36, 92, 0.18) !important;
+      }
+
+      .odoo-subtitle,
+      .mobile-global-nav__brand .trade {
+        color: var(--rose-muted) !important;
+      }
+
+      .form-control,
+      .form-select {
+        border-color: color-mix(in srgb, var(--hp-primary) 22%, #d6d3d8) !important;
+        background-color: var(--rose-surface) !important;
+      }
+
+      .form-control:focus,
+      .form-select:focus {
+        border-color: color-mix(in srgb, var(--hp-primary) 66%, #ffffff) !important;
+        box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--hp-primary) 24%, transparent) !important;
+      }
+
+      .odoo-table thead th {
+        color: color-mix(in srgb, var(--hp-primary) 72%, #241722) !important;
+        letter-spacing: 0.09em;
+      }
+
+      .sidebar .nav-link.active,
+      .sidebar .nav-link[aria-current="page"] {
+        background: linear-gradient(
+          140deg,
+          color-mix(in srgb, var(--hp-primary) 16%, #ffffff),
+          color-mix(in srgb, var(--hp-primary) 8%, #ffffff)
+        ) !important;
+        border-color: color-mix(in srgb, var(--hp-primary) 26%, #d2ccd2) !important;
       }
       {% endif %}
 

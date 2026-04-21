@@ -841,6 +841,40 @@
   .menu-card {
     min-height: 174px;
   }
+  .restaurant-image-fallback {
+    height: 150px;
+    border-radius: 18px;
+    border: 1px dashed rgba(126,167,216,.28);
+    background:
+      radial-gradient(circle at 20% 15%, rgba(126,167,216,.12), transparent 40%),
+      linear-gradient(180deg, #ffffff, #eef5ff);
+    color: #5f86b7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .restaurant-image-fallback .icon-main {
+    font-size: 2rem;
+    line-height: 1;
+    color: #4f77aa;
+  }
+  .restaurant-image-fallback .icon-accent {
+    position: absolute;
+    right: 16px;
+    bottom: 14px;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .98rem;
+    line-height: 1;
+    color: rgba(79,119,170,.78);
+    background: rgba(255,255,255,.86);
+    border: 1px solid rgba(126,167,216,.24);
+  }
   .menu-category-btn {
     border: 1px solid rgba(126,167,216,.18);
     background: rgba(255,255,255,.92);
@@ -1266,7 +1300,7 @@
       </div>
       {% elif draft_mode and not ns.selected_order %}
       <div class="row g-4 align-items-start" id="restaurant-active-order-shell">
-        <div class="col-12 col-xxl-4">
+        <div class="col-12 col-lg-5 col-xxl-4">
           <div class="pos-order-sheet p-3 p-lg-4">
             <div class="pos-order-sheet-inner">
               <div class="pos-order-header d-flex flex-wrap justify-content-between align-items-start gap-3">
@@ -1349,7 +1383,7 @@
             </div>
           </div>
         </div>
-        <div class="col-12 col-xxl-8" id="restaurant-inline-menu">
+        <div class="col-12 col-lg-7 col-xxl-8" id="restaurant-inline-menu">
           <div class="pos-menu-browser p-3 p-lg-4">
             <div class="pos-menu-browser-inner">
               <div class="menu-browser-header d-flex flex-wrap justify-content-between align-items-end gap-3">
@@ -1389,8 +1423,9 @@
                         <img class="w-100 h-100" src="{{ producto.image_url }}" alt="{{ producto.descripcion }}" style="object-fit:contain;border-radius:14px;background:#fff;">
                       </div>
                       {% else %}
-                      <div class="w-100 mb-3 d-flex align-items-center justify-content-center text-muted" style="height:150px;border-radius:18px;border:1px dashed rgba(126,167,216,.22);background:linear-gradient(180deg,#fff,#eef5ff);">
-                        <i class="bi bi-image fs-2"></i>
+                      <div class="w-100 mb-3 restaurant-image-fallback">
+                        <i class="bi bi-cup-hot-fill icon-main"></i>
+                        <i class="bi bi-cup-straw icon-accent"></i>
                       </div>
                       {% endif %}
                       <div class="small fw-bold text-uppercase text-muted">{{ producto.cod_producto }}</div>
@@ -1420,7 +1455,7 @@
       </div>
       {% else %}
       <div class="row g-4 align-items-start" id="restaurant-active-order-shell">
-        <div class="col-12 col-xxl-4">
+        <div class="col-12 col-lg-5 col-xxl-4">
           <div class="pos-order-sheet p-3 p-lg-4">
             <div class="pos-order-sheet-inner">
               <div class="pos-order-header d-flex flex-wrap justify-content-between align-items-start gap-3">
@@ -1505,7 +1540,7 @@
             </div>
           </div>
         </div>
-        <div class="col-12 col-xxl-8" id="restaurant-inline-menu">
+        <div class="col-12 col-lg-7 col-xxl-8" id="restaurant-inline-menu">
           <div class="pos-menu-browser p-3 p-lg-4">
             <div class="pos-menu-browser-inner">
               <div class="menu-browser-header d-flex flex-wrap justify-content-between align-items-end gap-3">
@@ -1546,8 +1581,9 @@
                         <img class="w-100 h-100" src="{{ producto.image_url }}" alt="{{ producto.descripcion }}" style="object-fit:contain;border-radius:14px;background:#fff;">
                       </div>
                       {% else %}
-                      <div class="w-100 mb-3 d-flex align-items-center justify-content-center text-muted" style="height:150px;border-radius:18px;border:1px dashed rgba(126,167,216,.22);background:linear-gradient(180deg,#fff,#eef5ff);">
-                        <i class="bi bi-image fs-2"></i>
+                      <div class="w-100 mb-3 restaurant-image-fallback">
+                        <i class="bi bi-cup-hot-fill icon-main"></i>
+                        <i class="bi bi-cup-straw icon-accent"></i>
                       </div>
                       {% endif %}
                       <div class="small fw-bold text-uppercase text-muted">{{ producto.cod_producto }}</div>
@@ -2071,9 +2107,19 @@
   const tableIdSelect = document.getElementById('table-id-select');
   const mesaNombreInput = document.getElementById('mesa-nombre-input');
   const restaurantOrderForm = document.getElementById('restaurant-order-form');
-  const hasSelectedOrderPage = {{ 'true' if ns.selected_order else 'false' }};
-  const isDraftModePage = {{ 'true' if draft_mode else 'false' }};
+  let hasSelectedOrderPage = {{ 'true' if ns.selected_order else 'false' }};
+  let isDraftModePage = {{ 'true' if draft_mode else 'false' }};
+  let restaurantCurrentOrder = {% if ns.selected_order %}{{ ns.selected_order|tojson }}{% else %}null{% endif %};
+  let restaurantPaymentItems = [];
   const restaurantRegisterOrderHelp = document.getElementById('restaurant-register-order-help');
+
+  function syncOrderStartButtonState() {
+    if (!orderStartButton) return;
+    const hasActiveOrder = Boolean(restaurantCurrentOrder?.id) || hasSelectedOrderPage;
+    orderStartButton.textContent = hasActiveOrder ? 'Nueva orden' : 'Levantar orden';
+    orderStartButton.classList.toggle('btn-lb-soft', hasActiveOrder);
+    orderStartButton.classList.toggle('btn-lb-primary', !hasActiveOrder);
+  }
 
   function isDirectBillingMode(mode) {
     return ['LLEVAR', 'DELIVERY'].includes(String(mode || '').toUpperCase());
@@ -2162,6 +2208,7 @@
     syncRestaurantServiceMode();
   }
   syncDirectBillingUi({% if ns.selected_order %}'{{ ns.selected_order.service_type }}'{% else %}(serviceTypeSelect?.value || '{{ draft_service_type if draft_mode else "MESA" }}'){% endif %});
+  syncOrderStartButtonState();
 
   document.querySelectorAll('[data-service-card]').forEach((card) => {
     card.addEventListener('click', () => {
@@ -2274,6 +2321,10 @@
   if (restaurantOrderForm) {
     restaurantOrderForm.addEventListener('submit', (event) => {
       event.preventDefault();
+      if (hasSelectedOrderPage) {
+        window.location.href = '/sales';
+        return;
+      }
       if ((serviceTypeSelect?.value || 'MESA') === 'MESA' && !String(tableIdSelect?.value || '').trim()) {
         const modal = document.getElementById('restaurantTableModal');
         if (modal && window.bootstrap) {
@@ -2285,8 +2336,6 @@
         window.location.href = buildRestaurantDraftUrl(serviceTypeSelect?.value || 'MESA');
         return;
       }
-      document.getElementById('restaurant-inline-menu')?.scrollIntoView({behavior:'smooth', block:'start'});
-      document.getElementById('menu-search')?.focus();
     });
   }
 
@@ -2365,8 +2414,6 @@
 
   const fmtMoney = (value) => Number(value || 0).toFixed(2);
   const restaurantRateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
-  let restaurantCurrentOrder = {% if ns.selected_order %}{{ ns.selected_order|tojson }}{% else %}null{% endif %};
-  let restaurantPaymentItems = [];
 
   function restaurantFormatMoney(value, currency) {
     const amount = Number(value || 0);
@@ -2626,6 +2673,9 @@
   function restaurantHandleDeletedOrder(payload) {
     if (!payload) return;
     restaurantCurrentOrder = null;
+    hasSelectedOrderPage = false;
+    isDraftModePage = false;
+    syncOrderStartButtonState();
     if (payload.table_id) {
       restaurantMarkTableAsFree(payload.table_id);
     }
@@ -2763,6 +2813,8 @@
   function renderRestaurantOrder(order) {
     if (!restaurantOrderLines || !order) return;
     restaurantCurrentOrder = order;
+    hasSelectedOrderPage = Boolean(order?.id);
+    syncOrderStartButtonState();
     syncDirectBillingUi(order.service_type || '');
     if (serviceTypeSelect && order.service_type) {
       serviceTypeSelect.value = order.service_type;
@@ -2924,6 +2976,8 @@
 
   function activateDraftOrder(order) {
     if (!order?.id) return;
+    hasSelectedOrderPage = true;
+    isDraftModePage = false;
     window.history.replaceState({}, '', `/sales?restaurant_order_id=${order.id}`);
     document.querySelectorAll('.restaurant-draft-add-item-form').forEach((form) => {
       form.action = `/sales/restaurante/orders/${order.id}/items`;
@@ -2945,6 +2999,7 @@
     if (form.dataset.bound === '1') return;
     form.dataset.bound = '1';
     form.addEventListener('submit', async (event) => {
+      if (!form.classList.contains('restaurant-draft-add-item-form')) return;
       event.preventDefault();
       try {
         const resp = await fetch(form.action, {
