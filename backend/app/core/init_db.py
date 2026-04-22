@@ -524,6 +524,7 @@ def _seed_egreso_tipos(db: Session) -> None:
         "Merma",
         "Perdida",
         "Reposicion a Cliente",
+        "Produccion de Abierta",
         "Produccion embalaje",
         "Produccion perdida",
         "Ajuste por Faltante",

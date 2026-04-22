@@ -290,7 +290,7 @@
                       <select id="field-tipo" name="tipo_id" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100">
                         <option value="">Selecciona</option>
                         {% for tipo in tipos %}
-                        <option value="{{ tipo.id }}" data-is-traslado="{{ 1 if 'traslado' in (tipo.nombre or '')|lower else 0 }}">{{ tipo.nombre }}</option>
+                        <option value="{{ tipo.id }}" data-is-traslado="{{ 1 if 'traslado' in (tipo.nombre or '')|lower else 0 }}" data-is-abierta="{{ 1 if 'produccion de abierta' in (tipo.nombre or '')|lower else 0 }}">{{ tipo.nombre }}</option>
                         {% endfor %}
                       </select>
                     </div>
@@ -451,6 +451,97 @@
                       </div>
                     </div>
                 </div>
+                <div id="abierta-result-wrap" class="search-panel p-3 border rounded-3 bg-light d-none">
+                  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                    <div>
+                      <div class="odoo-modal-title odoo-accent">Resultado de abierta (productos producidos)</div>
+                      <div class="odoo-help odoo-accent">Agrega los productos resultantes del proceso de abierta. Este bloque es obligatorio para este tipo de egreso.</div>
+                    </div>
+                    <div class="input-group input-group-sm shadow-sm rounded-pill overflow-hidden bg-white w-100 max-w-[520px]">
+                      <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
+                      <input id="result-product-search" class="form-control border-0 text-uppercase" type="text" placeholder="BUSCAR PRODUCTO RESULTADO" />
+                    </div>
+                  </div>
+                  <div class="odoo-table-wrap max-h-52 overflow-y-auto">
+                    <table class="table table-sm align-middle mb-0 odoo-table text-sm w-100">
+                      <thead class="odoo-table-head text-xs uppercase tracking-[0.2em]">
+                        <tr>
+                          <th class="text-left px-3 py-2">Codigo</th>
+                          <th class="text-left px-3 py-2">Descripcion</th>
+                          <th class="text-right px-3 py-2">Costo {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
+                          <th class="text-right px-3 py-2">Precio {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
+                          <th class="text-right px-3 py-2">Cantidad</th>
+                          <th class="text-center px-3 py-2">Agregar</th>
+                        </tr>
+                      </thead>
+                      <tbody id="result-product-list" class="odoo-muted">
+                        {% for p in productos %}
+                        <tr class="result-product-pick-row border-b border-slate-50" style="display:none;" data-name="{{ p.descripcion }}" data-code="{{ p.cod_producto }}">
+                          <td class="px-3 py-2 font-semibold text-ink">{{ p.cod_producto }}</td>
+                          <td class="px-3 py-2 text-slate">{{ p.descripcion }}</td>
+                          <td class="px-3 py-2 text-right text-slate">
+                            {% if inventory_cs_only %}
+                            C$ {{ "%.2f"|format(p.costo_producto or 0) }}
+                            {% else %}
+                            $ {% if p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0.00{% endif %}
+                            {% endif %}
+                          </td>
+                          <td class="px-3 py-2 text-right text-slate">{% if inventory_cs_only %}C$ {{ "%.2f"|format(p.precio_venta1 or 0) }}{% else %}$ {{ "%.2f"|format(p.precio_venta1_usd or 0) }}{% endif %}</td>
+                          <td class="px-3 py-2 text-right">
+                            <input class="result-qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" value="1" />
+                          </td>
+                          <td class="px-3 py-2 text-center">
+                            <button
+                              class="add-result-item inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-ink hover:bg-slate-50 shadow-sm"
+                              type="button"
+                              data-product-id="{{ p.id }}"
+                              data-code="{{ p.cod_producto }}"
+                              data-name="{{ p.descripcion }}"
+                              data-cost-usd="{% if p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0{% endif %}"
+                              data-cost-cs="{{ "%.2f"|format(p.costo_producto or 0) }}"
+                              data-price-usd="{{ "%.2f"|format(p.precio_venta1_usd or 0) }}"
+                              data-price-cs="{{ "%.2f"|format(p.precio_venta1 or 0) }}"
+                            >
+                              <i class="bi bi-plus"></i>
+                            </button>
+                          </td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="mt-3 mb-2 d-flex align-items-center justify-content-between">
+                    <div class="odoo-modal-title odoo-accent">Items de resultado cargados</div>
+                  </div>
+                  <div class="odoo-table-wrap overflow-x-auto max-h-44 overflow-y-auto">
+                    <table class="table table-sm align-middle mb-0 odoo-table text-base w-100">
+                      <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                        <tr>
+                          <th class="text-left px-3 py-2">Producto</th>
+                          <th class="text-right px-3 py-2">Cantidad</th>
+                          <th class="text-right px-3 py-2">Costo</th>
+                          <th class="text-right px-3 py-2">Precio</th>
+                          <th class="text-right px-3 py-2">Subtotal</th>
+                          <th class="text-center px-3 py-2">Quitar</th>
+                        </tr>
+                      </thead>
+                      <tbody id="result-items-table" class="odoo-muted">
+                        <tr id="empty-result-items">
+                          <td colspan="6" class="text-center py-3 text-slate">Sin items de resultado agregados</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="mt-2 d-flex flex-wrap gap-3 justify-content-end fw-bold text-dark">
+                    <span>Bultos resultado: <span id="result-bultos-live">0.00</span></span>
+                    <span>Items resultado: <span id="result-items-live">0</span></span>
+                    {% if not inventory_cs_only %}
+                    <span>Total resultado USD: <span id="result-total-usd-live">$ 0.00</span></span>
+                    {% endif %}
+                    <span>Total resultado C$: <span id="result-total-cs-live">C$ 0.00</span></span>
+                  </div>
+                </div>
+
                 <div class="totals-bar d-flex flex-wrap gap-4 align-items-center justify-content-end border-top pt-3">
                   <div>
                     <div class="label">Total bultos</div>
@@ -523,6 +614,11 @@
   const productSearch = document.getElementById("product-search");
   const itemsTable = document.getElementById("items-table");
   const emptyItems = document.getElementById("empty-items");
+  const resultProductList = document.getElementById("result-product-list");
+  const resultProductSearch = document.getElementById("result-product-search");
+  const resultItemsTable = document.getElementById("result-items-table");
+  const emptyResultItems = document.getElementById("empty-result-items");
+  const abiertaResultWrap = document.getElementById("abierta-result-wrap");
   const itemsBultosLive = document.getElementById("items-bultos-live");
   const itemsCountLive = document.getElementById("items-count-live");
   const summaryBultos = document.getElementById("summary-bultos");
@@ -531,6 +627,10 @@
   const totalItems = document.getElementById("total-items");
   const totalUsd = document.getElementById("total-usd");
   const totalCs = document.getElementById("total-cs");
+  const resultBultosLive = document.getElementById("result-bultos-live");
+  const resultItemsLive = document.getElementById("result-items-live");
+  const resultTotalUsdLive = document.getElementById("result-total-usd-live");
+  const resultTotalCsLive = document.getElementById("result-total-cs-live");
   const monedaField = document.getElementById("field-moneda");
   const tipoField = document.getElementById("field-tipo");
   const bodegaDestinoWrap = document.getElementById("bodega-destino-wrap");
@@ -600,9 +700,43 @@
     totalCs.textContent = `C$ ${sumCs.toFixed(2)}`;
   };
 
+  const updateResultTotals = () => {
+    if (!resultItemsTable) return;
+    let sumBultos = 0;
+    let countItems = 0;
+    let sumUsd = 0;
+    let sumCs = 0;
+    resultItemsTable.querySelectorAll("tr[data-result-item-row]").forEach((row) => {
+      countItems += 1;
+      const qtyInput = row.querySelector(".result-row-qty");
+      const qtyHidden = row.querySelector("input[name='result_item_cantidad']");
+      const qtyValue = parseFloat(qtyInput?.value || qtyHidden?.value || 0);
+      sumBultos += Number.isFinite(qtyValue) ? qtyValue : 0;
+      sumUsd += parseFloat(row.dataset.subtotalUsd || 0);
+      sumCs += parseFloat(row.dataset.subtotalCs || 0);
+    });
+    if (resultBultosLive) resultBultosLive.textContent = sumBultos.toFixed(2);
+    if (resultItemsLive) resultItemsLive.textContent = `${countItems}`;
+    if (resultTotalUsdLive) resultTotalUsdLive.textContent = `$ ${sumUsd.toFixed(2)}`;
+    if (resultTotalCsLive) resultTotalCsLive.textContent = `C$ ${sumCs.toFixed(2)}`;
+  };
+
   const filterProductRows = (value) => {
     const normalized = value.toLowerCase().trim();
     productList.querySelectorAll(".product-pick-row").forEach((row) => {
+      if (!normalized) {
+        row.style.display = "none";
+        return;
+      }
+      const payload = `${row.dataset.code} ${row.dataset.name}`.toLowerCase();
+      row.style.display = payload.includes(normalized) ? "" : "none";
+    });
+  };
+
+  const filterResultProductRows = (value) => {
+    if (!resultProductList) return;
+    const normalized = value.toLowerCase().trim();
+    resultProductList.querySelectorAll(".result-product-pick-row").forEach((row) => {
       if (!normalized) {
         row.style.display = "none";
         return;
@@ -618,20 +752,30 @@
     return option.dataset.isTraslado === "1" || (option.text || "").toLowerCase().includes("traslado");
   };
 
+  const isAbiertaSelected = () => {
+    const option = tipoField?.selectedOptions?.[0];
+    if (!option) return false;
+    return option.dataset.isAbierta === "1" || (option.text || "").toLowerCase().includes("produccion de abierta");
+  };
+
   const updateBodegaBanner = () => {
     const bodegaField = ingresoForm?.querySelector("select[name='bodega_id']");
     const banner = document.getElementById("bodega-banner");
     if (!bodegaField || !banner) return;
     const selectedName = bodegaField.options[bodegaField.selectedIndex]?.text || "Central";
     const isTraslado = isTrasladoSelected();
+    const isAbierta = isAbiertaSelected();
     const destinoName = bodegaDestinoField?.selectedOptions?.[0]?.text || "";
     banner.innerHTML = isTraslado && destinoName
       ? `<i class="bi bi-arrow-left-right"></i><span class="fw-semibold">Traslado de ${selectedName} hacia ${destinoName}</span>`
-      : `<i class="bi bi-box-arrow-up"></i><span class="fw-semibold">Egreso de mercaderia en Bodega ${selectedName}</span>`;
+      : isAbierta
+        ? `<i class="bi bi-layers"></i><span class="fw-semibold">Produccion de Abierta en Bodega ${selectedName}: salida + ingreso de resultado</span>`
+        : `<i class="bi bi-box-arrow-up"></i><span class="fw-semibold">Egreso de mercaderia en Bodega ${selectedName}</span>`;
   };
 
   const syncTrasladoMode = () => {
     const isTraslado = isTrasladoSelected();
+    const isAbierta = isAbiertaSelected();
     if (bodegaDestinoWrap) {
       bodegaDestinoWrap.classList.toggle("d-none", !isTraslado);
     }
@@ -640,6 +784,9 @@
       if (!isTraslado) {
         bodegaDestinoField.value = "";
       }
+    }
+    if (abiertaResultWrap) {
+      abiertaResultWrap.classList.toggle("d-none", !isAbierta);
     }
     updateBodegaBanner();
   };
@@ -802,6 +949,24 @@
     });
   };
 
+  const serializeResultItems = () => {
+    return Array.from(resultItemsTable?.querySelectorAll("tr[data-result-item-row]") || []).map((row) => {
+      const qtyInput = row.querySelector(".result-row-qty");
+      const costInput = row.querySelector(".result-row-cost");
+      const priceInput = row.querySelector(".result-row-price");
+      const productId = row.querySelector("input[name='result_item_producto_id']")?.value || "";
+      const qtyHidden = row.querySelector("input[name='result_item_cantidad']")?.value || "";
+      const nameCell = row.querySelectorAll("td")[0]?.textContent || "";
+      return {
+        productId,
+        name: nameCell,
+        qty: qtyInput ? qtyInput.value : qtyHidden,
+        cost: costInput ? costInput.value : "0",
+        price: priceInput ? priceInput.value : "0",
+      };
+    });
+  };
+
   const saveDraft = () => {
     if (!ingresoForm) return;
     const bodegaField = ingresoForm.querySelector("select[name='bodega_id']");
@@ -815,6 +980,7 @@
       observacion: obs?.value || "",
       allowDecimals: !!allowDecimals?.checked,
       items: serializeItems(),
+      resultItems: serializeResultItems(),
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
@@ -877,6 +1043,34 @@
       });
       updateTotals();
     }
+    if (resultItemsTable) {
+      resultItemsTable.innerHTML = `<tr id="empty-result-items"><td colspan="6" class="text-center py-3 text-slate">Sin items de resultado agregados</td></tr>`;
+    }
+    if (Array.isArray(draft.resultItems)) {
+      draft.resultItems.forEach((item) => {
+        if (!item.productId) return;
+        const qty = parseFloat(item.qty || 0) || 1;
+        const cost = parseFloat(item.cost || 0) || 0;
+        const price = parseFloat(item.price || 0) || 0;
+        const subtotal = cost * qty;
+        const subtotalUsd = monedaField?.value === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
+        const subtotalCs = monedaField?.value === "USD" ? subtotal * rateToday : subtotal;
+        addResultItemRow({
+          productId: item.productId,
+          code: "",
+          name: item.name || "",
+          qtyValue: allowDecimals && allowDecimals.checked ? qty.toFixed(2) : Math.trunc(qty).toFixed(2),
+          qtyValueDisplay: allowDecimals && allowDecimals.checked ? qty.toFixed(2) : Math.trunc(qty).toString(),
+          qtyStep: allowDecimals && allowDecimals.checked ? "0.01" : "1",
+          costValue: cost.toFixed(2),
+          priceValue: price.toFixed(2),
+          subtotalLabel: monedaField?.value === "USD" ? `$ ${subtotal.toFixed(2)}` : `C$ ${subtotal.toFixed(2)}`,
+          subtotalUsd,
+          subtotalCs,
+        });
+      });
+      updateResultTotals();
+    }
     if (typeof updateSaldoCells === "function") {
       updateSaldoCells();
     }
@@ -930,6 +1124,9 @@
   syncBodegaGate();
   if (productSearch) {
     filterProductRows(productSearch.value || "");
+  }
+  if (resultProductSearch) {
+    filterResultProductRows(resultProductSearch.value || "");
   }
   const params = new URLSearchParams(window.location.search || "");
   const focusEgresoId = (params.get("focus_egreso_id") || "").trim();
@@ -997,18 +1194,29 @@
   {% endif %}
   {% if print_id %}
   {% if print_mode == "ticket" %}
-  if (window.erpOpenPrintable) {
-    window.erpOpenPrintable("/inventory/egresos/{{ print_id }}/ticket/print?copies=1&return_to=/inventory/egresos", { fallbackSameTab: true });
-  } else {
-    window.open("/inventory/egresos/{{ print_id }}/ticket/print?copies=1&return_to=/inventory/egresos", "_blank", "noopener");
-  }
+  const basePrintUrl = "/inventory/egresos/{{ print_id }}/ticket/print?copies=1&return_to=/inventory/egresos";
+  {% elif print_mode == "abierta" %}
+  const basePrintUrl = "/inventory/egresos/{{ print_id }}/pdf";
   {% else %}
-  if (window.erpOpenPrintable) {
-    window.erpOpenPrintable("/inventory/egresos/{{ print_id }}/pdf", { fallbackSameTab: true });
-  } else {
-    window.open("/inventory/egresos/{{ print_id }}/pdf", "_blank", "noopener");
-  }
+  const basePrintUrl = "/inventory/egresos/{{ print_id }}/pdf";
   {% endif %}
+  const printUrl = `${basePrintUrl}${basePrintUrl.includes("?") ? "&" : "?"}_ts=${Date.now()}`;
+  const tryOpenPrint = () => {
+    if (window.erpOpenPrintable) {
+      return window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
+    }
+    const popup = window.open(printUrl, "_blank", "noopener");
+    return { opened: Boolean(popup), popup };
+  };
+  let openResult = { opened: false, popup: null };
+  window.setTimeout(() => {
+    openResult = tryOpenPrint();
+  }, 220);
+  window.setTimeout(() => {
+    if (!openResult.opened) {
+      openResult = tryOpenPrint();
+    }
+  }, 1300);
   {% endif %}
 
   if (focusEgresoId) {
@@ -1114,6 +1322,36 @@
     return qty.toFixed(2);
   };
 
+  const addResultItemRow = (payload) => {
+    if (emptyResultItems) {
+      emptyResultItems.remove();
+    }
+    const row = document.createElement("tr");
+    row.dataset.resultItemRow = "1";
+    row.dataset.subtotalUsd = payload.subtotalUsd.toFixed(2);
+    row.dataset.subtotalCs = payload.subtotalCs.toFixed(2);
+    row.innerHTML = `
+      <td class="px-3 py-2">${payload.code} - ${payload.name}</td>
+      <td class="px-3 py-2 text-right">
+        <input class="result-row-qty w-20 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="${payload.qtyStep}" min="1" value="${payload.qtyValueDisplay}" />
+      </td>
+      <td class="px-3 py-2 text-right">
+        <input class="result-row-cost w-24 rounded-lg border border-slate-200 px-2 py-1 text-right" type="number" step="0.01" min="0" value="${payload.costValue}" name="result_item_costo" />
+      </td>
+      <td class="px-3 py-2 text-right">
+        <input class="result-row-price w-24 rounded-lg border border-slate-200 px-2 py-1 text-right" type="number" step="0.01" min="0" value="${payload.priceValue}" name="result_item_precio" />
+      </td>
+      <td class="px-3 py-2 text-right">${payload.subtotalLabel}</td>
+      <td class="px-3 py-2 text-center">
+        <button class="remove-result-item text-red-600" type="button"><i class="bi bi-x-circle"></i></button>
+      </td>
+      <input type="hidden" name="result_item_producto_id" value="${payload.productId}" />
+      <input type="hidden" name="result_item_cantidad" value="${payload.qtyValue}" />
+    `;
+    resultItemsTable?.appendChild(row);
+    updateResultTotals();
+  };
+
   if (allowDecimals) {
     allowDecimals.addEventListener("change", () => {
       productList.querySelectorAll(".qty-input").forEach((input) => {
@@ -1125,6 +1363,22 @@
         }
       });
       itemsTable.querySelectorAll(".row-qty").forEach((input) => {
+        if (allowDecimals.checked) {
+          input.step = "0.01";
+        } else {
+          input.step = "1";
+          input.value = Math.max(1, Math.round(parseFloat(input.value || 1)));
+        }
+      });
+      resultProductList?.querySelectorAll(".result-qty-input").forEach((input) => {
+        if (allowDecimals.checked) {
+          input.step = "0.01";
+        } else {
+          input.step = "1";
+          input.value = Math.max(1, Math.round(parseFloat(input.value || 1)));
+        }
+      });
+      resultItemsTable?.querySelectorAll(".result-row-qty").forEach((input) => {
         if (allowDecimals.checked) {
           input.step = "0.01";
         } else {
@@ -1213,6 +1467,75 @@
             handleAddItem(button, "cost");
           }
         }
+      });
+    });
+  }
+  if (resultProductSearch) {
+    resultProductSearch.addEventListener("input", (event) => {
+      filterResultProductRows(event.target.value || "");
+    });
+    resultProductSearch.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const firstVisible = Array.from(resultProductList?.querySelectorAll(".result-product-pick-row") || [])
+        .find((row) => row.style.display !== "none");
+      if (!firstVisible) return;
+      const qtyInput = firstVisible.querySelector(".result-qty-input");
+      if (qtyInput) {
+        qtyInput.focus();
+        qtyInput.select();
+      }
+    });
+  }
+
+  if (resultProductList) {
+    const handleAddResultItem = (button) => {
+      const row = button.closest("tr");
+      const qtyInput = row.querySelector(".result-qty-input");
+      const qty = parseQty(qtyInput.value);
+      if (qty <= 0) return;
+      const moneda = monedaField.value || defaultMoneda;
+      const costUsd = parseFloat(button.dataset.costUsd || 0);
+      const costCs = parseFloat(button.dataset.costCs || 0);
+      const priceUsd = parseFloat(button.dataset.priceUsd || 0);
+      const priceCs = parseFloat(button.dataset.priceCs || 0);
+      const cost = moneda === "USD" ? costUsd : costCs;
+      const price = moneda === "USD" ? priceUsd : priceCs;
+      const subtotal = cost * qty;
+      const subtotalUsd = moneda === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
+      const subtotalCs = moneda === "USD" ? subtotal * rateToday : subtotal;
+      addResultItemRow({
+        productId: button.dataset.productId,
+        code: button.dataset.code,
+        name: button.dataset.name,
+        qtyValue: allowDecimals && allowDecimals.checked ? qty.toFixed(2) : Math.trunc(qty).toFixed(2),
+        qtyValueDisplay: allowDecimals && allowDecimals.checked ? qty.toFixed(2) : Math.trunc(qty).toString(),
+        qtyStep: allowDecimals && allowDecimals.checked ? "0.01" : "1",
+        costValue: cost.toFixed(2),
+        priceValue: price.toFixed(2),
+        subtotalLabel: moneda === "USD" ? `$ ${subtotal.toFixed(2)}` : `C$ ${subtotal.toFixed(2)}`,
+        subtotalUsd,
+        subtotalCs,
+      });
+      if (resultProductSearch) {
+        resultProductSearch.value = "";
+        resultProductSearch.focus();
+      }
+      saveDraft();
+    };
+
+    resultProductList.querySelectorAll(".add-result-item").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        handleAddResultItem(event.currentTarget);
+      });
+    });
+    resultProductList.querySelectorAll(".result-qty-input").forEach((input) => {
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        const row = input.closest("tr");
+        const button = row?.querySelector(".add-result-item");
+        if (button) handleAddResultItem(button);
       });
     });
   }
@@ -1323,9 +1646,14 @@
     const bodegaField = ingresoForm?.querySelector("select[name='bodega_id']");
     if (!bodegaField?.value) missing.push("Bodega");
     const isTraslado = isTrasladoSelected();
+    const isAbierta = isAbiertaSelected();
     if (isTraslado && !bodegaDestinoField?.value) missing.push("Bodega destino");
     if (isTraslado && bodegaField?.value && bodegaDestinoField?.value && bodegaField.value === bodegaDestinoField.value) {
       missing.push("Destino distinto al origen");
+    }
+    if (isAbierta) {
+      const resultCount = resultItemsTable?.querySelectorAll("tr[data-result-item-row]").length || 0;
+      if (!resultCount) missing.push("Productos de resultado de abierta");
     }
     if (missing.length) {
       const errorBanner = document.getElementById("egreso-client-error");
@@ -1380,6 +1708,41 @@
     });
   }
 
+  if (resultItemsTable) {
+    resultItemsTable.addEventListener("click", (event) => {
+      const button = event.target.closest(".remove-result-item");
+      if (!button) return;
+      const row = button.closest("tr");
+      row.remove();
+      if (resultItemsTable.querySelectorAll("tr[data-result-item-row]").length === 0) {
+        resultItemsTable.innerHTML = `<tr id="empty-result-items"><td colspan="6" class="text-center py-3 text-slate">Sin items de resultado agregados</td></tr>`;
+      }
+      updateResultTotals();
+      saveDraft();
+    });
+    resultItemsTable.addEventListener("input", (event) => {
+      const row = event.target.closest("tr");
+      if (!row) return;
+      const qtyInput = row.querySelector(".result-row-qty");
+      const costInput = row.querySelector(".result-row-cost");
+      if (!qtyInput && !costInput) return;
+      const qtyHidden = row.querySelector("input[name='result_item_cantidad']");
+      const qty = parseFloat(qtyInput ? qtyInput.value : (qtyHidden ? qtyHidden.value : 0));
+      const cost = parseFloat(costInput ? costInput.value : 0);
+      if (qtyHidden && qtyInput) {
+        qtyHidden.value = allowDecimals && allowDecimals.checked ? qty.toFixed(2) : Math.trunc(qty).toFixed(2);
+      }
+      const subtotal = cost * qty;
+      const moneda = monedaField.value || defaultMoneda;
+      row.dataset.subtotalUsd = moneda === "USD" ? subtotal.toFixed(2) : (rateToday ? (subtotal / rateToday).toFixed(2) : "0.00");
+      row.dataset.subtotalCs = moneda === "USD" ? (subtotal * rateToday).toFixed(2) : subtotal.toFixed(2);
+      const subtotalCell = row.querySelectorAll("td")[4];
+      subtotalCell.textContent = moneda === "USD" ? `$ ${subtotal.toFixed(2)}` : `C$ ${subtotal.toFixed(2)}`;
+      updateResultTotals();
+      saveDraft();
+    });
+  }
+
   const submitEgresoButton = document.getElementById("submit-egreso");
   if (submitEgresoButton && ingresoForm) {
     submitEgresoButton.addEventListener("click", (event) => {
@@ -1403,10 +1766,14 @@
       if (itemsTable) {
         itemsTable.innerHTML = `<tr id="empty-items"><td colspan="6" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
       }
+      if (resultItemsTable) {
+        resultItemsTable.innerHTML = `<tr id="empty-result-items"><td colspan="6" class="text-center py-3 text-slate">Sin items de resultado agregados</td></tr>`;
+      }
       if (bodegaDestinoField) {
         bodegaDestinoField.value = "";
       }
       updateTotals();
+      updateResultTotals();
       syncTrasladoMode();
       if (productSearch) {
         productSearch.value = "";

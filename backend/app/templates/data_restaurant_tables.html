@@ -32,6 +32,25 @@
     min-height: 280px;
     overflow: hidden;
   }
+  .mesa-preview-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .75rem;
+  }
+  .mesa-preview-canvas {
+    position: relative;
+    min-height: 360px;
+    border-radius: 18px;
+    border: 1px dashed rgba(126,167,216,.34);
+    background:
+      linear-gradient(90deg, rgba(126,167,216,.08) 1px, transparent 1px) 0 0 / 40px 40px,
+      linear-gradient(0deg, rgba(126,167,216,.08) 1px, transparent 1px) 0 0 / 40px 40px,
+      linear-gradient(180deg, #ffffff, #f5f9ff);
+    overflow: hidden;
+  }
   .mesa-preview-node {
     position: absolute;
     transform: translate(-50%, -50%);
@@ -47,6 +66,20 @@
     box-shadow: 0 10px 20px rgba(56,86,122,.08);
     padding: .5rem;
     text-align: center;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .mesa-preview-node.dragging {
+    cursor: grabbing;
+    z-index: 4;
+    transform: translate(-50%, -50%) scale(1.04);
+    box-shadow: 0 16px 28px rgba(56,86,122,.18);
+  }
+  .mesa-chip {
+    font-size: .72rem;
+    color: #4d6a90;
   }
   .mesa-form-advanced {
     border-top: 1px dashed rgba(126,167,216,.20);
@@ -213,12 +246,22 @@
               <span class="text-muted small">{{ items|length }} mesas registradas</span>
             </div>
             <div class="mesa-preview-board position-relative p-3 mb-4">
-              <div class="small text-muted mb-2">Plano resumido del local</div>
-              <div class="position-relative rounded-4 overflow-hidden" style="min-height:220px;">
+              <div class="mesa-preview-toolbar">
+                <div class="small text-muted">Arrastra y suelta mesas para ordenar el plano.</div>
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="mesa-layout-reset">Reset</button>
+                  <button type="button" class="btn btn-sm btn-primary" id="mesa-layout-save">Guardar plano</button>
+                </div>
+              </div>
+              <div class="mesa-preview-canvas" id="mesa-layout-canvas">
                 <div class="position-absolute top-0 start-0 m-3 px-3 py-2 rounded-pill border bg-white text-muted small">Barra</div>
                 {% for item in items if item.active %}
                 <div
                   class="mesa-preview-node"
+                  data-id="{{ item.id }}"
+                  data-pos-x="{{ item.pos_x or 10 }}"
+                  data-pos-y="{{ item.pos_y or 10 }}"
+                  data-sort-order="{{ item.sort_order or 0 }}"
                   style="
                     left: {{ item.pos_x or 10 }}%;
                     top: {{ item.pos_y or 10 }}%;
@@ -228,23 +271,33 @@
                 >
                   <div class="fw-bold">{{ item.name }}</div>
                   <div class="small text-muted">{{ item.code }}</div>
+                  <div class="mesa-chip">({{ item.pos_x or 10 }}%, {{ item.pos_y or 10 }}%)</div>
                 </div>
                 {% endfor %}
               </div>
             </div>
+            <form id="mesa-layout-form" method="post" action="/data/mesas/layout" class="d-none">
+              <input type="hidden" name="layout_json" id="mesa-layout-json" value="[]" />
+            </form>
             <div class="mesa-quick-grid">
               {% for item in items %}
                 <div class="mesa-mini-card">
                   <div class="d-flex align-items-start justify-content-between gap-2">
                     <div>
                       <div class="fw-bold">{{ item.name }}</div>
-                      <div class="text-muted small">{{ item.code }} · {{ item.sector or 'Salon principal' }}</div>
+                      <div class="text-muted small">{{ item.code }} - {{ item.sector or 'Salon principal' }}</div>
                     </div>
                     <span class="odoo-pill {{ 'success' if item.active else '' }}">{{ 'Activa' if item.active else 'Inactiva' }}</span>
                   </div>
-                  <div class="small mt-3 text-muted">{{ item.branch.name if item.branch else '-' }} · {{ item.bodega.name if item.bodega else '-' }}</div>
-                  <div class="small text-muted">Capacidad {{ item.seats }} · {{ item.shape }}</div>
-                  <div class="mt-3 text-end">
+                  <div class="small mt-3 text-muted">{{ item.branch.name if item.branch else '-' }} - {{ item.bodega.name if item.bodega else '-' }}</div>
+                  <div class="small text-muted">Capacidad {{ item.seats }} - {{ item.shape }}</div>
+                  <div class="mt-3 d-flex gap-2 justify-content-end">
+                    <form method="post" action="/data/mesas/{{ item.id }}/toggle" class="m-0">
+                      <input type="hidden" name="active" value="{{ 0 if item.active else 1 }}">
+                      <button type="submit" class="btn btn-sm {{ 'btn-outline-danger' if item.active else 'btn-outline-success' }}">
+                        {{ 'Desactivar' if item.active else 'Activar' }}
+                      </button>
+                    </form>
                     <a class="btn btn-sm btn-outline-secondary" href="/data/mesas?edit_id={{ item.id }}">Editar</a>
                   </div>
                 </div>
@@ -269,6 +322,7 @@
   </main>
 </div>
 {% endblock %}
+{% block extra_scripts %}
 <script>
   document.querySelectorAll('.mesa-preset').forEach((button) => {
     button.addEventListener('click', () => {
@@ -284,4 +338,79 @@
       if (shape) shape.value = button.dataset.shape || 'ROUND';
     });
   });
+
+  (() => {
+    const canvas = document.getElementById('mesa-layout-canvas');
+    const saveBtn = document.getElementById('mesa-layout-save');
+    const resetBtn = document.getElementById('mesa-layout-reset');
+    const form = document.getElementById('mesa-layout-form');
+    const jsonInput = document.getElementById('mesa-layout-json');
+    if (!canvas || !saveBtn || !form || !jsonInput) return;
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const nodes = Array.from(canvas.querySelectorAll('.mesa-preview-node'));
+    const initialLayout = nodes.map((node) => ({
+      node,
+      x: Number(node.dataset.posX || 10),
+      y: Number(node.dataset.posY || 10),
+    }));
+
+    const setNodePosition = (node, x, y) => {
+      const nextX = clamp(x, 6, 94);
+      const nextY = clamp(y, 8, 92);
+      node.style.left = `${nextX}%`;
+      node.style.top = `${nextY}%`;
+      node.dataset.posX = String(Math.round(nextX));
+      node.dataset.posY = String(Math.round(nextY));
+      const chip = node.querySelector('.mesa-chip');
+      if (chip) chip.textContent = `(${Math.round(nextX)}%, ${Math.round(nextY)}%)`;
+    };
+
+    nodes.forEach((node) => {
+      let activePointerId = null;
+      const onMove = (event) => {
+        const rect = canvas.getBoundingClientRect();
+        const relativeX = ((event.clientX - rect.left) / rect.width) * 100;
+        const relativeY = ((event.clientY - rect.top) / rect.height) * 100;
+        setNodePosition(node, relativeX, relativeY);
+      };
+      const onUp = () => {
+        node.classList.remove('dragging');
+        if (activePointerId !== null) {
+          try { node.releasePointerCapture(activePointerId); } catch (_) {}
+        }
+        activePointerId = null;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+      node.addEventListener('pointerdown', (event) => {
+        activePointerId = event.pointerId;
+        node.classList.add('dragging');
+        try { node.setPointerCapture(activePointerId); } catch (_) {}
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
+    });
+
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        initialLayout.forEach((entry) => setNodePosition(entry.node, entry.x, entry.y));
+      });
+    }
+
+    saveBtn.addEventListener('click', () => {
+      const payload = nodes
+        .map((node) => ({
+          id: Number(node.dataset.id || 0),
+          pos_x: Number(node.dataset.posX || 10),
+          pos_y: Number(node.dataset.posY || 10),
+        }))
+        .filter((row) => Number.isFinite(row.id) && row.id > 0)
+        .sort((a, b) => (a.pos_y - b.pos_y) || (a.pos_x - b.pos_x))
+        .map((row, index) => ({ ...row, sort_order: (index + 1) * 10 }));
+      jsonInput.value = JSON.stringify(payload);
+      form.submit();
+    });
+  })();
 </script>
+{% endblock %}

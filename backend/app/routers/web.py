@@ -18723,6 +18723,122 @@ def data_restaurant_tables_update(
     return RedirectResponse("/data/mesas?success=Mesa+actualizada", status_code=303)
 
 
+@router.post("/data/mesas/{item_id}/toggle")
+def data_restaurant_tables_toggle_active(
+    request: Request,
+    item_id: int,
+    active: int = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if (get_active_company_key() or "").strip().lower() != "barrera":
+        raise HTTPException(status_code=404, detail="Catalogo no disponible")
+    item = db.query(RestaurantTable).filter(RestaurantTable.id == item_id).first()
+    if not item:
+        return RedirectResponse("/data/mesas?error=Mesa+no+existe", status_code=303)
+    desired_state = bool(int(active or 0))
+    if not desired_state:
+        open_order = (
+            db.query(RestaurantOrder)
+            .filter(
+                RestaurantOrder.table_id == item.id,
+                RestaurantOrder.estado == "ABIERTA",
+            )
+            .first()
+        )
+        if open_order:
+            return RedirectResponse(
+                "/data/mesas?error=No+puedes+desactivar+una+mesa+con+orden+abierta",
+                status_code=303,
+            )
+    item.active = desired_state
+    db.commit()
+    return RedirectResponse(
+        f"/data/mesas?success={'Mesa+activada' if desired_state else 'Mesa+desactivada'}",
+        status_code=303,
+    )
+
+
+@router.post("/data/mesas/layout")
+async def data_restaurant_tables_layout_save(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if (get_active_company_key() or "").strip().lower() != "barrera":
+        raise HTTPException(status_code=404, detail="Catalogo no disponible")
+    form = await request.form()
+    raw_payload = str(form.get("layout_json") or "").strip()
+    if not raw_payload:
+        return RedirectResponse("/data/mesas?error=No+se+recibio+layout", status_code=303)
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError:
+        return RedirectResponse("/data/mesas?error=Layout+invalido", status_code=303)
+    if not isinstance(payload, list):
+        return RedirectResponse("/data/mesas?error=Layout+invalido", status_code=303)
+
+    table_ids: list[int] = []
+    normalized_items: list[dict[str, int]] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        try:
+            table_id = int(row.get("id"))
+        except Exception:
+            continue
+        try:
+            pos_x = int(row.get("pos_x"))
+            pos_y = int(row.get("pos_y"))
+        except Exception:
+            continue
+        sort_order_raw = row.get("sort_order")
+        try:
+            sort_order = int(sort_order_raw) if sort_order_raw is not None else 0
+        except Exception:
+            sort_order = 0
+        normalized_items.append(
+            {
+                "id": table_id,
+                "pos_x": max(min(pos_x, 90), 0),
+                "pos_y": max(min(pos_y, 90), 0),
+                "sort_order": max(sort_order, 0),
+            }
+        )
+        table_ids.append(table_id)
+    if not normalized_items:
+        return RedirectResponse("/data/mesas?error=Layout+vacio", status_code=303)
+
+    tables = (
+        db.query(RestaurantTable)
+        .filter(RestaurantTable.id.in_(table_ids))
+        .all()
+    )
+    by_id = {int(table.id): table for table in tables}
+    changed = False
+    for row in normalized_items:
+        table = by_id.get(int(row["id"]))
+        if not table or not table.active:
+            continue
+        next_x = int(row["pos_x"])
+        next_y = int(row["pos_y"])
+        next_sort = int(row["sort_order"])
+        if int(table.pos_x or 0) != next_x:
+            table.pos_x = next_x
+            changed = True
+        if int(table.pos_y or 0) != next_y:
+            table.pos_y = next_y
+            changed = True
+        if int(table.sort_order or 0) != next_sort:
+            table.sort_order = next_sort
+            changed = True
+    if changed:
+        db.commit()
+    return RedirectResponse("/data/mesas?success=Plano+de+mesas+actualizado", status_code=303)
+
+
 @router.get("/data/menu")
 def data_menu_layout(
     request: Request,
@@ -21072,6 +21188,54 @@ def inventory_ingreso_labels_pdf(
     return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
 
 
+_ABIERTA_TAG_ING = "[ABIERTA_ING:"
+_ABIERTA_TAG_EGR = "[ABIERTA_EGR:"
+
+
+def _is_produccion_abierta_tipo(nombre: Optional[str]) -> bool:
+    text = (nombre or "").strip().lower()
+    return "produccion de abierta" in text
+
+
+def _extract_tagged_id(text: Optional[str], tag_prefix: str) -> Optional[int]:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    marker_pos = raw.find(tag_prefix)
+    if marker_pos < 0:
+        return None
+    start = marker_pos + len(tag_prefix)
+    end = raw.find("]", start)
+    if end <= start:
+        return None
+    token = raw[start:end].strip()
+    if not token.isdigit():
+        return None
+    return int(token)
+
+
+def _append_tag_to_observacion(base: Optional[str], tag_prefix: str, value: int) -> str:
+    base_text = (base or "").strip()
+    tag = f"{tag_prefix}{value}]"
+    if tag in base_text:
+        return base_text[:300]
+    next_text = f"{base_text} {tag}".strip()
+    return next_text[:300]
+
+
+def _find_linked_ingreso_for_abierta(db: Session, egreso: EgresoInventario) -> Optional[IngresoInventario]:
+    ingreso_id = _extract_tagged_id(egreso.observacion, _ABIERTA_TAG_ING)
+    if ingreso_id:
+        return db.query(IngresoInventario).filter(IngresoInventario.id == ingreso_id).first()
+    guess = (
+        db.query(IngresoInventario)
+        .filter(IngresoInventario.observacion.like(f"%{_ABIERTA_TAG_EGR}{egreso.id}]%"))
+        .order_by(IngresoInventario.id.desc())
+        .first()
+    )
+    return guess
+
+
 @router.get("/inventory/egresos/{egreso_id}/pdf")
 def inventory_egreso_pdf(
     request: Request,
@@ -21094,6 +21258,235 @@ def inventory_egreso_pdf(
     )
     if not egreso:
         raise HTTPException(status_code=404, detail="Egreso no encontrado")
+    if _is_produccion_abierta_tipo(egreso.tipo.nombre if egreso.tipo else ""):
+        linked_ingreso = _find_linked_ingreso_for_abierta(db, egreso)
+        if linked_ingreso:
+            buffer = io.BytesIO()
+            pdf = canvas.Canvas(buffer, pagesize=letter)
+            width, height = letter
+            margin = 36
+
+            logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
+            if logo_path.exists():
+                pdf.drawImage(
+                    str(logo_path),
+                    margin,
+                    height - 78,
+                    width=90,
+                    height=60,
+                    preserveAspectRatio=True,
+                    mask="auto",
+                )
+
+            info_x = margin + 110
+            info_y = height - 44
+            branch = egreso.bodega.branch if egreso.bodega else None
+            identity = _company_identity(branch, company_profile)
+            pdf.setFont("Helvetica-Bold", 11)
+            pdf.drawString(info_x, info_y, identity["company_name"])
+            pdf.setFont("Helvetica", 9)
+            pdf.drawString(info_x, info_y - 14, f"Telf. {identity['telefono']}")
+            pdf.drawString(info_x, info_y - 28, f"Direccion: {identity['direccion']}")
+
+            pdf.setFont("Helvetica-Bold", 13)
+            pdf.drawString(margin, height - 120, "Resultado del movimiento de abiertas de pacas producidas")
+            pdf.setFont("Helvetica", 10)
+            pdf.drawString(margin, height - 136, f"Egreso #{egreso.id}  |  Ingreso resultado #{linked_ingreso.id}")
+            pdf.setStrokeColorRGB(0.75, 0.75, 0.75)
+            pdf.setLineWidth(0.6)
+            pdf.line(margin, height - 146, width - margin, height - 146)
+
+            def fmt_num(value: float) -> str:
+                return f"{float(value or 0):,.2f}"
+
+            def fmt_cs(value: float) -> str:
+                return f"C$ {fmt_num(value)}"
+
+            def fmt_usd(value: float) -> str:
+                return f"$ {fmt_num(value)}"
+
+            def fmt_cs_signed(value: float) -> str:
+                if value < 0:
+                    return f"-C$ {fmt_num(abs(value))}"
+                return f"C$ {fmt_num(value)}"
+
+            def fmt_usd_signed(value: float) -> str:
+                if value < 0:
+                    return f"-$ {fmt_num(abs(value))}"
+                return f"$ {fmt_num(value)}"
+
+            tasa_ref = float(egreso.tasa_cambio or linked_ingreso.tasa_cambio or 0)
+            pdf.setFont("Helvetica", 9)
+            pdf.drawString(margin, height - 160, f"Fecha proceso: {egreso.fecha.isoformat()}")
+            pdf.drawString(margin + 220, height - 160, f"Bodega: {egreso.bodega.name if egreso.bodega else '-'}")
+            pdf.drawString(margin, height - 174, f"Moneda base: {(egreso.moneda or '-').upper()}")
+            pdf.drawString(margin + 220, height - 174, f"Tasa referencia: {('C$ %.4f' % tasa_ref) if tasa_ref else '-'}")
+            obs_text = egreso.observacion or "-"
+            if len(obs_text) > 110:
+                obs_text = f"{obs_text[:107]}..."
+            pdf.drawString(margin, height - 188, f"Motivo: {obs_text}")
+
+            y = height - 210
+
+            def _page_header(section_title: str, y_pos: float) -> float:
+                pdf.setFont("Helvetica-Bold", 10)
+                pdf.drawString(margin, y_pos, section_title)
+                y_pos -= 4
+                pdf.setStrokeColorRGB(0.83, 0.83, 0.83)
+                pdf.setLineWidth(0.5)
+                pdf.line(margin, y_pos, width - margin, y_pos)
+                y_pos -= 14
+                pdf.setFont("Helvetica-Bold", 8.5)
+                pdf.drawString(margin, y_pos, "Codigo")
+                pdf.drawString(margin + 70, y_pos, "Descripcion")
+                pdf.drawRightString(margin + 320, y_pos, "Cant.")
+                pdf.drawRightString(margin + 400, y_pos, "Subtotal C$")
+                pdf.drawRightString(margin + 500, y_pos, "Subtotal USD")
+                y_pos -= 3
+                pdf.setStrokeColorRGB(0.90, 0.90, 0.90)
+                pdf.setLineWidth(0.4)
+                pdf.line(margin, y_pos, width - margin, y_pos)
+                return y_pos - 10
+
+            def _ensure_space(current_y: float, required: float = 40) -> float:
+                if current_y >= margin + required:
+                    return current_y
+                pdf.setFont("Helvetica", 8)
+                pdf.drawRightString(width - margin, margin - 18, f"Pagina {pdf.getPageNumber()}")
+                pdf.showPage()
+                return height - margin
+
+            y = _page_header("1) Salida de inventario (egreso origen)", y)
+            pdf.setFont("Helvetica", 8)
+            for item in egreso.items or []:
+                y = _ensure_space(y)
+                if y > height - margin - 1:
+                    y = _page_header("1) Salida de inventario (egreso origen) (cont.)", y)
+                    pdf.setFont("Helvetica", 8)
+                code = item.producto.cod_producto if item.producto else ""
+                desc = item.producto.descripcion if item.producto else ""
+                if len(desc) > 42:
+                    desc = f"{desc[:39]}..."
+                pdf.drawString(margin, y, code)
+                pdf.drawString(margin + 70, y, desc)
+                pdf.drawRightString(margin + 320, y, fmt_num(float(item.cantidad or 0)))
+                pdf.drawRightString(margin + 400, y, fmt_num(float(item.subtotal_cs or 0)))
+                pdf.drawRightString(margin + 500, y, fmt_num(float(item.subtotal_usd or 0)))
+                y -= 13
+
+            egreso_total_bultos = sum(float(item.cantidad or 0) for item in (egreso.items or []))
+            y -= 4
+            pdf.setStrokeColorRGB(0.90, 0.90, 0.90)
+            pdf.setLineWidth(0.4)
+            pdf.line(margin, y, width - margin, y)
+            y -= 12
+            pdf.setFont("Helvetica-Bold", 9)
+            pdf.drawString(margin, y, "Subtotal salida:")
+            pdf.drawRightString(margin + 320, y, fmt_num(egreso_total_bultos))
+            pdf.drawRightString(margin + 400, y, fmt_num(float(egreso.total_cs or 0)))
+            pdf.drawRightString(margin + 500, y, fmt_num(float(egreso.total_usd or 0)))
+
+            y -= 20
+            y = _ensure_space(y, 80)
+            if y > height - margin - 1:
+                y = _page_header("2) Ingreso de resultado (productos producidos)", y)
+            else:
+                y = _page_header("2) Ingreso de resultado (productos producidos)", y)
+            pdf.setFont("Helvetica", 8)
+            for item in linked_ingreso.items or []:
+                y = _ensure_space(y)
+                if y > height - margin - 1:
+                    y = _page_header("2) Ingreso de resultado (productos producidos) (cont.)", y)
+                    pdf.setFont("Helvetica", 8)
+                code = item.producto.cod_producto if item.producto else ""
+                desc = item.producto.descripcion if item.producto else ""
+                if len(desc) > 42:
+                    desc = f"{desc[:39]}..."
+                pdf.drawString(margin, y, code)
+                pdf.drawString(margin + 70, y, desc)
+                pdf.drawRightString(margin + 320, y, fmt_num(float(item.cantidad or 0)))
+                pdf.drawRightString(margin + 400, y, fmt_num(float(item.subtotal_cs or 0)))
+                pdf.drawRightString(margin + 500, y, fmt_num(float(item.subtotal_usd or 0)))
+                y -= 13
+
+            ingreso_total_bultos = sum(float(item.cantidad or 0) for item in (linked_ingreso.items or []))
+            y -= 4
+            pdf.setStrokeColorRGB(0.90, 0.90, 0.90)
+            pdf.setLineWidth(0.4)
+            pdf.line(margin, y, width - margin, y)
+            y -= 12
+            pdf.setFont("Helvetica-Bold", 9)
+            pdf.drawString(margin, y, "Subtotal ingreso:")
+            pdf.drawRightString(margin + 320, y, fmt_num(ingreso_total_bultos))
+            pdf.drawRightString(margin + 400, y, fmt_num(float(linked_ingreso.total_cs or 0)))
+            pdf.drawRightString(margin + 500, y, fmt_num(float(linked_ingreso.total_usd or 0)))
+
+            egreso_total_cs = float(egreso.total_cs or 0)
+            egreso_total_usd = float(egreso.total_usd or 0)
+            ingreso_total_cs = float(linked_ingreso.total_cs or 0)
+            ingreso_total_usd = float(linked_ingreso.total_usd or 0)
+            resultado_cs = ingreso_total_cs - egreso_total_cs
+            resultado_usd = ingreso_total_usd - egreso_total_usd
+            tol = 1e-9
+            if resultado_cs > tol:
+                balance_label = "GANANCIA"
+            elif resultado_cs < -tol:
+                balance_label = "PERDIDA"
+            elif resultado_usd > tol:
+                balance_label = "GANANCIA"
+            elif resultado_usd < -tol:
+                balance_label = "PERDIDA"
+            else:
+                balance_label = "SIN DIFERENCIA"
+
+            y -= 22
+            y = _ensure_space(y, 120)
+            if y > height - margin - 1:
+                y = height - margin - 10
+            pdf.setFont("Helvetica-Bold", 10)
+            pdf.drawString(margin, y, "3) Balance final del movimiento")
+            y -= 4
+            pdf.setStrokeColorRGB(0.83, 0.83, 0.83)
+            pdf.setLineWidth(0.5)
+            pdf.line(margin, y, width - margin, y)
+            y -= 16
+            pdf.setFont("Helvetica", 9)
+            pdf.drawString(margin, y, f"Bultos salida: {fmt_num(egreso_total_bultos)}")
+            pdf.drawString(margin + 250, y, f"Bultos ingreso: {fmt_num(ingreso_total_bultos)}")
+            y -= 18
+            pdf.drawString(margin, y, f"Total salida: {fmt_cs(egreso_total_cs)}")
+            pdf.drawString(margin + 250, y, f"Total salida: {fmt_usd(egreso_total_usd)}")
+            y -= 14
+            pdf.drawString(margin, y, f"Total ingreso: {fmt_cs(ingreso_total_cs)}")
+            pdf.drawString(margin + 250, y, f"Total ingreso: {fmt_usd(ingreso_total_usd)}")
+            y -= 16
+            pdf.setFont("Helvetica-Bold", 10)
+            resultado_cs_display = resultado_cs
+            resultado_usd_display = resultado_usd
+            if balance_label == "PERDIDA":
+                pdf.setFillColorRGB(0.78, 0.09, 0.09)
+            pdf.drawString(margin, y, f"Resultado neto: {fmt_cs_signed(resultado_cs_display)}")
+            pdf.drawString(margin + 250, y, f"Resultado neto: {fmt_usd_signed(resultado_usd_display)}")
+            if balance_label == "PERDIDA":
+                pdf.setFillColorRGB(0, 0, 0)
+            y -= 16
+            pdf.setFont("Helvetica-Bold", 10)
+            if balance_label == "PERDIDA":
+                pdf.setFillColorRGB(0.78, 0.09, 0.09)
+            pdf.drawString(margin, y, f"Estado: {balance_label}")
+            if balance_label == "PERDIDA":
+                pdf.setFillColorRGB(0, 0, 0)
+
+            pdf.setFont("Helvetica", 8)
+            pdf.drawRightString(width - margin, margin - 18, f"Pagina {pdf.getPageNumber()}")
+
+            pdf.showPage()
+            pdf.save()
+            buffer.seek(0)
+            headers = {
+                "Content-Disposition": f"inline; filename=abierta_pacas_{egreso.id}.pdf"
+            }
+            return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
 
     total_items = len(egreso.items or [])
     total_bultos = sum(float(item.cantidad or 0) for item in (egreso.items or []))
@@ -23444,6 +23837,10 @@ async def inventory_create_egreso(
     item_qtys = form.getlist("item_cantidad")
     item_costs = form.getlist("item_costo")
     item_prices = form.getlist("item_precio")
+    result_item_ids = form.getlist("result_item_producto_id")
+    result_item_qtys = form.getlist("result_item_cantidad")
+    result_item_costs = form.getlist("result_item_costo")
+    result_item_prices = form.getlist("result_item_precio")
 
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
@@ -23457,6 +23854,7 @@ async def inventory_create_egreso(
     if not tipo:
         return RedirectResponse(f"{redirect_to}?error=Tipo+no+valido", status_code=303)
     es_traslado = "traslado" in (tipo.nombre or "").lower()
+    es_produccion_abierta = _is_produccion_abierta_tipo(tipo.nombre)
     bodega_destino_obj = None
     if es_traslado:
         moneda = "CS"
@@ -23480,6 +23878,11 @@ async def inventory_create_egreso(
     )
     if moneda == "USD" and not rate_today:
         return RedirectResponse(f"{redirect_to}?error=Tasa+de+cambio+no+configurada", status_code=303)
+    if es_produccion_abierta and not result_item_ids:
+        return RedirectResponse(
+            f"{redirect_to}?error=Agrega+productos+de+resultado+para+Produccion+de+Abierta",
+            status_code=303,
+        )
 
     def to_float(value: Optional[str]) -> float:
         if not value:
@@ -23604,6 +24007,47 @@ async def inventory_create_egreso(
         db.rollback()
         return RedirectResponse(f"{redirect_to}?error=Agrega+items+validos+con+saldo", status_code=303)
 
+    produccion_resultado_items: list[dict[str, float | int]] = []
+    if es_produccion_abierta:
+        for index, product_id in enumerate(result_item_ids):
+            if not str(product_id).isdigit():
+                continue
+            qty = to_float(result_item_qtys[index] if index < len(result_item_qtys) else 0)
+            cost = to_float(result_item_costs[index] if index < len(result_item_costs) else 0)
+            price = to_float(result_item_prices[index] if index < len(result_item_prices) else 0)
+            if qty <= 0:
+                continue
+            producto = db.query(Producto).filter(Producto.id == int(product_id)).first()
+            if not producto:
+                db.rollback()
+                return RedirectResponse(f"{redirect_to}?error=Producto+resultado+no+encontrado", status_code=303)
+            if moneda == "USD":
+                costo_usd = cost
+                costo_cs = cost * tasa
+            else:
+                costo_cs = cost
+                costo_usd = cost / tasa if tasa else 0
+            subtotal_usd = costo_usd * qty
+            subtotal_cs = costo_cs * qty
+            produccion_resultado_items.append(
+                {
+                    "producto_id": int(product_id),
+                    "cantidad": qty,
+                    "costo_unitario_usd": costo_usd,
+                    "costo_unitario_cs": costo_cs,
+                    "subtotal_usd": subtotal_usd,
+                    "subtotal_cs": subtotal_cs,
+                    "precio_cs": price if moneda == "CS" else (price * tasa if tasa else 0),
+                    "precio_usd": price if moneda == "USD" else (price / tasa if tasa else 0),
+                }
+            )
+        if not produccion_resultado_items:
+            db.rollback()
+            return RedirectResponse(
+                f"{redirect_to}?error=Agrega+items+de+resultado+con+cantidades+validas",
+                status_code=303,
+            )
+
     if es_traslado and bodega_destino_obj and traslado_items:
         ingreso_tipo = (
             db.query(IngresoTipo)
@@ -23672,6 +24116,75 @@ async def inventory_create_egreso(
                         )
                     )
 
+    ingreso_resultado_abierta: Optional[IngresoInventario] = None
+    if es_produccion_abierta and produccion_resultado_items:
+        ingreso_tipo_resultado = (
+            db.query(IngresoTipo)
+            .filter(func.lower(IngresoTipo.nombre) == "produccion de abierta - resultado")
+            .first()
+        )
+        if not ingreso_tipo_resultado:
+            ingreso_tipo_resultado = IngresoTipo(nombre="Produccion de Abierta - Resultado", requiere_proveedor=False)
+            db.add(ingreso_tipo_resultado)
+            db.flush()
+        resultado_obs = f"Resultado de produccion de abierta para egreso #{egreso.id}"
+        if observacion:
+            resultado_obs = f"{resultado_obs} | {observacion}"
+        ingreso_resultado_abierta = IngresoInventario(
+            tipo_id=ingreso_tipo_resultado.id,
+            bodega_id=int(bodega_id),
+            proveedor_id=None,
+            fecha=fecha_value,
+            moneda=moneda,
+            tasa_cambio=tasa if moneda == "USD" else None,
+            total_usd=0,
+            total_cs=0,
+            observacion=resultado_obs[:300],
+            usuario_registro=user.full_name,
+        )
+        db.add(ingreso_resultado_abierta)
+        db.flush()
+
+        ingreso_total_usd = 0.0
+        ingreso_total_cs = 0.0
+        for row in produccion_resultado_items:
+            db.add(
+                IngresoItem(
+                    ingreso_id=ingreso_resultado_abierta.id,
+                    producto_id=int(row["producto_id"]),
+                    cantidad=float(row["cantidad"]),
+                    costo_unitario_usd=float(row["costo_unitario_usd"]),
+                    costo_unitario_cs=float(row["costo_unitario_cs"]),
+                    subtotal_usd=float(row["subtotal_usd"]),
+                    subtotal_cs=float(row["subtotal_cs"]),
+                )
+            )
+            ingreso_total_usd += float(row["subtotal_usd"])
+            ingreso_total_cs += float(row["subtotal_cs"])
+            producto_resultado = db.query(Producto).filter(Producto.id == int(row["producto_id"])).first()
+            if producto_resultado and producto_resultado.saldo:
+                producto_resultado.saldo.existencia = to_decimal(producto_resultado.saldo.existencia) + to_decimal(
+                    float(row["cantidad"])
+                )
+            elif producto_resultado:
+                db.add(SaldoProducto(producto_id=producto_resultado.id, existencia=to_decimal(float(row["cantidad"]))))
+            if producto_resultado:
+                if float(row["costo_unitario_cs"]) > 0:
+                    producto_resultado.costo_producto = float(row["costo_unitario_cs"])
+                if float(row["precio_cs"]) > 0:
+                    producto_resultado.precio_venta1 = float(row["precio_cs"])
+                if float(row["precio_usd"]) > 0:
+                    producto_resultado.precio_venta1_usd = float(row["precio_usd"])
+
+        ingreso_resultado_abierta.total_usd = ingreso_total_usd
+        ingreso_resultado_abierta.total_cs = ingreso_total_cs
+        ingreso_resultado_abierta.observacion = _append_tag_to_observacion(
+            ingreso_resultado_abierta.observacion,
+            _ABIERTA_TAG_EGR,
+            egreso.id,
+        )
+        egreso.observacion = _append_tag_to_observacion(egreso.observacion, _ABIERTA_TAG_ING, ingreso_resultado_abierta.id)
+
     egreso.total_usd = 0 if es_traslado else total_usd
     egreso.total_cs = total_cs
     bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
@@ -23687,9 +24200,27 @@ async def inventory_create_egreso(
     )
     if auto_entry:
         db.add(auto_entry)
+    if ingreso_resultado_abierta:
+        auto_in_amount = to_decimal(
+            ingreso_resultado_abierta.total_usd
+            if (ingreso_resultado_abierta.moneda or "").upper() == "USD"
+            else ingreso_resultado_abierta.total_cs
+        )
+        auto_in_entry = _build_auto_accounting_entry(
+            db,
+            event_code="INV_IN",
+            branch_id=bodega_obj.branch_id if bodega_obj else None,
+            entry_date=fecha_value,
+            amount=auto_in_amount,
+            reference=f"AUTO-ING-AB-{ingreso_resultado_abierta.id}",
+            description=f"Asiento automatico por resultado de abierta #{ingreso_resultado_abierta.id}",
+        )
+        if auto_in_entry:
+            db.add(auto_in_entry)
     db.commit()
+    result_print_mode = "abierta" if es_produccion_abierta else ("ticket" if es_traslado else "pdf")
     return RedirectResponse(
-        f"{redirect_to}?success=Egreso+registrado&print_id={egreso.id}&print_mode={'ticket' if es_traslado else 'pdf'}",
+        f"{redirect_to}?success=Egreso+registrado&print_id={egreso.id}&print_mode={result_print_mode}",
         status_code=303,
     )
 

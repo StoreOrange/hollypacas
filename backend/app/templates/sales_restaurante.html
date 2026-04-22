@@ -332,7 +332,7 @@
   }
   .table-modal-layout {
     display: grid;
-    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 300px;
     gap: 1rem;
   }
   .table-board {
@@ -432,6 +432,71 @@
   }
   .table-node-admin:hover {
     transform: translateY(-3px) scale(1.01);
+  }
+  .table-floor-canvas {
+    position: relative;
+    min-height: 520px;
+    border-radius: 22px;
+    border: 1px dashed rgba(126,167,216,.35);
+    background:
+      linear-gradient(90deg, rgba(126,167,216,.08) 1px, transparent 1px) 0 0 / 42px 42px,
+      linear-gradient(0deg, rgba(126,167,216,.08) 1px, transparent 1px) 0 0 / 42px 42px,
+      linear-gradient(180deg, rgba(255,255,255,.98), rgba(240,248,255,.96));
+    overflow: hidden;
+  }
+  .table-floor-zone {
+    position: absolute;
+    z-index: 1;
+    padding: .45rem .8rem;
+    border-radius: 999px;
+    border: 1px solid rgba(126,167,216,.24);
+    background: rgba(255,255,255,.92);
+    color: #5a7daa;
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .table-floor-node {
+    position: absolute;
+    z-index: 2;
+    transform: translate(-50%, -50%);
+    border-radius: 18px;
+    border: 1px solid rgba(126,167,216,.24);
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(233,244,255,.96));
+    box-shadow: 0 10px 20px rgba(56,86,122,.12);
+    min-width: 122px;
+    min-height: 94px;
+    padding: .55rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: .45rem;
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  }
+  .table-floor-node:hover {
+    transform: translate(-50%, -50%) scale(1.02);
+    box-shadow: 0 14px 24px rgba(56,86,122,.16);
+  }
+  .table-floor-node.ocupada {
+    border-color: rgba(143,52,68,.28);
+    background: linear-gradient(180deg, rgba(255,242,244,.99), rgba(255,229,233,.97));
+    box-shadow: 0 10px 20px rgba(143,52,68,.12);
+  }
+  .table-floor-node .meta {
+    font-size: .72rem;
+    color: #5f7fa7;
+    line-height: 1.2;
+  }
+  .table-floor-node.ocupada .meta {
+    color: #84505b;
+  }
+  .table-floor-side {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(242,248,255,.96));
+    padding: 1rem;
   }
   .table-node-admin.state-transition {
     animation: tableNodeSwap .42s ease;
@@ -933,6 +998,7 @@
     .floor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .service-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .table-modal-layout { grid-template-columns: 1fr; }
+    .table-floor-canvas { min-height: 440px; }
     .table-sector-grid { grid-template-columns: 1fr; }
     .restaurant-empty-state-kpis { grid-template-columns: 1fr; }
   }
@@ -947,7 +1013,7 @@
             <div class="lb-chip"><i class="bi bi-stars"></i> Restaurante / Bar</div>
             <div>
               <h1 class="h3 mb-1" style="font-weight:950;letter-spacing:-.03em;">La Barrera</h1>
-              <div class="small" style="color:#617a9a;">{{ user.default_branch.name if user.default_branch else 'Sucursal' }} · {{ user.default_bodega.name if user.default_bodega else 'Bodega' }}</div>
+              <div class="small" style="color:#617a9a;">{{ user.default_branch.name if user.default_branch else 'Sucursal' }}  -  {{ user.default_bodega.name if user.default_bodega else 'Bodega' }}</div>
             </div>
           </div>
           <div class="d-flex flex-wrap align-items-center justify-content-end gap-2">
@@ -1289,7 +1355,7 @@
                   <strong>{{ order.mesa_nombre or order.service_type }}</strong>
                   <span class="small">C$ {{ '%.2f'|format(order.total_cs) }}</span>
                 </div>
-                <div class="small mt-1" style="color:#617a9a;">{{ order.numero }} · {{ order.service_type }} · {{ order.opened_at }}</div>
+                <div class="small mt-1" style="color:#617a9a;">{{ order.numero }}  -  {{ order.service_type }}  -  {{ order.opened_at }}</div>
               </a>
               {% else %}
               <div class="text-center small py-4 text-muted">Sin cuentas abiertas.</div>
@@ -1391,7 +1457,7 @@
                   <div class="menu-browser-subnav">
                     <span><i class="bi bi-house-door"></i></span>
                     <span>Menu</span>
-                    <span>›</span>
+                    <span>></span>
                     <span>{{ draft_service_type }}</span>
                   </div>
                   <div class="fw-bold fs-4 mt-2 mb-1">Elige el primer producto</div>
@@ -1548,7 +1614,7 @@
                   <div class="menu-browser-subnav">
                     <span><i class="bi bi-house-door"></i></span>
                     <span>Menu</span>
-                    <span>›</span>
+                    <span>></span>
                     <span>{{ ns.selected_order.service_type }}</span>
                   </div>
                   <div class="fw-bold fs-4 mt-2 mb-1">Catalogo visual del menu</div>
@@ -1647,7 +1713,7 @@
                     <strong>{{ order.mesa_nombre or order.service_type }}</strong>
                     <span class="small">C$ {{ '%.2f'|format(order.total_cs) }}</span>
                   </div>
-                  <div class="small mt-1" style="color:#617a9a;">{{ order.numero }} · {{ order.service_type }} · {{ order.opened_at }}</div>
+                  <div class="small mt-1" style="color:#617a9a;">{{ order.numero }}  -  {{ order.service_type }}  -  {{ order.opened_at }}</div>
                 </a>
                 {% else %}
                 <div class="text-center small py-4 text-muted">Sin cuentas abiertas.</div>
@@ -1758,77 +1824,76 @@
         {% if restaurant_tables %}
         <div class="table-modal-layout">
           <div class="table-board">
-            <div class="table-board-bar"><i class="bi bi-cup-straw"></i> Barra · Facturacion directa</div>
-            <div class="small text-muted mt-3">Selecciona una mesa libre para abrir una nueva orden. Si ya esta ocupada, retoma la cuenta desde aqui sin salir del modal.</div>
+            <div class="table-board-bar"><i class="bi bi-cup-straw"></i> Barra - Facturacion directa</div>
+            <div class="small text-muted mt-3">Plano operativo del salon: doble clic en una mesa libre para seleccionarla. Doble clic en una ocupada para abrir detalle.</div>
             <div class="table-legend">
               <div class="table-legend-item"><span class="table-legend-dot" style="background:#d6e8ff;border:1px solid rgba(126,167,216,.35);"></span> Mesa libre para nueva orden</div>
               <div class="table-legend-item"><span class="table-legend-dot" style="background:#ffe4e8;border:1px solid rgba(143,52,68,.24);"></span> Mesa ocupada con cuenta abierta</div>
-              <div class="table-legend-item"><span class="table-legend-dot" style="background:#eef5ff;border:1px solid rgba(126,167,216,.22);"></span> Vista organizada por sector</div>
+              <div class="table-legend-item"><span class="table-legend-dot" style="background:#eef5ff;border:1px solid rgba(126,167,216,.22);"></span> Posicion real segun catalogo de mesas</div>
             </div>
-          </div>
-          <div class="d-grid gap-3">
-            {% set sector_ns = namespace(current='') %}
-            {% for table in restaurant_tables %}
-              {% if sector_ns.current != table.sector %}
-                {% if not loop.first %}</div></section>{% endif %}
-                {% set sector_ns.current = table.sector %}
-                <section class="table-sector-panel">
-                  <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
-                    <div>
-                      <div class="lb-section-title mb-1">Sector</div>
-                      <div class="fw-bold">{{ table.sector }}</div>
-                    </div>
-                    <span class="small text-muted">Mesas listas para operar</span>
-                  </div>
-                  <div class="table-sector-grid">
-              {% endif %}
+            <div class="table-floor-canvas mt-3" id="restaurant-table-floor-canvas">
+              <div class="table-floor-zone" style="left: 16px; top: 16px;">Barra</div>
+              {% for table in restaurant_tables %}
               <div
-                class="table-node table-node-admin {{ 'ocupada' if table.status == 'OCUPADA' else 'free' }}"
+                class="table-floor-node table-node-admin {{ 'ocupada' if table.status == 'OCUPADA' else 'free' }}"
                 data-table-id="{{ table.id }}"
                 data-table-name="{{ table.name }}"
                 data-table-code="{{ table.code }}"
                 data-table-sector="{{ table.sector }}"
                 data-table-seats="{{ table.seats }}"
+                data-table-meta="{{ table.code }} - {{ table.sector }} - {{ table.seats }} puestos"
                 {% if table.active_order %}
                 data-order='{{ table.active_order|tojson }}'
                 {% endif %}
+                style="
+                  left: {{ table.pos_x or 10 }}%;
+                  top: {{ table.pos_y or 10 }}%;
+                  width: {{ 92 * (table.width_units or 1) }}px;
+                  min-height: {{ 80 * (table.height_units or 1) }}px;
+                "
               >
                 <div class="d-flex justify-content-between align-items-start gap-2">
                   <div>
                     <div class="fw-bold">{{ table.name }}</div>
-                    <div class="small text-muted">{{ table.code }} · {{ table.seats }} puestos</div>
+                    <div class="meta">{{ table.code }} - {{ table.sector }}</div>
                   </div>
-                  <div class="d-flex align-items-center gap-2">
-                    {% if table.status == 'OCUPADA' %}
-                    <span class="table-node-alert pulse"><i class="bi bi-broadcast-pin"></i></span>
-                    {% endif %}
-                    <span class="mesa-status {{ 'ocupada' if table.status == 'OCUPADA' else 'libre' }}">{{ table.status }}</span>
-                  </div>
+                  <span class="mesa-status {{ 'ocupada' if table.status == 'OCUPADA' else 'libre' }}">{{ table.status }}</span>
                 </div>
-                <div class="small text-muted">{{ table.sector }}</div>
-                <div>
-                  {% if table.active_order_id %}
-                  <div class="small mb-2" style="color:#617a9a;">{{ table.active_order_number }} · C$ {{ '%.2f'|format(table.active_order_total_cs) }}</div>
-                  <div class="d-grid gap-2">
-                    <button class="btn btn-sm btn-lb-soft w-100 restaurant-table-detail-trigger" type="button">Ver detalle</button>
-                    <a class="btn btn-sm btn-lb-soft w-100" href="/sales?restaurant_order_id={{ table.active_order_id }}">Editar orden</a>
-                    <a class="btn btn-sm btn-lb-primary w-100" href="/sales?restaurant_order_id={{ table.active_order_id }}&focus_payment=1">Gestionar pago final</a>
-                  </div>
-                  {% else %}
-                  <button
-                    class="btn btn-sm btn-lb-primary w-100 restaurant-table-select"
-                    type="button"
-                    data-table-id="{{ table.id }}"
-                    data-table-name="{{ table.name }}"
-                    data-table-meta="{{ table.code }} · {{ table.sector }} · {{ table.seats }} puestos"
-                  >
-                    Elegir mesa
-                  </button>
-                  {% endif %}
-                </div>
+                {% if table.active_order_id %}
+                <div class="meta">{{ table.seats }} puestos - {{ table.active_order_number }} - C$ {{ '%.2f'|format(table.active_order_total_cs) }}</div>
+                <div class="meta">Doble clic: detalle de cuenta</div>
+                {% else %}
+                <div class="meta">{{ table.seats }} puestos</div>
+                <button
+                  class="btn btn-sm btn-lb-primary w-100 restaurant-table-select"
+                  type="button"
+                  data-table-id="{{ table.id }}"
+                  data-table-name="{{ table.name }}"
+                  data-table-meta="{{ table.code }} - {{ table.sector }} - {{ table.seats }} puestos"
+                >
+                  Elegir mesa
+                </button>
+                {% endif %}
               </div>
-              {% if loop.last %}</div></section>{% endif %}
-            {% endfor %}
+              {% endfor %}
+            </div>
+          </div>
+          <div class="table-floor-side d-grid gap-3">
+            <div>
+              <div class="lb-section-title mb-1">Interaccion rapida</div>
+              <div class="small text-muted">Doble clic en libre: selecciona mesa para la orden actual.</div>
+              <div class="small text-muted">Doble clic en ocupada: abre detalle para retomar y cobrar.</div>
+            </div>
+            <div class="table-sector-panel">
+              <div class="lb-section-title mb-2">Resumen</div>
+              <div class="small text-muted">Mesas activas: <strong>{{ restaurant_tables|length }}</strong></div>
+              <div class="small text-muted">Libres: <strong>{{ restaurant_tables|selectattr('status', 'equalto', 'LIBRE')|list|length }}</strong></div>
+              <div class="small text-muted">Ocupadas: <strong>{{ restaurant_tables|selectattr('status', 'equalto', 'OCUPADA')|list|length }}</strong></div>
+            </div>
+            <div class="table-sector-panel">
+              <div class="lb-section-title mb-2">Detalle de mesa</div>
+              <div class="small text-muted">Si la mesa esta ocupada puedes abrir detalle, editar la orden o gestionar pago final desde el mismo flujo.</div>
+            </div>
           </div>
         </div>
         {% else %}
@@ -1863,7 +1928,7 @@
           <div class="col-md-6"><div class="table-admin-stat"><div class="small text-muted">Servicio</div><div class="fw-bold" id="table-detail-service">-</div></div></div>
           <div class="col-md-6"><div class="table-admin-stat"><div class="small text-muted">Cliente</div><div class="fw-bold" id="table-detail-client">Consumidor final</div></div></div>
         </div>
-        <div class="small text-muted mb-2">Doble clic sobre una mesa ocupada para abrir este detalle rápidamente.</div>
+        <div class="small text-muted mb-2">Doble clic sobre una mesa ocupada para abrir este detalle rapidamente.</div>
         <div id="table-detail-lines" class="table-admin-detail-list"></div>
       </div>
       <div class="modal-footer px-4 py-3">
@@ -2074,6 +2139,14 @@
           restaurantInlineMenu?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           menuSearch?.focus();
         }, 180);
+      });
+    });
+    scope.querySelectorAll('.table-node-admin.free').forEach((node) => {
+      if (node.dataset.dblBound === '1') return;
+      node.dataset.dblBound = '1';
+      node.addEventListener('dblclick', () => {
+        const button = node.querySelector('.restaurant-table-select');
+        if (button) button.click();
       });
     });
   }
@@ -2589,25 +2662,27 @@
     node.classList.remove('ocupada');
     node.classList.add('free');
     node.classList.add('state-transition');
+    node.classList.add('table-floor-node');
     node.removeAttribute('data-order');
+    node.dataset.tableMeta = `${tableCode} - ${tableSector} - ${tableSeats} puestos`;
     node.innerHTML = `
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div>
           <div class="fw-bold">${tableName}</div>
-          <div class="small text-muted">${tableCode} · ${tableSeats} puestos</div>
+          <div class="meta">${tableCode} - ${tableSector}</div>
         </div>
         <div class="d-flex align-items-center gap-2">
           <span class="mesa-status libre">LIBRE</span>
         </div>
       </div>
-      <div class="small text-muted">${tableSector}</div>
+      <div class="meta">${tableSeats} puestos</div>
       <div>
         <button
           class="btn btn-sm btn-lb-primary w-100 restaurant-table-select"
           type="button"
           data-table-id="${tableId}"
           data-table-name="${tableName}"
-          data-table-meta="${tableCode} · ${tableSector} · ${tableSeats} puestos"
+          data-table-meta="${tableCode} - ${tableSector} - ${tableSeats} puestos"
         >
           Elegir mesa
         </button>
@@ -2624,21 +2699,21 @@
     node.classList.remove('free');
     node.classList.add('ocupada');
     node.classList.add('state-transition');
+    node.classList.add('table-floor-node');
     node.dataset.order = JSON.stringify(order);
+    node.dataset.tableMeta = `${table.code || ''} - ${table.sector || 'Salon'} - ${table.seats || 0} puestos`;
     node.innerHTML = `
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div>
-          <div class="fw-bold">${table.name || order.mesa_nombre || 'Mesa'}</div>
-          <div class="small text-muted">${table.code || ''} · ${table.seats || 0} puestos</div>
+          <div class="fw-bold">${table.name || order.mesa_nombre || "Mesa"}</div>
+          <div class="meta">${table.code || ""} - ${table.sector || "Salon"}</div>
         </div>
         <div class="d-flex align-items-center gap-2">
-          <span class="table-node-alert pulse"><i class="bi bi-broadcast-pin"></i></span>
           <span class="mesa-status ocupada">OCUPADA</span>
         </div>
       </div>
-      <div class="small text-muted">${table.sector || 'Salon'}</div>
+      <div class="meta">${table.seats || 0} puestos - ${order.numero || ""} - C$ ${fmtMoney(order.total_cs || 0)}</div>
       <div>
-        <div class="small mb-2" style="color:#617a9a;">${order.numero || ''} · C$ ${fmtMoney(order.total_cs || 0)}</div>
         <div class="d-grid gap-2">
           <button class="btn btn-sm btn-lb-soft w-100 restaurant-table-detail-trigger" type="button">Ver detalle</button>
           <a class="btn btn-sm btn-lb-soft w-100" href="/sales?restaurant_order_id=${order.id}">Editar orden</a>
@@ -2662,10 +2737,10 @@
     document.querySelectorAll(`.order-pill[href="/sales?restaurant_order_id=${order.id}"]`).forEach((link) => {
       link.innerHTML = `
         <div class="d-flex justify-content-between align-items-center gap-2">
-          <strong>${order.mesa_nombre || order.service_type || 'Orden'}</strong>
+          <strong>${order.mesa_nombre || order.service_type || "Orden"}</strong>
           <span class="small">C$ ${fmtMoney(order.total_cs || 0)}</span>
         </div>
-        <div class="small mt-1" style="color:#617a9a;">${order.numero || ''} · ${order.service_type || ''} · ${order.opened_at || ''}</div>
+        <div class="small mt-1" style="color:#617a9a;">${order.numero || ""}  -  ${order.service_type || ""}  -  ${order.opened_at || ""}</div>
       `;
     });
   }
@@ -2734,7 +2809,7 @@
       restaurantPaymentModalTitle.textContent = order.mesa_nombre || order.service_type || 'Pedido activo';
     }
     if (restaurantPaymentModalMeta) {
-      restaurantPaymentModalMeta.textContent = `${order.numero || 'Sin numero'} · ${order.cliente || 'Consumidor final'}`;
+      restaurantPaymentModalMeta.textContent = `${order.numero || 'Sin numero'}  -  ${order.cliente || 'Consumidor final'}`;
     }
     if (restaurantPaymentModalClienteName) restaurantPaymentModalClienteName.textContent = order.cliente || 'Consumidor final';
     if (restaurantPaymentModalVendedorName) restaurantPaymentModalVendedorName.textContent = order.vendedor || '-';
@@ -2836,7 +2911,7 @@
       const tableSector = activeTableNode?.dataset.tableSector || 'Salon';
       const tableSeats = activeTableNode?.dataset.tableSeats || '';
       const tableMeta = tableCode
-        ? `${tableCode} · ${tableSector} · ${tableSeats} puestos`
+        ? `${tableCode}  -  ${tableSector}  -  ${tableSeats} puestos`
         : 'Mesa activa asignada a esta cuenta.';
       setRestaurantTableSelection(order.table_id || '', order.mesa_nombre || 'Mesa activa', tableMeta);
     } else {
