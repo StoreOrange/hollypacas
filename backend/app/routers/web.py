@@ -8127,6 +8127,8 @@ def inventory_ingresos_page(
 
     start_date = _parse_date(request.query_params.get("start_date"))
     end_date = _parse_date(request.query_params.get("end_date"))
+    selected_tipo_id_raw = (request.query_params.get("tipo_id") or "").strip()
+    selected_tipo_id = int(selected_tipo_id_raw) if selected_tipo_id_raw.isdigit() else None
     selected_product_id_raw = (request.query_params.get("product_id") or "").strip()
     selected_product_id = int(selected_product_id_raw) if selected_product_id_raw.isdigit() else None
     selected_product_query = (request.query_params.get("product_q") or "").strip()
@@ -8283,6 +8285,8 @@ def inventory_egresos_page(
 
     start_date = _parse_date(request.query_params.get("start_date"))
     end_date = _parse_date(request.query_params.get("end_date"))
+    selected_tipo_id_raw = (request.query_params.get("tipo_id") or "").strip()
+    selected_tipo_id = int(selected_tipo_id_raw) if selected_tipo_id_raw.isdigit() else None
     selected_product_id_raw = (request.query_params.get("product_id") or "").strip()
     selected_product_id = int(selected_product_id_raw) if selected_product_id_raw.isdigit() else None
     selected_product_query = (request.query_params.get("product_q") or "").strip()
@@ -8294,6 +8298,8 @@ def inventory_egresos_page(
         egresos_query = egresos_query.filter(EgresoInventario.fecha >= start_date)
     if end_date:
         egresos_query = egresos_query.filter(EgresoInventario.fecha <= end_date)
+    if selected_tipo_id:
+        egresos_query = egresos_query.filter(EgresoInventario.tipo_id == selected_tipo_id)
     if selected_product_query:
         q = f"%{selected_product_query.lower()}%"
         egresos_query = egresos_query.filter(
@@ -8318,6 +8324,7 @@ def inventory_egresos_page(
     if _is_shoes_mode():
         tipos_query = tipos_query.filter(func.lower(EgresoTipo.nombre) != "traslado entre bodegas")
     tipos = tipos_query.order_by(EgresoTipo.nombre).all()
+    tipos_filtro = db.query(EgresoTipo).order_by(EgresoTipo.nombre).all()
     bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     productos = (
         db.query(Producto)
@@ -8353,6 +8360,7 @@ def inventory_egresos_page(
             "user": user,
             "egresos": egresos,
             "tipos": tipos,
+            "tipos_filtro": tipos_filtro,
             "bodegas": bodegas,
             "productos": productos,
             "saldos_por_bodega": saldos_por_bodega,
@@ -8362,6 +8370,7 @@ def inventory_egresos_page(
             "end_date": end_date.isoformat() if end_date else "",
             "selected_product_id": selected_product_id,
             "selected_product_query": selected_product_query,
+            "selected_tipo_id": selected_tipo_id,
             "success": success,
             "print_id": print_id,
             "print_mode": print_mode,
