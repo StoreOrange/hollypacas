@@ -8140,6 +8140,8 @@ def inventory_ingresos_page(
         ingresos_query = ingresos_query.filter(IngresoInventario.fecha >= start_date)
     if end_date:
         ingresos_query = ingresos_query.filter(IngresoInventario.fecha <= end_date)
+    if selected_tipo_id:
+        ingresos_query = ingresos_query.filter(IngresoInventario.tipo_id == selected_tipo_id)
     if selected_product_query:
         q = f"%{selected_product_query.lower()}%"
         ingresos_query = ingresos_query.filter(
@@ -8167,6 +8169,7 @@ def inventory_ingresos_page(
         .order_by(IngresoTipo.nombre)
         .all()
     )
+    tipos_filtro = db.query(IngresoTipo).order_by(IngresoTipo.nombre).all()
     bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     proveedores = db.query(Proveedor).order_by(Proveedor.nombre).all()
     productos = (
@@ -8235,6 +8238,7 @@ def inventory_ingresos_page(
             "user": user,
             "ingresos": ingresos,
             "tipos": tipos,
+            "tipos_filtro": tipos_filtro,
             "bodegas": bodegas,
             "proveedores": proveedores,
             "productos": productos,
@@ -8251,6 +8255,7 @@ def inventory_ingresos_page(
             "error": error,
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
+            "selected_tipo_id": selected_tipo_id,
             "selected_product_id": selected_product_id,
             "selected_product_query": selected_product_query,
             "success": success,

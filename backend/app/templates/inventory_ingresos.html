@@ -1225,6 +1225,15 @@
           <span class="input-group-text bg-white border-0">a</span>
           <input name="end_date" type="date" class="form-control border-0" value="{{ end_date }}" />
         </div>
+        <div class="input-group input-group-sm" style="min-width: 220px;">
+          <span class="input-group-text bg-white"><i class="bi bi-funnel"></i></span>
+          <select name="tipo_id" class="form-select">
+            <option value="">Todos los tipos</option>
+            {% for tipo in tipos_filtro %}
+            <option value="{{ tipo.id }}" {% if selected_tipo_id and selected_tipo_id == tipo.id %}selected{% endif %}>{{ tipo.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
         <div class="input-group input-group-sm" style="min-width: 260px;">
           <span class="input-group-text bg-white"><i class="bi bi-upc-scan"></i></span>
           <input
@@ -2050,7 +2059,7 @@
   const focusIngresoId = (params.get("focus_ingreso_id") || "").trim();
   const focusProductoId = (params.get("focus_producto_id") || "").trim();
   const forceListView = (params.get("view") || "").trim().toLowerCase() === "list";
-  const hasFilter = ["start_date", "end_date", "product_q", "product_id"].some((key) => (params.get(key) || "").trim() !== "");
+  const hasFilter = ["start_date", "end_date", "product_q", "product_id", "tipo_id"].some((key) => (params.get(key) || "").trim() !== "");
   if (focusIngresoId || forceListView || hasFilter) {
     setIngresoView("list");
   } else {
