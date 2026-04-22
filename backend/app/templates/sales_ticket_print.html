@@ -149,6 +149,9 @@
       <div class="row bold"><span>Subtotal</span><span>{{ currency_label }} {{ format_amount(subtotal_amount) }}</span></div>
       <div class="row"><span>Descuentos</span><span>{{ currency_label }} 0.00</span></div>
       <div class="row bold"><span>Total</span><span>{{ currency_label }} {{ format_amount(total_amount) }}</span></div>
+      {% if show_usd_equivalent %}
+      <div class="row bold"><span>Equivalente en USD</span><span>$ {{ format_amount(usd_equivalent_amount) }}</span></div>
+      {% endif %}
 
       {% if pagos %}
       <div class="line"></div>

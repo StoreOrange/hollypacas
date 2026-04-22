@@ -2033,6 +2033,13 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     currency_label = "C$" if moneda == "CS" else "$"
     total_amount = float(factura.total_cs or 0) if moneda == "CS" else float(factura.total_usd or 0)
     subtotal_amount = total_amount
+    tasa_referencia = Decimal(str(factura.tasa_cambio or 0))
+    total_usd_equiv_dec = Decimal(str(factura.total_usd or 0))
+    if total_usd_equiv_dec <= 0 and moneda == "CS" and tasa_referencia > 0:
+        total_usd_equiv_dec = (
+            Decimal(str(factura.total_cs or 0)) / tasa_referencia
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    usd_equivalent_amount = float(total_usd_equiv_dec)
 
     pagos = factura.pagos or []
     total_paid = sum(
@@ -2046,6 +2053,8 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
         ("amajo" in active_company_key) or ("comestibles" in active_company_key)
         or ("amajo" in db_name) or ("comestibles" in db_name)
     )
+    is_global_mode = (active_company_key == "bdtrend") or ("bdtrend" in db_name)
+    show_usd_equivalent = is_global_mode and usd_equivalent_amount > 0
     show_item_code = not is_amajo_mode
     title_size = 10.5 if is_amajo_mode else 10
     normal_size = 9.5 if is_amajo_mode else 9
@@ -2116,6 +2125,8 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     add_line(f"Subtotal: {currency_label} {format_amount(subtotal_amount)}", "right", True, normal_size)
     add_line(f"Descuentos: {currency_label} 0.00", "right", False, normal_size)
     add_line(f"Total: {currency_label} {format_amount(total_amount)}", "right", True, title_size)
+    if show_usd_equivalent:
+        add_line(f"Equivalente en USD: $ {format_amount(usd_equivalent_amount)}", "right", True, normal_size)
 
     if pagos:
         add_line("-" * 32, "center")
@@ -21652,6 +21663,13 @@ def sales_ticket_print(
     currency_label = "C$" if moneda == "CS" else "$"
     total_amount = float(factura.total_cs or 0) if moneda == "CS" else float(factura.total_usd or 0)
     subtotal_amount = total_amount
+    tasa_referencia = Decimal(str(factura.tasa_cambio or 0))
+    total_usd_equiv_dec = Decimal(str(factura.total_usd or 0))
+    if total_usd_equiv_dec <= 0 and moneda == "CS" and tasa_referencia > 0:
+        total_usd_equiv_dec = (
+            Decimal(str(factura.total_cs or 0)) / tasa_referencia
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    usd_equivalent_amount = float(total_usd_equiv_dec)
 
     pagos = factura.pagos or []
     total_paid = sum(
@@ -21669,6 +21687,8 @@ def sales_ticket_print(
         ("amajo" in active_company_key) or ("comestibles" in active_company_key)
         or ("amajo" in db_name) or ("comestibles" in db_name)
     )
+    is_global_mode = (active_company_key == "bdtrend") or ("bdtrend" in db_name)
+    show_usd_equivalent = is_global_mode and usd_equivalent_amount > 0
     is_hollpacas_mode = (
         ("hollpacas" in active_company_key) or ("hollywoodpacas" in active_company_key)
         or ("holl" in db_name) or ("pacas" in db_name)
@@ -21725,6 +21745,8 @@ def sales_ticket_print(
 
     pagos_render = []
     line_count += 4  # total unds + subtotal + descuentos + total
+    if show_usd_equivalent:
+        line_count += 1
     for pago in pagos:
         forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
         banco = pago.banco.nombre if pago.banco else ""
@@ -21766,6 +21788,8 @@ def sales_ticket_print(
             "currency_label": currency_label,
             "total_amount": total_amount,
             "subtotal_amount": subtotal_amount,
+            "show_usd_equivalent": show_usd_equivalent,
+            "usd_equivalent_amount": usd_equivalent_amount,
             "saldo": saldo,
             "total_unidades": total_unidades,
             "items": items,
