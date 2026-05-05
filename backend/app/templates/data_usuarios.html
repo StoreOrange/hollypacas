@@ -156,7 +156,18 @@
                       <span class="odoo-pill {{ 'success' if item.is_active else '' }}">{{ "Activo" if item.is_active else "Inactivo" }}</span>
                     </td>
                     <td class="text-end">
-                      <a class="btn btn-sm btn-outline-secondary" href="/data/usuarios?edit_id={{ item.id }}">Editar</a>
+                      <div class="d-inline-flex flex-wrap justify-content-end gap-2">
+                        <a class="btn btn-sm btn-outline-secondary" href="/data/usuarios?edit_id={{ item.id }}">Editar</a>
+                        <form method="post" action="/data/usuarios/{{ item.id }}/toggle" class="d-inline">
+                          <button
+                            class="btn btn-sm {{ 'btn-outline-danger' if item.is_active else 'btn-outline-success' }}"
+                            type="submit"
+                            {% if item.id == user.id %}disabled title="No puedes cambiar el estado de tu propio usuario desde aqui"{% endif %}
+                          >
+                            {{ 'Desactivar' if item.is_active else 'Activar' }}
+                          </button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                   {% endfor %}

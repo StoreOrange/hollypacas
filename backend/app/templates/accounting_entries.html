@@ -31,6 +31,62 @@
   .accounting-compact .assistant-panel .small {
     font-size: 0.72rem !important;
   }
+  .accounting-dialog .modal-content {
+    border: 0;
+    border-radius: 10px;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.24);
+  }
+  .accounting-dialog .modal-header {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+    background: #f8fafc;
+  }
+  .accounting-dialog .modal-title {
+    font-size: 0.98rem;
+  }
+  .accounting-data-hub {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background:
+      radial-gradient(circle at top left, rgba(14, 165, 233, 0.08), transparent 32%),
+      linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  }
+  .accounting-data-hub .hub-chip {
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 999px;
+    padding: 0.25rem 0.6rem;
+    background: #fff;
+    color: #334155;
+    font-size: 0.76rem;
+  }
+  .accounting-link-grid {
+    max-height: 560px;
+    overflow: auto;
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 12px;
+  }
+  .accounting-link-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #0f172a;
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .accounting-link-grid tbody tr.is-unassigned {
+    background: rgba(251, 191, 36, 0.08);
+  }
+  .accounting-link-grid tbody tr.is-inactive {
+    opacity: 0.62;
+  }
+  .accounting-pdf-modal .modal-dialog {
+    max-width: min(1120px, 96vw);
+  }
+  .accounting-pdf-modal iframe {
+    width: 100%;
+    height: min(78vh, 860px);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 10px;
+    background: #f8fafc;
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -42,6 +98,7 @@
           <h1 class="odoo-title mb-1">Comprobantes contables</h1>
         </div>
         <div class="d-flex gap-2">
+          <a class="btn btn-dark" href="#datos-contables"><i class="bi bi-diagram-3"></i> Datos contables</a>
           <a class="btn btn-outline-secondary" href="/accounting/financial-data">Datos financieros</a>
           <a class="btn btn-outline-secondary" href="/accounting">Volver</a>
         </div>
@@ -67,23 +124,29 @@
           {% endif %}
         </div>
         <form method="post" action="/accounting/entries" id="entryForm">
+          <input type="hidden" name="edit_entry_id" value="{{ edit_entry.id if edit_entry else '' }}" />
+          {% if edit_entry %}
+          <div class="alert alert-warning py-2">
+            Editando borrador <strong>{{ edit_entry.numero }}</strong>. Al registrar comprobante, este borrador se convertira en comprobante posteado.
+          </div>
+          {% endif %}
           <div class="row g-3">
             <div class="col-md-2">
               <label class="form-label">Fecha</label>
-              <input class="form-control" type="date" name="fecha" value="{{ today }}" required />
+              <input class="form-control" type="date" name="fecha" value="{{ edit_entry.fecha if edit_entry else today }}" required />
             </div>
             <div class="col-md-3">
               <label class="form-label">Sucursal</label>
               <select class="form-select" name="branch_id">
                 <option value="">General</option>
                 {% for b in branches %}
-                <option value="{{ b.id }}">{{ b.name }}</option>
+                <option value="{{ b.id }}" {% if edit_entry and edit_entry.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>
                 {% endfor %}
               </select>
             </div>
             <div class="col-md-4">
               <label class="form-label">Referencia</label>
-              <input class="form-control" name="referencia" maxlength="160" placeholder="Factura, recibo, transferencia..." />
+              <input class="form-control" name="referencia" maxlength="160" placeholder="Factura, recibo, transferencia..." value="{{ edit_entry.referencia if edit_entry else '' }}" />
             </div>
             <div class="col-md-3">
               <label class="form-label">Tipo comprobante</label>
@@ -91,12 +154,28 @@
                 {% for t in voucher_types %}
                 <option
                   value="{{ t.id }}"
-                  {% if (t.code or '')|upper == 'DIARIO' %}selected{% endif %}
+                  {% if (edit_entry and edit_entry.tipo_id == t.id) or ((not edit_entry) and (t.code or '')|upper == 'DIARIO') %}selected{% endif %}
                 >
                   {{ t.code }} - {{ t.nombre }}
                 </option>
                 {% endfor %}
               </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Moneda captura</label>
+              <select class="form-select" name="moneda" id="entryCurrency">
+                {% set _entry_currency = (edit_entry.moneda if edit_entry else 'CS') %}
+                <option value="CS" {% if _entry_currency == 'CS' %}selected{% endif %}>C$ Cordobas</option>
+                <option value="USD" {% if _entry_currency == 'USD' %}selected{% endif %}>$ Dolares</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Tasa sistema</label>
+              <input class="form-control" id="systemRate" name="tasa_sistema" type="number" step="0.0001" value="{{ '%.4f'|format(accounting_system_rate or 0) }}" readonly />
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Tasa contador</label>
+              <input class="form-control" id="manualRate" name="tasa_cambio" type="number" min="0" step="0.0001" value="{{ '%.4f'|format(edit_entry.tasa_cambio if edit_entry and edit_entry.tasa_cambio else accounting_system_rate or 0) }}" />
             </div>
             <div class="col-md-4">
               <label class="form-label">Subrubro contable (guia)</label>
@@ -110,13 +189,13 @@
               />
               <datalist id="subrubroOptions">
                 {% for item in subrubros %}
-                <option value="{{ item.label }}"></option>
+                <option value="{{ item.code }} - {{ item.label }}"></option>
                 {% endfor %}
               </datalist>
             </div>
             <div class="col-md-8">
               <label class="form-label">Descripcion del comprobante</label>
-              <input class="form-control" name="descripcion" maxlength="400" required />
+              <input class="form-control" name="descripcion" maxlength="400" required value="{{ edit_entry.descripcion if edit_entry else '' }}" />
             </div>
           </div>
 
@@ -148,7 +227,7 @@
                       <th>Detalle</th>
                       <th style="min-width: 130px;">Debe</th>
                       <th style="min-width: 130px;">Haber</th>
-                      <th style="width: 70px;">Accion</th>
+                      <th style="width: 105px;">Accion</th>
                     </tr>
                   </thead>
                   <tbody id="linesBody"></tbody>
@@ -174,6 +253,11 @@
                 <div id="assistantCounterpart" class="fw-semibold">-</div>
                 <div id="assistantReason" class="small text-muted">Selecciona una cuenta en la grilla para recibir guia inteligente.</div>
                 <hr class="my-2" />
+                <div class="small text-muted mb-1">Cuentas guia del subrubro</div>
+                <div class="small"><span class="text-muted">Debe:</span> <span id="assistantSubrubroDebe">-</span></div>
+                <div class="small"><span class="text-muted">Haber contado:</span> <span id="assistantSubrubroHaberContado">-</span></div>
+                <div class="small mb-2"><span class="text-muted">Haber credito:</span> <span id="assistantSubrubroHaberCredito">-</span></div>
+                <hr class="my-2" />
                 <div class="small text-muted mb-1">Atajos</div>
                 <ul class="small mb-0 ps-3">
                   <li>`Enter`: siguiente celda</li>
@@ -186,10 +270,123 @@
           <div id="accountSuggest" class="list-group position-fixed shadow d-none" style="z-index: 1080; max-height: 240px; overflow-y: auto; min-width: 420px;"></div>
           <div id="gridHiddenInputs"></div>
 
-          <div class="d-flex gap-2">
-            <button class="btn btn-dark" type="submit">Guardar comprobante</button>
+          <div class="modal fade accounting-dialog" id="accountingDialog" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="accountingDialogTitle">Aviso contable</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                  <div id="accountingDialogMessage" class="small text-muted"></div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-dark btn-sm" data-bs-dismiss="modal">Entendido</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-outline-dark" type="submit" name="estado_comprobante" value="BORRADOR">
+              <i class="bi bi-file-earmark"></i> Guardar borrador
+            </button>
+            <button class="btn btn-dark" type="submit" name="estado_comprobante" value="POSTEADO">
+              <i class="bi bi-check2-circle"></i> Registrar comprobante
+            </button>
           </div>
         </form>
+      </div>
+
+      <div class="odoo-card mt-3">
+        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
+          <div>
+            <div class="odoo-section-title mb-0">Ultimos comprobantes</div>
+            <div class="small text-muted">Vista inicial limitada a los ultimos 8 dias. Para ver mas, usa el rango de fechas.</div>
+          </div>
+          <form class="d-flex gap-2 align-items-end flex-wrap" method="get" action="/accounting/entries">
+            <div>
+              <label class="form-label mb-1 small">Factura / referencia</label>
+              <input class="form-control form-control-sm" name="factura" value="{{ factura_filter }}" placeholder="Factura, numero, referencia" style="min-width: 180px;" />
+            </div>
+            <div>
+              <label class="form-label mb-1 small">Rubro / concepto</label>
+              <input class="form-control form-control-sm" name="rubro" value="{{ rubro_filter }}" placeholder="Combustible, salarios..." style="min-width: 180px;" />
+            </div>
+            <div>
+              <label class="form-label mb-1 small">Desde</label>
+              <input class="form-control form-control-sm" type="date" name="start" value="{{ start_filter }}" />
+            </div>
+            <div>
+              <label class="form-label mb-1 small">Hasta</label>
+              <input class="form-control form-control-sm" type="date" name="end" value="{{ end_filter }}" />
+            </div>
+            <button class="btn btn-sm btn-outline-dark" type="submit">Filtrar</button>
+            <a class="btn btn-sm btn-outline-secondary" href="/accounting/entries">Ultimos 8 dias</a>
+          </form>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Numero</th>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Sucursal</th>
+                <th>Moneda/Tasa</th>
+                <th>Estado</th>
+                <th class="text-end">Debe</th>
+                <th class="text-end">Haber</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in entries %}
+              <tr>
+                <td class="fw-semibold">{{ row.numero }}</td>
+                <td>{{ row.fecha }}</td>
+                <td>{{ row.tipo.code if row.tipo else "-" }}</td>
+                <td>{{ row.branch.name if row.branch else "General" }}</td>
+                <td>
+                  <div class="fw-semibold">{{ row.moneda or "CS" }}</div>
+                  {% if (row.moneda or "CS") == "USD" %}
+                  <div class="small text-muted">Tasa: {{ "%.4f"|format(row.tasa_cambio or 0) }}</div>
+                  {% else %}
+                  <div class="small text-muted">Nacional</div>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if row.estado == "ANULADO" %}
+                    <span class="badge text-bg-danger">ANULADO</span>
+                  {% elif row.estado == "BORRADOR" %}
+                    <span class="badge text-bg-warning">BORRADOR</span>
+                  {% else %}
+                    <span class="badge text-bg-success">{{ row.estado }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">{{ "{:,.2f}".format(row.total_debe or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.total_haber or 0) }}</td>
+                <td>
+                  <a class="btn btn-sm btn-outline-secondary" target="_blank" href="/accounting/entries/{{ row.id }}/pdf">PDF</a>
+                  {% if row.estado == "BORRADOR" %}
+                  <a class="btn btn-sm btn-outline-primary" href="/accounting/entries?edit_entry_id={{ row.id }}">Retomar</a>
+                  {% endif %}
+                  {% if row.estado == "POSTEADO" %}
+                  <form method="post" action="/accounting/entries/{{ row.id }}/annul" class="d-inline">
+                    <input type="hidden" name="motivo" value="Anulacion manual desde interfaz" />
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Anular</button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="9" class="text-muted">Sin comprobantes registrados en el rango seleccionado.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div class="odoo-card mt-3">
@@ -310,59 +507,374 @@
         </div>
       </div>
 
-      <div class="odoo-card mt-3">
-        <div class="odoo-section-title mb-2">Ultimos comprobantes</div>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle">
-            <thead>
-              <tr>
-                <th>Numero</th>
-                <th>Fecha</th>
-                <th>Tipo</th>
-                <th>Sucursal</th>
-                <th>Estado</th>
-                <th class="text-end">Debe</th>
-                <th class="text-end">Haber</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in entries %}
-              <tr>
-                <td class="fw-semibold">{{ row.numero }}</td>
-                <td>{{ row.fecha }}</td>
-                <td>{{ row.tipo.code if row.tipo else "-" }}</td>
-                <td>{{ row.branch.name if row.branch else "General" }}</td>
-                <td>
-                  {% if row.estado == "ANULADO" %}
-                    <span class="badge text-bg-danger">ANULADO</span>
-                  {% else %}
-                    <span class="badge text-bg-success">{{ row.estado }}</span>
-                  {% endif %}
-                </td>
-                <td class="text-end">{{ "%.2f"|format(row.total_debe or 0) }}</td>
-                <td class="text-end">{{ "%.2f"|format(row.total_haber or 0) }}</td>
-                <td>
-                  <a class="btn btn-sm btn-outline-secondary" target="_blank" href="/accounting/entries/{{ row.id }}/pdf">PDF</a>
-                  {% if row.estado != "ANULADO" %}
-                  <form method="post" action="/accounting/entries/{{ row.id }}/annul" class="d-inline">
-                    <input type="hidden" name="motivo" value="Anulacion manual desde interfaz" />
-                    <button class="btn btn-sm btn-outline-danger" type="submit">Anular</button>
-                  </form>
-                  {% endif %}
-                </td>
-              </tr>
-              {% else %}
-              <tr>
-                <td colspan="8" class="text-muted">Sin comprobantes registrados.</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+      <div class="odoo-card mt-3 accounting-data-hub" id="datos-contables">
+        <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-3">
+          <div>
+            <div class="odoo-section-title mb-1"><i class="bi bi-diagram-3"></i> Datos contables inteligentes</div>
+            <div class="text-muted small">Centro de control para ver, filtrar, crear y mantener la relacion Subrubro - Cuenta contable.</div>
+          </div>
+          <form method="post" action="/accounting/subrubro-account-links/bootstrap-pcga" class="d-flex gap-2 align-items-center">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" name="overwrite" id="overwritePcgaLinksHub" />
+              <label class="form-check-label small" for="overwritePcgaLinksHub">Sobrescribir asociaciones</label>
+            </div>
+            <button class="btn btn-sm btn-dark" type="submit"><i class="bi bi-magic"></i> Autoasociar PCGA</button>
+          </form>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-lg-3 col-md-6">
+            <label class="form-label">Buscar por rubro/subrubro</label>
+            <input class="form-control form-control-sm" id="accountingDataFilterSubrubro" placeholder="Ej. salarios, combustible, papeleria" autocomplete="off" />
+          </div>
+          <div class="col-lg-3 col-md-6">
+            <label class="form-label">Buscar por cuenta catalogo</label>
+            <input class="form-control form-control-sm" id="accountingDataFilterAccount" placeholder="Ej. 6208, caja, gastos" autocomplete="off" />
+          </div>
+          <div class="col-lg-2 col-md-4">
+            <label class="form-label">Rol</label>
+            <select class="form-select form-select-sm" id="accountingDataFilterSide">
+              <option value="">Todos</option>
+              <option value="DEBE">Debe</option>
+              <option value="HABER_CONTADO">Haber contado</option>
+              <option value="HABER_CREDITO">Haber credito</option>
+            </select>
+          </div>
+          <div class="col-lg-2 col-md-4">
+            <label class="form-label">Tipo</label>
+            <select class="form-select form-select-sm" id="accountingDataFilterIntent">
+              <option value="">Todos</option>
+              <option value="EGRESO">Egreso</option>
+              <option value="INGRESO">Ingreso</option>
+              <option value="DIARIO">Diario</option>
+              <option value="AJUSTE">Ajuste</option>
+            </select>
+          </div>
+          <div class="col-lg-2 col-md-4">
+            <label class="form-label">Estado</label>
+            <select class="form-select form-select-sm" id="accountingDataFilterStatus">
+              <option value="">Todos</option>
+              <option value="active">Activos</option>
+              <option value="inactive">Inactivos</option>
+              <option value="unassigned">Sin asignacion</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap mb-3">
+          <span class="hub-chip">Subrubros: {{ subrubros|length }}</span>
+          <span class="hub-chip">Asociaciones: {{ subrubro_account_links|length }}</span>
+          <span class="hub-chip">Cuentas activas: {{ cuentas|length }}</span>
+          <span class="hub-chip">Filas visibles: <strong id="accountingDataVisibleCount">{{ subrubro_assignment_rows|length }}</strong></span>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-xl-4">
+            <form method="post" action="/accounting/subrubros/create-and-link" class="border rounded-3 p-3 bg-white shadow-sm">
+              <div class="fw-semibold mb-2">Crear subrubro y asignar cuenta</div>
+              <div class="row g-2">
+                <div class="col-12">
+                  <label class="form-label">Nombre</label>
+                  <input class="form-control form-control-sm" name="label" maxlength="160" required placeholder="Combustible administrativo" />
+                  <div class="form-text small">El codigo se genera automaticamente desde el nombre, sin digitacion manual.</div>
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Tipo</label>
+                  <select class="form-select form-select-sm" name="intent_code">
+                    <option value="EGRESO">EGRESO</option>
+                    <option value="INGRESO">INGRESO</option>
+                    <option value="DIARIO">DIARIO</option>
+                    <option value="AJUSTE">AJUSTE</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Cuenta Debe principal</label>
+                  <select class="form-select form-select-sm" name="debit_account_id" required>
+                    <option value="">Selecciona cuenta de gasto, costo, activo o inventario</option>
+                    {% for c in cuentas %}
+                    {% if c.naturaleza == 'DEBE' %}
+                    <option value="{{ c.id }}">{{ c.codigo }} - {{ c.nombre }} ({{ c.naturaleza }})</option>
+                    {% endif %}
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Catalogo Haber contado</label>
+                  <select class="form-select form-select-sm" name="cash_credit_account_id">
+                    <option value="">Opcional: Caja/Banco cuando se paga de contado</option>
+                    {% for c in cuentas %}
+                    {% set _account_name = (c.nombre or '')|lower %}
+                    {% if c.codigo in ['1101', '1102'] or 'caja' in _account_name or 'banco' in _account_name %}
+                    <option value="{{ c.id }}">{{ c.codigo }} - {{ c.nombre }} ({{ c.naturaleza }})</option>
+                    {% endif %}
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Catalogo Haber credito</label>
+                  <select class="form-select form-select-sm" name="payable_credit_account_id">
+                    <option value="">Opcional: Proveedor/CxP cuando queda al credito</option>
+                    {% for c in cuentas %}
+                    {% set _account_name = (c.nombre or '')|lower %}
+                    {% set _account_code = c.codigo or '' %}
+                    {% if c.naturaleza == 'HABER' and (_account_code.startswith('21') or _account_code.startswith('22') or 'pagar' in _account_name or 'proveedor' in _account_name or 'obligacion' in _account_name) %}
+                    <option value="{{ c.id }}">{{ c.codigo }} - {{ c.nombre }} ({{ c.naturaleza }})</option>
+                    {% endif %}
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Criterios Debe</label>
+                  <input class="form-control form-control-sm" name="debit_terms" maxlength="500" placeholder="salario,planilla,personal" />
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Haber contado</label>
+                  <input class="form-control form-control-sm" name="credit_cash_terms" maxlength="500" value="caja,banco,efectivo" />
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Haber credito</label>
+                  <input class="form-control form-control-sm" name="credit_credit_terms" maxlength="500" value="proveedor,pagar,cxp" />
+                </div>
+                <div class="col-8">
+                  <label class="form-label">Notas</label>
+                  <input class="form-control form-control-sm" name="notes" maxlength="220" placeholder="Justificacion contable" />
+                </div>
+                <div class="col-4">
+                  <label class="form-label">Prioridad</label>
+                  <input class="form-control form-control-sm" type="number" min="0" step="1" name="priority" value="100" />
+                </div>
+              </div>
+              <button class="btn btn-sm btn-dark w-100 mt-3" type="submit">Crear y cargar al grid</button>
+            </form>
+          </div>
+          <div class="col-xl-8">
+            <div class="accounting-link-grid">
+              <table class="table table-sm table-bordered align-middle mb-0" id="accountingDataGrid">
+                <thead>
+                  <tr>
+                    <th>Subrubro</th>
+                    <th>Tipo</th>
+                    <th>Rol</th>
+                    <th>Cuenta catalogo</th>
+                    <th>Estado</th>
+                    <th>Notas</th>
+                    <th>Accion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in subrubro_assignment_rows %}
+                  {% set account_text = (row.account.codigo ~ ' - ' ~ row.account.nombre) if row.account else '' %}
+                  <tr
+                    data-accounting-data-row
+                    data-subrubro="{{ row.subrubro_code }} {{ row.subrubro_label }}"
+                    data-account="{{ account_text }}"
+                    data-side="{{ row.side }}"
+                    data-intent="{{ row.intent_code }}"
+                    data-status="{% if not row.link %}unassigned{% elif row.activo %}active{% else %}inactive{% endif %}"
+                    class="{% if not row.link %}is-unassigned{% elif not row.activo %}is-inactive{% endif %}"
+                  >
+                    <td>
+                      <div class="fw-semibold">{{ row.subrubro_code }}</div>
+                      <div class="small text-muted">{{ row.subrubro_label }}</div>
+                    </td>
+                    <td>{{ row.intent_code or "-" }}</td>
+                    <td>
+                      {% if row.side %}
+                      <span class="badge text-bg-light border">{{ row.side }}</span>
+                      {% else %}
+                      <span class="text-muted">Sin rol</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if row.account %}
+                      <div class="fw-semibold">{{ row.account.codigo }} - {{ row.account.nombre }}</div>
+                      <div class="small text-muted">{{ row.account.tipo }} / {{ row.account.naturaleza }}</div>
+                      {% else %}
+                      <span class="badge text-bg-warning">Sin cuenta asignada</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if not row.link %}
+                      <span class="badge text-bg-warning">Pendiente</span>
+                      {% elif row.activo %}
+                      <span class="badge text-bg-success">Activo</span>
+                      {% else %}
+                      <span class="badge text-bg-secondary">Inactivo</span>
+                      {% endif %}
+                    </td>
+                    <td class="small">{{ row.notes or "-" }}</td>
+                    <td class="text-nowrap">
+                      {% if row.link %}
+                      <a class="btn btn-sm btn-outline-primary" href="/accounting/entries?subrubro_link_edit_id={{ row.link.id }}#datos-contables">Editar</a>
+                      {% if row.activo %}
+                      <form method="post" action="/accounting/subrubro-account-links/{{ row.link.id }}/deactivate" class="d-inline">
+                        <button class="btn btn-sm btn-outline-danger" type="submit">Quitar</button>
+                      </form>
+                      {% endif %}
+                      {% else %}
+                      <a class="btn btn-sm btn-outline-dark" href="#datos-contables">Asignar arriba</a>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
+
+      <div class="odoo-card mt-3">
+        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
+          <div class="odoo-section-title mb-0">Catalogo de asociaciones Subrubro - Cuentas</div>
+          <form method="post" action="/accounting/subrubro-account-links/bootstrap-pcga" class="d-flex gap-2 align-items-center">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" name="overwrite" id="overwritePcgaLinks" />
+              <label class="form-check-label small" for="overwritePcgaLinks">Sobrescribir existentes</label>
+            </div>
+            <button class="btn btn-sm btn-outline-dark" type="submit">Autoasociar PCGA</button>
+          </form>
+        </div>
+        <div class="row g-3">
+          <div class="col-xl-5">
+            <form method="post" action="/accounting/subrubro-account-links/save" class="border rounded p-3 bg-light-subtle">
+              <div class="fw-semibold mb-2">Registrar / editar asociacion</div>
+              <input type="hidden" name="link_id" value="{{ subrubro_link_edit_item.id if subrubro_link_edit_item else '' }}" />
+              <div class="row g-2">
+                <div class="col-12">
+                  <label class="form-label">Subrubro</label>
+                  {% set _link_code = (subrubro_link_edit_item.subrubro_code if subrubro_link_edit_item else '') %}
+                  <select class="form-select form-select-sm" name="subrubro_code" required>
+                    <option value="">Selecciona subrubro</option>
+                    {% for item in subrubros %}
+                    <option value="{{ item.code }}" {% if _link_code == item.code %}selected{% endif %}>{{ item.code }} - {{ item.label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Cuenta contable</label>
+                  {% set _link_account_id = (subrubro_link_edit_item.account_id if subrubro_link_edit_item else None) %}
+                  <select class="form-select form-select-sm" name="account_id" required>
+                    <option value="">Selecciona cuenta</option>
+                    {% for c in cuentas %}
+                    <option value="{{ c.id }}" {% if _link_account_id == c.id %}selected{% endif %}>{{ c.codigo }} - {{ c.nombre }} ({{ c.naturaleza }})</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Rol</label>
+                  {% set _link_side = (subrubro_link_edit_item.side if subrubro_link_edit_item else 'DEBE') %}
+                  <select class="form-select form-select-sm" name="side">
+                    <option value="DEBE" {% if _link_side == 'DEBE' %}selected{% endif %}>Debe</option>
+                    <option value="HABER_CONTADO" {% if _link_side == 'HABER_CONTADO' %}selected{% endif %}>Haber contado</option>
+                    <option value="HABER_CREDITO" {% if _link_side == 'HABER_CREDITO' %}selected{% endif %}>Haber credito</option>
+                  </select>
+                </div>
+                <div class="col-3">
+                  <label class="form-label">Prioridad</label>
+                  <input class="form-control form-control-sm" type="number" min="0" step="1" name="priority" value="{{ subrubro_link_edit_item.priority if subrubro_link_edit_item else 100 }}" />
+                </div>
+                <div class="col-3 d-flex align-items-end">
+                  <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" name="activo" id="subrubroLinkActivo" {% if not subrubro_link_edit_item or subrubro_link_edit_item.activo %}checked{% endif %} />
+                    <label class="form-check-label" for="subrubroLinkActivo">Activo</label>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Notas</label>
+                  <input class="form-control form-control-sm" name="notes" maxlength="220" value="{{ subrubro_link_edit_item.notes if subrubro_link_edit_item else '' }}" placeholder="Regla contable para este subrubro" />
+                </div>
+              </div>
+              <div class="d-flex gap-2 mt-3">
+                <button class="btn btn-sm btn-dark" type="submit">Guardar asociacion</button>
+                <a class="btn btn-sm btn-outline-secondary" href="/accounting/entries">Nuevo</a>
+              </div>
+            </form>
+          </div>
+          <div class="col-xl-7">
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th>Subrubro</th>
+                    <th>Rol</th>
+                    <th>Cuenta</th>
+                    <th>Prioridad</th>
+                    <th>Estado</th>
+                    <th>Accion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in subrubro_account_links %}
+                  <tr>
+                    <td class="fw-semibold">{{ row.subrubro_code }}</td>
+                    <td>{{ row.side }}</td>
+                    <td>
+                      {% if row.cuenta %}
+                        {{ row.cuenta.codigo }} - {{ row.cuenta.nombre }}
+                      {% else %}
+                        <span class="text-muted">Cuenta no disponible</span>
+                      {% endif %}
+                    </td>
+                    <td>{{ row.priority }}</td>
+                    <td>
+                      {% if row.activo %}
+                      <span class="badge text-bg-success">Activo</span>
+                      {% else %}
+                      <span class="badge text-bg-secondary">Inactivo</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-nowrap">
+                      <a class="btn btn-sm btn-outline-primary" href="/accounting/entries?subrubro_link_edit_id={{ row.id }}">Editar</a>
+                      {% if row.activo %}
+                      <form method="post" action="/accounting/subrubro-account-links/{{ row.id }}/deactivate" class="d-inline">
+                        <button class="btn btn-sm btn-outline-danger" type="submit">Desactivar</button>
+                      </form>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  {% else %}
+                  <tr>
+                    <td colspan="6" class="text-muted">No hay asociaciones registradas.</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </main>
+</div>
+
+<div class="modal fade accounting-pdf-modal" id="accountingPdfModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-0">Comprobante registrado</h5>
+          <div class="small text-muted">Vista previa del PDF para revision e impresion.</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        {% if pdf_entry_id %}
+        <iframe id="accountingPdfFrame" src="/accounting/entries/{{ pdf_entry_id }}/pdf"></iframe>
+        {% else %}
+        <iframe id="accountingPdfFrame" src="about:blank"></iframe>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        {% if pdf_entry_id %}
+        <a class="btn btn-outline-secondary btn-sm" target="_blank" href="/accounting/entries/{{ pdf_entry_id }}/pdf">Abrir en pestana</a>
+        <button class="btn btn-dark btn-sm" type="button" id="btnPrintAccountingPdf">Imprimir PDF</button>
+        {% endif %}
+        <button type="button" class="btn btn-outline-dark btn-sm" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -370,6 +882,10 @@
   const ACCOUNTING_SUGGESTIONS = {{ counter_suggestions | tojson }};
   const ACCOUNTING_POLICY = {{ policy | tojson }};
   const ACCOUNTING_SUBRUBROS = {{ subrubros | tojson }};
+  const ACCOUNTING_SUBRUBRO_LINKS = {{ subrubro_account_links_json | tojson }};
+  const ACCOUNTING_SYSTEM_RATE = {{ accounting_system_rate | tojson }};
+  const ACCOUNTING_PDF_ENTRY_ID = {{ (pdf_entry_id or "") | tojson }};
+  const ACCOUNTING_EDIT_LINES = {{ edit_entry_lines_json | tojson }};
 </script>
 
 <template id="lineTemplate">
@@ -389,7 +905,10 @@
       <input class="form-control form-control-sm text-end line-haber" type="number" min="0" step="0.01" value="0.00" />
     </td>
     <td>
-      <button class="btn btn-sm btn-outline-danger btn-remove-line" type="button"><i class="bi bi-trash"></i></button>
+      <div class="d-flex gap-1">
+        <button class="btn btn-sm btn-outline-primary btn-add-line-below" type="button" title="Agregar linea debajo"><i class="bi bi-plus-lg"></i></button>
+        <button class="btn btn-sm btn-outline-danger btn-remove-line" type="button" title="Eliminar linea"><i class="bi bi-trash"></i></button>
+      </div>
     </td>
   </tr>
 </template>
@@ -405,6 +924,8 @@
     const voucherTypeSelect = document.getElementById("voucherTypeSelect");
     const subrubroSearchInput = document.getElementById("subrubroSearch");
     const subrubroCodeInput = document.getElementById("subrubroCode");
+    const entryCurrency = document.getElementById("entryCurrency");
+    const manualRate = document.getElementById("manualRate");
     const totalDebe = document.getElementById("totalDebe");
     const totalHaber = document.getElementById("totalHaber");
     const accountSuggest = document.getElementById("accountSuggest");
@@ -413,6 +934,12 @@
     const assistantNature = document.getElementById("assistantNature");
     const assistantCounterpart = document.getElementById("assistantCounterpart");
     const assistantReason = document.getElementById("assistantReason");
+    const assistantSubrubroDebe = document.getElementById("assistantSubrubroDebe");
+    const assistantSubrubroHaberContado = document.getElementById("assistantSubrubroHaberContado");
+    const assistantSubrubroHaberCredito = document.getElementById("assistantSubrubroHaberCredito");
+    const accountingDialogEl = document.getElementById("accountingDialog");
+    const accountingDialogTitle = document.getElementById("accountingDialogTitle");
+    const accountingDialogMessage = document.getElementById("accountingDialogMessage");
     const descriptionInput = document.querySelector('input[name="descripcion"]');
     const accountMap = Object.fromEntries((ACCOUNTING_ACCOUNTS || []).map((item) => [String(item.id), item]));
     const accountList = (ACCOUNTING_ACCOUNTS || []).map((item) => ({
@@ -421,7 +948,30 @@
       searchText: (item.codigo + " " + item.nombre + " " + (item.naturaleza || "") + " " + (item.tipo || "")).toLowerCase(),
     }));
     const subrubroMap = Object.fromEntries((ACCOUNTING_SUBRUBROS || []).map((item) => [String(item.code || ""), item]));
-    const subrubroLabelMap = Object.fromEntries((ACCOUNTING_SUBRUBROS || []).map((item) => [String(item.label || "").toLowerCase(), String(item.code || "")]));
+    const subrubroLinkMap = {};
+    for (const row of (ACCOUNTING_SUBRUBRO_LINKS || [])) {
+      if (!row || !row.activo) continue;
+      const code = String(row.subrubro_code || "").toUpperCase();
+      const side = String(row.side || "").toUpperCase();
+      if (!code || !side) continue;
+      if (!subrubroLinkMap[code]) subrubroLinkMap[code] = {};
+      if (!subrubroLinkMap[code][side]) {
+        const label = (row.account_code && row.account_name) ? (row.account_code + " - " + row.account_name) : "-";
+        subrubroLinkMap[code][side] = {
+          accountId: row.account_id ? String(row.account_id) : "",
+          label,
+        };
+      }
+    }
+    const subrubroLabelMap = {};
+    for (const item of (ACCOUNTING_SUBRUBROS || [])) {
+      const code = String(item.code || "");
+      const label = String(item.label || "");
+      if (!code) continue;
+      subrubroLabelMap[normalizeText(label)] = code;
+      subrubroLabelMap[normalizeText(code)] = code;
+      subrubroLabelMap[normalizeText(code + " - " + label)] = code;
+    }
     let smartAssistTimer = null;
     let autoManagedGrid = false;
 
@@ -429,14 +979,33 @@
       autoManagedGrid = false;
     }
 
+    function showAccountingDialog(message, title = "Aviso contable") {
+      const text = String(message || "").trim();
+      if (!text) return;
+      if (!accountingDialogEl || !window.bootstrap?.Modal) {
+        window.alert(text);
+        return;
+      }
+      if (accountingDialogTitle) accountingDialogTitle.textContent = title;
+      if (accountingDialogMessage) accountingDialogMessage.textContent = text;
+      window.bootstrap.Modal.getOrCreateInstance(accountingDialogEl).show();
+    }
+
     function normalizeText(value) {
-      return String(value || "").trim().toLowerCase();
+      return String(value || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
     }
 
     function resolveSubrubroCodeFromText(rawText) {
       const text = normalizeText(rawText);
       if (!text) return "";
       if (subrubroLabelMap[text]) return subrubroLabelMap[text];
+      const raw = String(rawText || "").trim();
+      const prefCode = raw.split("-")[0]?.trim().toUpperCase();
+      if (prefCode && subrubroMap[prefCode]) return prefCode;
       // Preferencia solo para consulta generica: "insumo"/"insumos"
       if (text === "insumo" || text === "insumos") {
         const preferred = (ACCOUNTING_SUBRUBROS || []).find((item) => {
@@ -445,8 +1014,35 @@
         });
         if (preferred) return String(preferred.code || "");
       }
+      if (text.includes("combus") || text.includes("combust") || text.includes("bust") || text.includes("gasolina") || text.includes("diesel")) {
+        const fuel = (ACCOUNTING_SUBRUBROS || []).find((item) => {
+          const code = normalizeText(item.code);
+          const label = normalizeText(item.label);
+          return code.includes("combust") || label.includes("combust");
+        });
+        if (fuel) return String(fuel.code || "");
+      }
       const byCode = (ACCOUNTING_SUBRUBROS || []).find((item) => normalizeText(item.code) === text);
       if (byCode) return String(byCode.code || "");
+      const tokens = text.split(/\s+/).filter((t) => t.length >= 3);
+      if (tokens.length > 0) {
+        let best = null;
+        let bestScore = 0;
+        for (const item of (ACCOUNTING_SUBRUBROS || [])) {
+          const label = normalizeText(item.label);
+          const code = normalizeText(item.code);
+          let score = 0;
+          for (const token of tokens) {
+            if (label.includes(token)) score += 2;
+            if (code.includes(token)) score += 1;
+          }
+          if (score > bestScore) {
+            bestScore = score;
+            best = item;
+          }
+        }
+        if (best && bestScore >= 2) return String(best.code || "");
+      }
       const contains = (ACCOUNTING_SUBRUBROS || []).find((item) => {
         const label = normalizeText(item.label);
         const code = normalizeText(item.code);
@@ -458,6 +1054,10 @@
     function syncSubrubroCode() {
       const code = resolveSubrubroCodeFromText(subrubroSearchInput?.value || "");
       if (subrubroCodeInput) subrubroCodeInput.value = code;
+      const links = subrubroLinkMap[String(code || "").toUpperCase()] || {};
+      if (assistantSubrubroDebe) assistantSubrubroDebe.textContent = links.DEBE?.label || "-";
+      if (assistantSubrubroHaberContado) assistantSubrubroHaberContado.textContent = links.HABER_CONTADO?.label || "-";
+      if (assistantSubrubroHaberCredito) assistantSubrubroHaberCredito.textContent = links.HABER_CREDITO?.label || "-";
       return code;
     }
 
@@ -646,13 +1246,52 @@
       assistantNature.textContent = "Naturaleza: " + (account.naturaleza || "-") + " | Tipo: " + (account.tipo || "-");
       const counterpartId = String(ACCOUNTING_SUGGESTIONS?.[String(account.id)] || "");
       const counterpart = counterpartId ? accountMap[counterpartId] : null;
-      if (counterpart) {
+      if (counterpart && isHistoricalSuggestionCompatible(account, counterpart)) {
         assistantCounterpart.textContent = counterpart.codigo + " - " + counterpart.nombre;
         assistantReason.textContent = "Sugerida por historial de asientos y naturaleza contable opuesta.";
       } else {
-        assistantCounterpart.textContent = "Sin sugerencia historica";
-        assistantReason.textContent = "Usa plantilla por tipo o autollenado inteligente para generar cuentas base.";
+        assistantCounterpart.textContent = "Sin sugerencia compatible";
+        assistantReason.textContent = "La sugerencia historica no es coherente con el tipo/subrubro actual. Usa autollenado inteligente.";
       }
+    }
+
+    function containsAny(text, terms) {
+      const hay = normalizeText(text);
+      return (terms || []).some((term) => hay.includes(normalizeText(term)));
+    }
+
+    function getCurrentIntentCode() {
+      const subCode = syncSubrubroCode();
+      const sub = subrubroMap[String(subCode || "")];
+      if (sub?.intent_code) return String(sub.intent_code).toUpperCase();
+      const selectedText = normalizeText(voucherTypeSelect?.selectedOptions?.[0]?.textContent || "");
+      if (selectedText.includes("egreso")) return "EGRESO";
+      if (selectedText.includes("ingreso")) return "INGRESO";
+      if (selectedText.includes("ajuste")) return "AJUSTE";
+      if (selectedText.includes("diario")) return "DIARIO";
+      return "";
+    }
+
+    function isHistoricalSuggestionCompatible(sourceAccount, counterpartAccount) {
+      if (!sourceAccount || !counterpartAccount) return false;
+      const intent = getCurrentIntentCode();
+      const desc = normalizeText(descriptionInput?.value || "");
+      const cpText = normalizeText((counterpartAccount.codigo || "") + " " + (counterpartAccount.nombre || ""));
+      const srcText = normalizeText((sourceAccount.codigo || "") + " " + (sourceAccount.nombre || ""));
+      const badIncomeTerms = ["ingreso", "venta", "ventas", "cliente", "cobrar", "cxc", "cuentas por cobrar"];
+      const fixedAssetHints = ["camara", "camaras", "equipo", "activo fijo", "mobiliario", "maquinaria", "vehiculo", "vehiculo"];
+
+      if (intent === "EGRESO" && containsAny(cpText, badIncomeTerms)) {
+        return false;
+      }
+      if (intent === "EGRESO" && containsAny(desc, fixedAssetHints)) {
+        if (containsAny(srcText, ["activo", "equipo", "propiedad", "mobiliario", "maquinaria", "camara"])) {
+          if (containsAny(cpText, ["gasto", "comision", "comisiones", "bancaria", "ingreso", "venta"])) {
+            return false;
+          }
+        }
+      }
+      return true;
     }
 
     function parseAmount(value) {
@@ -660,13 +1299,33 @@
       return parseFloat(clean || "0") || 0;
     }
 
+    function formatThousands(value) {
+      return new Intl.NumberFormat("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(Number(value || 0));
+    }
+
+    function getAccountingRate() {
+      const rate = parseAmount(manualRate?.value || ACCOUNTING_SYSTEM_RATE || "0");
+      return rate > 0 ? rate : 0;
+    }
+
+    function amountToLocalCurrency(value) {
+      const amount = parseAmount(value);
+      const currency = String(entryCurrency?.value || "CS").toUpperCase();
+      if (currency !== "USD") return amount;
+      const rate = getAccountingRate();
+      return rate > 0 ? amount * rate : 0;
+    }
+
     function calculateTotals() {
       const parseValue = (selector) => Array.from(linesBody.querySelectorAll(selector))
-        .reduce((acc, input) => acc + parseAmount(input.value), 0);
+        .reduce((acc, input) => acc + amountToLocalCurrency(input.value), 0);
       const d = parseValue(".line-debe");
       const h = parseValue(".line-haber");
-      totalDebe.value = d.toFixed(2);
-      totalHaber.value = h.toFixed(2);
+      totalDebe.value = formatThousands(d);
+      totalHaber.value = formatThousands(h);
       totalDebe.classList.toggle("is-invalid", d !== h);
       totalHaber.classList.toggle("is-invalid", d !== h);
     }
@@ -695,7 +1354,7 @@
         return accountId && (debeValue > 0 || haberValue > 0);
       });
       if (!source) {
-        alert("Primero registra una linea con cuenta y monto para generar la contrapartida.");
+        showAccountingDialog("Primero registra una linea con cuenta y monto para generar la contrapartida.");
         return;
       }
 
@@ -707,7 +1366,13 @@
 
       const suggestedId = String(ACCOUNTING_SUGGESTIONS?.[sourceAccountId] || "");
       if (!suggestedId) {
-        alert("No encontre sugerencia automatica para esta cuenta. Agrega la contrapartida manualmente.");
+        showAccountingDialog("No encontre sugerencia automatica para esta cuenta. Agrega la contrapartida manualmente.");
+        return;
+      }
+      const sourceAccount = accountMap[String(sourceAccountId)];
+      const suggestedAccount = accountMap[String(suggestedId)];
+      if (!isHistoricalSuggestionCompatible(sourceAccount, suggestedAccount)) {
+        showAccountingDialog("La sugerencia historica no es compatible con el tipo/subrubro actual. Usa el autollenado inteligente.");
         return;
       }
 
@@ -741,23 +1406,80 @@
       });
     }
 
+    function currentSubrubroCreditSide() {
+      const text = normalizeText((descriptionInput?.value || "") + " " + (subrubroSearchInput?.value || ""));
+      return containsAny(text, ["credito", "crédito", "cxp", "por pagar", "a plazo", "proveedor"])
+        ? "HABER_CREDITO"
+        : "HABER_CONTADO";
+    }
+
+    function applyLinkedSubrubroJournal(options = {}) {
+      const silent = !!options.silent;
+      const force = !!options.force;
+      const subrubroCode = syncSubrubroCode();
+      const montoBase = parseAmount(smartAmountInput?.value || "0");
+      if (!subrubroCode) return false;
+      if (montoBase <= 0) {
+        if (!silent) showAccountingDialog("Ingresa un monto base valido mayor a 0.");
+        return false;
+      }
+      if (!force && gridHasMeaningfulData() && !autoManagedGrid) return false;
+
+      const links = subrubroLinkMap[String(subrubroCode).toUpperCase()] || {};
+      const debitLink = links.DEBE;
+      const creditSide = currentSubrubroCreditSide();
+      const creditLink = links[creditSide] || links.HABER_CONTADO || links.HABER_CREDITO;
+      if (!debitLink?.accountId || !creditLink?.accountId) {
+        if (!silent) showAccountingDialog("Este subrubro no tiene asociacion completa DEBE/HABER en el catalogo.");
+        if (assistantReason) assistantReason.textContent = "Falta asociacion DEBE/HABER para el subrubro seleccionado.";
+        return false;
+      }
+
+      clearLines();
+      addLine();
+      addLine();
+      const rows = Array.from(linesBody.querySelectorAll("tr"));
+      const sub = subrubroMap[String(subrubroCode)] || {};
+      const concept = String(descriptionInput?.value || sub.default_concept || "Asiento automatico").trim();
+      setAccount(rows[0], debitLink.accountId);
+      setAccount(rows[1], creditLink.accountId);
+      rows[0].querySelector(".line-detail").value = concept + " - Debe";
+      rows[1].querySelector(".line-detail").value = concept + " - Haber";
+      rows[0].querySelector(".line-debe").value = montoBase.toFixed(2);
+      rows[0].querySelector(".line-haber").value = "0.00";
+      rows[1].querySelector(".line-debe").value = "0.00";
+      rows[1].querySelector(".line-haber").value = montoBase.toFixed(2);
+      autoManagedGrid = true;
+      calculateTotals();
+      refreshAssistant(rows[0]);
+      return true;
+    }
+
     async function applySmartAssist(options = {}) {
       const silent = !!options.silent;
       const force = !!options.force;
       const tipoId = voucherTypeSelect?.value;
       const descripcion = (descriptionInput?.value || "").trim();
+      const subrubroRaw = (subrubroSearchInput?.value || "").trim();
       const subrubroCode = syncSubrubroCode();
       const montoBase = parseAmount(smartAmountInput?.value || "0");
       if (!tipoId) {
-        if (!silent) alert("Selecciona el tipo de comprobante.");
+        if (!silent) showAccountingDialog("Selecciona el tipo de comprobante.");
         return;
       }
       if (descripcion.length < 4 && !subrubroCode) return;
+      if (subrubroRaw && !subrubroCode) {
+        if (!silent) showAccountingDialog("Selecciona un subrubro valido de la lista para autocompletar cuentas.");
+        return;
+      }
       if (montoBase <= 0) {
-        if (!silent) alert("Ingresa un monto base valido mayor a 0.");
+        if (!silent) showAccountingDialog("Ingresa un monto base valido mayor a 0.");
         return;
       }
       if (!force && gridHasMeaningfulData() && !autoManagedGrid) {
+        return;
+      }
+      if (applyLinkedSubrubroJournal({ silent, force })) {
         return;
       }
       try {
@@ -772,11 +1494,14 @@
         });
         const payload = await response.json().catch(() => null);
         if (!response.ok || !payload?.ok) {
-          if (!silent) alert(payload?.message || "No pude autocompletar el comprobante.");
+          if (silent && (payload?.message || "").trim() && assistantReason) {
+            assistantReason.textContent = payload.message;
+          }
+          if (!silent) showAccountingDialog(payload?.message || "No pude autocompletar el comprobante.");
           return;
         }
         if (!payload.debit_account || !payload.credit_account) {
-          if (!silent) alert("No se encontraron cuentas sugeridas.");
+          if (!silent) showAccountingDialog("No se encontraron cuentas sugeridas.");
           return;
         }
         clearLines();
@@ -791,14 +1516,11 @@
         rows[0].querySelector(".line-haber").value = "0.00";
         rows[1].querySelector(".line-debe").value = "0.00";
         rows[1].querySelector(".line-haber").value = Number(payload.amount || montoBase).toFixed(2);
-        if (descriptionInput && !descriptionInput.value.trim()) {
-          descriptionInput.value = payload.concept || "";
-        }
         autoManagedGrid = true;
         calculateTotals();
         refreshAssistant(rows[0]);
       } catch (_e) {
-        if (!silent) alert("No se pudo conectar con el asistente inteligente.");
+        if (!silent) showAccountingDialog("No se pudo conectar con el asistente inteligente.");
       }
     }
 
@@ -807,6 +1529,7 @@
       const debeInput = row.querySelector(".line-debe");
       const haberInput = row.querySelector(".line-haber");
       const removeBtn = row.querySelector(".btn-remove-line");
+      const addBelowBtn = row.querySelector(".btn-add-line-below");
       row.dataset.uid = row.dataset.uid || String(Date.now() + Math.random());
 
       [debeInput, haberInput].forEach((input) => {
@@ -824,6 +1547,14 @@
         row.remove();
         calculateTotals();
         refreshAssistant(Array.from(linesBody.querySelectorAll("tr"))[0] || null);
+      });
+      addBelowBtn?.addEventListener("click", () => {
+        const nextRow = addLine(row);
+        window.setTimeout(() => {
+          const search = nextRow?.querySelector(".line-account-search");
+          search?.focus();
+          search?.select();
+        }, 40);
       });
       accountSearch.addEventListener("focus", async () => {
         refreshAssistant(row);
@@ -925,11 +1656,16 @@
       }
     }
 
-    function addLine() {
+    function addLine(afterRow = null) {
       const row = template.content.firstElementChild.cloneNode(true);
       bindRowEvents(row);
-      linesBody.appendChild(row);
+      if (afterRow && afterRow.parentElement === linesBody) {
+        afterRow.insertAdjacentElement("afterend", row);
+      } else {
+        linesBody.appendChild(row);
+      }
       calculateTotals();
+      return row;
     }
 
     function appendHidden(name, value) {
@@ -940,32 +1676,61 @@
       hiddenContainer.appendChild(input);
     }
 
+    function loadEditLines() {
+      const rows = Array.isArray(ACCOUNTING_EDIT_LINES) ? ACCOUNTING_EDIT_LINES : [];
+      if (!rows.length) {
+        addLine();
+        addLine();
+        return;
+      }
+      linesBody.innerHTML = "";
+      const currency = String(entryCurrency?.value || "CS").toUpperCase();
+      const rate = getAccountingRate();
+      rows.forEach((item) => {
+        const row = addLine();
+        setAccount(row, item.cuenta_id);
+        const detailInput = row.querySelector(".line-detail");
+        const debeInput = row.querySelector(".line-debe");
+        const haberInput = row.querySelector(".line-haber");
+        if (detailInput) detailInput.value = item.descripcion || "";
+        const debe = parseAmount(item.debe || 0);
+        const haber = parseAmount(item.haber || 0);
+        if (debeInput) debeInput.value = (currency === "USD" && rate > 0 ? debe / rate : debe).toFixed(2);
+        if (haberInput) haberInput.value = (currency === "USD" && rate > 0 ? haber / rate : haber).toFixed(2);
+      });
+      calculateTotals();
+    }
+
     addBtn.addEventListener("click", addLine);
+    entryCurrency?.addEventListener("change", calculateTotals);
+    manualRate?.addEventListener("input", calculateTotals);
+    manualRate?.addEventListener("change", calculateTotals);
     smartAssistBtn?.addEventListener("click", () => applySmartAssist({ force: true }));
-      autoBtn.addEventListener("click", applySmartCounterpart);
+    autoBtn?.addEventListener("click", applySmartCounterpart);
     voucherTypeSelect.addEventListener("change", () => {
       if (smartAssistTimer) clearTimeout(smartAssistTimer);
       smartAssistTimer = window.setTimeout(() => applySmartAssist({ silent: true }), 220);
     });
     subrubroSearchInput?.addEventListener("input", () => {
       const code = syncSubrubroCode();
-      const selected = subrubroMap[String(code || "")];
-      if (selected && descriptionInput && !descriptionInput.value.trim()) {
-        descriptionInput.value = String(selected.default_concept || "").trim();
-      }
-      if (smartAssistTimer) clearTimeout(smartAssistTimer);
-      smartAssistTimer = window.setTimeout(() => applySmartAssist({ silent: true }), 180);
+    });
+    subrubroSearchInput?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.code !== "NumpadEnter") return;
+      event.preventDefault();
+      syncSubrubroCode();
+      smartAmountInput?.focus();
+      smartAmountInput?.select();
     });
     subrubroSearchInput?.addEventListener("change", () => {
       syncSubrubroCode();
+      if (smartAmountInput) smartAmountInput.focus();
     });
     descriptionInput?.addEventListener("input", () => {
       if (smartAssistTimer) clearTimeout(smartAssistTimer);
       smartAssistTimer = window.setTimeout(() => applySmartAssist({ silent: true }), 320);
     });
     smartAmountInput?.addEventListener("change", () => {
-      if (smartAssistTimer) clearTimeout(smartAssistTimer);
-      smartAssistTimer = window.setTimeout(() => applySmartAssist({ silent: true }), 220);
+      calculateTotals();
     });
     smartAmountInput?.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.code !== "NumpadEnter") return;
@@ -987,6 +1752,18 @@
         applySmartAssist({ force: true });
         return;
       }
+      if (!String(descriptionInput?.value || "").trim()) {
+        event.preventDefault();
+        showAccountingDialog("Detalla la descripcion del comprobante antes de guardar.");
+        descriptionInput?.focus();
+        return;
+      }
+      if (String(entryCurrency?.value || "CS").toUpperCase() === "USD" && getAccountingRate() <= 0) {
+        event.preventDefault();
+        showAccountingDialog("Para registrar en USD debes indicar una tasa de cambio valida.");
+        manualRate?.focus();
+        return;
+      }
       hiddenContainer.innerHTML = "";
       const rows = Array.from(linesBody.querySelectorAll("tr"));
       let validRows = 0;
@@ -1004,18 +1781,30 @@
       }
       if (validRows < 2) {
         event.preventDefault();
-        alert("La grilla requiere al menos 2 lineas validas con cuenta y montos.");
+        showAccountingDialog("La grilla requiere al menos 2 lineas validas con cuenta y montos.");
       }
       hideResults();
     });
     document.addEventListener("click", (event) => {
       if (!accountSuggest.contains(event.target) && !linesBody.contains(event.target)) hideResults();
     });
-    addLine();
-    addLine();
+    loadEditLines();
     syncSubrubroCode();
     applySmartAssist({ silent: true });
     refreshAssistant(null);
+    if (ACCOUNTING_PDF_ENTRY_ID && window.bootstrap?.Modal) {
+      const pdfModalEl = document.getElementById("accountingPdfModal");
+      window.bootstrap.Modal.getOrCreateInstance(pdfModalEl).show();
+    }
+    document.getElementById("btnPrintAccountingPdf")?.addEventListener("click", () => {
+      const frame = document.getElementById("accountingPdfFrame");
+      if (frame?.contentWindow) {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      } else if (ACCOUNTING_PDF_ENTRY_ID) {
+        window.open("/accounting/entries/" + ACCOUNTING_PDF_ENTRY_ID + "/pdf", "_blank");
+      }
+    });
   })();
 </script>
 <script>
@@ -1030,6 +1819,58 @@
         row.style.display = !q || text.includes(q) ? "" : "none";
       });
     });
+  })();
+</script>
+<script>
+  (function () {
+    const grid = document.getElementById("accountingDataGrid");
+    if (!grid) return;
+    const rows = Array.from(grid.querySelectorAll("tbody tr[data-accounting-data-row]"));
+    const subrubroInput = document.getElementById("accountingDataFilterSubrubro");
+    const accountInput = document.getElementById("accountingDataFilterAccount");
+    const sideSelect = document.getElementById("accountingDataFilterSide");
+    const intentSelect = document.getElementById("accountingDataFilterIntent");
+    const statusSelect = document.getElementById("accountingDataFilterStatus");
+    const visibleCount = document.getElementById("accountingDataVisibleCount");
+
+    function normalize(value) {
+      return String(value || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+    }
+
+    function applyFilters() {
+      const subQ = normalize(subrubroInput?.value);
+      const accountQ = normalize(accountInput?.value);
+      const sideQ = String(sideSelect?.value || "").toUpperCase();
+      const intentQ = String(intentSelect?.value || "").toUpperCase();
+      const statusQ = String(statusSelect?.value || "");
+      let count = 0;
+      for (const row of rows) {
+        const subText = normalize(row.dataset.subrubro || row.textContent);
+        const accountText = normalize(row.dataset.account || "");
+        const side = String(row.dataset.side || "").toUpperCase();
+        const intent = String(row.dataset.intent || "").toUpperCase();
+        const status = String(row.dataset.status || "");
+        const ok =
+          (!subQ || subText.includes(subQ)) &&
+          (!accountQ || accountText.includes(accountQ)) &&
+          (!sideQ || side === sideQ) &&
+          (!intentQ || intent === intentQ) &&
+          (!statusQ || status === statusQ);
+        row.style.display = ok ? "" : "none";
+        if (ok) count += 1;
+      }
+      if (visibleCount) visibleCount.textContent = String(count);
+    }
+
+    [subrubroInput, accountInput, sideSelect, intentSelect, statusSelect].forEach((el) => {
+      el?.addEventListener("input", applyFilters);
+      el?.addEventListener("change", applyFilters);
+    });
+    applyFilters();
   })();
 </script>
 {% endblock %}

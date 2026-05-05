@@ -3755,7 +3755,11 @@
       const variantResp = await fetch(buildVariantSearchUrl(normalized, "", ""));
       const variantPayload = await variantResp.json().catch(() => null);
       if (variantPayload?.ok) {
-        const exact = (variantPayload.items || []).find((it) => String(it.cod_variante || "").toUpperCase() === normalized);
+        const exact = (variantPayload.items || []).find((it) => {
+          const scanCode = String(it.scan_code || "").toUpperCase();
+          const variantCode = String(it.cod_variante || "").toUpperCase();
+          return scanCode === normalized || variantCode === normalized;
+        });
         if (exact) {
           const addedVariant = addVariantToInvoice(exact, 1);
           productSearch.classList.remove("barcode-ready");

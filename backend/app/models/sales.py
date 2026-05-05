@@ -714,6 +714,9 @@ class AccountingEntry(Base):
     numero = Column(String(40), nullable=False, unique=True)
     referencia = Column(String(160), nullable=True)
     descripcion = Column(Text, nullable=False, default="")
+    moneda = Column(String(10), nullable=False, default="CS")
+    tasa_sistema = Column(Numeric(12, 4), nullable=True)
+    tasa_cambio = Column(Numeric(12, 4), nullable=True)
     estado = Column(String(20), nullable=False, default="POSTEADO")
     total_debe = Column(Numeric(14, 2), nullable=False, default=0)
     total_haber = Column(Numeric(14, 2), nullable=False, default=0)
@@ -750,7 +753,7 @@ class AccountingPolicySetting(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     strict_mode = Column(Boolean, nullable=False, default=True)
-    auto_entry_enabled = Column(Boolean, nullable=False, default=False)
+    auto_entry_enabled = Column(Boolean, nullable=False, default=True)
     ingreso_debe_terms = Column(String(260), nullable=False, default="caja,banco,cliente,cobrar")
     ingreso_haber_terms = Column(String(260), nullable=False, default="venta,ingreso")
     egreso_debe_terms = Column(String(260), nullable=False, default="gasto,costo,compra,inventario")
@@ -777,3 +780,23 @@ class AccountingSubrubroRule(Base):
     updated_by = Column(String(160), nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created_at = Column(DateTime, server_default=func.now())
+
+
+class AccountingSubrubroAccountLink(Base):
+    __tablename__ = "accounting_subrubro_account_links"
+    __table_args__ = (
+        UniqueConstraint("subrubro_code", "account_id", "side", name="uq_subrubro_account_side"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    subrubro_code = Column(String(60), nullable=False, index=True)
+    account_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=False, index=True)
+    side = Column(String(20), nullable=False, default="DEBE")  # DEBE / HABER_CONTADO / HABER_CREDITO
+    priority = Column(Integer, nullable=False, default=100)
+    notes = Column(String(220), nullable=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    updated_by = Column(String(160), nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+
+    cuenta = relationship("CuentaContable")

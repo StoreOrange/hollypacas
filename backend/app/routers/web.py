@@ -10,6 +10,7 @@ import re
 import smtplib
 import subprocess
 import tempfile
+import unicodedata
 from email.message import EmailMessage
 from email.utils import make_msgid
 
@@ -79,6 +80,7 @@ from ..models.sales import (
     AccountingPolicySetting,
     AccountingEntry,
     AccountingEntryLine,
+    AccountingSubrubroAccountLink,
     AccountingSubrubroRule,
     AccountingVoucherType,
     Banco,
@@ -363,6 +365,16 @@ def get_sidebar_menu_layout(db: Session) -> list[dict[str, str | None]]:
 
 def to_decimal(value: Optional[float]) -> Decimal:
     return Decimal(str(value or 0))
+
+
+def _ascii_lower(value: Optional[str]) -> str:
+    return (
+        unicodedata.normalize("NFKD", str(value or ""))
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .lower()
+        .strip()
+    )
 
 
 def _get_user_from_cookie(request: Request, db: Session) -> Optional[User]:
@@ -1375,8 +1387,6 @@ def _default_company_profile_payload() -> dict[str, str]:
     active_company_key = (get_active_company_key() or "").strip().lower()
     db_name = _current_db_name().strip().lower()
     shoes_mode = _is_shoes_mode()
-    comestibles_mode = active_company_key == "comestibles" or "comestibles" in db_name or "amajo" in db_name
-    global_mode = active_company_key == "bdtrend" or "bdtrend" in db_name
     restaurant_mode = active_company_key == "barrera" or "barrera" in db_name
     multi_branch_enabled = active_company_key not in {"comestibles", "barrera", "bdtrend"}
     if shoes_mode:
@@ -1425,62 +1435,16 @@ def _default_company_profile_payload() -> dict[str, str]:
             "price_margin_percent": 0,
             "theme_code": "default",
         }
-    if comestibles_mode:
-        return {
-            "legal_name": "Tienda de Conveniencia AMAJO",
-            "trade_name": "AMAJO",
-            "app_title": "ERP AMAJO",
-            "sidebar_subtitle": "Tienda de Conveniencia",
-            "website": "",
-            "ruc": "",
-            "phone": "",
-            "address": "Sucursal principal",
-            "email": "",
-            "logo_url": "/static/logo_hollywood.png",
-            "pos_logo_url": "/static/logo_hollywood.png",
-            "favicon_url": "/static/favicon.ico",
-            "inventory_cs_only": False,
-            "recipe_explosion_on_ingreso": False,
-            "weighted_inventory_enabled": False,
-            "weighted_sales_enabled": False,
-            "multi_branch_enabled": multi_branch_enabled,
-            "price_auto_from_cost_enabled": False,
-            "price_margin_percent": 0,
-            "theme_code": "default",
-        }
-    if global_mode:
-        return {
-            "legal_name": "Pacas Global",
-            "trade_name": "Pacas Global",
-            "app_title": "ERP Pacas Global",
-            "sidebar_subtitle": "ERP Central",
-            "website": "",
-            "ruc": "",
-            "phone": "8900-0300",
-            "address": "Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
-            "email": "admin@pacasglobal.com",
-            "logo_url": "/static/logo_hollywood.png",
-            "pos_logo_url": "/static/logo_hollywood.png",
-            "favicon_url": "/static/favicon.ico",
-            "inventory_cs_only": False,
-            "recipe_explosion_on_ingreso": False,
-            "weighted_inventory_enabled": False,
-            "weighted_sales_enabled": False,
-            "multi_branch_enabled": multi_branch_enabled,
-            "price_auto_from_cost_enabled": False,
-            "price_margin_percent": 0,
-            "theme_code": "default",
-        }
     return {
-        "legal_name": "Hollywood Pacas",
-        "trade_name": "Hollywood Pacas",
-        "app_title": "ERP Hollywood Pacas",
+        "legal_name": "Pacas Global",
+        "trade_name": "Pacas Global",
+        "app_title": "ERP Pacas Global",
         "sidebar_subtitle": "ERP Central",
-        "website": "http://hollywoodpacas.com.ni",
+        "website": "",
         "ruc": "",
         "phone": "8900-0300",
-        "address": "Managua, De los semaforos del colonial 10 vrs. al lago frente al pillin.",
-        "email": "admin@hollywoodpacas.com",
+        "address": "",
+        "email": "admin@pacasglobal.com",
         "logo_url": "/static/logo_hollywood.png",
         "pos_logo_url": "/static/logo_hollywood.png",
         "favicon_url": "/static/favicon.ico",
@@ -1500,49 +1464,20 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
     row = db.query(CompanyProfileSetting).order_by(CompanyProfileSetting.id.asc()).first()
     if not row:
         return payload
-    legal_name = (row.legal_name or "").strip() or payload["legal_name"]
-    trade_name = (row.trade_name or "").strip() or payload["trade_name"]
-    app_title = (row.app_title or "").strip() or payload["app_title"]
-    sidebar_subtitle = (row.sidebar_subtitle or "").strip() or payload["sidebar_subtitle"]
-    website = (row.website or "").strip() or payload["website"]
-    ruc = (row.ruc or "").strip() or payload["ruc"]
-    phone = (row.phone or "").strip() or payload["phone"]
-    address = (row.address or "").strip() or payload["address"]
-    email = (row.email or "").strip() or payload["email"]
-    logo_url = (row.logo_url or "").strip() or payload["logo_url"]
-    pos_logo_url = (row.pos_logo_url or "").strip() or payload["pos_logo_url"]
-    favicon_url = (row.favicon_url or "").strip() or payload["favicon_url"]
-    central_branch = (
-        db.query(Branch)
-        .filter(func.lower(Branch.code) == "central")
-        .order_by(Branch.id.asc())
-        .first()
-    )
-    if central_branch:
-        if not phone and (central_branch.telefono or "").strip():
-            phone = (central_branch.telefono or "").strip()
-        if not address and (central_branch.direccion or "").strip():
-            address = (central_branch.direccion or "").strip()
-        if not legal_name and (central_branch.company_name or "").strip():
-            legal_name = (central_branch.company_name or "").strip()
-        if not trade_name and (central_branch.company_name or "").strip():
-            trade_name = (central_branch.company_name or "").strip()
-        if not ruc and (central_branch.ruc or "").strip():
-            ruc = (central_branch.ruc or "").strip()
     payload.update(
         {
-            "legal_name": legal_name,
-            "trade_name": trade_name,
-            "app_title": app_title,
-            "sidebar_subtitle": sidebar_subtitle,
-            "website": website,
-            "ruc": ruc,
-            "phone": phone,
-            "address": address,
-            "email": email,
-            "logo_url": logo_url,
-            "pos_logo_url": pos_logo_url,
-            "favicon_url": favicon_url,
+            "legal_name": row.legal_name or payload["legal_name"],
+            "trade_name": row.trade_name or payload["trade_name"],
+            "app_title": row.app_title or payload["app_title"],
+            "sidebar_subtitle": row.sidebar_subtitle or payload["sidebar_subtitle"],
+            "website": row.website or payload["website"],
+            "ruc": row.ruc or payload["ruc"],
+            "phone": row.phone or payload["phone"],
+            "address": row.address or payload["address"],
+            "email": row.email or payload["email"],
+            "logo_url": row.logo_url or payload["logo_url"],
+            "pos_logo_url": row.pos_logo_url or payload["pos_logo_url"],
+            "favicon_url": row.favicon_url or payload["favicon_url"],
             "inventory_cs_only": bool(row.inventory_cs_only),
             "recipe_explosion_on_ingreso": bool(getattr(row, "recipe_explosion_on_ingreso", False)),
             "weighted_inventory_enabled": bool(getattr(row, "weighted_inventory_enabled", False)),
@@ -1733,6 +1668,14 @@ def _text_initials(value: str, limit: int = 4) -> str:
 def _sanitize_code_token(value: str, limit: int = 14) -> str:
     clean = re.sub(r"[^A-Za-z0-9]+", "", (value or "").upper())
     return clean[:limit] if clean else "X"
+
+
+def _variant_scan_code(variant_id: Optional[int]) -> str:
+    try:
+        value = int(variant_id or 0)
+    except (TypeError, ValueError):
+        value = 0
+    return f"V{value:06d}" if value > 0 else ""
 
 
 def _normalize_price_tier(raw: Optional[str], default: int = 1) -> int:
@@ -2033,13 +1976,6 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     currency_label = "C$" if moneda == "CS" else "$"
     total_amount = float(factura.total_cs or 0) if moneda == "CS" else float(factura.total_usd or 0)
     subtotal_amount = total_amount
-    tasa_referencia = Decimal(str(factura.tasa_cambio or 0))
-    total_usd_equiv_dec = Decimal(str(factura.total_usd or 0))
-    if total_usd_equiv_dec <= 0 and moneda == "CS" and tasa_referencia > 0:
-        total_usd_equiv_dec = (
-            Decimal(str(factura.total_cs or 0)) / tasa_referencia
-        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    usd_equivalent_amount = float(total_usd_equiv_dec)
 
     pagos = factura.pagos or []
     total_paid = sum(
@@ -2053,8 +1989,6 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
         ("amajo" in active_company_key) or ("comestibles" in active_company_key)
         or ("amajo" in db_name) or ("comestibles" in db_name)
     )
-    is_global_mode = (active_company_key == "bdtrend") or ("bdtrend" in db_name)
-    show_usd_equivalent = is_global_mode and usd_equivalent_amount > 0
     show_item_code = not is_amajo_mode
     title_size = 10.5 if is_amajo_mode else 10
     normal_size = 9.5 if is_amajo_mode else 9
@@ -2125,8 +2059,6 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     add_line(f"Subtotal: {currency_label} {format_amount(subtotal_amount)}", "right", True, normal_size)
     add_line(f"Descuentos: {currency_label} 0.00", "right", False, normal_size)
     add_line(f"Total: {currency_label} {format_amount(total_amount)}", "right", True, title_size)
-    if show_usd_equivalent:
-        add_line(f"Equivalente en USD: $ {format_amount(usd_equivalent_amount)}", "right", True, normal_size)
 
     if pagos:
         add_line("-" * 32, "center")
@@ -2855,40 +2787,12 @@ def _send_html_email(
         return f"Error SMTP: {exc.__class__.__name__}"
     return None
 
-
-def _resolve_login_logo_url(db: Session, request: Request) -> str:
-    branding = (
-        request.state.branding
-        if request and getattr(request, "state", None) and getattr(request.state, "branding", None)
-        else {}
-    )
-    row = db.query(CompanyProfileSetting).order_by(CompanyProfileSetting.id.asc()).first()
-    if row:
-        return (
-            (getattr(row, "login_logo_url", "") or "").strip()
-            or
-            (row.pos_logo_url or "").strip()
-            or (row.logo_url or "").strip()
-            or (branding.get("pos_logo_url") or "").strip()
-            or (branding.get("logo_url") or "").strip()
-            or (branding.get("favicon_url") or "").strip()
-            or "/static/favicon.ico"
-        )
-    return (
-        (branding.get("pos_logo_url") or "").strip()
-        or (branding.get("logo_url") or "").strip()
-        or (branding.get("favicon_url") or "").strip()
-        or "/static/favicon.ico"
-    )
-
-
 @router.get("/login")
-def login_page(request: Request, db: Session = Depends(get_db)):
+def login_page(request: Request):
     return request.app.state.templates.TemplateResponse(
         "login.html",
         {
             "request": request,
-            "login_logo_url": _resolve_login_logo_url(db, request),
             "version": settings.UI_VERSION,
         },
     )
@@ -2913,7 +2817,6 @@ def login_action(
             {
                 "request": request,
                 "error": "Credenciales incorrectas",
-                "login_logo_url": _resolve_login_logo_url(db, request),
                 "version": settings.UI_VERSION,
             },
             status_code=401,
@@ -2924,7 +2827,6 @@ def login_action(
             {
                 "request": request,
                 "error": "Usuario inactivo",
-                "login_logo_url": _resolve_login_logo_url(db, request),
                 "version": settings.UI_VERSION,
             },
             status_code=403,
@@ -3248,16 +3150,71 @@ def _find_account_by_terms(
     naturaleza: Optional[str] = None,
 ) -> Optional[int]:
     target_nat = (naturaleza or "").upper().strip()
-    for term in terms:
-        term_lower = term.lower()
-        for account in active_accounts:
-            if target_nat and (account.naturaleza or "").upper() != target_nat:
+    normalized_terms = [str(term or "").strip().lower() for term in terms if str(term or "").strip()]
+    if not normalized_terms:
+        return None
+
+    best_account: Optional[CuentaContable] = None
+    best_key: Optional[tuple] = None
+    for account in active_accounts:
+        if target_nat and (account.naturaleza or "").upper() != target_nat:
+            continue
+        code = (account.codigo or "").lower()
+        name = (account.nombre or "").lower()
+        combined = f"{code} {name}"
+        combined_padded = f" {combined} "
+
+        score = 0
+        matched_terms = 0
+        longest_match = 0
+        for idx, term in enumerate(normalized_terms):
+            if term not in combined:
                 continue
-            name = (account.nombre or "").lower()
-            code = (account.codigo or "").lower()
-            if term_lower in name or term_lower in code:
-                return int(account.id)
-    return None
+            matched_terms += 1
+            longest_match = max(longest_match, len(term))
+            priority = max(1, len(normalized_terms) - idx)
+            whole_word = f" {term} " in combined_padded
+            if code == term or name == term:
+                score += 8000 * priority
+            elif code.startswith(term):
+                score += 5200 * priority
+            elif whole_word:
+                score += 4000 * priority
+            elif term in code:
+                score += 2800 * priority
+            else:
+                score += 1800 * priority
+
+        if matched_terms == 0:
+            continue
+
+        account_type = (account.tipo or "").upper().strip()
+        if any(t in normalized_terms for t in ["gasto", "costo", "servicio", "planilla", "honorarios", "publicidad", "limpieza"]):
+            if account_type == "RESULTADO":
+                score += 700
+        if any(t in normalized_terms for t in ["inventario", "activo", "equipo", "mobiliario", "maquinaria", "vehiculo", "diferido"]):
+            if account_type == "BALANCE":
+                score += 700
+
+        # Favorece cuentas mas especificas cuando empatan terminos genericos.
+        generic_penalty = 0
+        if any(t in {"gasto", "operacion", "operativo", "cuenta", "general"} for t in normalized_terms):
+            if any(g in name for g in ["gasto operativo", "gasto general", "cuenta general"]):
+                generic_penalty = 900
+
+        key = (
+            score - generic_penalty,
+            matched_terms,
+            longest_match,
+            len(name),
+            len(code),
+            -(int(account.id) if account.id is not None else 0),
+        )
+        if best_key is None or key > best_key:
+            best_key = key
+            best_account = account
+
+    return int(best_account.id) if best_account else None
 
 
 def _find_account_by_terms_excluding(
@@ -3267,20 +3224,68 @@ def _find_account_by_terms_excluding(
     naturaleza: Optional[str] = None,
 ) -> Optional[int]:
     target_nat = (naturaleza or "").upper().strip()
-    excludes = [term.lower() for term in exclude_terms if term]
-    for term in terms:
-        term_lower = term.lower()
-        for account in active_accounts:
-            if target_nat and (account.naturaleza or "").upper() != target_nat:
+    normalized_terms = [str(term or "").strip().lower() for term in terms if str(term or "").strip()]
+    excludes = [str(term or "").strip().lower() for term in exclude_terms if str(term or "").strip()]
+    if not normalized_terms:
+        return None
+
+    best_account: Optional[CuentaContable] = None
+    best_key: Optional[tuple] = None
+    for account in active_accounts:
+        if target_nat and (account.naturaleza or "").upper() != target_nat:
+            continue
+        code = (account.codigo or "").lower()
+        name = (account.nombre or "").lower()
+        combined = f"{code} {name}"
+        if any(ex in combined for ex in excludes):
+            continue
+        combined_padded = f" {combined} "
+
+        score = 0
+        matched_terms = 0
+        longest_match = 0
+        for idx, term in enumerate(normalized_terms):
+            if term not in combined:
                 continue
-            name = (account.nombre or "").lower()
-            code = (account.codigo or "").lower()
-            combined = f"{code} {name}"
-            if any(ex in combined for ex in excludes):
-                continue
-            if term_lower in name or term_lower in code:
-                return int(account.id)
-    return None
+            matched_terms += 1
+            longest_match = max(longest_match, len(term))
+            priority = max(1, len(normalized_terms) - idx)
+            whole_word = f" {term} " in combined_padded
+            if code == term or name == term:
+                score += 8000 * priority
+            elif code.startswith(term):
+                score += 5200 * priority
+            elif whole_word:
+                score += 4000 * priority
+            elif term in code:
+                score += 2800 * priority
+            else:
+                score += 1800 * priority
+
+        if matched_terms == 0:
+            continue
+
+        account_type = (account.tipo or "").upper().strip()
+        if any(t in normalized_terms for t in ["gasto", "costo", "servicio", "planilla", "honorarios", "publicidad", "limpieza"]):
+            if account_type == "RESULTADO":
+                score += 700
+        if any(t in normalized_terms for t in ["inventario", "activo", "equipo", "mobiliario", "maquinaria", "vehiculo", "diferido"]):
+            if account_type == "BALANCE":
+                score += 700
+
+        key = (
+            score,
+            matched_terms,
+            longest_match,
+            len(name),
+            len(code),
+            -(int(account.id) if account.id is not None else 0),
+        )
+        if best_key is None or key > best_key:
+            best_key = key
+            best_account = account
+
+    return int(best_account.id) if best_account else None
 
 
 def _terms_from_csv(value: Optional[str], fallback: list[str]) -> list[str]:
@@ -3295,7 +3300,7 @@ def _get_accounting_policy(db: Session) -> dict:
     row = db.query(AccountingPolicySetting).order_by(AccountingPolicySetting.id.asc()).first()
     defaults = {
         "strict_mode": True,
-        "auto_entry_enabled": False,
+        "auto_entry_enabled": True,
         "ingreso_debe_terms": ["caja", "banco", "cliente", "cobrar"],
         "ingreso_haber_terms": ["venta", "ingreso"],
         "egreso_debe_terms": ["gasto", "costo", "compra", "inventario"],
@@ -4112,6 +4117,360 @@ def _load_accounting_subrubros(db: Session) -> list[dict]:
     return base
 
 
+def _load_subrubro_account_links(db: Session) -> dict[str, dict[str, list[int]]]:
+    grouped: dict[str, dict[str, list[int]]] = {}
+    rows = (
+        db.query(AccountingSubrubroAccountLink)
+        .filter(AccountingSubrubroAccountLink.activo.is_(True))
+        .order_by(
+            AccountingSubrubroAccountLink.subrubro_code.asc(),
+            AccountingSubrubroAccountLink.side.asc(),
+            AccountingSubrubroAccountLink.priority.asc(),
+            AccountingSubrubroAccountLink.id.asc(),
+        )
+        .all()
+    )
+    for row in rows:
+        code = (row.subrubro_code or "").strip().upper()
+        side = (row.side or "DEBE").strip().upper()
+        if not code:
+            continue
+        bucket = grouped.setdefault(
+            code,
+            {
+                "DEBE": [],
+                "HABER_CONTADO": [],
+                "HABER_CREDITO": [],
+            },
+        )
+        if side not in bucket:
+            continue
+        if row.account_id not in bucket[side]:
+            bucket[side].append(int(row.account_id))
+    return grouped
+
+
+def _pick_linked_account_id(
+    active_accounts: list[CuentaContable],
+    candidate_ids: list[int],
+    naturaleza: Optional[str] = None,
+) -> Optional[int]:
+    if not candidate_ids:
+        return None
+    target_nat = (naturaleza or "").upper().strip()
+    by_id = {int(acc.id): acc for acc in active_accounts if acc.id is not None}
+    for account_id in candidate_ids:
+        acc = by_id.get(int(account_id))
+        if not acc:
+            continue
+        if target_nat and (acc.naturaleza or "").upper() != target_nat:
+            continue
+        return int(acc.id)
+    return None
+
+
+def _pcga_subrubro_profiles() -> dict[str, set[str]]:
+    return {
+        "inventory": {"INVENTARIO", "INSUMOS_PRODUCTOS"},
+        "fixed_asset": {"ACTIVO_EQUIPO"},
+        "financial": {"GASTO_FINANCIERO", "AJUSTE_CONCILIACION_BANCARIA"},
+        "fuel": {"COMBUSTIBLE_DISTRIBUCION", "COMBUSTIBLE"},
+    }
+
+
+def _pcga_debit_account_codes_by_subrubro() -> dict[str, list[str]]:
+    return {
+        "GASTO_OPERATIVO": ["6102"],
+        "PAPELERIA": ["6203", "6202"],
+        "LIMPIEZA": ["6107", "6102"],
+        "INSUMOS_TIENDA": ["6108", "6102"],
+        "INSUMOS_PRODUCTOS": ["5103", "1104"],
+        "ACTIVO_EQUIPO": ["1205", "1201"],
+        "INVENTARIO": ["1104"],
+        "PLANILLA": ["6208"],
+        "ALQUILER": ["6204", "6202"],
+        "SERVICIOS_BASICOS": ["6109", "6102"],
+        "TRANSPORTE_FLETE": ["6104", "6406", "6102"],
+        "MANTENIMIENTO_REPARACION": ["6105", "6102"],
+        "GASTO_FINANCIERO": ["6304", "6302", "6301"],
+        "IMPUESTO_PAGO": ["2106", "6210"],
+        "PRESTAMO_CUOTA": ["2201", "2203", "2111"],
+        "ENERGIA_ELECTRICA": ["6110", "6109"],
+        "AGUA_POTABLE": ["6111", "6109"],
+        "INTERNET": ["6112", "6109"],
+        "TELEFONIA_FIJA": ["6112", "6109"],
+        "TELEFONIA_MOVIL": ["6112", "6109"],
+        "HONORARIOS_PROFESIONALES": ["6205", "6202"],
+        "ASESORIA_CONTABLE": ["6206", "6205"],
+        "ASESORIA_LEGAL": ["6206", "6205"],
+        "LICENCIA_SOFTWARE": ["6207", "1212", "1203"],
+        "SUSCRIPCION_DIGITAL": ["6207", "6202"],
+        "PUBLICIDAD_DIGITAL": ["6403", "6402"],
+        "PUBLICIDAD_IMPRESA": ["6403", "6402"],
+        "MATERIAL_PROMOCIONAL": ["6404", "6402"],
+        "COMISION_VENTAS": ["6405", "6402"],
+        "FLETES_VENTAS": ["6406", "6402"],
+        "COMBUSTIBLE_DISTRIBUCION": ["6103", "6104", "6406"],
+        "SEGURIDAD_VIGILANCIA": ["6106", "6102"],
+        "TRANSPORTE_INTERNO": ["6104", "6102"],
+        "SALARIOS": ["6208"],
+        "HORAS_EXTRAS": ["6208"],
+        "BONIFICACIONES": ["6208"],
+        "AGUINALDO": ["6209"],
+        "VACACIONES": ["6209"],
+        "INSS_PATRONAL": ["6209"],
+        "INDEMNIZACION": ["6209"],
+        "COMPRA_LAPTOP_PC": ["1205", "1201"],
+        "COMPRA_SERVIDOR": ["1205", "1201"],
+        "COMPRA_IMPRESORA": ["1205", "1201"],
+        "COMPRA_CAMARAS_SEGURIDAD": ["1205", "1201"],
+        "MOBILIARIO_OFICINA": ["1205", "1201"],
+        "COMPRA_VEHICULO": ["1204", "1201"],
+        "REMODELACION_MEJORAS": ["1213", "1201"],
+        "SOFTWARE_DESARROLLO": ["1212", "1203"],
+        "PROVISION_SALARIOS": ["6208"],
+        "PROVISION_AGUINALDO": ["6209"],
+        "PROVISION_VACACIONES": ["6209"],
+        "PROVISION_IMPUESTOS": ["6210", "6202"],
+        "PROVISION_SERVICIOS_ACUMULADOS": ["6109", "6102"],
+        "PROVISION_INCOBRABLES": ["6202", "6201"],
+        "AJUSTE_INVENTARIO": ["5102", "1104"],
+        "AJUSTE_DIFERENCIA_CAMBIARIA": ["6303", "6301"],
+        "RECLAS_GASTO": ["6202", "6102", "6402"],
+        "RECLAS_INGRESO": ["4104", "4102"],
+        "RECLAS_PASIVO_CLP_LP": ["2111", "2101"],
+        "RECLAS_ANTICIPO": ["1105", "1106"],
+        "CORRECCION_IMPUESTO": ["6210", "2106"],
+    }
+
+
+def _pcga_credit_account_codes_by_subrubro() -> dict[str, list[str]]:
+    return {
+        "PLANILLA": ["2113", "2104"],
+        "SALARIOS": ["2113", "2104"],
+        "HORAS_EXTRAS": ["2113", "2104"],
+        "BONIFICACIONES": ["2113", "2104"],
+        "AGUINALDO": ["2113", "2104"],
+        "VACACIONES": ["2113", "2104"],
+        "INSS_PATRONAL": ["2113", "2110", "2104"],
+        "INDEMNIZACION": ["2113", "2104"],
+        "PROVISION_SALARIOS": ["2113", "2104"],
+        "PROVISION_AGUINALDO": ["2113", "2104"],
+        "PROVISION_VACACIONES": ["2113", "2104"],
+        "PROVISION_IMPUESTOS": ["2106", "2110"],
+        "PROVISION_SERVICIOS_ACUMULADOS": ["2112", "2109"],
+        "HONORARIOS_PROFESIONALES": ["2114", "2112"],
+        "ASESORIA_CONTABLE": ["2114", "2112"],
+        "ASESORIA_LEGAL": ["2114", "2112"],
+        "COMISION_VENTAS": ["2115", "2109"],
+        "IMPUESTO_PAGO": ["2106", "2110"],
+        "PRESTAMO_CUOTA": ["2201", "2203"],
+        "SERVICIOS_BASICOS": ["2112", "2109"],
+        "ENERGIA_ELECTRICA": ["2112", "2109"],
+        "AGUA_POTABLE": ["2112", "2109"],
+        "INTERNET": ["2112", "2109"],
+        "TELEFONIA_FIJA": ["2112", "2109"],
+        "TELEFONIA_MOVIL": ["2112", "2109"],
+    }
+
+
+def _bootstrap_pcga_subrubro_links(
+    db: Session,
+    actor_email: str,
+    overwrite: bool = False,
+) -> dict[str, int]:
+    subrubros = _load_accounting_subrubros(db)
+    active_accounts = (
+        db.query(CuentaContable)
+        .filter(CuentaContable.activo.is_(True))
+        .order_by(CuentaContable.codigo.asc())
+        .all()
+    )
+    profile = _pcga_subrubro_profiles()
+
+    rows = (
+        db.query(AccountingSubrubroAccountLink)
+        .filter(AccountingSubrubroAccountLink.activo.is_(True))
+        .order_by(
+            AccountingSubrubroAccountLink.subrubro_code.asc(),
+            AccountingSubrubroAccountLink.side.asc(),
+            AccountingSubrubroAccountLink.priority.asc(),
+            AccountingSubrubroAccountLink.id.asc(),
+        )
+        .all()
+    )
+    existing_by_side: dict[tuple[str, str], list[AccountingSubrubroAccountLink]] = {}
+    for row in rows:
+        key = ((row.subrubro_code or "").strip().upper(), (row.side or "").strip().upper())
+        existing_by_side.setdefault(key, []).append(row)
+
+    created = 0
+    updated = 0
+    skipped = 0
+
+    def _pick(terms: list[str], excludes: list[str], naturaleza: str) -> Optional[int]:
+        return (
+            _find_account_by_terms_excluding(active_accounts, terms, excludes, naturaleza)
+            or _find_account_by_terms_excluding(active_accounts, terms, excludes)
+            or _find_account_by_terms(active_accounts, terms, naturaleza)
+            or _find_account_by_terms(active_accounts, terms)
+        )
+
+    by_code = {str(acc.codigo or "").strip(): acc for acc in active_accounts}
+
+    def _pick_code(codes: list[str], naturaleza: Optional[str] = None) -> Optional[int]:
+        target_nat = (naturaleza or "").upper().strip()
+        for code in codes:
+            acc = by_code.get(str(code))
+            if not acc:
+                continue
+            if target_nat and (acc.naturaleza or "").upper().strip() != target_nat:
+                continue
+            return int(acc.id)
+        return None
+
+    pcga_debit_account_by_subrubro = _pcga_debit_account_codes_by_subrubro()
+    pcga_credit_account_by_subrubro = _pcga_credit_account_codes_by_subrubro()
+
+    for sub in subrubros:
+        code = str(sub.get("code") or "").strip().upper()
+        if not code:
+            continue
+        intent = str(sub.get("intent_code") or "EGRESO").strip().upper() or "EGRESO"
+        debit_terms = [str(t).strip().lower() for t in (sub.get("debit_terms") or []) if str(t).strip()]
+        credit_terms = [str(t).strip().lower() for t in (sub.get("credit_terms") or []) if str(t).strip()]
+        cash_terms = [str(t).strip().lower() for t in (sub.get("credit_cash_terms") or []) if str(t).strip()]
+        credit_purchase_terms = [str(t).strip().lower() for t in (sub.get("credit_credit_terms") or []) if str(t).strip()]
+
+        if intent == "INGRESO":
+            debe_terms = debit_terms or ["caja", "banco", "cliente", "cobrar", "cxc"]
+            haber_terms = credit_terms or ["venta", "ingreso"]
+            debe_excludes = ["proveedor", "pagar", "cxp", "gasto financiero", "comision bancaria"]
+            haber_excludes = ["caja", "banco", "efectivo", "proveedor", "pagar", "cxp", "gasto"]
+            picks = {
+                "DEBE": _pick(debe_terms, debe_excludes, "DEBE") or _pick_code(["1101", "1102", "1107", "1103"], "DEBE"),
+                "HABER_CONTADO": _pick(haber_terms, haber_excludes, "HABER") or _pick_code(["4103", "4105", "4101"], "HABER"),
+                "HABER_CREDITO": _pick(haber_terms, haber_excludes, "HABER") or _pick_code(["4103", "4105", "4101"], "HABER"),
+            }
+        elif intent == "EGRESO":
+            explicit_debit_fallback = _pick_code(pcga_debit_account_by_subrubro.get(code, []))
+            explicit_credit_fallback = _pick_code(pcga_credit_account_by_subrubro.get(code, []), "HABER")
+            if code in profile["inventory"]:
+                debe_terms = ["inventario", "mercaderia", "materia prima", "insumo", "stock", "compra"]
+                debe_excludes = ["gasto financiero", "comision bancaria", "comision", "comisiones", "caja", "banco", "cliente", "cxc"]
+                debit_fallback = _pick_code(["1104"], "DEBE")
+            elif code in profile["fixed_asset"]:
+                debe_terms = ["activo fijo", "propiedad", "equipo", "mobiliario", "maquinaria", "vehiculo", "software", "licencia"]
+                debe_excludes = ["gasto", "costo", "diferido", "inventario", "comision", "comisiones", "caja", "banco", "cliente", "cxc"]
+                debit_fallback = _pick_code(["1205", "1201", "1203"], "DEBE")
+            elif code in profile["financial"]:
+                debe_terms = ["gasto financiero", "interes", "interés", "comision bancaria", "comision", "comisiones"]
+                debe_excludes = ["ventas", "ingreso", "cxc", "cliente", "inventario", "activo fijo"]
+                debit_fallback = _pick_code(["6304", "6302", "6301"], "DEBE")
+            elif code in profile["fuel"]:
+                debe_terms = ["combustible", "transporte", "distribucion", "flete", "movilidad", "gasto transporte"]
+                debe_excludes = [
+                    "comision",
+                    "comisiones",
+                    "comision bancaria",
+                    "gasto financiero",
+                    "interes",
+                    "interés",
+                    "venta",
+                    "ingreso",
+                    "cliente",
+                    "cxc",
+                    "cobrar",
+                    "caja",
+                    "banco",
+                    "inventario",
+                    "activo fijo",
+                ]
+                debit_fallback = _pick_code(["6102", "6101", "6402", "6201"], "DEBE")
+            else:
+                debe_terms = debit_terms or ["gasto", "costo", "servicio", "suministro", "insumo", "operativo"]
+                debe_excludes = [
+                    "ingreso",
+                    "venta",
+                    "cliente",
+                    "cxc",
+                    "cobrar",
+                    "comision",
+                    "comisiones",
+                    "comision bancaria",
+                    "gasto financiero",
+                    "interes",
+                    "interés",
+                ]
+                debit_fallback = _pick_code(["6102", "6101", "6202", "6201", "6402", "6901"], "DEBE")
+
+            contado_terms = cash_terms or ["caja", "banco", "efectivo", "transferencia", "cheque", "tarjeta"]
+            credito_terms = credit_purchase_terms or ["proveedor", "pagar", "cxp", "obligacion"]
+            picks = {
+                "DEBE": explicit_debit_fallback or _pick(debe_terms, debe_excludes, "DEBE") or debit_fallback,
+                "HABER_CONTADO": (
+                    _find_account_by_terms_excluding(
+                        active_accounts,
+                        contado_terms,
+                        ["proveedor", "pagar", "cxp", "ingreso", "venta"],
+                        "DEBE",
+                    )
+                    or _pick_code(["1101", "1102"], "DEBE")
+                ),
+                "HABER_CREDITO": explicit_credit_fallback
+                or _pick(credito_terms, ["ingreso", "venta", "cliente", "cxc", "cobrar"], "HABER")
+                or _pick_code(["2107", "2102", "2111", "2101"], "HABER"),
+            }
+        else:
+            debe_terms = debit_terms or ["ajuste", "provision", "regularizacion", "gasto"]
+            haber_terms = credit_terms or ["ajuste", "provision", "acumulado", "pagar"]
+            explicit_debit_fallback = _pick_code(pcga_debit_account_by_subrubro.get(code, []))
+            explicit_credit_fallback = _pick_code(pcga_credit_account_by_subrubro.get(code, []), "HABER")
+            picks = {
+                "DEBE": explicit_debit_fallback or _pick(debe_terms, ["ingreso", "venta", "cliente", "cxc"], "DEBE") or _pick_code(["6201", "6101", "1101"], "DEBE"),
+                "HABER_CONTADO": explicit_credit_fallback or _pick(haber_terms, ["caja", "banco", "efectivo"], "HABER") or _pick_code(["2109", "2101", "3204"], "HABER"),
+                "HABER_CREDITO": explicit_credit_fallback or _pick(haber_terms, ["caja", "banco", "efectivo"], "HABER") or _pick_code(["2109", "2101", "3204"], "HABER"),
+            }
+
+        for side, account_id in picks.items():
+            if not account_id:
+                skipped += 1
+                continue
+            key = (code, side)
+            existing_rows = existing_by_side.get(key) or []
+            if existing_rows and not overwrite:
+                skipped += 1
+                continue
+            if existing_rows and overwrite:
+                primary = existing_rows[0]
+                if int(primary.account_id or 0) != int(account_id):
+                    primary.account_id = int(account_id)
+                    primary.updated_by = actor_email
+                    primary.priority = int(primary.priority or 100)
+                    primary.notes = "PCGA auto-map"
+                    updated += 1
+                for extra in existing_rows[1:]:
+                    extra.activo = False
+                    extra.updated_by = actor_email
+                continue
+
+            new_row = AccountingSubrubroAccountLink(
+                subrubro_code=code,
+                account_id=int(account_id),
+                side=side,
+                priority=100 if side == "DEBE" else (110 if side == "HABER_CONTADO" else 120),
+                notes="PCGA auto-map",
+                activo=True,
+                updated_by=actor_email,
+            )
+            db.add(new_row)
+            existing_by_side.setdefault(key, []).append(new_row)
+            created += 1
+
+    db.commit()
+    return {"created": created, "updated": updated, "skipped": skipped}
+
+
 def _parse_accounting_report_dates(
     month_value: str,
     start_value: str,
@@ -4369,8 +4728,8 @@ def _build_accounting_reports_payload(
             activos_rows.append(row)
             total_activo += amount
         else:
-            name_key = f"{(acc.codigo or '').lower()} {(acc.nombre or '').lower()}"
-            if any(k in name_key for k in ["capital", "patrimonio", "reserva", "utilidad", "perdida", "pérdida"]):
+            name_key = _ascii_lower(f"{acc.codigo or ''} {acc.nombre or ''}")
+            if any(k in name_key for k in ["capital", "patrimonio", "reserva", "utilidad", "perdida"]):
                 patrimonio_rows.append(row)
                 total_patrimonio += amount
             else:
@@ -4489,7 +4848,7 @@ def _smart_entry_terms(
     subrubro_code: str = "",
     subrubros_catalog: Optional[list[dict]] = None,
 ) -> dict:
-    text = (description or "").strip().lower()
+    text = _ascii_lower(description)
     code = (voucher_type.code or "").upper().strip()
     ingreso_debe = list(policy.get("ingreso_debe_terms") or ["caja", "banco", "cliente", "cobrar"])
     ingreso_haber = list(policy.get("ingreso_haber_terms") or ["venta", "ingreso"])
@@ -4530,10 +4889,10 @@ def _smart_entry_terms(
             "cheque",
             "tarjeta",
             "debito",
-            "débito",
+            "debito",
         ]
     )
-    credit_purchase = any(k in text for k in ["credito", "crédito", "cxp", "por pagar", "a plazo", "proveedor"])
+    credit_purchase = any(k in text for k in ["credito", "cxp", "por pagar", "a plazo", "proveedor"])
     fixed_asset_intent = any(
         k in text
         for k in [
@@ -4546,7 +4905,7 @@ def _smart_entry_terms(
             "silla",
             "estante",
             "vehiculo",
-            "vehículo",
+            "vehiculo",
             "maquinaria",
             "activo fijo",
             "propiedad",
@@ -4556,21 +4915,21 @@ def _smart_entry_terms(
         k in text
         for k in [
             "papeleria",
-            "papelería",
+            "papeleria",
             "utiles",
-            "útiles",
+            "utiles",
             "oficina",
             "fotocopia",
             "fotocopias",
             "toner",
-            "tóner",
+            "toner",
             "tinta",
             "resma",
             "cartulina",
             "lapiz",
-            "lápiz",
+            "lapiz",
             "boligrafo",
-            "bolígrafo",
+            "boligrafo",
             "folder",
             "cuaderno",
         ]
@@ -4586,9 +4945,34 @@ def _smart_entry_terms(
             "cloro",
             "desinfectante",
             "jabon",
-            "jabón",
+            "jabon",
             "bolsa de basura",
             "guantes",
+        ]
+    )
+    fuel_intent = any(
+        k in text
+        for k in [
+            "combus",
+            "combusti",
+            "combust",
+            "combustible",
+            "gasolina",
+            "diesel",
+            "carburante",
+        ]
+    )
+    deferred_expense_intent = any(
+        k in text
+        for k in [
+            "prepag",
+            "anticipad",
+            "adelantad",
+            "seguro anual",
+            "poliza anual",
+            "suscripcion anual",
+            "arrendamiento anticipado",
+            "membresia anual",
         ]
     )
     inferred_code = "EGRESO" if expense_intent and not income_intent else "INGRESO" if income_intent and not expense_intent else code
@@ -4597,15 +4981,41 @@ def _smart_entry_terms(
         (item for item in subrubros if item["code"] == (subrubro_code or "").strip().upper()),
         None,
     )
+    if selected_subrubro:
+        selected_code = str(selected_subrubro.get("code") or "").upper()
+        selected_debit_terms = " ".join(str(t).lower() for t in (selected_subrubro.get("debit_terms") or []))
+        if "COMBUST" in selected_code or "combust" in selected_debit_terms:
+            fuel_intent = True
 
     # Si el usuario selecciona subrubro, manda esa intencion como prioridad.
     if selected_subrubro:
         sub_intent = (selected_subrubro.get("intent_code") or "").upper().strip()
         if sub_intent:
             inferred_code = sub_intent
-        debit_terms = list(selected_subrubro.get("debit_terms") or [])
-        explicit_credit_terms = list(selected_subrubro.get("credit_terms") or [])
-        if explicit_credit_terms:
+        raw_debit_terms = list(selected_subrubro.get("debit_terms") or [])
+        raw_credit_terms = list(selected_subrubro.get("credit_terms") or [])
+        if inferred_code == "EGRESO":
+            debit_terms = [
+                t for t in raw_debit_terms
+                if not any(
+                    bad in str(t).lower()
+                    for bad in ["ingreso", "venta", "cobrar", "cliente", "cxc", "cuentas por cobrar"]
+                )
+            ]
+            if not debit_terms:
+                debit_terms = ["gasto", "costo", "suministro", "servicio", "insumo"]
+            explicit_credit_terms = [
+                t for t in raw_credit_terms
+                if not any(
+                    bad in str(t).lower()
+                    for bad in ["ingreso", "venta", "cobrar", "cliente", "cxc", "cuentas por cobrar"]
+                )
+            ]
+        else:
+            debit_terms = raw_debit_terms
+            explicit_credit_terms = raw_credit_terms
+
+        if explicit_credit_terms and not (inferred_code == "EGRESO" and any("venta" in str(t).lower() or "ingreso" in str(t).lower() for t in explicit_credit_terms)):
             credit_terms = explicit_credit_terms
         elif inferred_code == "INGRESO":
             credit_terms = ["venta", "ingreso"]
@@ -4629,9 +5039,12 @@ def _smart_entry_terms(
             "concept": concept,
             "intent_code": inferred_code,
             "immediate_payment": immediate_payment,
+            "credit_purchase": credit_purchase,
             "fixed_asset_intent": selected_subrubro.get("code") == "ACTIVO_EQUIPO",
             "office_supply_intent": selected_subrubro.get("code") == "PAPELERIA",
             "cleaning_supply_intent": selected_subrubro.get("code") == "LIMPIEZA",
+            "fuel_intent": fuel_intent,
+            "deferred_expense_intent": deferred_expense_intent,
             "subrubro_code": (selected_subrubro.get("code") or ""),
         }
 
@@ -4644,14 +5057,14 @@ def _smart_entry_terms(
             concept = concept or "Ingreso de contado"
         credit_terms = [*ingreso_haber, "venta", "ingreso"]
     elif inferred_code == "EGRESO":
-        is_inventory_purchase = any(k in text for k in ["inventario", "mercaderia", "mercadería", "reventa", "stock"])
+        is_inventory_purchase = any(k in text for k in ["inventario", "mercaderia", "reventa", "stock"])
         if immediate_payment:
             payment_terms = ["caja", "banco", "efectivo", "transferencia", "cheque", "tarjeta"]
         elif credit_purchase:
             payment_terms = ["proveedor", "pagar", "cxp"]
         else:
             payment_terms = ["caja", "banco", "efectivo", *egreso_haber_clean]
-        if any(k in text for k in ["compra", "mercaderia", "mercadería", "proveedor"]) and is_inventory_purchase:
+        if any(k in text for k in ["compra", "mercaderia", "proveedor"]) and is_inventory_purchase:
             debit_terms = ["inventario", "compra", *egreso_debe]
             credit_terms = payment_terms
             concept = concept or "Compra / egreso de inventario"
@@ -4670,30 +5083,44 @@ def _smart_entry_terms(
         elif office_supply_intent:
             debit_terms = [
                 "papeleria",
-                "útiles",
+                "utiles",
                 "utiles",
                 "suministros",
                 "material oficina",
                 "gasto oficina",
                 "insumo",
                 "consumibles",
-                *egreso_debe,
             ]
             credit_terms = payment_terms
             concept = concept or "Compra de papeleria y utiles de oficina"
         elif cleaning_supply_intent:
+            if deferred_expense_intent:
+                debit_terms = [
+                    "gasto pagado por anticipado",
+                    "activo diferido",
+                    "diferido",
+                ]
+                concept = concept or "Registro de gasto prepagado de limpieza"
+            else:
+                debit_terms = [
+                    "gasto limpieza",
+                    "limpieza",
+                    "aseo",
+                    "suministros",
+                    "insumo",
+                    "gasto operativo",
+                ]
+                concept = concept or "Compra de insumos de limpieza"
+            credit_terms = payment_terms
+        elif fuel_intent:
             debit_terms = [
+                "combustible",
+                "transporte",
+                "distribucion",
                 "gasto operativo",
-                "suministros",
-                "servicios exteriores",
-                "materiales de oficina",
-                "limpieza",
-                "aseo",
-                "insumo",
-                *egreso_debe,
             ]
             credit_terms = payment_terms
-            concept = concept or "Compra de insumos de limpieza"
+            concept = concept or "Gasto de combustibles"
         elif "insumo" in text:
             debit_terms = [
                 "insumos",
@@ -4705,7 +5132,7 @@ def _smart_entry_terms(
             ]
             credit_terms = payment_terms
             concept = concept or "Compra de insumos operativos"
-        elif any(k in text for k in ["compra", "insumo", "pintura", "mantenimiento", "reparacion", "reparación"]):
+        elif any(k in text for k in ["compra", "insumo", "pintura", "mantenimiento", "reparacion"]):
             debit_terms = ["gasto", "mantenimiento", "operacion", "compra", "insumo", *egreso_debe]
             credit_terms = payment_terms
             concept = concept or "Compra/gasto operativo"
@@ -4737,9 +5164,12 @@ def _smart_entry_terms(
         "concept": concept,
         "intent_code": inferred_code,
         "immediate_payment": immediate_payment,
+        "credit_purchase": credit_purchase,
         "fixed_asset_intent": fixed_asset_intent,
         "office_supply_intent": office_supply_intent,
         "cleaning_supply_intent": cleaning_supply_intent,
+        "fuel_intent": fuel_intent,
+        "deferred_expense_intent": deferred_expense_intent,
         "subrubro_code": (selected_subrubro.get("code") if selected_subrubro else ""),
     }
 
@@ -4820,6 +5250,38 @@ def _find_voucher_type_for_code(db: Session, code: str) -> Optional[AccountingVo
     )
 
 
+def _find_account_by_codes(
+    active_accounts: list[CuentaContable],
+    codes: list[str],
+    naturaleza: Optional[str] = None,
+) -> Optional[int]:
+    target_nat = (naturaleza or "").upper().strip()
+    normalized_codes = [str(code or "").strip() for code in codes if str(code or "").strip()]
+    for expected_code in normalized_codes:
+        for account in active_accounts:
+            if target_nat and (account.naturaleza or "").upper() != target_nat:
+                continue
+            if (account.codigo or "").strip() == expected_code:
+                return int(account.id)
+    return None
+
+
+def _auto_accounting_entry_exists(db: Session, reference: str) -> bool:
+    ref = (reference or "").strip()[:160]
+    if not ref:
+        return False
+    return (
+        db.query(AccountingEntry.id)
+        .filter(
+            AccountingEntry.referencia == ref,
+            AccountingEntry.creado_por == "auto-system",
+            AccountingEntry.estado != "ANULADO",
+        )
+        .first()
+        is not None
+    )
+
+
 def _build_auto_accounting_entry(
     db: Session,
     *,
@@ -4835,8 +5297,13 @@ def _build_auto_accounting_entry(
         return None
     if amount <= 0:
         return None
+    if _auto_accounting_entry_exists(db, reference):
+        return None
 
-    voucher_type = _find_voucher_type_for_code(db, "INGRESO" if event_code == "SALE" else "EGRESO")
+    voucher_code = "INGRESO" if event_code == "SALE" else "EGRESO"
+    if event_code in {"SALE_COST", "PAYROLL"}:
+        voucher_code = "DIARIO"
+    voucher_type = _find_voucher_type_for_code(db, voucher_code)
     if not voucher_type:
         return None
 
@@ -4851,14 +5318,18 @@ def _build_auto_accounting_entry(
     credit_id = int(template["credit_account_id"]) if template.get("credit_account_id") else None
 
     if event_code == "INV_IN":
-        debit_id = _find_account_by_terms(active_accounts, ["inventario"], "DEBE") or debit_id
+        debit_id = _find_account_by_codes(active_accounts, ["1104"]) or _find_account_by_terms(active_accounts, ["inventario"], "DEBE") or debit_id
         credit_id = (
-            _find_account_by_terms(active_accounts, ["proveedor", "pagar", "caja", "banco"], "HABER")
+            _find_account_by_codes(active_accounts, ["2102", "2101", "1101", "1102"])
+            or _find_account_by_terms(active_accounts, ["proveedor", "pagar", "caja", "banco"], "HABER")
             or credit_id
         )
     elif event_code == "INV_OUT":
-        debit_id = _find_account_by_terms(active_accounts, ["costo", "gasto", "merma"], "DEBE") or debit_id
-        credit_id = _find_account_by_terms(active_accounts, ["inventario"], "HABER") or credit_id
+        debit_id = _find_account_by_codes(active_accounts, ["5102", "5101", "5103"]) or _find_account_by_terms(active_accounts, ["costo", "gasto", "merma"], "DEBE") or debit_id
+        credit_id = _find_account_by_codes(active_accounts, ["1104"]) or _find_account_by_terms(active_accounts, ["inventario"], "DEBE") or credit_id
+    elif event_code == "PAYROLL":
+        debit_id = _find_account_by_codes(active_accounts, ["6208", "6209"]) or _find_account_by_terms(active_accounts, ["salario", "planilla", "nomina"], "DEBE") or debit_id
+        credit_id = _find_account_by_codes(active_accounts, ["2113", "1101", "1102"]) or _find_account_by_terms(active_accounts, ["nomina", "pagar", "caja", "banco"], "HABER") or credit_id
 
     if not debit_id or not credit_id or debit_id == credit_id:
         return None
@@ -4900,6 +5371,155 @@ def _build_auto_accounting_entry(
         ],
     )
     return entry
+
+
+def _build_sale_accounting_entries(
+    db: Session,
+    *,
+    factura: VentaFactura,
+    branch_id: Optional[int],
+    entry_date: date,
+    sale_amount_cs: Decimal,
+    cost_amount_cs: Decimal,
+    payments: Optional[list[VentaPago]] = None,
+) -> list[AccountingEntry]:
+    policy = _get_accounting_policy(db)
+    if not policy.get("auto_entry_enabled", False):
+        return []
+
+    sale_total = Decimal(str(sale_amount_cs or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    cost_total = Decimal(str(cost_amount_cs or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if sale_total <= 0:
+        return []
+
+    active_accounts = (
+        db.query(CuentaContable)
+        .filter(CuentaContable.activo.is_(True))
+        .order_by(CuentaContable.codigo)
+        .all()
+    )
+    revenue_id = (
+        _find_account_by_codes(active_accounts, ["4105", "4103", "4101"])
+        or _find_account_by_terms(active_accounts, ["venta", "ingreso"], "HABER")
+    )
+    cash_id = _find_account_by_codes(active_accounts, ["1101"]) or _find_account_by_terms(active_accounts, ["caja"], "DEBE")
+    bank_id = _find_account_by_codes(active_accounts, ["1102"]) or _find_account_by_terms(active_accounts, ["banco"], "DEBE")
+    receivable_id = _find_account_by_codes(active_accounts, ["1103", "1107"]) or _find_account_by_terms(active_accounts, ["cliente", "cobrar"], "DEBE")
+    inventory_id = _find_account_by_codes(active_accounts, ["1104"]) or _find_account_by_terms(active_accounts, ["inventario"], "DEBE")
+    cogs_id = _find_account_by_codes(active_accounts, ["5102", "5101", "5103"]) or _find_account_by_terms(active_accounts, ["costo venta", "costo mercaderia", "costo"], "DEBE")
+
+    entries: list[AccountingEntry] = []
+    if revenue_id:
+        ref = f"AUTO-VTA-{factura.id}"
+        if not _auto_accounting_entry_exists(db, ref):
+            voucher_type = _find_voucher_type_for_code(db, "INGRESO")
+            debit_lines: list[tuple[int, Decimal, str]] = []
+            if (factura.condicion_venta or "").upper() == "CREDITO":
+                if receivable_id:
+                    debit_lines.append((receivable_id, sale_total, "Cliente por cobrar"))
+            else:
+                grouped = {"cash": Decimal("0.00"), "bank": Decimal("0.00")}
+                for pago in payments or []:
+                    pago_amount = Decimal(str(pago.monto_cs or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    if pago_amount <= 0:
+                        continue
+                    key = "bank" if getattr(pago, "banco_id", None) or getattr(pago, "cuenta_id", None) else "cash"
+                    grouped[key] += pago_amount
+                if not any(grouped.values()):
+                    grouped["cash"] = sale_total
+                running = Decimal("0.00")
+                if grouped["cash"] > 0 and cash_id:
+                    amount = min(grouped["cash"], sale_total)
+                    debit_lines.append((cash_id, amount, "Cobro de venta"))
+                    running += amount
+                if grouped["bank"] > 0 and bank_id:
+                    remaining = sale_total - running
+                    amount = min(grouped["bank"], remaining) if remaining > 0 else Decimal("0.00")
+                    if amount > 0:
+                        debit_lines.append((bank_id, amount, "Cobro bancario de venta"))
+                        running += amount
+                diff = sale_total - running
+                if diff != 0 and debit_lines:
+                    last_account_id, last_amount, last_desc = debit_lines[-1]
+                    debit_lines[-1] = (last_account_id, (last_amount + diff).quantize(Decimal("0.01")), last_desc)
+                elif diff > 0 and cash_id:
+                    debit_lines.append((cash_id, diff.quantize(Decimal("0.01")), "Cobro de venta"))
+            if voucher_type and debit_lines and sum((row[1] for row in debit_lines), Decimal("0.00")) == sale_total:
+                period = _accounting_period(entry_date)
+                seq = _next_accounting_sequence(db, voucher_type.id, branch_id, period)
+                number = _build_accounting_entry_number(voucher_type, period, seq)
+                lines = [
+                    AccountingEntryLine(cuenta_id=account_id, descripcion=desc, debe=amount, haber=Decimal("0.00"))
+                    for account_id, amount, desc in debit_lines
+                    if amount > 0
+                ]
+                lines.append(
+                    AccountingEntryLine(
+                        cuenta_id=revenue_id,
+                        descripcion=f"Venta facturada {factura.numero}",
+                        debe=Decimal("0.00"),
+                        haber=sale_total,
+                    )
+                )
+                entries.append(
+                    AccountingEntry(
+                        tipo_id=voucher_type.id,
+                        branch_id=branch_id,
+                        fecha=entry_date,
+                        periodo=period,
+                        secuencia=seq,
+                        numero=number,
+                        referencia=ref,
+                        descripcion=f"Asiento automatico por venta {factura.numero}"[:400],
+                        moneda="CS",
+                        estado="POSTEADO",
+                        total_debe=sale_total,
+                        total_haber=sale_total,
+                        creado_por="auto-system",
+                        lines=lines,
+                    )
+                )
+
+    if cost_total > 0 and cogs_id and inventory_id:
+        ref = f"AUTO-COSTO-VTA-{factura.id}"
+        if not _auto_accounting_entry_exists(db, ref):
+            voucher_type = _find_voucher_type_for_code(db, "DIARIO")
+            if voucher_type:
+                period = _accounting_period(entry_date)
+                seq = _next_accounting_sequence(db, voucher_type.id, branch_id, period)
+                number = _build_accounting_entry_number(voucher_type, period, seq)
+                entries.append(
+                    AccountingEntry(
+                        tipo_id=voucher_type.id,
+                        branch_id=branch_id,
+                        fecha=entry_date,
+                        periodo=period,
+                        secuencia=seq,
+                        numero=number,
+                        referencia=ref,
+                        descripcion=f"Costo automatico de venta {factura.numero}"[:400],
+                        moneda="CS",
+                        estado="POSTEADO",
+                        total_debe=cost_total,
+                        total_haber=cost_total,
+                        creado_por="auto-system",
+                        lines=[
+                            AccountingEntryLine(
+                                cuenta_id=cogs_id,
+                                descripcion=f"Costo de mercaderia vendida {factura.numero}",
+                                debe=cost_total,
+                                haber=Decimal("0.00"),
+                            ),
+                            AccountingEntryLine(
+                                cuenta_id=inventory_id,
+                                descripcion=f"Salida contable de inventario {factura.numero}",
+                                debe=Decimal("0.00"),
+                                haber=cost_total,
+                            ),
+                        ],
+                    )
+                )
+    return entries
 
 
 @router.get("/accounting")
@@ -5147,8 +5767,8 @@ def accounting_reports(
             activos_rows.append(row)
             total_activo += amount
         else:
-            name_key = f"{(acc.codigo or '').lower()} {(acc.nombre or '').lower()}"
-            if any(k in name_key for k in ["capital", "patrimonio", "reserva", "utilidad", "perdida", "pérdida"]):
+            name_key = _ascii_lower(f"{acc.codigo or ''} {acc.nombre or ''}")
+            if any(k in name_key for k in ["capital", "patrimonio", "reserva", "utilidad", "perdida"]):
                 patrimonio_rows.append(row)
                 total_patrimonio += amount
             else:
@@ -5789,30 +6409,77 @@ def accounting_entries_page(
 ):
     _enforce_permission(request, user, "access.accounting.entries")
     branch_ids = _user_scoped_branch_ids(db, user)
-    entries_query = (
+    base_entries_query = (
         db.query(AccountingEntry)
         .outerjoin(Branch, Branch.id == AccountingEntry.branch_id)
         .filter(or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)))
     )
+    entries_query = base_entries_query
     start = request.query_params.get("start")
     end = request.query_params.get("end")
+    factura_q = (request.query_params.get("factura") or "").strip()
+    rubro_q = (request.query_params.get("rubro") or "").strip()
+    start_filter_value = start or ""
+    end_filter_value = end or ""
     if start:
         try:
             start_date = datetime.strptime(start, "%Y-%m-%d").date()
             entries_query = entries_query.filter(AccountingEntry.fecha >= start_date)
         except ValueError:
             pass
+    else:
+        start_date = local_today() - timedelta(days=7)
+        start_filter_value = start_date.isoformat()
+        entries_query = entries_query.filter(AccountingEntry.fecha >= start_date)
     if end:
         try:
             end_date = datetime.strptime(end, "%Y-%m-%d").date()
             entries_query = entries_query.filter(AccountingEntry.fecha <= end_date)
         except ValueError:
             pass
+    else:
+        end_date = local_today()
+        end_filter_value = end_date.isoformat()
+        entries_query = entries_query.filter(AccountingEntry.fecha <= end_date)
+    if factura_q:
+        factura_like = f"%{factura_q.lower()}%"
+        entries_query = entries_query.filter(
+            or_(
+                func.lower(AccountingEntry.numero).like(factura_like),
+                func.lower(func.coalesce(AccountingEntry.referencia, "")).like(factura_like),
+                func.lower(func.coalesce(AccountingEntry.descripcion, "")).like(factura_like),
+            )
+        )
+    if rubro_q:
+        rubro_like = f"%{rubro_q.lower()}%"
+        entries_query = entries_query.filter(
+            or_(
+                func.lower(func.coalesce(AccountingEntry.descripcion, "")).like(rubro_like),
+                AccountingEntry.id.in_(
+                    db.query(AccountingEntryLine.entry_id).filter(
+                        func.lower(func.coalesce(AccountingEntryLine.descripcion, "")).like(rubro_like)
+                    )
+                ),
+            )
+        )
     entries = (
         entries_query.order_by(AccountingEntry.fecha.desc(), AccountingEntry.id.desc())
         .limit(120)
         .all()
     )
+    edit_entry_id_raw = request.query_params.get("edit_entry_id")
+    edit_entry = None
+    if edit_entry_id_raw:
+        try:
+            edit_entry = (
+                base_entries_query.filter(
+                    AccountingEntry.id == int(edit_entry_id_raw),
+                    AccountingEntry.estado == "BORRADOR",
+                )
+                .first()
+            )
+        except ValueError:
+            edit_entry = None
     voucher_types = (
         db.query(AccountingVoucherType)
         .filter(AccountingVoucherType.activo.is_(True))
@@ -5820,12 +6487,31 @@ def accounting_entries_page(
         .all()
     )
     policy = _get_accounting_policy(db)
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    accounting_system_rate = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
     subrubros = _load_accounting_subrubros(db)
+    _bootstrap_pcga_subrubro_links(db, actor_email=user.email, overwrite=False)
     custom_subrubros = (
         db.query(AccountingSubrubroRule)
         .order_by(AccountingSubrubroRule.sort_order.asc(), AccountingSubrubroRule.label.asc())
         .all()
     )
+    subrubro_account_links = (
+        db.query(AccountingSubrubroAccountLink)
+        .order_by(
+            AccountingSubrubroAccountLink.subrubro_code.asc(),
+            AccountingSubrubroAccountLink.side.asc(),
+            AccountingSubrubroAccountLink.priority.asc(),
+            AccountingSubrubroAccountLink.id.asc(),
+        )
+        .all()
+    )
+    subrubro_by_code = {str(item.get("code") or "").strip().upper(): item for item in subrubros}
     subrubro_edit_id_raw = request.query_params.get("subrubro_edit_id")
     subrubro_edit_item = None
     if subrubro_edit_id_raw:
@@ -5837,12 +6523,69 @@ def accounting_entries_page(
             )
         except ValueError:
             subrubro_edit_item = None
+    subrubro_link_edit_id_raw = request.query_params.get("subrubro_link_edit_id")
+    subrubro_link_edit_item = None
+    if subrubro_link_edit_id_raw:
+        try:
+            subrubro_link_edit_item = (
+                db.query(AccountingSubrubroAccountLink)
+                .filter(AccountingSubrubroAccountLink.id == int(subrubro_link_edit_id_raw))
+                .first()
+            )
+        except ValueError:
+            subrubro_link_edit_item = None
     cuentas = (
         db.query(CuentaContable)
         .filter(CuentaContable.activo.is_(True))
         .order_by(CuentaContable.codigo)
         .all()
     )
+    account_by_id = {int(c.id): c for c in cuentas if c.id is not None}
+    link_rows_by_subrubro: dict[str, list[AccountingSubrubroAccountLink]] = {}
+    for link in subrubro_account_links:
+        code = str(link.subrubro_code or "").strip().upper()
+        if not code:
+            continue
+        link_rows_by_subrubro.setdefault(code, []).append(link)
+    subrubro_assignment_rows = []
+    for code, item in sorted(
+        subrubro_by_code.items(),
+        key=lambda row: (
+            str(row[1].get("intent_code") or ""),
+            str(row[1].get("label") or row[0]),
+        ),
+    ):
+        rows = link_rows_by_subrubro.get(code) or []
+        if rows:
+            for link in rows:
+                account = account_by_id.get(int(link.account_id or 0))
+                subrubro_assignment_rows.append(
+                    {
+                        "link": link,
+                        "subrubro_code": code,
+                        "subrubro_label": item.get("label") or code,
+                        "intent_code": item.get("intent_code") or "",
+                        "account": account,
+                        "side": link.side or "",
+                        "priority": int(link.priority or 0),
+                        "activo": bool(link.activo),
+                        "notes": link.notes or "",
+                    }
+                )
+        else:
+            subrubro_assignment_rows.append(
+                {
+                    "link": None,
+                    "subrubro_code": code,
+                    "subrubro_label": item.get("label") or code,
+                    "intent_code": item.get("intent_code") or "",
+                    "account": None,
+                    "side": "",
+                    "priority": 0,
+                    "activo": False,
+                    "notes": "",
+                }
+            )
     counter_suggestions: dict[int, int] = {}
     for account in cuentas:
         suggested = _suggest_counter_account_id(db, account, cuentas)
@@ -5863,6 +6606,20 @@ def accounting_entries_page(
             "request": request,
             "user": user,
             "entries": entries,
+            "start_filter": start_filter_value,
+            "end_filter": end_filter_value,
+            "factura_filter": factura_q,
+            "rubro_filter": rubro_q,
+            "edit_entry": edit_entry,
+            "edit_entry_lines_json": [
+                {
+                    "cuenta_id": int(line.cuenta_id),
+                    "descripcion": line.descripcion or "",
+                    "debe": float(line.debe or 0),
+                    "haber": float(line.haber or 0),
+                }
+                for line in (edit_entry.lines if edit_entry else [])
+            ],
             "voucher_types": voucher_types,
             "cuentas": cuentas,
             "cuentas_json": [
@@ -5878,13 +6635,30 @@ def accounting_entries_page(
             "counter_suggestions": counter_suggestions,
             "voucher_templates": voucher_templates,
             "policy": policy,
+            "accounting_system_rate": float(accounting_system_rate) if accounting_system_rate else 0,
             "subrubros": subrubros,
             "custom_subrubros": custom_subrubros,
+            "subrubro_account_links": subrubro_account_links,
+            "subrubro_assignment_rows": subrubro_assignment_rows,
+            "subrubro_account_links_json": [
+                {
+                    "subrubro_code": (row.subrubro_code or "").strip().upper(),
+                    "side": (row.side or "").strip().upper(),
+                    "account_id": int(row.account_id) if row.account_id else None,
+                    "account_code": (row.cuenta.codigo if row.cuenta else ""),
+                    "account_name": (row.cuenta.nombre if row.cuenta else ""),
+                    "activo": bool(row.activo),
+                    "priority": int(row.priority or 0),
+                }
+                for row in subrubro_account_links
+            ],
             "subrubro_edit_item": subrubro_edit_item,
+            "subrubro_link_edit_item": subrubro_link_edit_item,
             "branches": branches,
             "version": settings.UI_VERSION,
             "error": request.query_params.get("error"),
             "success": request.query_params.get("success"),
+            "pdf_entry_id": request.query_params.get("pdf_entry_id"),
             "today": local_today().isoformat(),
         },
     )
@@ -5971,6 +6745,216 @@ def accounting_subrubro_deactivate(
     return RedirectResponse("/accounting/entries?success=Subrubro+desactivado", status_code=303)
 
 
+@router.post("/accounting/subrubros/create-and-link")
+def accounting_subrubro_create_and_link(
+    request: Request,
+    label: str = Form(...),
+    intent_code: str = Form("EGRESO"),
+    debit_account_id: int = Form(...),
+    cash_credit_account_id: str = Form(""),
+    payable_credit_account_id: str = Form(""),
+    priority: int = Form(100),
+    notes: str = Form(""),
+    debit_terms: str = Form(""),
+    credit_terms: str = Form(""),
+    credit_cash_terms: str = Form("caja,banco,efectivo"),
+    credit_credit_terms: str = Form("proveedor,pagar,cxp"),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    label_norm = (label or "").strip()
+    if not label_norm:
+        return RedirectResponse("/accounting/entries?error=Nombre+de+subrubro+requerido#datos-contables", status_code=303)
+    raw_code = unicodedata.normalize("NFKD", label_norm).encode("ascii", "ignore").decode("ascii")
+    code_base = re.sub(r"[^A-Z0-9_]+", "_", raw_code.strip().upper()).strip("_")
+    code_base = re.sub(r"_+", "_", code_base)[:70].strip("_") or "SUBRUBRO"
+    code_norm = code_base
+    suffix = 2
+    while (
+        db.query(AccountingSubrubroRule)
+        .filter(func.upper(AccountingSubrubroRule.code) == code_norm)
+        .first()
+    ):
+        code_norm = f"{code_base}_{suffix}"
+        suffix += 1
+    intent = (intent_code or "EGRESO").strip().upper()
+    if intent not in {"INGRESO", "EGRESO", "DIARIO", "AJUSTE"}:
+        intent = "EGRESO"
+    debit_account = db.query(CuentaContable).filter(CuentaContable.id == int(debit_account_id)).first()
+    if not debit_account:
+        return RedirectResponse("/accounting/entries?error=Cuenta+Debe+invalida#datos-contables", status_code=303)
+
+    def _optional_account_id(raw_value: str) -> Optional[int]:
+        value = str(raw_value or "").strip()
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
+    row = AccountingSubrubroRule(code=code_norm)
+    db.add(row)
+    row.code = code_norm
+    row.label = label_norm
+    row.intent_code = intent
+    row.debit_terms = _csv_from_terms(_terms_from_csv(debit_terms, []))
+    row.credit_terms = _csv_from_terms(_terms_from_csv(credit_terms, []))
+    row.credit_cash_terms = _csv_from_terms(_terms_from_csv(credit_cash_terms, []))
+    row.credit_credit_terms = _csv_from_terms(_terms_from_csv(credit_credit_terms, []))
+    row.default_concept = label_norm
+    row.sort_order = int(row.sort_order or 1000)
+    row.activo = True
+    row.updated_by = user.email
+
+    def _add_link(account_id_value: Optional[int], side_value: str, side_priority: int) -> None:
+        if not account_id_value:
+            return
+        account = db.query(CuentaContable).filter(CuentaContable.id == int(account_id_value)).first()
+        if not account:
+            return
+        link = AccountingSubrubroAccountLink()
+        db.add(link)
+        link.subrubro_code = code_norm
+        link.account_id = int(account_id_value)
+        link.side = side_value
+        link.priority = max(0, int(priority or 0)) + side_priority
+        link.notes = (notes or "").strip() or f"Asociacion creada desde datos contables para {label_norm}"
+        link.activo = True
+        link.updated_by = user.email
+
+    _add_link(int(debit_account_id), "DEBE", 0)
+    _add_link(_optional_account_id(cash_credit_account_id), "HABER_CONTADO", 10)
+    _add_link(_optional_account_id(payable_credit_account_id), "HABER_CREDITO", 20)
+    db.commit()
+    return RedirectResponse(
+        f"/accounting/entries?success=Subrubro+{quote_plus(code_norm)}+creado+y+asociado#datos-contables",
+        status_code=303,
+    )
+
+
+@router.post("/accounting/subrubro-account-links/save")
+def accounting_subrubro_account_link_save(
+    request: Request,
+    link_id: str = Form(""),
+    subrubro_code: str = Form(...),
+    account_id: int = Form(...),
+    side: str = Form("DEBE"),
+    priority: int = Form(100),
+    notes: str = Form(""),
+    activo: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+
+    code_norm = re.sub(r"[^A-Z0-9_]+", "_", (subrubro_code or "").strip().upper()).strip("_")
+    if not code_norm:
+        return RedirectResponse("/accounting/entries?error=Subrubro+invalido", status_code=303)
+
+    valid_codes = {str(item.get("code") or "").upper() for item in _load_accounting_subrubros(db)}
+    if code_norm not in valid_codes:
+        return RedirectResponse("/accounting/entries?error=Subrubro+no+existe", status_code=303)
+
+    account = db.query(CuentaContable).filter(CuentaContable.id == int(account_id)).first()
+    if not account:
+        return RedirectResponse("/accounting/entries?error=Cuenta+contable+invalida", status_code=303)
+
+    side_norm = (side or "DEBE").strip().upper()
+    if side_norm not in {"DEBE", "HABER_CONTADO", "HABER_CREDITO"}:
+        side_norm = "DEBE"
+
+    link_id_value: Optional[int] = None
+    if str(link_id or "").strip():
+        try:
+            link_id_value = int(str(link_id).strip())
+        except ValueError:
+            return RedirectResponse("/accounting/entries?error=Asociacion+invalida", status_code=303)
+
+    row: Optional[AccountingSubrubroAccountLink] = None
+    if link_id_value:
+        row = (
+            db.query(AccountingSubrubroAccountLink)
+            .filter(AccountingSubrubroAccountLink.id == int(link_id_value))
+            .first()
+        )
+        if not row:
+            return RedirectResponse("/accounting/entries?error=Asociacion+no+encontrada", status_code=303)
+
+    exists = (
+        db.query(AccountingSubrubroAccountLink)
+        .filter(
+            func.upper(AccountingSubrubroAccountLink.subrubro_code) == code_norm,
+            AccountingSubrubroAccountLink.account_id == int(account_id),
+            func.upper(AccountingSubrubroAccountLink.side) == side_norm,
+        )
+        .first()
+    )
+    if exists and (not row or int(exists.id) != int(row.id)):
+        return RedirectResponse("/accounting/entries?error=La+asociacion+ya+existe", status_code=303)
+
+    if not row:
+        row = AccountingSubrubroAccountLink()
+        db.add(row)
+
+    row.subrubro_code = code_norm
+    row.account_id = int(account_id)
+    row.side = side_norm
+    row.priority = max(0, int(priority or 0))
+    row.notes = (notes or "").strip() or None
+    if activo is None:
+        row.activo = row.activo if link_id_value else True
+    else:
+        row.activo = activo == "on"
+    row.updated_by = user.email
+    db.commit()
+    return RedirectResponse("/accounting/entries?success=Asociacion+guardada", status_code=303)
+
+
+@router.post("/accounting/subrubro-account-links/{link_id}/deactivate")
+def accounting_subrubro_account_link_deactivate(
+    request: Request,
+    link_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    row = (
+        db.query(AccountingSubrubroAccountLink)
+        .filter(AccountingSubrubroAccountLink.id == int(link_id))
+        .first()
+    )
+    if not row:
+        return RedirectResponse("/accounting/entries?error=Asociacion+no+encontrada", status_code=303)
+    row.activo = False
+    row.updated_by = user.email
+    db.commit()
+    return RedirectResponse("/accounting/entries?success=Asociacion+desactivada", status_code=303)
+
+
+@router.post("/accounting/subrubro-account-links/bootstrap-pcga")
+def accounting_subrubro_account_link_bootstrap_pcga(
+    request: Request,
+    overwrite: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.accounting.entries")
+    result = _bootstrap_pcga_subrubro_links(
+        db,
+        actor_email=user.email,
+        overwrite=(overwrite == "on"),
+    )
+    return RedirectResponse(
+        (
+            "/accounting/entries?success="
+            f"PCGA+aplicado%3A+creadas+{result['created']}%2C+actualizadas+{result['updated']}%2C+omitidas+{result['skipped']}"
+        ),
+        status_code=303,
+    )
+
+
 @router.get("/accounting/accounts/search")
 def accounting_accounts_search(
     request: Request,
@@ -6045,6 +7029,20 @@ def accounting_entries_assist(
         .order_by(CuentaContable.codigo)
         .all()
     )
+
+    account_by_code = {str(acc.codigo or "").strip(): acc for acc in active_accounts}
+
+    def _pick_account_code(codes: list[str], naturaleza: Optional[str] = None) -> Optional[int]:
+        target_nat = (naturaleza or "").upper().strip()
+        for code in codes:
+            acc = account_by_code.get(str(code))
+            if not acc:
+                continue
+            if target_nat and (acc.naturaleza or "").upper().strip() != target_nat:
+                continue
+            return int(acc.id)
+        return None
+
     template = _build_voucher_template(voucher_type, active_accounts, policy)
     subrubros = _load_accounting_subrubros(db)
     smart = _smart_entry_terms(
@@ -6062,8 +7060,111 @@ def accounting_entries_assist(
     if not credit_id:
         credit_id = _find_account_by_terms(active_accounts, smart["credit_terms"])
 
+    # Prioridad 1: asociaciones explicitas Subrubro <-> Cuentas (catalogo de asociaciones).
+    linked_debit_id: Optional[int] = None
+    linked_credit_id: Optional[int] = None
+    sub_code = (smart.get("subrubro_code") or "").strip().upper()
+    if sub_code:
+        links = _load_subrubro_account_links(db).get(sub_code) or {}
+        linked_debit_id = _pick_linked_account_id(active_accounts, links.get("DEBE") or [])
+        if smart.get("credit_purchase"):
+            linked_credit_id = _pick_linked_account_id(active_accounts, links.get("HABER_CREDITO") or [])
+            if not linked_credit_id:
+                linked_credit_id = _pick_linked_account_id(active_accounts, links.get("HABER_CONTADO") or [])
+        else:
+            linked_credit_id = _pick_linked_account_id(active_accounts, links.get("HABER_CONTADO") or [])
+            if not linked_credit_id:
+                linked_credit_id = _pick_linked_account_id(active_accounts, links.get("HABER_CREDITO") or [])
+
+    linked_debit_locked = linked_debit_id is not None
+    linked_credit_locked = linked_credit_id is not None
+
+    labor_subrubros = {
+        "PLANILLA",
+        "SALARIOS",
+        "HORAS_EXTRAS",
+        "BONIFICACIONES",
+        "AGUINALDO",
+        "VACACIONES",
+        "INSS_PATRONAL",
+        "INDEMNIZACION",
+        "PROVISION_SALARIOS",
+        "PROVISION_AGUINALDO",
+        "PROVISION_VACACIONES",
+    }
+    if sub_code in labor_subrubros:
+        expected_debit_id = _pick_account_code(
+            _pcga_debit_account_codes_by_subrubro().get(sub_code, ["6208", "6209"]),
+            "DEBE",
+        )
+        expected_credit_id = _pick_account_code(
+            _pcga_credit_account_codes_by_subrubro().get(sub_code, ["2113", "2104"]),
+            "HABER",
+        )
+        linked_debit_account = next((a for a in active_accounts if linked_debit_id and int(a.id) == int(linked_debit_id)), None)
+        linked_debit_code = str(getattr(linked_debit_account, "codigo", "") or "").strip()
+        if expected_debit_id and (not linked_debit_id or linked_debit_code in {"6101", "6102", "6201", "6202"}):
+            linked_debit_id = expected_debit_id
+            linked_debit_locked = True
+        if expected_credit_id and not linked_credit_id:
+            linked_credit_id = expected_credit_id
+            linked_credit_locked = True
+
+    if sub_code in {"COMBUSTIBLE_DISTRIBUCION", "COMBUSTIBLE"} and linked_debit_locked:
+        linked_debit_account = next((a for a in active_accounts if int(a.id) == int(linked_debit_id)), None)
+        linked_debit_text = (
+            f"{(linked_debit_account.codigo or '').lower()} {(linked_debit_account.nombre or '').lower()}"
+            if linked_debit_account
+            else ""
+        )
+        if any(k in linked_debit_text for k in ["comision", "comisiones", "bancaria", "financiero", "interes", "interés"]):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "message": (
+                        f"Subrubro {sub_code}: la asociacion DEBE actual apunta a una cuenta financiera/comision. "
+                        "Corrige el catalogo Subrubro-Cuentas o ejecuta Autoasociar PCGA con sobrescritura."
+                    ),
+                    "subrubro_code": sub_code,
+                    "debit_terms": smart.get("debit_terms") or [],
+                    "credit_terms": smart.get("credit_terms") or [],
+                },
+                status_code=400,
+            )
+
+    # Modo estricto por subrubro: evita heuristicas ambiguas cuando el usuario
+    # ya eligio una guia contable especifica.
+    if sub_code and (not linked_debit_locked or not linked_credit_locked):
+        missing_parts: list[str] = []
+        if not linked_debit_locked:
+            missing_parts.append("DEBE")
+        if not linked_credit_locked:
+            if smart.get("credit_purchase"):
+                missing_parts.append("HABER_CREDITO (o HABER_CONTADO)")
+            else:
+                missing_parts.append("HABER_CONTADO (o HABER_CREDITO)")
+        return JSONResponse(
+            {
+                "ok": False,
+                "message": (
+                    f"Subrubro {sub_code}: faltan asociaciones obligatorias en el catalogo "
+                    f"Subrubro-Cuentas para {', '.join(missing_parts)}. "
+                    "Configuralas y vuelve a intentar."
+                ),
+                "subrubro_code": sub_code,
+                "debit_terms": smart.get("debit_terms") or [],
+                "credit_terms": smart.get("credit_terms") or [],
+            },
+            status_code=400,
+        )
+
+    if linked_debit_locked:
+        debit_id = linked_debit_id
+    if linked_credit_locked:
+        credit_id = linked_credit_id
+
     # Guard-rail: en EGRESO no debe quedar "Ingresos/Ventas" en el Haber por heuristica.
-    if smart.get("intent_code") == "EGRESO" and credit_id:
+    if smart.get("intent_code") == "EGRESO" and credit_id and not linked_credit_locked:
         selected_credit = next((acc for acc in active_accounts if int(acc.id) == int(credit_id)), None)
         selected_credit_text = (
             f"{(selected_credit.codigo or '').lower()} {(selected_credit.nombre or '').lower()}"
@@ -6112,13 +7213,11 @@ def accounting_entries_assist(
             )
 
     # Guard-rail: para compras/gastos operativos evita "diferido" en Debe cuando no aplica.
-    if smart.get("intent_code") == "EGRESO" and debit_id:
-        desc_text = (descripcion or "").lower()
+    if smart.get("intent_code") == "EGRESO" and debit_id and not linked_debit_locked:
+        desc_text = _ascii_lower(descripcion)
         selected_debit = next((acc for acc in active_accounts if int(acc.id) == int(debit_id)), None)
-        selected_debit_text = (
-            f"{(selected_debit.codigo or '').lower()} {(selected_debit.nombre or '').lower()}"
-            if selected_debit
-            else ""
+        selected_debit_text = _ascii_lower(
+            f"{selected_debit.codigo or ''} {selected_debit.nombre or ''}" if selected_debit else ""
         )
         if (
             any(k in desc_text for k in ["compra", "gasto", "insumo", "pintura", "mantenimiento"])
@@ -6142,13 +7241,11 @@ def accounting_entries_assist(
             )
 
     # Guard-rail: "insumos" operativos no debe mapear a "Mantenimiento de valor".
-    if smart.get("intent_code") == "EGRESO" and debit_id:
-        desc_text = (descripcion or "").lower()
+    if smart.get("intent_code") == "EGRESO" and debit_id and not linked_debit_locked:
+        desc_text = _ascii_lower(descripcion)
         selected_debit = next((acc for acc in active_accounts if int(acc.id) == int(debit_id)), None)
-        selected_debit_text = (
-            f"{(selected_debit.codigo or '').lower()} {(selected_debit.nombre or '').lower()}"
-            if selected_debit
-            else ""
+        selected_debit_text = _ascii_lower(
+            f"{selected_debit.codigo or ''} {selected_debit.nombre or ''}" if selected_debit else ""
         )
         is_operational_supply = any(k in desc_text for k in ["insumo", "suministro", "consumible", "tienda", "producto"])
         looks_financial_value = any(
@@ -6172,12 +7269,10 @@ def accounting_entries_assist(
             )
 
     # Guard-rail: compra de activo fijo no debe caer en gasto operativo ni diferido.
-    if smart.get("intent_code") == "EGRESO" and smart.get("fixed_asset_intent") and debit_id:
+    if smart.get("intent_code") == "EGRESO" and smart.get("fixed_asset_intent") and debit_id and not linked_debit_locked:
         selected_debit = next((acc for acc in active_accounts if int(acc.id) == int(debit_id)), None)
-        selected_debit_text = (
-            f"{(selected_debit.codigo or '').lower()} {(selected_debit.nombre or '').lower()}"
-            if selected_debit
-            else ""
+        selected_debit_text = _ascii_lower(
+            f"{selected_debit.codigo or ''} {selected_debit.nombre or ''}" if selected_debit else ""
         )
         if any(k in selected_debit_text for k in ["gasto", "diferido"]):
             fixed_terms = ["equipo", "mobiliario", "vehiculo", "maquinaria", "activo fijo", "propiedad"]
@@ -6196,20 +7291,28 @@ def accounting_entries_assist(
                 or debit_id
             )
 
-    # Guard-rail: papeleria/limpieza debe priorizar cuentas especificas de suministros.
-    if smart.get("intent_code") == "EGRESO" and debit_id and (
+    # Guard-rail: papeleria/limpieza debe priorizar cuentas especificas y evitar cuentas diferidas/genericas.
+    if smart.get("intent_code") == "EGRESO" and debit_id and not linked_debit_locked and (
         smart.get("office_supply_intent") or smart.get("cleaning_supply_intent")
     ):
         selected_debit = next((acc for acc in active_accounts if int(acc.id) == int(debit_id)), None)
-        selected_debit_text = (
-            f"{(selected_debit.codigo or '').lower()} {(selected_debit.nombre or '').lower()}"
-            if selected_debit
-            else ""
+        selected_debit_text = _ascii_lower(
+            f"{selected_debit.codigo or ''} {selected_debit.nombre or ''}" if selected_debit else ""
         )
-        is_too_generic = any(k in selected_debit_text for k in ["operacion", "operación", "gasto operativo"])
-        if is_too_generic:
+        is_too_generic = any(
+            k in selected_debit_text
+            for k in [
+                "operacion",
+                "operacion",
+                "gasto operativo",
+                "gasto diferido",
+                "activo diferido",
+                "diferido",
+            ]
+        )
+        if is_too_generic and not smart.get("deferred_expense_intent"):
             supply_terms = (
-                ["papeleria", "papelería", "útiles", "utiles", "suministros", "material oficina"]
+                ["papeleria", "utiles", "suministros", "material oficina"]
                 if smart.get("office_supply_intent")
                 else ["limpieza", "aseo", "suministros", "insumo", "mantenimiento"]
             )
@@ -6228,10 +7331,410 @@ def accounting_entries_assist(
                 or debit_id
             )
 
+    # Guard-rail estructural por subrubro (PCGA): clasifica y fuerza cuentas coherentes.
+    if smart.get("intent_code") == "EGRESO" and sub_code and not (linked_debit_locked and linked_credit_locked):
+        expense_period_codes = {
+            "GASTO_OPERATIVO",
+            "PAPELERIA",
+            "LIMPIEZA",
+            "INSUMOS_TIENDA",
+            "COMBUSTIBLE_DISTRIBUCION",
+            "SERVICIOS_BASICOS",
+            "TRANSPORTE_FLETE",
+            "MANTENIMIENTO_REPARACION",
+            "GASTO_FINANCIERO",
+            "PLANILLA",
+            "ALQUILER",
+            "ENERGIA_ELECTRICA",
+            "AGUA_POTABLE",
+            "INTERNET",
+            "TELEFONIA_FIJA",
+            "TELEFONIA_MOVIL",
+            "HONORARIOS_PROFESIONALES",
+            "HONORARIOS_CONTABLES",
+            "HONORARIOS_LEGALES",
+            "LICENCIA_SOFTWARE",
+            "SUSCRIPCION_DIGITAL",
+            "PUBLICIDAD_DIGITAL",
+            "PUBLICIDAD_IMPRESA",
+            "MATERIAL_PROMOCIONAL",
+            "COMISION_VENTAS",
+            "FLETES_VENTAS",
+            "COMBUSTIBLE",
+            "SEGURIDAD",
+            "TRANSPORTE_INTERNO",
+        }
+        inventory_codes = {"INVENTARIO", "INSUMOS_PRODUCTOS"}
+        fixed_asset_codes = {"ACTIVO_EQUIPO"}
+
+        if sub_code in expense_period_codes and not smart.get("deferred_expense_intent"):
+            period_debit_terms = list(smart.get("debit_terms") or []) + ["gasto", "costo", "servicio", "suministro", "insumo"]
+            period_debit_excludes = [
+                "diferido",
+                "activo diferido",
+                "activo fijo",
+                "propiedad",
+                "maquinaria",
+                "vehiculo",
+                "inventario",
+                "mantenimiento de valor",
+                "diferencia cambiaria",
+                "ingreso",
+                "venta",
+                "cliente",
+                "cobrar",
+                "cxc",
+                "caja",
+                "banco",
+            ]
+            if not linked_debit_locked:
+                debit_id = (
+                    _find_account_by_terms_excluding(active_accounts, period_debit_terms, period_debit_excludes, "DEBE")
+                    or _find_account_by_terms_excluding(active_accounts, period_debit_terms, period_debit_excludes)
+                    or debit_id
+                )
+
+            if smart.get("credit_purchase") and not linked_credit_locked:
+                payable_credit_terms = list(smart.get("credit_terms") or []) + ["proveedor", "pagar", "cxp", "obligacion"]
+                payable_credit_excludes = ["ingreso", "venta", "cliente", "cobrar", "cxc"]
+                credit_id = (
+                    _find_account_by_terms_excluding(active_accounts, payable_credit_terms, payable_credit_excludes, "HABER")
+                    or _find_account_by_terms_excluding(active_accounts, payable_credit_terms, payable_credit_excludes)
+                    or credit_id
+                )
+            elif not linked_credit_locked:
+                cash_credit_terms = ["caja", "banco", "efectivo", "transferencia", "cheque", "tarjeta"]
+                cash_credit_excludes = ["proveedor", "pagar", "cxp", "ingreso", "venta"]
+                credit_id = (
+                    _find_account_by_terms_excluding(active_accounts, cash_credit_terms, cash_credit_excludes, "HABER")
+                    or _find_account_by_terms_excluding(active_accounts, cash_credit_terms, cash_credit_excludes)
+                    or credit_id
+                )
+
+        elif sub_code in inventory_codes:
+            inventory_debit_terms = ["inventario", "mercaderia", "stock", "materia prima", "insumo", "compra"]
+            inventory_debit_excludes = ["gasto", "diferido", "caja", "banco", "cliente", "cobrar", "cxc"]
+            if not linked_debit_locked:
+                debit_id = (
+                    _find_account_by_terms_excluding(active_accounts, inventory_debit_terms, inventory_debit_excludes, "DEBE")
+                    or _find_account_by_terms_excluding(active_accounts, inventory_debit_terms, inventory_debit_excludes)
+                    or debit_id
+                )
+            if smart.get("credit_purchase") and not linked_credit_locked:
+                inv_payable_terms = ["proveedor", "pagar", "cxp"]
+                inv_payable_excludes = ["ingreso", "venta", "cliente", "cobrar", "cxc"]
+                credit_id = (
+                    _find_account_by_terms_excluding(active_accounts, inv_payable_terms, inv_payable_excludes, "HABER")
+                    or _find_account_by_terms_excluding(active_accounts, inv_payable_terms, inv_payable_excludes)
+                    or credit_id
+                )
+            elif not linked_credit_locked:
+                inv_cash_terms = ["caja", "banco", "efectivo", "transferencia", "cheque", "tarjeta"]
+                inv_cash_excludes = ["proveedor", "pagar", "cxp", "ingreso", "venta"]
+                credit_id = (
+                    _find_account_by_terms_excluding(active_accounts, inv_cash_terms, inv_cash_excludes, "HABER")
+                    or _find_account_by_terms_excluding(active_accounts, inv_cash_terms, inv_cash_excludes)
+                    or credit_id
+                )
+
+        elif sub_code in fixed_asset_codes:
+            asset_debit_terms = ["activo fijo", "propiedad", "equipo", "mobiliario", "vehiculo", "maquinaria", "activo"]
+            asset_debit_excludes = ["gasto", "diferido", "inventario", "caja", "banco"]
+            if not linked_debit_locked:
+                debit_id = (
+                    _find_account_by_terms_excluding(active_accounts, asset_debit_terms, asset_debit_excludes, "DEBE")
+                    or _find_account_by_terms_excluding(active_accounts, asset_debit_terms, asset_debit_excludes)
+                    or debit_id
+                )
+
+    # Reafirma asociaciones explicitas para evitar que cualquier heuristica las pise.
+    if linked_debit_locked:
+        debit_id = linked_debit_id
+    if linked_credit_locked:
+        credit_id = linked_credit_id
+
+    # Fallback coherente con la intencion inferida/subrubro, antes de usar plantilla por tipo.
+    intent_code = (smart.get("intent_code") or "").upper().strip()
+    if not debit_id:
+        debit_id = _find_account_by_terms(active_accounts, smart.get("debit_terms") or [], "DEBE")
+        if not debit_id:
+            debit_id = _find_account_by_terms(active_accounts, smart.get("debit_terms") or [])
+        if not debit_id:
+            if intent_code == "EGRESO":
+                debit_id = (
+                    _find_account_by_terms(active_accounts, ["gasto", "costo", "suministro", "servicio"], "DEBE")
+                    or _find_account_by_terms(active_accounts, ["inventario", "activo fijo", "activo"], "DEBE")
+                    or _find_account_by_terms(active_accounts, ["gasto", "costo", "inventario", "activo"], "DEBE")
+                )
+            elif intent_code == "INGRESO":
+                debit_id = (
+                    _find_account_by_terms(active_accounts, ["caja", "banco", "cliente", "cobrar"], "DEBE")
+                    or _find_account_by_terms(active_accounts, ["caja", "banco", "cliente"], "DEBE")
+                )
+            else:
+                debit_id = _find_account_by_terms(active_accounts, ["ajuste", "gasto", "inventario"], "DEBE")
+
+    if not credit_id:
+        credit_id = _find_account_by_terms(active_accounts, smart.get("credit_terms") or [], "HABER")
+        if not credit_id:
+            credit_id = _find_account_by_terms(active_accounts, smart.get("credit_terms") or [])
+        if not credit_id:
+            if intent_code == "EGRESO":
+                if smart.get("credit_purchase"):
+                    credit_id = (
+                        _find_account_by_terms(active_accounts, ["proveedor", "pagar", "cxp"], "HABER")
+                        or _find_account_by_terms(active_accounts, ["caja", "banco", "efectivo"], "HABER")
+                    )
+                else:
+                    credit_id = _find_account_by_terms(active_accounts, ["caja", "banco", "efectivo"], "HABER")
+            elif intent_code == "INGRESO":
+                credit_id = (
+                    _find_account_by_terms(active_accounts, ["venta", "ingreso"], "HABER")
+                    or _find_account_by_terms(active_accounts, ["ingreso", "venta"], "HABER")
+                )
+            else:
+                credit_id = _find_account_by_terms(active_accounts, ["ajuste", "ingreso", "proveedor"], "HABER")
+
+    # Ultimo recurso: plantilla del tipo de comprobante seleccionado en UI.
     if not debit_id:
         debit_id = int(template.get("debit_account_id") or 0) or None
     if not credit_id:
         credit_id = int(template.get("credit_account_id") or 0) or None
+
+    # Regla dura de coherencia: un EGRESO nunca debe proponer cuentas de ingreso/ventas/cxc.
+    if intent_code == "EGRESO":
+        def _account_text(account_id: Optional[int]) -> str:
+            if not account_id:
+                return ""
+            acc = next((a for a in active_accounts if int(a.id) == int(account_id)), None)
+            if not acc:
+                return ""
+            return f"{(acc.codigo or '').lower()} {(acc.nombre or '').lower()}"
+
+        debit_text = _account_text(debit_id)
+        credit_text = _account_text(credit_id)
+        bad_income_terms = [
+            "ingreso",
+            "venta",
+            "ventas",
+            "cliente",
+            "cobrar",
+            "cxc",
+            "cuentas por cobrar",
+        ]
+
+        if any(term in debit_text for term in bad_income_terms):
+            debit_id = (
+                _find_account_by_terms_excluding(
+                    active_accounts,
+                    list(smart.get("debit_terms") or []) + ["gasto", "costo", "servicio", "suministro", "insumo", "combustible"],
+                    bad_income_terms + ["caja", "banco", "efectivo"],
+                    "DEBE",
+                )
+                or _find_account_by_terms_excluding(
+                    active_accounts,
+                    ["gasto", "costo", "servicio", "suministro", "insumo", "combustible"],
+                    bad_income_terms + ["caja", "banco", "efectivo"],
+                    "DEBE",
+                )
+                or debit_id
+            )
+
+        if any(term in credit_text for term in bad_income_terms):
+            if smart.get("credit_purchase"):
+                credit_id = (
+                    _find_account_by_terms_excluding(
+                        active_accounts,
+                        ["proveedor", "pagar", "cxp", "obligacion"],
+                        bad_income_terms,
+                        "HABER",
+                    )
+                    or _find_account_by_terms_excluding(
+                        active_accounts,
+                        ["caja", "banco", "efectivo", "proveedor", "pagar"],
+                        bad_income_terms,
+                        "HABER",
+                    )
+                    or credit_id
+                )
+            else:
+                credit_id = (
+                    _find_account_by_terms_excluding(
+                        active_accounts,
+                        ["caja", "banco", "efectivo", "transferencia", "cheque", "tarjeta"],
+                        bad_income_terms,
+                        "HABER",
+                    )
+                    or _find_account_by_terms_excluding(
+                        active_accounts,
+                        ["caja", "banco", "efectivo"],
+                        bad_income_terms,
+                        "HABER",
+                    )
+                    or credit_id
+                )
+
+    # Regla dura: gasto de combustible no puede proponer comisiones bancarias.
+    if intent_code == "EGRESO" and smart.get("fuel_intent"):
+        current_debit = next((a for a in active_accounts if debit_id and int(a.id) == int(debit_id)), None)
+        current_debit_text = _ascii_lower(
+            f"{current_debit.codigo or ''} {current_debit.nombre or ''}" if current_debit else ""
+        )
+        if any(k in current_debit_text for k in ["comision", "comisiones", "bancaria", "financiero", "interes"]):
+            replacement_id = (
+                _find_account_by_terms_excluding(
+                    active_accounts,
+                    ["combustible", "transporte", "distribucion", "gasto transporte", "gasto operativo"],
+                    ["comision", "comisiones", "bancaria", "financiero", "interes", "ingreso", "venta"],
+                    "DEBE",
+                )
+                or _find_account_by_terms_excluding(
+                    active_accounts,
+                    ["combustible", "transporte", "distribucion", "gasto transporte", "gasto operativo"],
+                    ["comision", "comisiones", "bancaria", "financiero", "interes", "ingreso", "venta"],
+                )
+            )
+            if not replacement_id:
+                fallback = next(
+                    (
+                        a for a in active_accounts
+                        if (a.naturaleza or "").upper().strip() == "DEBE"
+                        and (a.tipo or "").upper().strip() == "RESULTADO"
+                        and not any(
+                            bad in f"{(a.codigo or '').lower()} {(a.nombre or '').lower()}"
+                            for bad in ["comision", "comisiones", "bancaria", "financiero", "interes", "interés", "ingreso", "venta", "caja", "banco"]
+                        )
+                        and any(
+                            good in f"{(a.codigo or '').lower()} {(a.nombre or '').lower()}"
+                            for good in ["gasto", "transporte", "distribucion", "combust", "operativo", "movilidad", "flete"]
+                        )
+                    ),
+                    None,
+                )
+                replacement_id = int(fallback.id) if fallback else None
+            if replacement_id:
+                debit_id = int(replacement_id)
+            else:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "message": (
+                            "No existe una cuenta de gasto valida para combustible. "
+                            "Configura una cuenta DEBE de gasto operativo/transporte y vuelve a intentar."
+                        ),
+                        "subrubro_code": sub_code,
+                        "debit_terms": smart.get("debit_terms") or [],
+                        "credit_terms": smart.get("credit_terms") or [],
+                    },
+                    status_code=400,
+                )
+
+    # Regla dura global: cuentas financieras/bancarias (ej. 6304) solo para subrubros financieros.
+    if intent_code == "EGRESO" and debit_id and not linked_debit_locked:
+        allowed_financial_subrubros = {"GASTO_FINANCIERO", "AJUSTE_CONCILIACION_BANCARIA"}
+        current_debit = next((a for a in active_accounts if int(a.id) == int(debit_id)), None)
+        current_debit_text = _ascii_lower(
+            f"{current_debit.codigo or ''} {current_debit.nombre or ''}" if current_debit else ""
+        )
+        is_financial_debit = any(
+            k in current_debit_text
+            for k in ["comision bancaria", "comisiones bancarias", "gasto financiero", "interes", "bancaria"]
+        ) or ("6304" in current_debit_text)
+        if is_financial_debit and sub_code not in allowed_financial_subrubros:
+            operational_terms = list(smart.get("debit_terms") or []) + [
+                "gasto operativo",
+                "suministro",
+                "insumo",
+                "transporte",
+                "mantenimiento",
+                "servicios",
+                "publicidad",
+                "alquiler",
+                "planilla",
+            ]
+            financial_excludes = [
+                "comision",
+                "comisiones",
+                "bancaria",
+                "financiero",
+                "interes",
+                "interés",
+                "ingreso",
+                "venta",
+                "cobrar",
+                "cxc",
+            ]
+            debit_id = (
+                _find_account_by_terms_excluding(active_accounts, operational_terms, financial_excludes, "DEBE")
+                or _find_account_by_terms_excluding(active_accounts, operational_terms, financial_excludes)
+                or debit_id
+            )
+
+    # Regla dura: compras de activo fijo (ej. camaras/equipos) no pueden caer en gasto operativo/financiero.
+    if intent_code == "EGRESO" and smart.get("fixed_asset_intent"):
+        def _get_account(account_id: Optional[int]) -> Optional[CuentaContable]:
+            if not account_id:
+                return None
+            return next((a for a in active_accounts if int(a.id) == int(account_id)), None)
+
+        current_debit = _get_account(debit_id)
+        current_debit_text = _ascii_lower(
+            f"{current_debit.codigo or ''} {current_debit.nombre or ''}" if current_debit else ""
+        )
+        looks_wrong_for_asset = (
+            (current_debit is None)
+            or ((current_debit.tipo or "").upper().strip() != "BALANCE")
+            or any(k in current_debit_text for k in ["gasto", "comision", "bancaria", "ingreso", "venta"])
+        )
+        if looks_wrong_for_asset:
+            asset_debit_terms = [
+                "activo fijo",
+                "equipo seguridad",
+                "camaras",
+                "camaras",
+                "equipo",
+                "mobiliario",
+                "maquinaria",
+                "propiedad",
+                "vehiculo",
+                "activo",
+            ]
+            asset_debit_excludes = [
+                "gasto",
+                "comision",
+                "comision",
+                "bancaria",
+                "ingreso",
+                "venta",
+                "cobrar",
+                "cxc",
+                "diferido",
+                "inventario",
+            ]
+            debit_id = (
+                _find_account_by_terms_excluding(active_accounts, asset_debit_terms, asset_debit_excludes, "DEBE")
+                or _find_account_by_terms_excluding(active_accounts, asset_debit_terms, asset_debit_excludes)
+                or debit_id
+            )
+            current_debit = _get_account(debit_id)
+            current_debit_text = _ascii_lower(
+                f"{current_debit.codigo or ''} {current_debit.nombre or ''}" if current_debit else ""
+            )
+            still_wrong = (
+                (current_debit is None)
+                or ((current_debit.tipo or "").upper().strip() != "BALANCE")
+                or any(k in current_debit_text for k in ["gasto", "comision", "bancaria", "ingreso", "venta"])
+            )
+            if still_wrong:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "message": "Para compra de activo fijo (ej. camaras), configura una cuenta contable de ACTIVO en el catalogo/asociaciones y vuelve a intentar.",
+                        "debit_terms": smart.get("debit_terms") or [],
+                        "credit_terms": smart.get("credit_terms") or [],
+                    },
+                    status_code=400,
+                )
 
     # Si por heuristica quedaron iguales, fuerza contrapartida historica.
     if debit_id and credit_id and debit_id == credit_id:
@@ -6294,6 +7797,11 @@ def accounting_entries_create(
     branch_id: Optional[str] = Form(None),
     referencia: str = Form(""),
     descripcion: str = Form(...),
+    moneda: str = Form("CS"),
+    tasa_sistema: str = Form(""),
+    tasa_cambio: str = Form(""),
+    estado_comprobante: str = Form("POSTEADO"),
+    edit_entry_id: str = Form(""),
     line_cuenta_id: list[str] = Form(...),
     line_descripcion: list[str] = Form([]),
     line_debe: list[str] = Form([]),
@@ -6317,6 +7825,24 @@ def accounting_entries_create(
     if selected_branch_id and selected_branch_id not in scoped_branch_ids:
         return RedirectResponse("/accounting/entries?error=Sucursal+no+permitida", status_code=303)
 
+    edit_entry: Optional[AccountingEntry] = None
+    if str(edit_entry_id or "").strip():
+        try:
+            edit_entry_id_value = int(str(edit_entry_id).strip())
+        except ValueError:
+            return RedirectResponse("/accounting/entries?error=Borrador+invalido", status_code=303)
+        edit_entry = (
+            db.query(AccountingEntry)
+            .filter(
+                AccountingEntry.id == edit_entry_id_value,
+                AccountingEntry.estado == "BORRADOR",
+                or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(scoped_branch_ids)),
+            )
+            .first()
+        )
+        if not edit_entry:
+            return RedirectResponse("/accounting/entries?error=Borrador+no+encontrado", status_code=303)
+
     voucher_type = (
         db.query(AccountingVoucherType)
         .filter(AccountingVoucherType.id == tipo_id, AccountingVoucherType.activo.is_(True))
@@ -6324,6 +7850,36 @@ def accounting_entries_create(
     )
     if not voucher_type:
         return RedirectResponse("/accounting/entries?error=Tipo+de+comprobante+invalido", status_code=303)
+
+    descripcion_clean = (descripcion or "").strip()
+    if not descripcion_clean:
+        return RedirectResponse("/accounting/entries?error=Descripcion+del+comprobante+requerida", status_code=303)
+    entry_status = (estado_comprobante or "POSTEADO").strip().upper()
+    if entry_status not in {"POSTEADO", "BORRADOR"}:
+        entry_status = "POSTEADO"
+
+    currency = (moneda or "CS").strip().upper()
+    if currency not in {"CS", "USD"}:
+        currency = "CS"
+    rate_row = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= entry_date)
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    system_rate = (Decimal(str(rate_row.rate)) if rate_row else Decimal("0")).quantize(Decimal("0.0001"))
+    try:
+        submitted_system_rate = to_decimal((tasa_sistema or "0").replace(",", ".")).quantize(Decimal("0.0001"))
+    except (InvalidOperation, ValueError):
+        submitted_system_rate = system_rate
+    try:
+        manual_rate = to_decimal((tasa_cambio or "0").replace(",", ".")).quantize(Decimal("0.0001"))
+    except (InvalidOperation, ValueError):
+        return RedirectResponse("/accounting/entries?error=Tasa+de+cambio+invalida", status_code=303)
+    if currency == "CS":
+        manual_rate = Decimal("0")
+    elif manual_rate <= 0:
+        return RedirectResponse("/accounting/entries?error=Tasa+de+cambio+requerida+para+USD", status_code=303)
 
     if len(line_cuenta_id) < 2:
         return RedirectResponse("/accounting/entries?error=Debes+registrar+al+menos+2+lineas", status_code=303)
@@ -6351,6 +7907,9 @@ def accounting_entries_create(
             haber_value = to_decimal(haber_raw).quantize(
                 Decimal("0.01"), rounding=ROUND_HALF_UP
             )
+            if currency == "USD":
+                debe_value = (debe_value * manual_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                haber_value = (haber_value * manual_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         except (InvalidOperation, ValueError):
             return RedirectResponse("/accounting/entries?error=Monto+invalido+en+lineas", status_code=303)
         if debe_value < 0 or haber_value < 0:
@@ -6389,26 +7948,53 @@ def accounting_entries_create(
     if policy_error:
         return RedirectResponse(f"/accounting/entries?error={quote_plus(policy_error)}", status_code=303)
     period = _accounting_period(entry_date)
-    seq = _next_accounting_sequence(db, tipo_id, selected_branch_id, period)
-    number = _build_accounting_entry_number(voucher_type, period, seq)
-    entry = AccountingEntry(
-        tipo_id=tipo_id,
-        branch_id=selected_branch_id,
-        fecha=entry_date,
-        periodo=period,
-        secuencia=seq,
-        numero=number,
-        referencia=(referencia or "").strip()[:160] or None,
-        descripcion=(descripcion or "").strip(),
-        estado="POSTEADO",
-        total_debe=total_debe,
-        total_haber=total_haber,
-        creado_por=user.email,
-        lines=lines,
-    )
-    db.add(entry)
+    if edit_entry:
+        entry = edit_entry
+        entry.tipo_id = tipo_id
+        entry.branch_id = selected_branch_id
+        entry.fecha = entry_date
+        entry.periodo = period
+        entry.referencia = (referencia or "").strip()[:160] or None
+        entry.descripcion = descripcion_clean
+        entry.moneda = currency
+        entry.tasa_sistema = submitted_system_rate if submitted_system_rate > 0 else system_rate
+        entry.tasa_cambio = manual_rate if currency == "USD" else None
+        entry.estado = entry_status
+        entry.total_debe = total_debe
+        entry.total_haber = total_haber
+        entry.lines = lines
+    else:
+        seq = _next_accounting_sequence(db, tipo_id, selected_branch_id, period)
+        number = _build_accounting_entry_number(voucher_type, period, seq)
+        entry = AccountingEntry(
+            tipo_id=tipo_id,
+            branch_id=selected_branch_id,
+            fecha=entry_date,
+            periodo=period,
+            secuencia=seq,
+            numero=number,
+            referencia=(referencia or "").strip()[:160] or None,
+            descripcion=descripcion_clean,
+            moneda=currency,
+            tasa_sistema=submitted_system_rate if submitted_system_rate > 0 else system_rate,
+            tasa_cambio=manual_rate if currency == "USD" else None,
+            estado=entry_status,
+            total_debe=total_debe,
+            total_haber=total_haber,
+            creado_por=user.email,
+            lines=lines,
+        )
+        db.add(entry)
     db.commit()
-    return RedirectResponse("/accounting/entries?success=Comprobante+registrado", status_code=303)
+    if entry_status == "BORRADOR":
+        return RedirectResponse(
+            f"/accounting/entries?success=Borrador+guardado+cuadrado",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"/accounting/entries?success=Comprobante+registrado&pdf_entry_id={entry.id}",
+        status_code=303,
+    )
 
 
 @router.post("/accounting/entries/{entry_id}/annul")
@@ -8127,8 +9713,6 @@ def inventory_ingresos_page(
 
     start_date = _parse_date(request.query_params.get("start_date"))
     end_date = _parse_date(request.query_params.get("end_date"))
-    selected_tipo_id_raw = (request.query_params.get("tipo_id") or "").strip()
-    selected_tipo_id = int(selected_tipo_id_raw) if selected_tipo_id_raw.isdigit() else None
     selected_product_id_raw = (request.query_params.get("product_id") or "").strip()
     selected_product_id = int(selected_product_id_raw) if selected_product_id_raw.isdigit() else None
     selected_product_query = (request.query_params.get("product_q") or "").strip()
@@ -8140,8 +9724,6 @@ def inventory_ingresos_page(
         ingresos_query = ingresos_query.filter(IngresoInventario.fecha >= start_date)
     if end_date:
         ingresos_query = ingresos_query.filter(IngresoInventario.fecha <= end_date)
-    if selected_tipo_id:
-        ingresos_query = ingresos_query.filter(IngresoInventario.tipo_id == selected_tipo_id)
     if selected_product_query:
         q = f"%{selected_product_query.lower()}%"
         ingresos_query = ingresos_query.filter(
@@ -8169,7 +9751,6 @@ def inventory_ingresos_page(
         .order_by(IngresoTipo.nombre)
         .all()
     )
-    tipos_filtro = db.query(IngresoTipo).order_by(IngresoTipo.nombre).all()
     bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     proveedores = db.query(Proveedor).order_by(Proveedor.nombre).all()
     productos = (
@@ -8238,7 +9819,6 @@ def inventory_ingresos_page(
             "user": user,
             "ingresos": ingresos,
             "tipos": tipos,
-            "tipos_filtro": tipos_filtro,
             "bodegas": bodegas,
             "proveedores": proveedores,
             "productos": productos,
@@ -8255,7 +9835,6 @@ def inventory_ingresos_page(
             "error": error,
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
-            "selected_tipo_id": selected_tipo_id,
             "selected_product_id": selected_product_id,
             "selected_product_query": selected_product_query,
             "success": success,
@@ -8290,8 +9869,6 @@ def inventory_egresos_page(
 
     start_date = _parse_date(request.query_params.get("start_date"))
     end_date = _parse_date(request.query_params.get("end_date"))
-    selected_tipo_id_raw = (request.query_params.get("tipo_id") or "").strip()
-    selected_tipo_id = int(selected_tipo_id_raw) if selected_tipo_id_raw.isdigit() else None
     selected_product_id_raw = (request.query_params.get("product_id") or "").strip()
     selected_product_id = int(selected_product_id_raw) if selected_product_id_raw.isdigit() else None
     selected_product_query = (request.query_params.get("product_q") or "").strip()
@@ -8303,8 +9880,6 @@ def inventory_egresos_page(
         egresos_query = egresos_query.filter(EgresoInventario.fecha >= start_date)
     if end_date:
         egresos_query = egresos_query.filter(EgresoInventario.fecha <= end_date)
-    if selected_tipo_id:
-        egresos_query = egresos_query.filter(EgresoInventario.tipo_id == selected_tipo_id)
     if selected_product_query:
         q = f"%{selected_product_query.lower()}%"
         egresos_query = egresos_query.filter(
@@ -8329,7 +9904,6 @@ def inventory_egresos_page(
     if _is_shoes_mode():
         tipos_query = tipos_query.filter(func.lower(EgresoTipo.nombre) != "traslado entre bodegas")
     tipos = tipos_query.order_by(EgresoTipo.nombre).all()
-    tipos_filtro = db.query(EgresoTipo).order_by(EgresoTipo.nombre).all()
     bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     productos = (
         db.query(Producto)
@@ -8365,7 +9939,6 @@ def inventory_egresos_page(
             "user": user,
             "egresos": egresos,
             "tipos": tipos,
-            "tipos_filtro": tipos_filtro,
             "bodegas": bodegas,
             "productos": productos,
             "saldos_por_bodega": saldos_por_bodega,
@@ -8375,7 +9948,6 @@ def inventory_egresos_page(
             "end_date": end_date.isoformat() if end_date else "",
             "selected_product_id": selected_product_id,
             "selected_product_query": selected_product_query,
-            "selected_tipo_id": selected_tipo_id,
             "success": success,
             "print_id": print_id,
             "print_mode": print_mode,
@@ -9282,7 +10854,7 @@ def mobile_preventas_product_combo(
                 "cantidad": float(combo.cantidad or 0),
                 "precio_venta1_usd": float(child.precio_venta1_usd or 0),
                 "precio_venta1": float(child.precio_venta1 or 0),
-                "existencia": existencia,
+                "existencia": existencia, 
             }
         )
     return JSONResponse({"ok": True, "items": items})
@@ -16274,7 +17846,7 @@ def report_depositos_export(
         method_label = _deposito_method_label(getattr(dep, "metodo", None))
         banco_name = dep.banco.nombre if dep.banco else "-"
         if len(banco_name) > 12:
-            banco_name = banco_name[:12] + "…"
+            banco_name = banco_name[:12] + "..."
         key = (method_label, dep.banco_id)
         grouped_map.setdefault(key, {"metodo": method_label, "banco": banco_name, "rows": []})
         grouped_map[key]["rows"].append(dep)
@@ -17427,10 +18999,10 @@ def report_sales_export(
         y -= 14
         c.drawString(margin, y, f"Total C$: {total_cs:,.2f}")
         if rate > 0:
-            c.drawString(margin + 220, y, f"Total USD conversión: {float(total_usd_conv):,.2f}")
+            c.drawString(margin + 220, y, f"Total USD conversion: {float(total_usd_conv):,.2f}")
             c.drawString(margin + 420, y, f"Tasa: {float(rate):,.4f}")
         else:
-            c.drawString(margin + 220, y, "Total USD conversión: -")
+            c.drawString(margin + 220, y, "Total USD conversion: -")
         y -= 24
 
         if y < 120:
@@ -17754,7 +19326,7 @@ def sales_depositos_export(
             method_label = _deposito_method_label(getattr(dep, "metodo", None))
             banco_name = dep.banco.nombre if dep.banco else "-"
             if len(banco_name) > 12:
-                banco_name = banco_name[:12] + "…"
+                banco_name = banco_name[:12] + "..."
             key = (method_label, dep.banco_id)
             grouped_map.setdefault(key, {"metodo": method_label, "banco": banco_name, "rows": []})
             grouped_map[key]["rows"].append(dep)
@@ -17799,7 +19371,7 @@ def sales_depositos_export(
                 c.drawString(30, y, str(dep.fecha))
                 banco_row = dep.banco.nombre if dep.banco else "-"
                 if len(banco_row) > 12:
-                    banco_row = banco_row[:12] + "…"
+                    banco_row = banco_row[:12] + "..."
                 c.drawString(78, y, banco_row)
                 c.setFillColor(colors.HexColor("#1d4ed8"))
                 display_cs = monto_cs if dep.moneda == "CS" else Decimal("0")
@@ -18737,122 +20309,6 @@ def data_restaurant_tables_update(
     return RedirectResponse("/data/mesas?success=Mesa+actualizada", status_code=303)
 
 
-@router.post("/data/mesas/{item_id}/toggle")
-def data_restaurant_tables_toggle_active(
-    request: Request,
-    item_id: int,
-    active: int = Form(...),
-    db: Session = Depends(get_db),
-    user: User = Depends(_require_admin_web),
-):
-    _enforce_permission(request, user, "access.data.catalogs")
-    if (get_active_company_key() or "").strip().lower() != "barrera":
-        raise HTTPException(status_code=404, detail="Catalogo no disponible")
-    item = db.query(RestaurantTable).filter(RestaurantTable.id == item_id).first()
-    if not item:
-        return RedirectResponse("/data/mesas?error=Mesa+no+existe", status_code=303)
-    desired_state = bool(int(active or 0))
-    if not desired_state:
-        open_order = (
-            db.query(RestaurantOrder)
-            .filter(
-                RestaurantOrder.table_id == item.id,
-                RestaurantOrder.estado == "ABIERTA",
-            )
-            .first()
-        )
-        if open_order:
-            return RedirectResponse(
-                "/data/mesas?error=No+puedes+desactivar+una+mesa+con+orden+abierta",
-                status_code=303,
-            )
-    item.active = desired_state
-    db.commit()
-    return RedirectResponse(
-        f"/data/mesas?success={'Mesa+activada' if desired_state else 'Mesa+desactivada'}",
-        status_code=303,
-    )
-
-
-@router.post("/data/mesas/layout")
-async def data_restaurant_tables_layout_save(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(_require_admin_web),
-):
-    _enforce_permission(request, user, "access.data.catalogs")
-    if (get_active_company_key() or "").strip().lower() != "barrera":
-        raise HTTPException(status_code=404, detail="Catalogo no disponible")
-    form = await request.form()
-    raw_payload = str(form.get("layout_json") or "").strip()
-    if not raw_payload:
-        return RedirectResponse("/data/mesas?error=No+se+recibio+layout", status_code=303)
-    try:
-        payload = json.loads(raw_payload)
-    except json.JSONDecodeError:
-        return RedirectResponse("/data/mesas?error=Layout+invalido", status_code=303)
-    if not isinstance(payload, list):
-        return RedirectResponse("/data/mesas?error=Layout+invalido", status_code=303)
-
-    table_ids: list[int] = []
-    normalized_items: list[dict[str, int]] = []
-    for row in payload:
-        if not isinstance(row, dict):
-            continue
-        try:
-            table_id = int(row.get("id"))
-        except Exception:
-            continue
-        try:
-            pos_x = int(row.get("pos_x"))
-            pos_y = int(row.get("pos_y"))
-        except Exception:
-            continue
-        sort_order_raw = row.get("sort_order")
-        try:
-            sort_order = int(sort_order_raw) if sort_order_raw is not None else 0
-        except Exception:
-            sort_order = 0
-        normalized_items.append(
-            {
-                "id": table_id,
-                "pos_x": max(min(pos_x, 90), 0),
-                "pos_y": max(min(pos_y, 90), 0),
-                "sort_order": max(sort_order, 0),
-            }
-        )
-        table_ids.append(table_id)
-    if not normalized_items:
-        return RedirectResponse("/data/mesas?error=Layout+vacio", status_code=303)
-
-    tables = (
-        db.query(RestaurantTable)
-        .filter(RestaurantTable.id.in_(table_ids))
-        .all()
-    )
-    by_id = {int(table.id): table for table in tables}
-    changed = False
-    for row in normalized_items:
-        table = by_id.get(int(row["id"]))
-        if not table or not table.active:
-            continue
-        next_x = int(row["pos_x"])
-        next_y = int(row["pos_y"])
-        next_sort = int(row["sort_order"])
-        if int(table.pos_x or 0) != next_x:
-            table.pos_x = next_x
-            changed = True
-        if int(table.pos_y or 0) != next_y:
-            table.pos_y = next_y
-            changed = True
-        if int(table.sort_order or 0) != next_sort:
-            table.sort_order = next_sort
-            changed = True
-    if changed:
-        db.commit()
-    return RedirectResponse("/data/mesas?success=Plano+de+mesas+actualizado", status_code=303)
-
-
 @router.get("/data/menu")
 def data_menu_layout(
     request: Request,
@@ -19113,11 +20569,9 @@ async def data_empresa_update(
     email: Optional[str] = Form(None),
     logo_url: Optional[str] = Form(None),
     pos_logo_url: Optional[str] = Form(None),
-    login_logo_url: Optional[str] = Form(None),
     favicon_url: Optional[str] = Form(None),
     logo_file: Optional[UploadFile] = File(None),
     pos_logo_file: Optional[UploadFile] = File(None),
-    login_logo_file: Optional[UploadFile] = File(None),
     favicon_file: Optional[UploadFile] = File(None),
     inventory_cs_only: Optional[str] = Form(None),
     recipe_explosion_on_ingreso: Optional[str] = Form(None),
@@ -19143,7 +20597,6 @@ async def data_empresa_update(
     profile.email = (email or "").strip()
     next_logo_url = (logo_url or "").strip() or (profile.logo_url or "/static/logo_hollywood.png")
     next_pos_logo_url = (pos_logo_url or "").strip() or (profile.pos_logo_url or next_logo_url)
-    next_login_logo_url = (login_logo_url or "").strip() or (getattr(profile, "login_logo_url", "") or next_pos_logo_url or next_logo_url)
     next_favicon_url = (favicon_url or "").strip() or (profile.favicon_url or "/static/favicon.ico")
     try:
         uploaded_logo_url = _save_company_asset(
@@ -19154,11 +20607,6 @@ async def data_empresa_update(
         uploaded_pos_logo_url = _save_company_asset(
             pos_logo_file,
             asset_kind="pos_logo",
-            allowed_exts={".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"},
-        )
-        uploaded_login_logo_url = _save_company_asset(
-            login_logo_file,
-            asset_kind="login_logo",
             allowed_exts={".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"},
         )
         uploaded_favicon_url = _save_company_asset(
@@ -19174,17 +20622,10 @@ async def data_empresa_update(
         next_pos_logo_url = uploaded_pos_logo_url
     elif uploaded_logo_url and not (pos_logo_url or "").strip():
         next_pos_logo_url = uploaded_logo_url
-    if uploaded_login_logo_url:
-        next_login_logo_url = uploaded_login_logo_url
-    elif uploaded_pos_logo_url and not (login_logo_url or "").strip():
-        next_login_logo_url = uploaded_pos_logo_url
-    elif uploaded_logo_url and not (login_logo_url or "").strip():
-        next_login_logo_url = uploaded_logo_url
     if uploaded_favicon_url:
         next_favicon_url = uploaded_favicon_url
     profile.logo_url = next_logo_url
     profile.pos_logo_url = next_pos_logo_url
-    profile.login_logo_url = next_login_logo_url
     profile.favicon_url = next_favicon_url
     profile.inventory_cs_only = inventory_cs_only == "on"
     profile.recipe_explosion_on_ingreso = recipe_explosion_on_ingreso == "on"
@@ -20457,14 +21898,28 @@ def data_update_usuario(
     edit_user = db.query(User).filter(User.id == item_id).first()
     if not edit_user:
         return RedirectResponse("/data/usuarios?error=Usuario+no+existe", status_code=303)
+    requested_active = is_active == "on"
+    role_ids = role_ids or []
+    roles = db.query(Role).filter(Role.id.in_(role_ids)).all() if role_ids else []
+    requested_role_names = {(role.name or "").strip().lower() for role in roles}
+    current_role_names = {(role.name or "").strip().lower() for role in (edit_user.roles or [])}
+    target_is_admin = "administrador" in requested_role_names or "administrador" in current_role_names
+    if not requested_active and int(edit_user.id) == int(user.id):
+        return RedirectResponse("/data/usuarios?error=No+puedes+desactivar+tu+propio+usuario", status_code=303)
+    if target_is_admin and not requested_active:
+        active_admin_count = (
+            db.query(User)
+            .join(User.roles)
+            .filter(User.is_active.is_(True), func.lower(Role.name) == "administrador")
+            .count()
+        )
+        if active_admin_count <= 1:
+            return RedirectResponse("/data/usuarios?error=Debe+existir+al+menos+un+administrador+activo", status_code=303)
     edit_user.full_name = full_name.strip()
     edit_user.email = email.strip().lower()
     if new_password:
         edit_user.hashed_password = hash_password(new_password)
-    edit_user.is_active = is_active == "on"
-    roles = []
-    if role_ids:
-        roles = db.query(Role).filter(Role.id.in_(role_ids)).all()
+    edit_user.is_active = requested_active
     edit_user.roles = roles
     if not branch_id or not bodega_id:
         return RedirectResponse("/data/usuarios?error=Sucursal+y+bodega+requeridas", status_code=303)
@@ -20493,6 +21948,36 @@ def data_update_usuario(
     edit_user.vendedor_id = vendedor.id if vendedor else None
     db.commit()
     return RedirectResponse("/data/usuarios?success=Usuario+actualizado", status_code=303)
+
+
+@router.post("/data/usuarios/{item_id}/toggle")
+def data_toggle_usuario(
+    request: Request,
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.users")
+    target = db.query(User).filter(User.id == item_id).first()
+    if not target:
+        return RedirectResponse("/data/usuarios?error=Usuario+no+existe", status_code=303)
+    if int(target.id) == int(user.id):
+        return RedirectResponse("/data/usuarios?error=No+puedes+desactivar+tu+propio+usuario", status_code=303)
+    role_names = {(role.name or "").strip().lower() for role in (target.roles or [])}
+    next_active = not bool(target.is_active)
+    if "administrador" in role_names and not next_active:
+        active_admin_count = (
+            db.query(User)
+            .join(User.roles)
+            .filter(User.is_active.is_(True), func.lower(Role.name) == "administrador")
+            .count()
+        )
+        if active_admin_count <= 1:
+            return RedirectResponse("/data/usuarios?error=Debe+existir+al+menos+un+administrador+activo", status_code=303)
+    target.is_active = next_active
+    db.commit()
+    action = "activado" if target.is_active else "desactivado"
+    return RedirectResponse(f"/data/usuarios?success=Usuario+{action}", status_code=303)
 
 
 @router.get("/data/clientes")
@@ -20682,6 +22167,7 @@ def sales_shoes_variants_search(
         return JSONResponse({"ok": True, "items": []})
     price_tier = _normalize_price_tier(price_list, default=1)
     query = (q or "").strip()
+    query_upper = query.upper()
     color_filter = (color or "").strip()
     talla_filter = (talla or "").strip()
     if len(query) < 1 and not color_filter and not talla_filter:
@@ -20716,7 +22202,14 @@ def sales_shoes_variants_search(
             Producto.activo.is_(True),
         )
     )
-    if query:
+    if query and re.fullmatch(r"V\d{1,10}", query_upper):
+        try:
+            variant_id_exact = int(query_upper[1:])
+        except ValueError:
+            variant_id_exact = 0
+        if variant_id_exact > 0:
+            q_variants = q_variants.filter(ShoeProductVariant.id == variant_id_exact)
+    elif query:
         like = f"%{query.lower()}%"
         q_variants = q_variants.filter(
             or_(
@@ -20742,15 +22235,38 @@ def sales_shoes_variants_search(
         .limit(max(10, min(limit, 500)))
         .all()
     )
+    variant_ids = [int(variant.id) for variant, _, _, _ in rows if getattr(variant, "id", None)]
+    global_stock_map: dict[int, float] = {}
+    if variant_ids:
+        global_stock_rows = (
+            db.query(
+                ShoeVariantStock.variante_id,
+                func.sum(ShoeVariantStock.existencia),
+            )
+            .join(Bodega, Bodega.id == ShoeVariantStock.bodega_id)
+            .filter(
+                ShoeVariantStock.variante_id.in_(variant_ids),
+                Bodega.activo.is_(True),
+            )
+            .group_by(ShoeVariantStock.variante_id)
+            .all()
+        )
+        global_stock_map = {
+            int(variante_id): float(total_qty or 0)
+            for variante_id, total_qty in global_stock_rows
+            if variante_id
+        }
     items: list[dict[str, object]] = []
     for variant, producto, color_row, stock_row in rows:
         existencia = float(stock_row.existencia or 0) if stock_row else 0.0
+        existencia_global = float(global_stock_map.get(int(variant.id), 0.0) or 0.0)
         prices = _product_price_map(producto)
         costo_cs = float(producto.costo_producto or 0)
         costo_usd = float((Decimal(str(costo_cs)) / Decimal(str(producto.tasa_cambio))).quantize(Decimal("0.01"))) if producto.tasa_cambio else 0.0
         items.append(
             {
                 "variant_id": int(variant.id),
+                "scan_code": _variant_scan_code(variant.id),
                 "producto_id": int(producto.id),
                 "cod_variante": variant.cod_variante,
                 "cod_producto": producto.cod_producto,
@@ -20758,6 +22274,7 @@ def sales_shoes_variants_search(
                 "color": color_row.nombre,
                 "talla": variant.talla,
                 "existencia": existencia,
+                "existencia_global": existencia_global,
                 "costo_cs": costo_cs,
                 "costo_usd": costo_usd,
                 **prices,
@@ -21027,9 +22544,12 @@ def _ingreso_labels_payload(ingreso: IngresoInventario) -> tuple[list[dict[str, 
         talla_name = ""
         if getattr(item, "variante", None):
             code_value = (item.variante.cod_variante or "").strip()
+            scan_code = _variant_scan_code(item.variante.id)
             if item.variante.color:
                 color_name = (item.variante.color.nombre or "").strip()
             talla_name = (item.variante.talla or "").strip()
+        else:
+            scan_code = ""
         if not code_value and item.producto:
             code_value = (item.producto.cod_producto or "").strip()
         if item.producto:
@@ -21040,6 +22560,7 @@ def _ingreso_labels_payload(ingreso: IngresoInventario) -> tuple[list[dict[str, 
         if key not in grouped:
             grouped[key] = {
                 "code": code_value,
+                "scan_code": scan_code or code_value,
                 "name": display_name or code_value,
                 "color": color_name,
                 "talla": talla_name,
@@ -21176,7 +22697,7 @@ def inventory_ingreso_labels_pdf(
             pdf.setFont("Helvetica", 6.5)
             pdf.drawString(x + 4, y + label_h - 18, detail[:48])
 
-        barcode = Code128(code_value, barHeight=max(8 * mm, label_h * 0.34), barWidth=0.28 * mm, humanReadable=False)
+        barcode = Code128(code_value, barHeight=max(8 * mm, label_h * 0.34), barWidth=0.34 * mm, humanReadable=False)
         bar_x = x + 4
         bar_y = y + max(7 * mm, label_h * 0.2)
         max_bar_w = label_w - 8
@@ -21185,7 +22706,7 @@ def inventory_ingreso_labels_pdf(
             barcode = Code128(
                 code_value,
                 barHeight=max(8 * mm, label_h * 0.34),
-                barWidth=max(0.12 * mm, (0.28 * mm) * shrink),
+                barWidth=max(0.19 * mm, (0.34 * mm) * shrink),
                 humanReadable=False,
             )
         barcode.drawOn(pdf, bar_x, bar_y)
@@ -21200,54 +22721,6 @@ def inventory_ingreso_labels_pdf(
         "X-Total-Labels": str(total_labels),
     }
     return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
-
-
-_ABIERTA_TAG_ING = "[ABIERTA_ING:"
-_ABIERTA_TAG_EGR = "[ABIERTA_EGR:"
-
-
-def _is_produccion_abierta_tipo(nombre: Optional[str]) -> bool:
-    text = (nombre or "").strip().lower()
-    return "produccion de abierta" in text
-
-
-def _extract_tagged_id(text: Optional[str], tag_prefix: str) -> Optional[int]:
-    raw = (text or "").strip()
-    if not raw:
-        return None
-    marker_pos = raw.find(tag_prefix)
-    if marker_pos < 0:
-        return None
-    start = marker_pos + len(tag_prefix)
-    end = raw.find("]", start)
-    if end <= start:
-        return None
-    token = raw[start:end].strip()
-    if not token.isdigit():
-        return None
-    return int(token)
-
-
-def _append_tag_to_observacion(base: Optional[str], tag_prefix: str, value: int) -> str:
-    base_text = (base or "").strip()
-    tag = f"{tag_prefix}{value}]"
-    if tag in base_text:
-        return base_text[:300]
-    next_text = f"{base_text} {tag}".strip()
-    return next_text[:300]
-
-
-def _find_linked_ingreso_for_abierta(db: Session, egreso: EgresoInventario) -> Optional[IngresoInventario]:
-    ingreso_id = _extract_tagged_id(egreso.observacion, _ABIERTA_TAG_ING)
-    if ingreso_id:
-        return db.query(IngresoInventario).filter(IngresoInventario.id == ingreso_id).first()
-    guess = (
-        db.query(IngresoInventario)
-        .filter(IngresoInventario.observacion.like(f"%{_ABIERTA_TAG_EGR}{egreso.id}]%"))
-        .order_by(IngresoInventario.id.desc())
-        .first()
-    )
-    return guess
 
 
 @router.get("/inventory/egresos/{egreso_id}/pdf")
@@ -21272,235 +22745,6 @@ def inventory_egreso_pdf(
     )
     if not egreso:
         raise HTTPException(status_code=404, detail="Egreso no encontrado")
-    if _is_produccion_abierta_tipo(egreso.tipo.nombre if egreso.tipo else ""):
-        linked_ingreso = _find_linked_ingreso_for_abierta(db, egreso)
-        if linked_ingreso:
-            buffer = io.BytesIO()
-            pdf = canvas.Canvas(buffer, pagesize=letter)
-            width, height = letter
-            margin = 36
-
-            logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
-            if logo_path.exists():
-                pdf.drawImage(
-                    str(logo_path),
-                    margin,
-                    height - 78,
-                    width=90,
-                    height=60,
-                    preserveAspectRatio=True,
-                    mask="auto",
-                )
-
-            info_x = margin + 110
-            info_y = height - 44
-            branch = egreso.bodega.branch if egreso.bodega else None
-            identity = _company_identity(branch, company_profile)
-            pdf.setFont("Helvetica-Bold", 11)
-            pdf.drawString(info_x, info_y, identity["company_name"])
-            pdf.setFont("Helvetica", 9)
-            pdf.drawString(info_x, info_y - 14, f"Telf. {identity['telefono']}")
-            pdf.drawString(info_x, info_y - 28, f"Direccion: {identity['direccion']}")
-
-            pdf.setFont("Helvetica-Bold", 13)
-            pdf.drawString(margin, height - 120, "Resultado del movimiento de abiertas de pacas producidas")
-            pdf.setFont("Helvetica", 10)
-            pdf.drawString(margin, height - 136, f"Egreso #{egreso.id}  |  Ingreso resultado #{linked_ingreso.id}")
-            pdf.setStrokeColorRGB(0.75, 0.75, 0.75)
-            pdf.setLineWidth(0.6)
-            pdf.line(margin, height - 146, width - margin, height - 146)
-
-            def fmt_num(value: float) -> str:
-                return f"{float(value or 0):,.2f}"
-
-            def fmt_cs(value: float) -> str:
-                return f"C$ {fmt_num(value)}"
-
-            def fmt_usd(value: float) -> str:
-                return f"$ {fmt_num(value)}"
-
-            def fmt_cs_signed(value: float) -> str:
-                if value < 0:
-                    return f"-C$ {fmt_num(abs(value))}"
-                return f"C$ {fmt_num(value)}"
-
-            def fmt_usd_signed(value: float) -> str:
-                if value < 0:
-                    return f"-$ {fmt_num(abs(value))}"
-                return f"$ {fmt_num(value)}"
-
-            tasa_ref = float(egreso.tasa_cambio or linked_ingreso.tasa_cambio or 0)
-            pdf.setFont("Helvetica", 9)
-            pdf.drawString(margin, height - 160, f"Fecha proceso: {egreso.fecha.isoformat()}")
-            pdf.drawString(margin + 220, height - 160, f"Bodega: {egreso.bodega.name if egreso.bodega else '-'}")
-            pdf.drawString(margin, height - 174, f"Moneda base: {(egreso.moneda or '-').upper()}")
-            pdf.drawString(margin + 220, height - 174, f"Tasa referencia: {('C$ %.4f' % tasa_ref) if tasa_ref else '-'}")
-            obs_text = egreso.observacion or "-"
-            if len(obs_text) > 110:
-                obs_text = f"{obs_text[:107]}..."
-            pdf.drawString(margin, height - 188, f"Motivo: {obs_text}")
-
-            y = height - 210
-
-            def _page_header(section_title: str, y_pos: float) -> float:
-                pdf.setFont("Helvetica-Bold", 10)
-                pdf.drawString(margin, y_pos, section_title)
-                y_pos -= 4
-                pdf.setStrokeColorRGB(0.83, 0.83, 0.83)
-                pdf.setLineWidth(0.5)
-                pdf.line(margin, y_pos, width - margin, y_pos)
-                y_pos -= 14
-                pdf.setFont("Helvetica-Bold", 8.5)
-                pdf.drawString(margin, y_pos, "Codigo")
-                pdf.drawString(margin + 70, y_pos, "Descripcion")
-                pdf.drawRightString(margin + 320, y_pos, "Cant.")
-                pdf.drawRightString(margin + 400, y_pos, "Subtotal C$")
-                pdf.drawRightString(margin + 500, y_pos, "Subtotal USD")
-                y_pos -= 3
-                pdf.setStrokeColorRGB(0.90, 0.90, 0.90)
-                pdf.setLineWidth(0.4)
-                pdf.line(margin, y_pos, width - margin, y_pos)
-                return y_pos - 10
-
-            def _ensure_space(current_y: float, required: float = 40) -> float:
-                if current_y >= margin + required:
-                    return current_y
-                pdf.setFont("Helvetica", 8)
-                pdf.drawRightString(width - margin, margin - 18, f"Pagina {pdf.getPageNumber()}")
-                pdf.showPage()
-                return height - margin
-
-            y = _page_header("1) Salida de inventario (egreso origen)", y)
-            pdf.setFont("Helvetica", 8)
-            for item in egreso.items or []:
-                y = _ensure_space(y)
-                if y > height - margin - 1:
-                    y = _page_header("1) Salida de inventario (egreso origen) (cont.)", y)
-                    pdf.setFont("Helvetica", 8)
-                code = item.producto.cod_producto if item.producto else ""
-                desc = item.producto.descripcion if item.producto else ""
-                if len(desc) > 42:
-                    desc = f"{desc[:39]}..."
-                pdf.drawString(margin, y, code)
-                pdf.drawString(margin + 70, y, desc)
-                pdf.drawRightString(margin + 320, y, fmt_num(float(item.cantidad or 0)))
-                pdf.drawRightString(margin + 400, y, fmt_num(float(item.subtotal_cs or 0)))
-                pdf.drawRightString(margin + 500, y, fmt_num(float(item.subtotal_usd or 0)))
-                y -= 13
-
-            egreso_total_bultos = sum(float(item.cantidad or 0) for item in (egreso.items or []))
-            y -= 4
-            pdf.setStrokeColorRGB(0.90, 0.90, 0.90)
-            pdf.setLineWidth(0.4)
-            pdf.line(margin, y, width - margin, y)
-            y -= 12
-            pdf.setFont("Helvetica-Bold", 9)
-            pdf.drawString(margin, y, "Subtotal salida:")
-            pdf.drawRightString(margin + 320, y, fmt_num(egreso_total_bultos))
-            pdf.drawRightString(margin + 400, y, fmt_num(float(egreso.total_cs or 0)))
-            pdf.drawRightString(margin + 500, y, fmt_num(float(egreso.total_usd or 0)))
-
-            y -= 20
-            y = _ensure_space(y, 80)
-            if y > height - margin - 1:
-                y = _page_header("2) Ingreso de resultado (productos producidos)", y)
-            else:
-                y = _page_header("2) Ingreso de resultado (productos producidos)", y)
-            pdf.setFont("Helvetica", 8)
-            for item in linked_ingreso.items or []:
-                y = _ensure_space(y)
-                if y > height - margin - 1:
-                    y = _page_header("2) Ingreso de resultado (productos producidos) (cont.)", y)
-                    pdf.setFont("Helvetica", 8)
-                code = item.producto.cod_producto if item.producto else ""
-                desc = item.producto.descripcion if item.producto else ""
-                if len(desc) > 42:
-                    desc = f"{desc[:39]}..."
-                pdf.drawString(margin, y, code)
-                pdf.drawString(margin + 70, y, desc)
-                pdf.drawRightString(margin + 320, y, fmt_num(float(item.cantidad or 0)))
-                pdf.drawRightString(margin + 400, y, fmt_num(float(item.subtotal_cs or 0)))
-                pdf.drawRightString(margin + 500, y, fmt_num(float(item.subtotal_usd or 0)))
-                y -= 13
-
-            ingreso_total_bultos = sum(float(item.cantidad or 0) for item in (linked_ingreso.items or []))
-            y -= 4
-            pdf.setStrokeColorRGB(0.90, 0.90, 0.90)
-            pdf.setLineWidth(0.4)
-            pdf.line(margin, y, width - margin, y)
-            y -= 12
-            pdf.setFont("Helvetica-Bold", 9)
-            pdf.drawString(margin, y, "Subtotal ingreso:")
-            pdf.drawRightString(margin + 320, y, fmt_num(ingreso_total_bultos))
-            pdf.drawRightString(margin + 400, y, fmt_num(float(linked_ingreso.total_cs or 0)))
-            pdf.drawRightString(margin + 500, y, fmt_num(float(linked_ingreso.total_usd or 0)))
-
-            egreso_total_cs = float(egreso.total_cs or 0)
-            egreso_total_usd = float(egreso.total_usd or 0)
-            ingreso_total_cs = float(linked_ingreso.total_cs or 0)
-            ingreso_total_usd = float(linked_ingreso.total_usd or 0)
-            resultado_cs = ingreso_total_cs - egreso_total_cs
-            resultado_usd = ingreso_total_usd - egreso_total_usd
-            tol = 1e-9
-            if resultado_cs > tol:
-                balance_label = "GANANCIA"
-            elif resultado_cs < -tol:
-                balance_label = "PERDIDA"
-            elif resultado_usd > tol:
-                balance_label = "GANANCIA"
-            elif resultado_usd < -tol:
-                balance_label = "PERDIDA"
-            else:
-                balance_label = "SIN DIFERENCIA"
-
-            y -= 22
-            y = _ensure_space(y, 120)
-            if y > height - margin - 1:
-                y = height - margin - 10
-            pdf.setFont("Helvetica-Bold", 10)
-            pdf.drawString(margin, y, "3) Balance final del movimiento")
-            y -= 4
-            pdf.setStrokeColorRGB(0.83, 0.83, 0.83)
-            pdf.setLineWidth(0.5)
-            pdf.line(margin, y, width - margin, y)
-            y -= 16
-            pdf.setFont("Helvetica", 9)
-            pdf.drawString(margin, y, f"Bultos salida: {fmt_num(egreso_total_bultos)}")
-            pdf.drawString(margin + 250, y, f"Bultos ingreso: {fmt_num(ingreso_total_bultos)}")
-            y -= 18
-            pdf.drawString(margin, y, f"Total salida: {fmt_cs(egreso_total_cs)}")
-            pdf.drawString(margin + 250, y, f"Total salida: {fmt_usd(egreso_total_usd)}")
-            y -= 14
-            pdf.drawString(margin, y, f"Total ingreso: {fmt_cs(ingreso_total_cs)}")
-            pdf.drawString(margin + 250, y, f"Total ingreso: {fmt_usd(ingreso_total_usd)}")
-            y -= 16
-            pdf.setFont("Helvetica-Bold", 10)
-            resultado_cs_display = resultado_cs
-            resultado_usd_display = resultado_usd
-            if balance_label == "PERDIDA":
-                pdf.setFillColorRGB(0.78, 0.09, 0.09)
-            pdf.drawString(margin, y, f"Resultado neto: {fmt_cs_signed(resultado_cs_display)}")
-            pdf.drawString(margin + 250, y, f"Resultado neto: {fmt_usd_signed(resultado_usd_display)}")
-            if balance_label == "PERDIDA":
-                pdf.setFillColorRGB(0, 0, 0)
-            y -= 16
-            pdf.setFont("Helvetica-Bold", 10)
-            if balance_label == "PERDIDA":
-                pdf.setFillColorRGB(0.78, 0.09, 0.09)
-            pdf.drawString(margin, y, f"Estado: {balance_label}")
-            if balance_label == "PERDIDA":
-                pdf.setFillColorRGB(0, 0, 0)
-
-            pdf.setFont("Helvetica", 8)
-            pdf.drawRightString(width - margin, margin - 18, f"Pagina {pdf.getPageNumber()}")
-
-            pdf.showPage()
-            pdf.save()
-            buffer.seek(0)
-            headers = {
-                "Content-Disposition": f"inline; filename=abierta_pacas_{egreso.id}.pdf"
-            }
-            return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
 
     total_items = len(egreso.items or [])
     total_bultos = sum(float(item.cantidad or 0) for item in (egreso.items or []))
@@ -22070,13 +23314,6 @@ def sales_ticket_print(
     currency_label = "C$" if moneda == "CS" else "$"
     total_amount = float(factura.total_cs or 0) if moneda == "CS" else float(factura.total_usd or 0)
     subtotal_amount = total_amount
-    tasa_referencia = Decimal(str(factura.tasa_cambio or 0))
-    total_usd_equiv_dec = Decimal(str(factura.total_usd or 0))
-    if total_usd_equiv_dec <= 0 and moneda == "CS" and tasa_referencia > 0:
-        total_usd_equiv_dec = (
-            Decimal(str(factura.total_cs or 0)) / tasa_referencia
-        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    usd_equivalent_amount = float(total_usd_equiv_dec)
 
     pagos = factura.pagos or []
     total_paid = sum(
@@ -22094,8 +23331,6 @@ def sales_ticket_print(
         ("amajo" in active_company_key) or ("comestibles" in active_company_key)
         or ("amajo" in db_name) or ("comestibles" in db_name)
     )
-    is_global_mode = (active_company_key == "bdtrend") or ("bdtrend" in db_name)
-    show_usd_equivalent = is_global_mode and usd_equivalent_amount > 0
     is_hollpacas_mode = (
         ("hollpacas" in active_company_key) or ("hollywoodpacas" in active_company_key)
         or ("holl" in db_name) or ("pacas" in db_name)
@@ -22152,8 +23387,6 @@ def sales_ticket_print(
 
     pagos_render = []
     line_count += 4  # total unds + subtotal + descuentos + total
-    if show_usd_equivalent:
-        line_count += 1
     for pago in pagos:
         forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
         banco = pago.banco.nombre if pago.banco else ""
@@ -22195,8 +23428,6 @@ def sales_ticket_print(
             "currency_label": currency_label,
             "total_amount": total_amount,
             "subtotal_amount": subtotal_amount,
-            "show_usd_equivalent": show_usd_equivalent,
-            "usd_equivalent_amount": usd_equivalent_amount,
             "saldo": saldo,
             "total_unidades": total_unidades,
             "items": items,
@@ -22371,13 +23602,7 @@ def inventory_update_product(
     linea_id: Optional[str] = Form(None),
     segmento_id: Optional[str] = Form(None),
     tipo_producto: Optional[str] = Form("DIRECTO"),
-    es_por_peso: Optional[str] = Form(None),
     unidad_medida_id: Optional[str] = Form(None),
-    precio_venta1_usd: float = Form(0),
-    precio_venta2_usd: float = Form(0),
-    precio_venta3_usd: float = Form(0),
-    costo_producto_usd: float = Form(0),
-    existencia: Optional[float] = Form(None),
     image_file: Optional[UploadFile] = File(None),
     activo: Optional[str] = Form(None),
     redirect_to: Optional[str] = Form(None),
@@ -22414,48 +23639,13 @@ def inventory_update_product(
     if not producto:
         return _error("Producto no encontrado")
 
-    rate_today = (
-        db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= local_today())
-        .order_by(ExchangeRate.effective_date.desc())
-        .first()
-    )
-    if not rate_today:
-        return _error("Tasa de cambio no configurada")
-
-    tasa = float(rate_today.rate)
-    weighted_feature_enabled = _weighted_inventory_enabled_mode(db) or _weighted_sales_enabled_mode(db)
-    is_weight_product = weighted_feature_enabled and es_por_peso == "on"
     selected_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=False) or producto.unidad_medida or _default_product_unit(db)
     if not selected_unit:
         return _error("Unidad de medida invalida")
     product_images_enabled = _product_images_enabled(db)
-    inventory_cs_only = _inventory_cs_only_mode(db)
-    if inventory_cs_only:
-        precio_venta1_cs = float(precio_venta1_usd or 0)
-        precio_venta2_cs = float(precio_venta2_usd or 0)
-        precio_venta3_cs = float(precio_venta3_usd or 0)
-        costo_producto_cs = float(costo_producto_usd or 0)
-        precio_venta1_usd = (precio_venta1_cs / tasa) if tasa else 0
-        precio_venta2_usd = (precio_venta2_cs / tasa) if tasa else 0
-        precio_venta3_usd = (precio_venta3_cs / tasa) if tasa else 0
-        costo_producto_usd = (costo_producto_cs / tasa) if tasa else 0
-    else:
-        precio_venta1_cs = precio_venta1_usd * tasa
-        precio_venta2_cs = precio_venta2_usd * tasa
-        precio_venta3_cs = precio_venta3_usd * tasa
-        costo_producto_cs = costo_producto_usd * tasa
     producto.descripcion = descripcion
     producto.linea_id = _to_int(linea_id)
     producto.segmento_id = _to_int(segmento_id)
-    producto.precio_venta1_usd = precio_venta1_usd
-    producto.precio_venta2_usd = precio_venta2_usd
-    producto.precio_venta3_usd = precio_venta3_usd
-    producto.precio_venta1 = precio_venta1_cs
-    producto.precio_venta2 = precio_venta2_cs
-    producto.precio_venta3 = precio_venta3_cs
-    producto.costo_producto = costo_producto_cs
-    producto.tasa_cambio = tasa
     producto.tipo_producto = tipo_producto_normalized
     try:
         uploaded_image_url = _save_product_asset(image_file) if product_images_enabled else None
@@ -22463,15 +23653,8 @@ def inventory_update_product(
         return _error(str(exc))
     if product_images_enabled and uploaded_image_url:
         producto.image_url = uploaded_image_url
-    producto.es_por_peso = is_weight_product
     producto.unidad_medida_id = selected_unit.id if selected_unit else None
     producto.activo = activo == "on"
-
-    if existencia is not None:
-        if producto.saldo:
-            producto.saldo.existencia = existencia
-        else:
-            db.add(SaldoProducto(producto_id=producto.id, existencia=existencia))
 
     db.commit()
     if is_fetch:
@@ -22482,14 +23665,9 @@ def inventory_update_product(
                 "id": producto.id,
                 "cod_producto": producto.cod_producto,
                 "descripcion": producto.descripcion,
-                "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
-                "precio_venta2_usd": float(producto.precio_venta2_usd or 0),
-                "precio_venta3_usd": float(producto.precio_venta3_usd or 0),
-                "costo_usd": float(costo_producto_usd or 0),
                 "activo": bool(producto.activo),
                 "image_url": (producto.image_url or "") if product_images_enabled else "",
                 "tipo_producto": producto.tipo_producto or "DIRECTO",
-                "es_por_peso": bool(producto.es_por_peso),
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
                 "unidad_medida_nombre": producto.unidad_medida.nombre if producto.unidad_medida else "",
             }
@@ -22522,12 +23700,224 @@ def inventory_product_json(
             "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
             "precio_venta2_usd": float(producto.precio_venta2_usd or 0),
             "precio_venta3_usd": float(producto.precio_venta3_usd or 0),
+            "precio_venta4_usd": float(producto.precio_venta4_usd or 0),
+            "precio_venta5_usd": float(producto.precio_venta5_usd or 0),
+            "precio_venta6_usd": float(producto.precio_venta6_usd or 0),
+            "precio_venta7_usd": float(producto.precio_venta7_usd or 0),
             "costo_usd": costo_usd,
             "activo": bool(producto.activo),
             "image_url": (producto.image_url or "") if product_images_enabled else "",
             "tipo_producto": producto.tipo_producto or "DIRECTO",
             "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
             "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
+        }
+    )
+
+
+@router.post("/inventory/products/bulk-price-update")
+def inventory_bulk_price_update(
+    request: Request,
+    filter_query: str = Form(...),
+    filter_mode: Optional[str] = Form("contains"),
+    precio_venta1_usd: Optional[str] = Form(None),
+    precio_venta2_usd: Optional[str] = Form(None),
+    precio_venta3_usd: Optional[str] = Form(None),
+    precio_venta4_usd: Optional[str] = Form(None),
+    precio_venta5_usd: Optional[str] = Form(None),
+    precio_venta6_usd: Optional[str] = Form(None),
+    precio_venta7_usd: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.productos")
+    query_text = (filter_query or "").strip()
+    if not query_text:
+        return JSONResponse({"ok": False, "message": "Debes indicar un codigo, modelo o termino de busqueda"}, status_code=400)
+
+    mode = (filter_mode or "contains").strip().lower()
+    if mode not in {"contains", "starts", "exact"}:
+        mode = "contains"
+
+    def _parse_optional_money(raw: Optional[str]) -> Optional[float]:
+        text = (raw or "").strip()
+        if not text:
+            return None
+        try:
+            value = float(text)
+        except (TypeError, ValueError):
+            raise ValueError("Los precios deben ser numericos")
+        if value < 0:
+            raise ValueError("Los precios no pueden ser negativos")
+        return value
+
+    try:
+        raw_prices = {
+            1: _parse_optional_money(precio_venta1_usd),
+            2: _parse_optional_money(precio_venta2_usd),
+            3: _parse_optional_money(precio_venta3_usd),
+            4: _parse_optional_money(precio_venta4_usd),
+            5: _parse_optional_money(precio_venta5_usd),
+            6: _parse_optional_money(precio_venta6_usd),
+            7: _parse_optional_money(precio_venta7_usd),
+        }
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+
+    if not any(value is not None for value in raw_prices.values()):
+        return JSONResponse({"ok": False, "message": "Debes indicar al menos un precio para aplicar"}, status_code=400)
+
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    if not rate_today:
+        return JSONResponse({"ok": False, "message": "Tasa de cambio no configurada"}, status_code=400)
+
+    tasa = float(rate_today.rate or 0)
+    if tasa <= 0:
+        return JSONResponse({"ok": False, "message": "La tasa de cambio actual es invalida"}, status_code=400)
+
+    inventory_cs_only = _inventory_cs_only_mode(db)
+    search_norm = query_text.lower()
+    if mode == "exact":
+        predicate = or_(
+            func.lower(Producto.cod_producto) == search_norm,
+            func.lower(Producto.descripcion) == search_norm,
+            func.lower(func.coalesce(Producto.marca, "")) == search_norm,
+            func.lower(func.coalesce(ShoeProductVariant.cod_variante, "")) == search_norm,
+        )
+    elif mode == "starts":
+        like = f"{search_norm}%"
+        predicate = or_(
+            func.lower(Producto.cod_producto).like(like),
+            func.lower(Producto.descripcion).like(like),
+            func.lower(func.coalesce(Producto.marca, "")).like(like),
+            func.lower(func.coalesce(ShoeProductVariant.cod_variante, "")).like(like),
+        )
+    else:
+        like = f"%{search_norm}%"
+        predicate = or_(
+            func.lower(Producto.cod_producto).like(like),
+            func.lower(Producto.descripcion).like(like),
+            func.lower(func.coalesce(Producto.marca, "")).like(like),
+            func.lower(func.coalesce(ShoeProductVariant.cod_variante, "")).like(like),
+        )
+
+    products = (
+        db.query(Producto)
+        .outerjoin(ShoeProductVariant, ShoeProductVariant.producto_id == Producto.id)
+        .filter(predicate)
+        .distinct()
+        .order_by(Producto.cod_producto.asc())
+        .all()
+    )
+    if not products:
+        return JSONResponse({"ok": False, "message": "No se encontraron productos para ese filtro"}, status_code=404)
+
+    changed_fields: list[str] = []
+    for producto in products:
+        producto.tasa_cambio = tasa
+        for tier, incoming_value in raw_prices.items():
+            if incoming_value is None:
+                continue
+            usd_value = (incoming_value / tasa) if inventory_cs_only else incoming_value
+            cs_value = incoming_value if inventory_cs_only else (incoming_value * tasa)
+            setattr(producto, f"precio_venta{tier}_usd", usd_value)
+            setattr(producto, f"precio_venta{tier}", cs_value)
+            field_name = f"precio_venta{tier}"
+            if field_name not in changed_fields:
+                changed_fields.append(field_name)
+
+    db.commit()
+    sample_codes = [str(producto.cod_producto or "") for producto in products[:8] if (producto.cod_producto or "").strip()]
+    return JSONResponse(
+        {
+            "ok": True,
+            "message": f"Se actualizaron {len(products)} productos",
+            "updated_count": len(products),
+            "sample_codes": sample_codes,
+            "changed_fields": changed_fields,
+            "filter_query": query_text,
+            "filter_mode": mode,
+        }
+    )
+
+
+@router.post("/inventory/shoes/prices/apply")
+def inventory_shoes_prices_apply(
+    request: Request,
+    product_ids: str = Form(...),
+    precio_venta1: float = Form(...),
+    precio_venta2: float = Form(...),
+    precio_venta3: float = Form(...),
+    precio_venta4: float = Form(...),
+    precio_venta5: float = Form(...),
+    precio_venta6: float = Form(...),
+    precio_venta7: float = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.productos")
+    if not _is_shoes_mode():
+        return JSONResponse({"ok": False, "message": "Disponible solo en modo zapatos"}, status_code=404)
+
+    try:
+        parsed_ids = [int(str(raw).strip()) for raw in str(product_ids or "").split(",") if str(raw).strip()]
+    except ValueError:
+        return JSONResponse({"ok": False, "message": "Lista de productos invalida"}, status_code=400)
+    unique_ids = sorted({pid for pid in parsed_ids if pid > 0})
+    if not unique_ids:
+        return JSONResponse({"ok": False, "message": "No se recibieron productos para actualizar"}, status_code=400)
+
+    prices_input = {
+        1: float(precio_venta1 or 0),
+        2: float(precio_venta2 or 0),
+        3: float(precio_venta3 or 0),
+        4: float(precio_venta4 or 0),
+        5: float(precio_venta5 or 0),
+        6: float(precio_venta6 or 0),
+        7: float(precio_venta7 or 0),
+    }
+    if any(value < 0 for value in prices_input.values()):
+        return JSONResponse({"ok": False, "message": "Los precios no pueden ser negativos"}, status_code=400)
+
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    if not rate_today or float(rate_today.rate or 0) <= 0:
+        return JSONResponse({"ok": False, "message": "Tasa de cambio no configurada"}, status_code=400)
+
+    tasa = float(rate_today.rate or 0)
+    products = (
+        db.query(Producto)
+        .filter(Producto.id.in_(unique_ids))
+        .order_by(Producto.cod_producto.asc())
+        .all()
+    )
+    if not products:
+        return JSONResponse({"ok": False, "message": "No se encontraron productos para actualizar"}, status_code=404)
+
+    for producto in products:
+        producto.tasa_cambio = tasa
+        for tier, entered_value in prices_input.items():
+            value_cs = entered_value
+            value_usd = (entered_value / tasa) if tasa else 0
+            setattr(producto, f"precio_venta{tier}", float(value_cs))
+            setattr(producto, f"precio_venta{tier}_usd", float(value_usd))
+
+    db.commit()
+    return JSONResponse(
+        {
+            "ok": True,
+            "message": f"Se actualizaron {len(products)} producto(s)",
+            "updated_count": len(products),
+            "product_ids": unique_ids,
+            "sample_codes": [str(producto.cod_producto or "") for producto in products[:10]],
         }
     )
 
@@ -23805,7 +25195,7 @@ async def inventory_create_ingreso(
     ingreso.total_usd = total_usd
     ingreso.total_cs = total_cs
     bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
-    auto_amount = to_decimal(total_usd if moneda == "USD" else total_cs)
+    auto_amount = to_decimal(total_cs)
     auto_entry = _build_auto_accounting_entry(
         db,
         event_code="INV_IN",
@@ -23851,10 +25241,6 @@ async def inventory_create_egreso(
     item_qtys = form.getlist("item_cantidad")
     item_costs = form.getlist("item_costo")
     item_prices = form.getlist("item_precio")
-    result_item_ids = form.getlist("result_item_producto_id")
-    result_item_qtys = form.getlist("result_item_cantidad")
-    result_item_costs = form.getlist("result_item_costo")
-    result_item_prices = form.getlist("result_item_precio")
 
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
@@ -23868,7 +25254,6 @@ async def inventory_create_egreso(
     if not tipo:
         return RedirectResponse(f"{redirect_to}?error=Tipo+no+valido", status_code=303)
     es_traslado = "traslado" in (tipo.nombre or "").lower()
-    es_produccion_abierta = _is_produccion_abierta_tipo(tipo.nombre)
     bodega_destino_obj = None
     if es_traslado:
         moneda = "CS"
@@ -23892,11 +25277,6 @@ async def inventory_create_egreso(
     )
     if moneda == "USD" and not rate_today:
         return RedirectResponse(f"{redirect_to}?error=Tasa+de+cambio+no+configurada", status_code=303)
-    if es_produccion_abierta and not result_item_ids:
-        return RedirectResponse(
-            f"{redirect_to}?error=Agrega+productos+de+resultado+para+Produccion+de+Abierta",
-            status_code=303,
-        )
 
     def to_float(value: Optional[str]) -> float:
         if not value:
@@ -24021,47 +25401,6 @@ async def inventory_create_egreso(
         db.rollback()
         return RedirectResponse(f"{redirect_to}?error=Agrega+items+validos+con+saldo", status_code=303)
 
-    produccion_resultado_items: list[dict[str, float | int]] = []
-    if es_produccion_abierta:
-        for index, product_id in enumerate(result_item_ids):
-            if not str(product_id).isdigit():
-                continue
-            qty = to_float(result_item_qtys[index] if index < len(result_item_qtys) else 0)
-            cost = to_float(result_item_costs[index] if index < len(result_item_costs) else 0)
-            price = to_float(result_item_prices[index] if index < len(result_item_prices) else 0)
-            if qty <= 0:
-                continue
-            producto = db.query(Producto).filter(Producto.id == int(product_id)).first()
-            if not producto:
-                db.rollback()
-                return RedirectResponse(f"{redirect_to}?error=Producto+resultado+no+encontrado", status_code=303)
-            if moneda == "USD":
-                costo_usd = cost
-                costo_cs = cost * tasa
-            else:
-                costo_cs = cost
-                costo_usd = cost / tasa if tasa else 0
-            subtotal_usd = costo_usd * qty
-            subtotal_cs = costo_cs * qty
-            produccion_resultado_items.append(
-                {
-                    "producto_id": int(product_id),
-                    "cantidad": qty,
-                    "costo_unitario_usd": costo_usd,
-                    "costo_unitario_cs": costo_cs,
-                    "subtotal_usd": subtotal_usd,
-                    "subtotal_cs": subtotal_cs,
-                    "precio_cs": price if moneda == "CS" else (price * tasa if tasa else 0),
-                    "precio_usd": price if moneda == "USD" else (price / tasa if tasa else 0),
-                }
-            )
-        if not produccion_resultado_items:
-            db.rollback()
-            return RedirectResponse(
-                f"{redirect_to}?error=Agrega+items+de+resultado+con+cantidades+validas",
-                status_code=303,
-            )
-
     if es_traslado and bodega_destino_obj and traslado_items:
         ingreso_tipo = (
             db.query(IngresoTipo)
@@ -24130,79 +25469,10 @@ async def inventory_create_egreso(
                         )
                     )
 
-    ingreso_resultado_abierta: Optional[IngresoInventario] = None
-    if es_produccion_abierta and produccion_resultado_items:
-        ingreso_tipo_resultado = (
-            db.query(IngresoTipo)
-            .filter(func.lower(IngresoTipo.nombre) == "produccion de abierta - resultado")
-            .first()
-        )
-        if not ingreso_tipo_resultado:
-            ingreso_tipo_resultado = IngresoTipo(nombre="Produccion de Abierta - Resultado", requiere_proveedor=False)
-            db.add(ingreso_tipo_resultado)
-            db.flush()
-        resultado_obs = f"Resultado de produccion de abierta para egreso #{egreso.id}"
-        if observacion:
-            resultado_obs = f"{resultado_obs} | {observacion}"
-        ingreso_resultado_abierta = IngresoInventario(
-            tipo_id=ingreso_tipo_resultado.id,
-            bodega_id=int(bodega_id),
-            proveedor_id=None,
-            fecha=fecha_value,
-            moneda=moneda,
-            tasa_cambio=tasa if moneda == "USD" else None,
-            total_usd=0,
-            total_cs=0,
-            observacion=resultado_obs[:300],
-            usuario_registro=user.full_name,
-        )
-        db.add(ingreso_resultado_abierta)
-        db.flush()
-
-        ingreso_total_usd = 0.0
-        ingreso_total_cs = 0.0
-        for row in produccion_resultado_items:
-            db.add(
-                IngresoItem(
-                    ingreso_id=ingreso_resultado_abierta.id,
-                    producto_id=int(row["producto_id"]),
-                    cantidad=float(row["cantidad"]),
-                    costo_unitario_usd=float(row["costo_unitario_usd"]),
-                    costo_unitario_cs=float(row["costo_unitario_cs"]),
-                    subtotal_usd=float(row["subtotal_usd"]),
-                    subtotal_cs=float(row["subtotal_cs"]),
-                )
-            )
-            ingreso_total_usd += float(row["subtotal_usd"])
-            ingreso_total_cs += float(row["subtotal_cs"])
-            producto_resultado = db.query(Producto).filter(Producto.id == int(row["producto_id"])).first()
-            if producto_resultado and producto_resultado.saldo:
-                producto_resultado.saldo.existencia = to_decimal(producto_resultado.saldo.existencia) + to_decimal(
-                    float(row["cantidad"])
-                )
-            elif producto_resultado:
-                db.add(SaldoProducto(producto_id=producto_resultado.id, existencia=to_decimal(float(row["cantidad"]))))
-            if producto_resultado:
-                if float(row["costo_unitario_cs"]) > 0:
-                    producto_resultado.costo_producto = float(row["costo_unitario_cs"])
-                if float(row["precio_cs"]) > 0:
-                    producto_resultado.precio_venta1 = float(row["precio_cs"])
-                if float(row["precio_usd"]) > 0:
-                    producto_resultado.precio_venta1_usd = float(row["precio_usd"])
-
-        ingreso_resultado_abierta.total_usd = ingreso_total_usd
-        ingreso_resultado_abierta.total_cs = ingreso_total_cs
-        ingreso_resultado_abierta.observacion = _append_tag_to_observacion(
-            ingreso_resultado_abierta.observacion,
-            _ABIERTA_TAG_EGR,
-            egreso.id,
-        )
-        egreso.observacion = _append_tag_to_observacion(egreso.observacion, _ABIERTA_TAG_ING, ingreso_resultado_abierta.id)
-
     egreso.total_usd = 0 if es_traslado else total_usd
     egreso.total_cs = total_cs
     bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
-    auto_amount = to_decimal(total_cs if es_traslado else (total_usd if moneda == "USD" else total_cs))
+    auto_amount = to_decimal(total_cs)
     auto_entry = _build_auto_accounting_entry(
         db,
         event_code="INV_OUT",
@@ -24214,27 +25484,9 @@ async def inventory_create_egreso(
     )
     if auto_entry:
         db.add(auto_entry)
-    if ingreso_resultado_abierta:
-        auto_in_amount = to_decimal(
-            ingreso_resultado_abierta.total_usd
-            if (ingreso_resultado_abierta.moneda or "").upper() == "USD"
-            else ingreso_resultado_abierta.total_cs
-        )
-        auto_in_entry = _build_auto_accounting_entry(
-            db,
-            event_code="INV_IN",
-            branch_id=bodega_obj.branch_id if bodega_obj else None,
-            entry_date=fecha_value,
-            amount=auto_in_amount,
-            reference=f"AUTO-ING-AB-{ingreso_resultado_abierta.id}",
-            description=f"Asiento automatico por resultado de abierta #{ingreso_resultado_abierta.id}",
-        )
-        if auto_in_entry:
-            db.add(auto_in_entry)
     db.commit()
-    result_print_mode = "abierta" if es_produccion_abierta else ("ticket" if es_traslado else "pdf")
     return RedirectResponse(
-        f"{redirect_to}?success=Egreso+registrado&print_id={egreso.id}&print_mode={result_print_mode}",
+        f"{redirect_to}?success=Egreso+registrado&print_id={egreso.id}&print_mode={'ticket' if es_traslado else 'pdf'}",
         status_code=303,
     )
 
@@ -25051,10 +26303,14 @@ async def restaurant_order_invoice(
     total_usd = Decimal("0")
     total_cs = Decimal("0")
     total_items = Decimal("0")
+    total_cost_cs = Decimal("0")
     for order_item in order.items:
         qty = Decimal(str(order_item.cantidad or 0))
         price_cs = Decimal(str(order_item.precio_unitario_cs or 0))
         price_usd = Decimal(str(order_item.precio_unitario_usd or 0))
+        producto_item = order_item.producto or db.query(Producto).filter(Producto.id == int(order_item.producto_id)).first()
+        if producto_item and not bool(getattr(producto_item, "servicio_producto", False)):
+            total_cost_cs += (Decimal(str(producto_item.costo_producto or 0)) * qty).quantize(Decimal("0.01"))
         if price_usd <= 0 and tasa > 0:
             price_usd = (price_cs / tasa).quantize(Decimal("0.01"))
         subtotal_cs = (price_cs * qty).quantize(Decimal("0.01"))
@@ -25135,17 +26391,16 @@ async def restaurant_order_invoice(
     order.vendedor_id = vendedor_id
     order.moneda = moneda
     _recalc_restaurant_order(order)
-    auto_amount = Decimal(str(factura.total_usd if moneda == "USD" else factura.total_cs))
-    auto_entry = _build_auto_accounting_entry(
+    auto_entries = _build_sale_accounting_entries(
         db,
-        event_code="SALE",
+        factura=factura,
         branch_id=bodega.branch_id if bodega else None,
         entry_date=local_today(),
-        amount=auto_amount,
-        reference=f"AUTO-VTA-{factura.id}",
-        description=f"Asiento automatico por venta {factura.numero}",
+        sale_amount_cs=Decimal(str(factura.total_cs or 0)),
+        cost_amount_cs=total_cost_cs,
+        payments=pagos,
     )
-    if auto_entry:
+    for auto_entry in auto_entries:
         db.add(auto_entry)
     db.commit()
     pos_print = db.query(PosPrintSetting).filter(PosPrintSetting.branch_id == branch.id).first()
@@ -25333,6 +26588,7 @@ async def sales_create_invoice(
     total_usd = 0.0
     total_cs = 0.0
     total_items = 0.0
+    total_cost_cs = Decimal("0")
     weighted_sales_enabled = _weighted_sales_enabled_mode(db)
     product_ids = [int(it["product_id"]) for it in source_items if int(it["product_id"]) > 0]
     balances = _balances_by_bodega(db, [bodega.id], list(set(product_ids))) if product_ids else {}
@@ -25408,6 +26664,8 @@ async def sales_create_invoice(
         total_usd += subtotal_usd
         total_cs += subtotal_cs
         total_items += qty
+        if not bool(getattr(producto, "servicio_producto", False)):
+            total_cost_cs += (Decimal(str(producto.costo_producto or 0)) * Decimal(str(qty))).quantize(Decimal("0.01"))
 
         combo_role = src.get("role")
         combo_group = src.get("combo_group")
@@ -25492,17 +26750,16 @@ async def sales_create_invoice(
     for pago in pagos:
         db.add(pago)
 
-    auto_amount = to_decimal(total_usd if moneda == "USD" else total_cs)
-    auto_entry = _build_auto_accounting_entry(
+    auto_entries = _build_sale_accounting_entries(
         db,
-        event_code="SALE",
+        factura=factura,
         branch_id=bodega.branch_id if bodega else None,
         entry_date=fecha_value,
-        amount=auto_amount,
-        reference=f"AUTO-VTA-{factura.id}",
-        description=f"Asiento automatico por venta {factura.numero}",
+        sale_amount_cs=Decimal(str(total_cs or 0)),
+        cost_amount_cs=total_cost_cs,
+        payments=pagos,
     )
-    if auto_entry:
+    for auto_entry in auto_entries:
         db.add(auto_entry)
 
     db.commit()
@@ -26037,8 +27294,8 @@ def sales_cobranza_export(
             c.showPage()
             y = height - 60
         c.drawString(40, y, row["numero"])
-        c.drawString(110, y, (row["cliente"][:20] + "…") if len(row["cliente"]) > 20 else row["cliente"])
-        c.drawString(260, y, (row["vendedor"][:14] + "…") if len(row["vendedor"]) > 14 else row["vendedor"])
+        c.drawString(110, y, (row["cliente"][:20] + "...") if len(row["cliente"]) > 20 else row["cliente"])
+        c.drawString(260, y, (row["vendedor"][:14] + "...") if len(row["vendedor"]) > 14 else row["vendedor"])
         c.drawString(370, y, row["estado"])
         c.setFillColor(colors.HexColor("#1d4ed8"))
         c.drawRightString(495, y, f"C$ {row['saldo_cs']:,.2f}")
@@ -26748,7 +28005,7 @@ def inventory_import_products(
         return None
 
     idx_codigo = col_idx("codigo", "cod_producto", "cod")
-    idx_desc = col_idx("descripcion", "descripción", "nombre")
+    idx_desc = col_idx("descripcion", "descripci\u00f3n", "nombre")
     idx_linea = col_idx("linea")
     idx_segmento = col_idx("segmento")
     idx_costo_usd = col_idx("costo_usd", "costo_producto_usd", "costo")
@@ -27200,3 +28457,4 @@ def inventory_activate_product(
         db.commit()
         return RedirectResponse("/inventory", status_code=303)
     return RedirectResponse("/inventory?error=Producto+no+encontrado", status_code=303)
+

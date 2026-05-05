@@ -296,7 +296,7 @@ def _seed_accounting_policy_settings(db: Session) -> None:
             row.strict_mode = True
             changed = True
         if row.auto_entry_enabled is None:
-            row.auto_entry_enabled = False
+            row.auto_entry_enabled = True
             changed = True
         if not (row.ingreso_debe_terms or "").strip():
             row.ingreso_debe_terms = "caja,banco,cliente,cobrar"
@@ -316,7 +316,7 @@ def _seed_accounting_policy_settings(db: Session) -> None:
     db.add(
         AccountingPolicySetting(
             strict_mode=True,
-            auto_entry_enabled=False,
+            auto_entry_enabled=True,
             ingreso_debe_terms="caja,banco,cliente,cobrar",
             ingreso_haber_terms="venta,ingreso",
             egreso_debe_terms="gasto,costo,compra,inventario",
@@ -949,12 +949,18 @@ def _seed_cuentas_contables(db: Session) -> None:
         ("1209", "Seguros", "BALANCE", "DEBE", "12"),
         ("1210", "Matricula de Alcaldia", "BALANCE", "DEBE", "12"),
         ("1211", "Activo Diferido", "BALANCE", "DEBE", "12"),
+        ("1212", "Software y Desarrollo", "BALANCE", "DEBE", "12"),
+        ("1213", "Mejoras en Propiedad Arrendada", "BALANCE", "DEBE", "12"),
         ("2106", "Impuestos por Pagar", "BALANCE", "HABER", "21"),
         ("2107", "Proveedores Nacionales", "BALANCE", "HABER", "21"),
         ("2108", "Proveedores Extranjeros", "BALANCE", "HABER", "21"),
         ("2109", "Gastos Acumulados por Pagar", "BALANCE", "HABER", "21"),
         ("2110", "Retenciones por Pagar", "BALANCE", "HABER", "21"),
         ("2111", "Cuentas por Pagar Corto Plazo", "BALANCE", "HABER", "21"),
+        ("2112", "Servicios por Pagar", "BALANCE", "HABER", "21"),
+        ("2113", "Salarios y Prestaciones por Pagar", "BALANCE", "HABER", "21"),
+        ("2114", "Honorarios por Pagar", "BALANCE", "HABER", "21"),
+        ("2115", "Comisiones por Pagar", "BALANCE", "HABER", "21"),
         ("2203", "Prestamos por Pagar Vehiculos", "BALANCE", "HABER", "22"),
         ("2204", "Cuentas por Pagar Largo Plazo", "BALANCE", "HABER", "22"),
         ("3102", "Aportacion de Capital", "BALANCE", "HABER", "31"),
@@ -971,9 +977,32 @@ def _seed_cuentas_contables(db: Session) -> None:
         ("4204", "Intereses Bancarios", "RESULTADO", "HABER", "42"),
         ("4205", "Otros Ingresos", "RESULTADO", "HABER", "42"),
         ("5102", "Costo de Ventas", "RESULTADO", "DEBE", "51"),
+        ("5103", "Insumos para Productos", "RESULTADO", "DEBE", "51"),
         ("6102", "Gastos de Operacion", "RESULTADO", "DEBE", "61"),
+        ("6103", "Combustible y Lubricantes", "RESULTADO", "DEBE", "61"),
+        ("6104", "Transporte y Fletes", "RESULTADO", "DEBE", "61"),
+        ("6105", "Mantenimiento y Reparaciones", "RESULTADO", "DEBE", "61"),
+        ("6106", "Seguridad y Vigilancia", "RESULTADO", "DEBE", "61"),
+        ("6107", "Insumos de Limpieza", "RESULTADO", "DEBE", "61"),
+        ("6108", "Insumos Operativos", "RESULTADO", "DEBE", "61"),
+        ("6109", "Servicios Basicos", "RESULTADO", "DEBE", "61"),
+        ("6110", "Energia Electrica", "RESULTADO", "DEBE", "61"),
+        ("6111", "Agua Potable", "RESULTADO", "DEBE", "61"),
+        ("6112", "Telefonia e Internet", "RESULTADO", "DEBE", "61"),
         ("6202", "Gastos de Administracion", "RESULTADO", "DEBE", "62"),
+        ("6203", "Papeleria y Utiles de Oficina", "RESULTADO", "DEBE", "62"),
+        ("6204", "Alquileres", "RESULTADO", "DEBE", "62"),
+        ("6205", "Honorarios Profesionales", "RESULTADO", "DEBE", "62"),
+        ("6206", "Asesoria Contable y Legal", "RESULTADO", "DEBE", "62"),
+        ("6207", "Suscripciones y Licencias", "RESULTADO", "DEBE", "62"),
+        ("6208", "Gastos de Personal Administrativo", "RESULTADO", "DEBE", "62"),
+        ("6209", "Prestaciones Laborales", "RESULTADO", "DEBE", "62"),
+        ("6210", "Impuestos y Tasas", "RESULTADO", "DEBE", "62"),
         ("6402", "Gastos de Venta", "RESULTADO", "DEBE", "64"),
+        ("6403", "Publicidad y Mercadeo", "RESULTADO", "DEBE", "64"),
+        ("6404", "Material Promocional", "RESULTADO", "DEBE", "64"),
+        ("6405", "Comisiones de Venta", "RESULTADO", "DEBE", "64"),
+        ("6406", "Fletes y Entregas de Venta", "RESULTADO", "DEBE", "64"),
         ("6302", "Intereses Corrientes y Moratorios", "RESULTADO", "DEBE", "63"),
         ("6303", "Perdida por Dif. Cambiarios", "RESULTADO", "DEBE", "63"),
         ("6304", "Gastos y Comisiones Bancarias", "RESULTADO", "DEBE", "63"),
@@ -1464,6 +1493,16 @@ def init_db() -> None:
         if "tipo" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE cuentas_contables ADD COLUMN tipo VARCHAR(20)"))
+    if "accounting_entries" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("accounting_entries")}
+        with engine.begin() as conn:
+            if "moneda" not in columns:
+                conn.execute(text("ALTER TABLE accounting_entries ADD COLUMN moneda VARCHAR(10) DEFAULT 'CS'"))
+                conn.execute(text("UPDATE accounting_entries SET moneda = 'CS' WHERE moneda IS NULL OR moneda = ''"))
+            if "tasa_sistema" not in columns:
+                conn.execute(text("ALTER TABLE accounting_entries ADD COLUMN tasa_sistema NUMERIC(12, 4)"))
+            if "tasa_cambio" not in columns:
+                conn.execute(text("ALTER TABLE accounting_entries ADD COLUMN tasa_cambio NUMERIC(12, 4)"))
     if "depositos_clientes" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("depositos_clientes")}
         if "metodo" not in columns:

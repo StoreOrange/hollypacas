@@ -1,6 +1,196 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
+  .ingresos-shell {
+    --ing-ink: #172033;
+    --ing-muted: #66758f;
+    --ing-line: #d8e0ec;
+    --ing-panel: #ffffff;
+    --ing-soft: #f4f7fb;
+    --ing-accent: #0f766e;
+    --ing-accent-2: #c2410c;
+    --ing-deep: #123047;
+    --ing-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+    color: var(--ing-ink);
+  }
+  .odoo-page.ingresos-shell {
+    display: grid;
+    gap: 1.35rem;
+  }
+  .ingresos-shell .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--ing-muted);
+  }
+  .inventory-hero {
+    position: relative;
+    overflow: hidden;
+    border: 0;
+    border-radius: 28px;
+    padding: 1.8rem;
+    background:
+      radial-gradient(circle at top left, rgba(96, 165, 250, 0.24), transparent 28%),
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.18), transparent 24%),
+      linear-gradient(135deg, #0f172a 0%, #123047 50%, #0b5d5b 100%);
+    box-shadow: 0 28px 55px rgba(15, 23, 42, 0.22);
+    color: #f8fafc;
+  }
+  .inventory-hero::after {
+    content: "";
+    position: absolute;
+    inset: auto -60px -70px auto;
+    width: 220px;
+    height: 220px;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(18, 48, 71, 0.12), transparent 68%);
+    pointer-events: none;
+  }
+  .inventory-hero-copy {
+    position: relative;
+    z-index: 1;
+    max-width: 760px;
+  }
+  .inventory-hero .breadcrumb,
+  .inventory-hero .odoo-subtitle,
+  .inventory-hero .toggle-sidebar,
+  .inventory-hero .breadcrumb-item,
+  .inventory-hero .breadcrumb-item.active {
+    color: rgba(248, 250, 252, 0.78) !important;
+  }
+  .inventory-hero .odoo-title {
+    color: #ffffff;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+  .inventory-hero-kpis {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+    min-width: min(100%, 320px);
+  }
+  .inventory-hero-stat {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    padding: 0.95rem 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(8px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  .inventory-hero-stat .label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: rgba(226, 232, 240, 0.8);
+  }
+  .inventory-hero-stat strong {
+    display: block;
+    margin-top: 0.3rem;
+    font-size: 1.55rem;
+    line-height: 1;
+    color: #ffffff;
+  }
+  .inventory-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1.05rem;
+  }
+  .inventory-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.62rem 0.95rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.12);
+    color: #f8fafc;
+    font-size: 0.88rem;
+    font-weight: 600;
+  }
+  .inventory-status-pill.rate {
+    border-color: rgba(251, 191, 36, 0.22);
+    color: #fde68a;
+  }
+  .inventory-section-card {
+    border: 1px solid rgba(18, 48, 71, 0.1);
+    border-radius: 26px;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    box-shadow: var(--ing-shadow);
+  }
+  .inventory-section-card .card-body {
+    padding: 1.35rem;
+  }
+  .inventory-panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .inventory-panel-head .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--ing-muted);
+  }
+  .inventory-panel-head h5,
+  .inventory-panel-head h6 {
+    margin: 0.18rem 0 0;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--ing-deep);
+  }
+  .inventory-panel-head .text-muted {
+    max-width: 760px;
+  }
+  .inventory-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.95rem;
+  }
+  .inventory-kpi-card {
+    border: 0;
+    border-radius: 22px;
+    padding: 1rem 1.1rem;
+    background: linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%);
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
+    position: relative;
+    overflow: hidden;
+  }
+  .inventory-kpi-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 5px;
+    border-radius: 22px 0 0 22px;
+    background: linear-gradient(180deg, #0ea5e9 0%, #0f766e 100%);
+  }
+  .inventory-kpi-card strong {
+    display: block;
+    margin-top: 0.45rem;
+    font-size: 1.7rem;
+    line-height: 1;
+    color: var(--ing-deep);
+  }
+  .inventory-kpi-card .kpi-note {
+    margin-top: 0.35rem;
+    font-size: 0.82rem;
+    color: var(--ing-muted);
+  }
   .ingreso-modal {
     font-family: "Inter", "Segoe UI", Tahoma, sans-serif;
     color: #0f172a;
@@ -62,35 +252,111 @@
     margin-bottom: 0.25rem;
   }
   .inventory-tabs .nav-link {
-    padding: 0.35rem 0.75rem;
-    font-size: 0.9rem;
+    padding: 0.72rem 1.1rem;
+    font-size: 0.95rem;
+    border: 0;
+    border-radius: 999px;
+    background: #edf4fb;
+    color: #35506d;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .inventory-tabs .nav-link.active {
+    background: linear-gradient(135deg, #123047 0%, #0f766e 100%);
+    border-color: transparent;
+    color: #ffffff;
+    font-weight: 700;
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(18, 48, 71, 0.18);
+  }
+  .ingresos-shell .card-body > .inventory-panel-head,
+  .ingresos-shell .card-body > .inventory-tabs,
+  .ingresos-shell .card-body > section {
+    position: relative;
+    z-index: 1;
+  }
+  .ingreso-modal {
+    border-radius: 28px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    overflow: hidden;
+  }
+  .ingreso-modal .odoo-modal-header {
+    padding: 1.35rem 1.6rem 1rem;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    border-bottom: 1px solid #dbe6f1;
+  }
+  .ingreso-modal .odoo-section-title {
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: var(--ing-deep);
+  }
+  .ingreso-modal .odoo-modal-body {
+    padding: 1.35rem 1.6rem 1.8rem !important;
+    max-height: none;
+    overflow: visible;
+  }
+  .ingreso-modal .odoo-modal-tabs {
+    gap: 0.65rem;
+    padding: 0.45rem 0 0.15rem;
+  }
+  .ingreso-modal .ingreso-tab {
+    min-height: 44px;
+    padding: 0.72rem 1rem;
+    border-radius: 16px;
+    font-size: 0.94rem;
+    font-weight: 700;
+    box-shadow: none;
+  }
+  .ingreso-modal .ingreso-tab.btn-outline-secondary {
+    border-color: #d7e2ee;
+    background: #f8fbff;
+    color: #35506d;
+  }
+  .ingreso-modal .ingreso-tab.btn-primary {
+    background: linear-gradient(135deg, #123047 0%, #0f766e 100%);
+    border-color: transparent;
+    color: #123047;
+    box-shadow: 0 14px 28px rgba(18, 48, 71, 0.18);
+    color: #ffffff;
   }
   .movement-meta-grid .form-label {
     display: flex;
     align-items: center;
-    margin-bottom: 0.2rem;
-    line-height: 1rem;
-    font-size: 0.82rem;
+    margin-bottom: 0.45rem;
+    line-height: 1.15rem;
+    font-size: 0.88rem;
     font-weight: 600;
   }
   .movement-meta-grid .form-control,
   .movement-meta-grid .form-select {
-    min-height: 32px;
-    padding-top: 0.2rem;
-    padding-bottom: 0.2rem;
-    font-size: 0.86rem;
+    min-height: 48px;
+    padding: 0.62rem 0.95rem;
+    font-size: 0.92rem;
+    border: 1px solid #d7e2ee;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
   }
   .movement-meta-grid .select2-container--default .select2-selection--single {
-    min-height: 32px;
+    min-height: 48px;
     display: flex;
     align-items: center;
+    border: 1px solid #d7e2ee;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
   }
   .movement-meta-grid .select2-container--default .select2-selection--single .select2-selection__rendered {
-    line-height: 30px;
-    font-size: 0.86rem;
+    line-height: 46px;
+    font-size: 0.92rem;
+    padding-left: 0.9rem;
+    color: #17324d;
   }
   .movement-meta-grid .select2-container--default .select2-selection--single .select2-selection__arrow {
-    height: 30px;
+    height: 46px;
+    right: 8px;
   }
   .movement-meta-grid .movement-meta-item {
     display: flex;
@@ -114,13 +380,402 @@
   }
   .shoe-intake-panel .form-control,
   .shoe-intake-panel .form-select {
-    min-height: 36px;
-    border-radius: 0.6rem;
+    min-height: 46px;
+    padding: 0.6rem 0.9rem;
+    border-radius: 16px;
+    border: 1px solid #d9e3ee;
+    background: linear-gradient(180deg, #ffffff 0%, #fffaf4 100%);
+    box-shadow: 0 10px 20px rgba(120, 53, 15, 0.06);
+  }
+  .ingresos-shell .form-control,
+  .ingresos-shell .form-select,
+  .ingresos-shell .odoo-input.form-control,
+  .ingresos-shell .odoo-input.form-select {
+    min-height: 46px;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid #d7e2ee;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    color: #17324d;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  }
+  .ingresos-shell .form-control.form-control-sm,
+  .ingresos-shell .form-select.form-select-sm {
+    min-height: 48px;
+    padding: 0.7rem 0.95rem;
+    border-radius: 16px;
+    font-size: 0.96rem;
+  }
+  .ingresos-shell .btn.btn-sm {
+    min-height: 42px;
+    font-size: 0.95rem;
+  }
+  .ingresos-shell .table.table-sm {
+    font-size: 0.93rem;
+  }
+  .ingresos-shell textarea.form-control {
+    min-height: 110px;
+  }
+  .ingresos-shell .form-control:focus,
+  .ingresos-shell .form-select:focus,
+  .ingresos-shell .odoo-input.form-control:focus,
+  .ingresos-shell .odoo-input.form-select:focus {
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 0.22rem rgba(14, 165, 233, 0.18), 0 14px 28px rgba(14, 165, 233, 0.1);
+    transform: translateY(-1px);
+  }
+  .ingresos-shell .input-group {
+    border-radius: 18px !important;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+  }
+  .ingresos-shell .input-group-text {
+    border: 1px solid #d7e2ee;
+    background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+    color: #46627f;
+    font-weight: 600;
+  }
+  .ingresos-shell .input-group > .form-control,
+  .ingresos-shell .input-group > .form-select {
+    border-left: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .ingresos-shell .input-group > .form-control:first-child,
+  .ingresos-shell .input-group > .form-select:first-child {
+    border-left: 1px solid #d7e2ee;
+  }
+  .ingresos-shell .select2-container {
+    width: 100% !important;
+  }
+  .ingresos-shell .select2-container--default .select2-selection--single {
+    min-height: 46px;
+    border: 1px solid #d7e2ee;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  }
+  .ingresos-shell .select2-container--default .select2-selection--single .select2-selection__rendered {
+    padding-left: 0.95rem;
+    padding-right: 2rem;
+    line-height: 44px;
+    color: #17324d;
+    font-size: 0.92rem;
+  }
+  .ingresos-shell .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 44px;
+    right: 8px;
+  }
+  .ingresos-shell .select2-container--default.select2-container--open .select2-selection--single,
+  .ingresos-shell .select2-container--default.select2-container--focus .select2-selection--single {
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 0.22rem rgba(14, 165, 233, 0.18), 0 14px 28px rgba(14, 165, 233, 0.1);
+    transform: translateY(-1px);
+  }
+  .ingresos-shell .select2-dropdown {
+    border: 1px solid #d7e2ee;
+    border-radius: 16px;
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+    overflow: hidden;
+  }
+  .ingresos-shell .select2-search--dropdown .select2-search__field {
+    border: 1px solid #d7e2ee;
+    border-radius: 12px;
+    padding: 0.55rem 0.75rem;
+  }
+  .ingresos-shell .odoo-modal-section,
+  .ingresos-shell .odoo-compact-card {
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 24px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
+    padding: 1.45rem;
+  }
+  .ingreso-modal .odoo-modal-section,
+  .ingreso-modal .odoo-compact-card {
+    width: 100%;
+    max-width: none !important;
+    margin: 0 !important;
+  }
+  .ingreso-modal .ingreso-panel {
+    display: block;
+    width: 100%;
+  }
+  .ingreso-modal .ingreso-panel.hidden {
+    display: none;
+  }
+  .ingreso-modal .odoo-modal-title {
+    font-size: 1.08rem;
+    font-weight: 800;
+    color: var(--ing-deep);
+    letter-spacing: -0.02em;
+  }
+  .ingreso-modal .text-muted.small,
+  .ingreso-modal .small.text-muted,
+  .ingreso-modal .text-slate {
+    font-size: 0.88rem !important;
+    line-height: 1.45;
+  }
+  .ingreso-modal .row {
+    --bs-gutter-x: 1rem;
+    --bs-gutter-y: 1rem;
+  }
+  .ingreso-modal label.block,
+  .ingreso-modal label[class*="inline"],
+  .ingreso-modal label[class*="flex"] {
+    margin-bottom: 0;
+  }
+  .ingreso-modal label.block {
+    display: block;
+    font-size: 0.9rem;
+    line-height: 1.35;
+  }
+  .ingreso-modal .btn {
+    min-height: 44px;
+    border-radius: 14px;
+    font-weight: 700;
+    padding-inline: 1rem;
+  }
+  .ingreso-modal .btn.btn-sm {
+    min-height: 40px;
+    padding-inline: 0.95rem;
+  }
+  .ingreso-modal .btn.btn-md {
+    min-height: 46px;
+    padding-inline: 1.1rem;
+  }
+  .ingreso-modal .search-panel,
+  .ingreso-modal .odoo-compact-card,
+  .ingreso-modal .odoo-modal-section {
+    overflow: hidden;
+  }
+  .ingreso-modal .search-panel {
+    padding: 1.25rem !important;
+  }
+  .ingreso-modal .search-panel .odoo-modal-title,
+  .ingreso-modal .search-panel .odoo-help {
+    margin-left: 0.1rem;
+  }
+  .ingreso-modal .odoo-table-wrap {
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 18px;
+    background: #ffffff;
+  }
+  .ingreso-modal .table {
+    font-size: 0.92rem;
+  }
+  .ingreso-modal .table th,
+  .ingreso-modal .table td {
+    vertical-align: middle;
+    padding-top: 0.82rem;
+    padding-bottom: 0.82rem;
+  }
+  .ingreso-modal .totals-bar {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+  }
+  .ingreso-modal .totals-bar > div:not(.label) {
+    min-width: 130px;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 16px;
+    background: #f8fbff;
+  }
+  .ingreso-modal .totals-bar .value {
+    font-size: 1.05rem;
+    margin-top: 0.15rem;
+  }
+  .ingreso-modal .movement-meta-item,
+  .ingreso-modal .col-md-6,
+  .ingreso-modal .col-md-4,
+  .ingreso-modal .col-md-3,
+  .ingreso-modal .col-lg-2,
+  .ingreso-modal .col-lg-3,
+  .ingreso-modal .col-lg-5 {
+    min-width: 0;
+  }
+  .ingreso-modal .compact-form {
+    max-width: none;
+    width: 100%;
+  }
+  .ingreso-modal .compact-form .row {
+    --bs-gutter-y: 1.15rem;
+  }
+  .ingreso-modal .compact-form > .text-muted,
+  .ingreso-modal .compact-form > .small {
+    margin-bottom: 0.55rem;
+  }
+  .ingreso-modal .price-grid .col-md-3,
+  .ingreso-modal .price-grid .col-md,
+  .ingreso-modal .price-grid .col-md-4 {
+    display: flex;
+  }
+  .ingreso-modal .price-grid label {
+    width: 100%;
+  }
+  .ingreso-modal .form-shell {
+    display: grid;
+    gap: 1rem;
+  }
+  .ingreso-modal .form-shell.two-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ingreso-modal .form-shell.three-col {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .ingreso-modal .form-card-note {
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 16px;
+    background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+  }
+  .ingreso-modal .action-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.5rem;
+  }
+  .ingreso-modal .action-bar .btn {
+    min-width: 180px;
+  }
+  .ingreso-modal .desktop-form-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+    gap: 1.2rem;
+    align-items: start;
+  }
+  .ingreso-modal .desktop-form-main,
+  .ingreso-modal .desktop-form-side {
+    display: grid;
+    gap: 1rem;
+  }
+  .ingreso-modal .field-card {
+    padding: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+  }
+  .ingreso-modal .field-card h6 {
+    margin: 0 0 0.85rem;
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--ing-deep);
+    letter-spacing: -0.01em;
+  }
+  .ingreso-modal .field-card .row:last-child,
+  .ingreso-modal .field-card .form-shell:last-child {
+    margin-bottom: 0;
+  }
+  .ingreso-modal .price-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.9rem;
+  }
+  .ingreso-modal .selector-hero {
+    padding: 1rem 1.1rem;
+    border: 1px solid rgba(59, 130, 246, 0.14);
+    border-radius: 18px;
+    background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+  }
+  .ingreso-modal .selector-hero .block {
+    margin-bottom: 0;
+  }
+  .ingreso-modal .compact-form > .btn.w-full,
+  .ingreso-modal .compact-form > .d-flex .btn.w-full {
+    width: auto !important;
+    min-width: 220px;
+  }
+  .ingreso-modal .compact-form > .btn,
+  .ingreso-modal .compact-form > .d-flex .btn {
+    justify-self: start;
+  }
+  .inventory-record-toolbar {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1.15rem;
+    align-items: center;
+  }
+  .inventory-records-table {
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 22px;
+    overflow: hidden;
+    background: #ffffff;
+  }
+  .inventory-records-table .table th,
+  .inventory-records-table .table td {
+    padding-top: 0.95rem;
+    padding-bottom: 0.95rem;
+  }
+  @media (max-width: 991.98px) {
+    .ingreso-modal .odoo-modal-body {
+      padding: 1rem !important;
+    }
+    .inventory-record-toolbar {
+      grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+    .ingreso-modal .totals-bar {
+      justify-content: stretch !important;
+    }
+    .ingreso-modal .totals-bar > div:not(.label) {
+      min-width: calc(50% - 0.5rem);
+      flex: 1 1 calc(50% - 0.5rem);
+    }
+    .ingreso-modal .form-shell.two-col,
+    .ingreso-modal .form-shell.three-col,
+    .ingreso-modal .desktop-form-grid,
+    .ingreso-modal .price-strip {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 767.98px) {
+    .inventory-tabs .nav-link,
+    .ingreso-modal .ingreso-tab {
+      width: 100%;
+      justify-content: center;
+    }
+    .ingreso-modal .odoo-modal-header {
+      padding: 1rem 1rem 0.85rem;
+    }
+    .ingreso-modal .odoo-section-title {
+      font-size: 1.3rem;
+    }
+    .ingreso-modal .odoo-modal-section,
+    .ingreso-modal .odoo-compact-card,
+    .ingreso-modal .search-panel {
+      padding: 1rem !important;
+      border-radius: 18px;
+    }
+    .ingreso-modal .totals-bar > div:not(.label) {
+      min-width: 100%;
+      flex: 1 1 100%;
+    }
+  }
+  .ingresos-shell .table-responsive {
+    border-radius: 20px;
+    overflow: hidden;
+  }
+  .ingresos-shell .table {
+    --bs-table-bg: transparent;
+  }
+  .ingresos-shell .table thead th {
+    background: linear-gradient(180deg, #f8fbff 0%, #edf5ff 100%);
+    color: #4f647d;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  }
+  .ingresos-shell .table tbody td {
+    border-color: rgba(226, 232, 240, 0.9);
   }
   .shoe-price-preview td,
   .shoe-price-preview th {
-    padding: 0.24rem 0.48rem;
-    font-size: 0.8rem;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.84rem;
   }
   .shoe-intake-panel .shoe-total-panel {
     border: 1px dashed #93c5fd;
@@ -148,8 +803,9 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 8px 16px rgba(111, 78, 44, 0.08);
   }
   .shoe-quickload-panel .quickload-card {
-    background: rgba(255, 255, 255, 0.6);
-    border-color: #d6c0a2;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 248, 240, 0.96) 100%);
+    border-color: rgba(214, 192, 162, 0.7);
+    box-shadow: 0 12px 24px rgba(120, 53, 15, 0.06);
   }
   .labels-preview-frame {
     width: 100%;
@@ -164,15 +820,225 @@
     background: linear-gradient(180deg, #fffdf8 0%, #f8f2e8 100%);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
   }
+  .inventory-soft-card {
+    border: 0;
+    border-radius: 22px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbfe 100%);
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  }
+  .inventory-soft-card .odoo-section-title {
+    margin-bottom: 0;
+  }
+  .inventory-record-toolbar {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    align-items: start;
+  }
+  .inventory-filter-wrap {
+    border: 1px solid rgba(59, 130, 246, 0.12);
+    border-radius: 22px;
+    padding: 1rem;
+    background: linear-gradient(180deg, #f8fbff 0%, #edf5ff 100%);
+  }
+  .inventory-filter-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.65rem;
+  }
+  .inventory-filter-form .input-group {
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--ing-line);
+    background: #fff;
+  }
+  .inventory-records-table {
+    overflow: hidden;
+    border: 0;
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: inset 0 0 0 1px rgba(18, 48, 71, 0.06);
+  }
+  .inventory-records-table .table thead {
+    background: linear-gradient(180deg, #f8fbff 0%, #edf4fa 100%);
+  }
+  .inventory-records-table .table thead th {
+    border-bottom: 1px solid rgba(18, 48, 71, 0.08);
+    color: #526177;
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+  }
+  .inventory-records-table .table tbody tr:hover {
+    background: #f7fbff;
+  }
+  .inventory-records-table .table tbody td {
+    vertical-align: middle;
+  }
+  .inventory-chip-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.42rem 0.7rem;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+    color: #1d4ed8;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .inventory-amount {
+    font-weight: 700;
+    color: var(--ing-deep);
+  }
+  .inventory-action-stack .btn {
+    min-width: 150px;
+  }
+  .shoe-intake-panel.inventory-soft-card {
+    background:
+      radial-gradient(circle at top right, rgba(194, 65, 12, 0.12), transparent 26%),
+      linear-gradient(180deg, #fffdf9 0%, #f8f1e4 100%);
+    border-top: 5px solid #c2410c;
+  }
+  .shoe-intake-callout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid rgba(162, 113, 58, 0.14);
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.86) 0%, rgba(255, 247, 237, 0.96) 100%);
+    box-shadow: 0 12px 22px rgba(120, 53, 15, 0.08);
+  }
+  .shoe-intake-callout .badge {
+    align-self: start;
+  }
+  .shoe-intake-panel .table-responsive,
+  .shoe-intake-panel .border.rounded-3,
+  .shoe-intake-panel .border.rounded-2 {
+    border-color: rgba(18, 48, 71, 0.1) !important;
+  }
+  .ingreso-modal .search-panel {
+    border: 1px solid rgba(59, 130, 246, 0.12);
+    border-radius: 24px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbfd 100%);
+    box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08);
+  }
+  .ingreso-modal .totals-bar {
+    margin-top: 0.8rem;
+    padding: 1rem 1.1rem 0;
+    border-top-style: solid;
+  }
+  .ingreso-modal .totals-bar > div:not(.label) {
+    min-width: 110px;
+  }
+  .ingresos-shell .btn-primary {
+    border: 0;
+    background: linear-gradient(135deg, #0f766e 0%, #0ea5e9 100%);
+    box-shadow: 0 12px 22px rgba(14, 165, 233, 0.22);
+  }
+  .ingresos-shell .btn-outline-secondary {
+    border-color: rgba(18, 48, 71, 0.16);
+    color: #284056;
+  }
+  .ingresos-shell .btn-outline-secondary:hover {
+    background: #eef6ff;
+    border-color: #93c5fd;
+    color: #123047;
+  }
+  .price-before-chip,
+  .price-after-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 92px;
+    padding: 0.36rem 0.6rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.82rem;
+  }
+  .price-before-chip {
+    background: #fff1f2;
+    color: #be123c;
+  }
+  .price-after-chip {
+    background: #ecfdf3;
+    color: #047857;
+  }
+  .stock-total-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 104px;
+    padding: 0.38rem 0.72rem;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #0f172a;
+    font-weight: 800;
+    font-size: 0.84rem;
+    border: 1px solid rgba(59, 130, 246, 0.18);
+  }
+  .price-scale-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  .price-scale-stack span {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.18rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 600;
+  }
+  .price-scale-stack.old span {
+    background: #f8d7da;
+    color: #842029;
+  }
+  .price-scale-stack.new span {
+    background: #d1e7dd;
+    color: #0f5132;
+  }
+  @media (max-width: 1199px) {
+    .inventory-kpi-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 991px) {
+    .inventory-hero {
+      padding: 1.2rem;
+    }
+    .inventory-hero-kpis {
+      width: 100%;
+    }
+    .inventory-record-toolbar {
+      grid-template-columns: 1fr;
+    }
+    .shoe-intake-callout {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 767px) {
+    .inventory-kpi-grid,
+    .inventory-hero-kpis {
+      grid-template-columns: 1fr;
+    }
+    .inventory-status-pill,
+    .inventory-action-stack .btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
-  <main class="p-6 lg:p-8 text-[18px]">
-    <div class="odoo-page">
-      <div class="odoo-header inventory-compact-header">
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
-          <div>
+  <main class="p-4 p-lg-5 text-[18px] bg-body-tertiary">
+    <div class="odoo-page ingresos-shell">
+      <div class="inventory-hero">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-4 position-relative">
+          <div class="inventory-hero-copy">
             <button class="toggle-sidebar sidebar-toggle-show btn btn-sm btn-outline-secondary mb-2" type="button">
               <i class="bi bi-layout-sidebar"></i>
               Mostrar menu
@@ -184,20 +1050,42 @@
               </ol>
             </nav>
             <div class="odoo-title mt-2">Ingresos de inventario</div>
-            <div class="odoo-subtitle mt-1">Registro de compras, importaciones y ajustes.</div>
+            <div class="odoo-subtitle mt-1">Registro de compras, importaciones y ajustes con trazabilidad operativa.</div>
+            <div class="inventory-hero-actions">
+              <span class="inventory-status-pill">
+                <i class="bi bi-shield-check"></i>
+                Flujo centralizado de ingresos
+              </span>
+              <span class="inventory-status-pill rate">
+                <i class="bi bi-currency-exchange"></i>
+                {% if rate_today %}
+                  Tasa activa C$ {{ "%.4f"|format(rate_today.rate) }}
+                {% else %}
+                  Sin tasa configurada
+                {% endif %}
+              </span>
+            </div>
           </div>
-          <div class="odoo-toolbar">
-            <div class="odoo-pill primary">
-              <i class="bi bi-currency-exchange"></i>
-              {% if rate_today %}
-                Tasa C$ {{ "%.4f"|format(rate_today.rate) }}
-              {% else %}
-                Sin tasa
-              {% endif %}
+          <div class="inventory-hero-kpis">
+            <div class="inventory-hero-stat">
+              <div class="label"><i class="bi bi-journal-arrow-down"></i> Movimientos</div>
+              <strong>{{ ingresos|length }}</strong>
+            </div>
+            <div class="inventory-hero-stat">
+              <div class="label"><i class="bi bi-box-seam"></i> Productos</div>
+              <strong>{{ productos|length }}</strong>
+            </div>
+            <div class="inventory-hero-stat">
+              <div class="label"><i class="bi bi-building"></i> Proveedores</div>
+              <strong>{{ proveedores|length }}</strong>
+            </div>
+            <div class="inventory-hero-stat">
+              <div class="label"><i class="bi bi-house-door"></i> Bodegas</div>
+              <strong>{{ bodegas|length }}</strong>
             </div>
           </div>
         </div>
-        <ul class="nav nav-tabs mt-2 inventory-tabs">
+        <ul class="nav nav-pills flex-wrap mt-4 inventory-tabs">
           <li class="nav-item">
             <a class="nav-link" href="/inventory">Catalogo de productos</a>
           </li>
@@ -213,34 +1101,38 @@
         </ul>
       </div>
 
-      <div class="odoo-kpis">
-        <div class="odoo-kpi">
+      <div class="inventory-kpi-grid">
+        <div class="inventory-kpi-card">
           <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
             <i class="bi bi-journal-check text-blue-600"></i>
             Ingresos
           </div>
           <strong>{{ ingresos|length }}</strong>
+          <div class="kpi-note">Operaciones registradas en la vista actual.</div>
         </div>
-        <div class="odoo-kpi">
+        <div class="inventory-kpi-card">
           <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
             <i class="bi bi-box-seam text-emerald-600"></i>
             Productos
           </div>
           <strong>{{ productos|length }}</strong>
+          <div class="kpi-note">Catalogo disponible para carga inmediata.</div>
         </div>
-        <div class="odoo-kpi">
+        <div class="inventory-kpi-card">
           <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
             <i class="bi bi-building text-violet-600"></i>
             Proveedores
           </div>
           <strong>{{ proveedores|length }}</strong>
+          <div class="kpi-note">Base activa para compras e importaciones.</div>
         </div>
-        <div class="odoo-kpi">
+        <div class="inventory-kpi-card">
           <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
             <i class="bi bi-house-door text-rose-600"></i>
             Bodegas
           </div>
           <strong>{{ bodegas|length }}</strong>
+          <div class="kpi-note">Destinos habilitados para recepción.</div>
         </div>
       </div>
 
@@ -256,14 +1148,17 @@
     {% endif %}
 
       {% if shoes_mode %}
-      <div class="card shadow-sm border-0 mt-3">
-        <div class="card-body p-3 p-lg-4 shoe-intake-panel">
-          <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
-            <h6 class="mb-0 fw-semibold">Ingreso especializado de zapatos</h6>
+      <div class="card shadow-lg border-0 mt-3 inventory-section-card">
+        <div class="card-body p-3 p-lg-4 shoe-intake-panel inventory-soft-card">
+          <div class="shoe-intake-callout">
+            <div>
+              <div class="eyebrow text-uppercase small text-muted fw-semibold">Modulo especializado</div>
+              <h6 class="mb-1 fw-semibold">Ingreso especializado de zapatos</h6>
+              <div class="text-muted small">
+                Define codigo base + linea + marca, selecciona formato de tallas y colores. El sistema genera variantes por color/talla automaticamente.
+              </div>
+            </div>
             <span class="badge bg-primary-subtle text-primary-emphasis">BD Zapatos</span>
-          </div>
-          <div class="text-muted small mb-3">
-            Define codigo base + linea + marca, selecciona formato de tallas y colores. El sistema genera variantes por color/talla automaticamente.
           </div>
           <form method="post" action="/inventory/ingresos/zapatos" id="shoe-ingreso-form" class="row g-2">
             <div class="col-md-2">
@@ -525,25 +1420,25 @@
       </div>
       {% endif %}
 
-      <div class="card shadow-sm border-0">
+      <div class="card shadow-lg border-0 inventory-section-card">
         <div class="card-body p-3 p-lg-4">
-        <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+        <div class="inventory-panel-head">
           <div>
-            <div class="text-uppercase text-muted small">Inventario / Ingresos</div>
-            <h5 class="mb-1 fw-semibold">Movimientos de inventario</h5>
-            <div class="text-muted small">Registra ingresos y controla existencias por bodega.</div>
+            <div class="eyebrow"><i class="bi bi-layers"></i> Inventario / Ingresos</div>
+            <h5>Movimientos de inventario</h5>
+            <div class="text-muted small">Registra ingresos, controla existencias por bodega y centraliza operaciones maestras.</div>
           </div>
-          <span class="badge bg-light text-dark border">ERP Inventarios</span>
+          <span class="inventory-status-pill"><i class="bi bi-diagram-3"></i> ERP Inventarios</span>
         </div>
-        <ul class="nav nav-tabs mb-2 inventory-tabs" role="tablist">
+        <ul class="nav nav-pills flex-wrap mb-3 inventory-tabs" role="tablist">
           <li class="nav-item" role="presentation">
-            <button class="nav-link active py-1 px-3 small" id="ingreso-form-tab" type="button">
+            <button class="nav-link active py-1 px-3 small" id="ingreso-form-tab" type="button" onclick="document.getElementById('ingreso-form-section')?.classList.remove('hidden');document.getElementById('ingreso-list-section')?.classList.add('hidden');this.classList.add('active');document.getElementById('ingreso-list-tab')?.classList.remove('active');">
               <i class="bi bi-box-arrow-in-down"></i>
               Registrar ingreso
             </button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link py-1 px-3 small" id="ingreso-list-tab" type="button">
+            <button class="nav-link py-1 px-3 small" id="ingreso-list-tab" type="button" onclick="document.getElementById('ingreso-list-section')?.classList.remove('hidden');document.getElementById('ingreso-form-section')?.classList.add('hidden');this.classList.add('active');document.getElementById('ingreso-form-tab')?.classList.remove('active');">
               <i class="bi bi-list-check"></i>
               Ingresos registrados
             </button>
@@ -557,44 +1452,50 @@
         <div class="odoo-section-title text-2xl tracking-tight">Nuevo ingreso</div>
         <div class="text-sm text-slate mt-1">Registro de entradas de inventario</div>
       </div>
-          </div>
+    </div>
     <div class="px-6 pt-2">
       <div class="flex flex-wrap gap-2 odoo-tabs odoo-modal-tabs">
-        <button class="ingreso-tab btn btn-sm btn-primary d-inline-flex align-items-center gap-2" data-target="tab-ingreso" type="button">
+        <button class="ingreso-tab btn btn-sm btn-primary d-inline-flex align-items-center gap-2" data-target="tab-ingreso" type="button" onclick="document.querySelectorAll('.ingreso-tab').forEach((el)=>{el.classList.remove('btn-primary');el.classList.add('btn-outline-secondary');});this.classList.add('btn-primary');this.classList.remove('btn-outline-secondary');document.querySelectorAll('.ingreso-panel').forEach((el)=>el.classList.add('hidden'));document.getElementById('tab-ingreso')?.classList.remove('hidden');">
           <i class="bi bi-box-arrow-in-down"></i>
           Ingreso
         </button>
-        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-proveedor" type="button">
+        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-proveedor" type="button" onclick="document.querySelectorAll('.ingreso-tab').forEach((el)=>{el.classList.remove('btn-primary');el.classList.add('btn-outline-secondary');});this.classList.add('btn-primary');this.classList.remove('btn-outline-secondary');document.querySelectorAll('.ingreso-panel').forEach((el)=>el.classList.add('hidden'));document.getElementById('tab-proveedor')?.classList.remove('hidden');">
           <i class="bi bi-truck"></i>
           Proveedor
         </button>
-        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-proveedor-edit" type="button">
+        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-proveedor-edit" type="button" onclick="document.querySelectorAll('.ingreso-tab').forEach((el)=>{el.classList.remove('btn-primary');el.classList.add('btn-outline-secondary');});this.classList.add('btn-primary');this.classList.remove('btn-outline-secondary');document.querySelectorAll('.ingreso-panel').forEach((el)=>el.classList.add('hidden'));document.getElementById('tab-proveedor-edit')?.classList.remove('hidden');">
           <i class="bi bi-pencil"></i>
           Editar proveedor
         </button>
-        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-producto" type="button">
+        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-producto" type="button" onclick="document.querySelectorAll('.ingreso-tab').forEach((el)=>{el.classList.remove('btn-primary');el.classList.add('btn-outline-secondary');});this.classList.add('btn-primary');this.classList.remove('btn-outline-secondary');document.querySelectorAll('.ingreso-panel').forEach((el)=>el.classList.add('hidden'));document.getElementById('tab-producto')?.classList.remove('hidden');">
           <i class="bi bi-boxes"></i>
           Nuevo producto
         </button>
-        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-producto-edit" type="button">
+        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-producto-edit" type="button" onclick="document.querySelectorAll('.ingreso-tab').forEach((el)=>{el.classList.remove('btn-primary');el.classList.add('btn-outline-secondary');});this.classList.add('btn-primary');this.classList.remove('btn-outline-secondary');document.querySelectorAll('.ingreso-panel').forEach((el)=>el.classList.add('hidden'));document.getElementById('tab-producto-edit')?.classList.remove('hidden');">
           <i class="bi bi-pencil"></i>
           Editar producto
         </button>
-        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-linea" type="button">
+        {% if shoes_mode %}
+        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-shoes-pricing" type="button" onclick="document.querySelectorAll('.ingreso-tab').forEach((el)=>{el.classList.remove('btn-primary');el.classList.add('btn-outline-secondary');});this.classList.add('btn-primary');this.classList.remove('btn-outline-secondary');document.querySelectorAll('.ingreso-panel').forEach((el)=>el.classList.add('hidden'));document.getElementById('tab-shoes-pricing')?.classList.remove('hidden');">
+          <i class="bi bi-cash-stack"></i>
+          Precios zapatos
+        </button>
+        {% endif %}
+        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-linea" type="button" onclick="document.querySelectorAll('.ingreso-tab').forEach((el)=>{el.classList.remove('btn-primary');el.classList.add('btn-outline-secondary');});this.classList.add('btn-primary');this.classList.remove('btn-outline-secondary');document.querySelectorAll('.ingreso-panel').forEach((el)=>el.classList.add('hidden'));document.getElementById('tab-linea')?.classList.remove('hidden');">
           <i class="bi bi-tags"></i>
           Linea
         </button>
-        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-segmento" type="button">
+        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-segmento" type="button" onclick="document.querySelectorAll('.ingreso-tab').forEach((el)=>{el.classList.remove('btn-primary');el.classList.add('btn-outline-secondary');});this.classList.add('btn-primary');this.classList.remove('btn-outline-secondary');document.querySelectorAll('.ingreso-panel').forEach((el)=>el.classList.add('hidden'));document.getElementById('tab-segmento')?.classList.remove('hidden');">
           <i class="bi bi-grid-3x3-gap"></i>
           Segmento
         </button>
-        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-import" type="button">
+        <button class="ingreso-tab btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" data-target="tab-import" type="button" onclick="document.querySelectorAll('.ingreso-tab').forEach((el)=>{el.classList.remove('btn-primary');el.classList.add('btn-outline-secondary');});this.classList.add('btn-primary');this.classList.remove('btn-outline-secondary');document.querySelectorAll('.ingreso-panel').forEach((el)=>el.classList.add('hidden'));document.getElementById('tab-import')?.classList.remove('hidden');">
           <i class="bi bi-file-earmark-arrow-up"></i>
           Importar
         </button>
       </div>
     </div>
-    <div class="px-6 pb-4 pt-2 space-y-4 overflow-y-auto max-h-[70vh] odoo-modal-body">
+    <div class="px-6 pb-4 pt-2 space-y-4 odoo-modal-body">
       <div id="tab-ingreso" class="ingreso-panel">
         <form id="ingreso-form" method="post" action="/inventory/ingresos" class="space-y-4 text-sm" novalidate>
           <div id="bodega-banner" class="alert alert-info py-2 px-3 mb-2 d-flex align-items-center gap-2" role="status">
@@ -808,6 +1709,7 @@
               </div>
             </div>
           </div>
+          </div>
           <div class="totals-bar d-flex flex-wrap gap-4 align-items-center justify-content-end border-top pt-3">
             <div>
               <div class="label">Total bultos</div>
@@ -859,49 +1761,85 @@
       <div id="tab-proveedor" class="ingreso-panel hidden">
         <div class="odoo-modal-section odoo-compact-card">
           <div class="odoo-modal-title mb-3">Nuevo proveedor</div>
-          <form id="proveedor-create-form" class="space-y-3" method="post" action="/inventory/proveedor">
+          <form id="proveedor-create-form" class="space-y-3 compact-form" method="post" action="/inventory/proveedor">
             <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
-            <input name="nombre" class="w-full odoo-input form-control" placeholder="Nombre del proveedor" required />
-            <input name="tipo" class="w-full odoo-input form-control" placeholder="Tipo (Local/Importacion)" />
-            <label class="flex items-center gap-2 text-sm text-slate">
-              <input class="accent-brand" type="checkbox" name="activo" checked />
-              Activo
-            </label>
-            <button class="w-full btn btn-primary btn-sm">
-              Guardar proveedor
-            </button>
-        </form>
+            <div class="desktop-form-grid">
+              <div class="desktop-form-main">
+                <div class="field-card">
+                  <h6>Datos del proveedor</h6>
+                  <div class="form-shell two-col">
+                    <label class="block text-sm font-semibold text-ink">
+                      Nombre del proveedor
+                      <input name="nombre" class="mt-2 w-full odoo-input form-control" placeholder="Nombre del proveedor" required />
+                    </label>
+                    <label class="block text-sm font-semibold text-ink">
+                      Tipo
+                      <input name="tipo" class="mt-2 w-full odoo-input form-control" placeholder="Tipo (Local/Importacion)" />
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="desktop-form-side">
+                <div class="field-card">
+                  <h6>Estado</h6>
+                  <label class="flex items-center gap-2 text-sm text-slate mb-3">
+                    <input class="accent-brand" type="checkbox" name="activo" checked />
+                    Proveedor activo
+                  </label>
+                  <button class="btn btn-primary w-100" type="submit">
+                    Guardar proveedor
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
       </div>
       </div>
       <div id="tab-proveedor-edit" class="ingreso-panel hidden">
         <div class="odoo-modal-section odoo-compact-card">
           <div class="odoo-modal-title mb-3">Editar proveedor</div>
-          <form id="proveedor-edit-form" class="space-y-3" method="post" action="/inventory/proveedor/0/update">
+          <form id="proveedor-edit-form" class="space-y-3 compact-form" method="post" action="/inventory/proveedor/0/update">
             <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
-            <label class="block text-sm font-semibold text-ink">
-              Selecciona proveedor *
-              <select id="edit-proveedor-select" class="mt-2 w-full odoo-input form-select select2 odoo-select2" required>
-                <option value="">Selecciona</option>
-                {% for proveedor in proveedores %}
-                <option value="{{ proveedor.id }}" data-nombre="{{ proveedor.nombre }}" data-tipo="{{ proveedor.tipo or '' }}" data-activo="{{ 1 if proveedor.activo else 0 }}">{{ proveedor.nombre }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label class="block text-sm font-semibold text-ink">
-              Nombre *
-              <input id="edit-proveedor-nombre" name="nombre" class="mt-2 w-full odoo-input form-control" required />
-            </label>
-            <label class="block text-sm font-semibold text-ink">
-              Tipo
-              <input id="edit-proveedor-tipo" name="tipo" class="mt-2 w-full odoo-input form-control" />
-            </label>
-            <label class="flex items-center gap-2 text-sm text-slate">
-              <input id="edit-proveedor-activo" class="accent-brand" type="checkbox" name="activo" checked />
-              Activo
-            </label>
-            <button class="w-full btn btn-primary btn-sm">
-              Guardar cambios
-            </button>
+            <div class="desktop-form-grid">
+              <div class="desktop-form-main">
+                <div class="selector-hero">
+                  <label class="block text-sm font-semibold text-ink">
+                    Selecciona proveedor *
+                    <select id="edit-proveedor-select" class="mt-2 w-full odoo-input form-select select2 odoo-select2" required>
+                      <option value="">Selecciona</option>
+                      {% for proveedor in proveedores %}
+                      <option value="{{ proveedor.id }}" data-nombre="{{ proveedor.nombre }}" data-tipo="{{ proveedor.tipo or '' }}" data-activo="{{ 1 if proveedor.activo else 0 }}">{{ proveedor.nombre }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                </div>
+                <div class="field-card">
+                  <h6>Datos a editar</h6>
+                  <div class="form-shell two-col">
+                    <label class="block text-sm font-semibold text-ink">
+                      Nombre *
+                      <input id="edit-proveedor-nombre" name="nombre" class="mt-2 w-full odoo-input form-control" required />
+                    </label>
+                    <label class="block text-sm font-semibold text-ink">
+                      Tipo
+                      <input id="edit-proveedor-tipo" name="tipo" class="mt-2 w-full odoo-input form-control" />
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="desktop-form-side">
+                <div class="field-card">
+                  <h6>Estado y accion</h6>
+                  <label class="flex items-center gap-2 text-sm text-slate mb-3">
+                    <input id="edit-proveedor-activo" class="accent-brand" type="checkbox" name="activo" checked />
+                    Proveedor activo
+                  </label>
+                  <button class="btn btn-primary w-100" type="submit">
+                    Guardar cambios
+                  </button>
+                </div>
+              </div>
+            </div>
           </form>
         </div>
       </div>
@@ -916,106 +1854,112 @@
             Si este producto final trabaja con receta, al ingresar existencia se descargaran las materias primas configuradas.
           </div>
           {% endif %}
-          <form id="ingreso-product-form" class="text-base" method="post" action="/inventory/product" target="ingresos-background-frame" enctype="multipart/form-data">
+          <form id="ingreso-product-form" class="text-base compact-form" method="post" action="/inventory/product" target="ingresos-background-frame" enctype="multipart/form-data">
             <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
-            <div class="row g-3">
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Codigo *
-                  <input id="new-product-code" name="cod_producto" class="mt-2 w-full odoo-input form-control" required />
-                </label>
+            <div class="desktop-form-grid">
+              <div class="desktop-form-main">
+                <div class="field-card">
+                  <h6>Ficha base</h6>
+                  <div class="row g-3 price-grid">
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Codigo *
+                        <input id="new-product-code" name="cod_producto" class="mt-2 w-full odoo-input form-control" required />
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Descripcion *
+                        <input id="new-product-desc" name="descripcion" class="mt-2 w-full odoo-input form-control" required />
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Linea
+                        <select id="new-product-linea" name="linea_id" class="mt-2 w-full odoo-input form-select select2 odoo-select2">
+                          <option value="">Selecciona</option>
+                          {% for linea in lineas %}
+                          <option value="{{ linea.id }}">{{ linea.linea }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Segmento
+                        <select id="new-product-segmento" name="segmento_id" class="mt-2 w-full odoo-input form-select select2 odoo-select2">
+                          <option value="">Selecciona</option>
+                          {% for seg in segmentos %}
+                          <option value="{{ seg.id }}">{{ seg.segmento }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Tipo de producto
+                        <select id="new-product-type" name="tipo_producto" class="mt-2 w-full odoo-input form-select">
+                          {% for option in product_type_options %}
+                          <option value="{{ option.value }}" {% if option.value == 'DIRECTO' %}selected{% endif %}>{{ option.label }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Unidad base
+                        <select id="new-product-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
+                          {% for unidad in unidades_medida %}
+                          <option value="{{ unidad.id }}" {% if unidad.codigo == 'UNIDAD' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Marca
+                        <select id="new-product-marca" name="marca" class="mt-2 w-full odoo-input form-select">
+                          <option value="Sin Marca" selected>Sin Marca</option>
+                          {% for m in marcas %}
+                          {% if (m.nombre or '') != 'Sin Marca' %}
+                          <option value="{{ m.nombre }}">{{ m.nombre }}</option>
+                          {% endif %}
+                          {% endfor %}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Descripcion *
-                  <input id="new-product-desc" name="descripcion" class="mt-2 w-full odoo-input form-control" required />
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Linea
-                  <select id="new-product-linea" name="linea_id" class="mt-2 w-full odoo-input form-select select2 odoo-select2">
-                    <option value="">Selecciona</option>
-                    {% for linea in lineas %}
-                    <option value="{{ linea.id }}">{{ linea.linea }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Segmento
-                  <select id="new-product-segmento" name="segmento_id" class="mt-2 w-full odoo-input form-select select2 odoo-select2">
-                    <option value="">Selecciona</option>
-                    {% for seg in segmentos %}
-                    <option value="{{ seg.id }}">{{ seg.segmento }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Tipo de producto
-                  <select id="new-product-type" name="tipo_producto" class="mt-2 w-full odoo-input form-select">
-                    {% for option in product_type_options %}
-                    <option value="{{ option.value }}" {% if option.value == 'DIRECTO' %}selected{% endif %}>{{ option.label }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Unidad base
-                  <select id="new-product-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
-                    {% for unidad in unidades_medida %}
-                    <option value="{{ unidad.id }}" {% if unidad.codigo == 'UNIDAD' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
-                    {% endfor %}
-                  </select>
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Marca
-                  <select id="new-product-marca" name="marca" class="mt-2 w-full odoo-input form-select">
-                    <option value="Sin Marca" selected>Sin Marca</option>
-                    {% for m in marcas %}
-                    {% if (m.nombre or '') != 'Sin Marca' %}
-                    <option value="{{ m.nombre }}">{{ m.nombre }}</option>
+              <div class="desktop-form-side">
+                <div class="field-card">
+                  <h6>Comercial</h6>
+                  <div class="form-shell">
+                    <label class="block text-sm font-semibold text-ink">
+                      Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})
+                      <input id="new-product-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
+                    </label>
+                    <label class="block text-sm font-semibold text-ink">
+                      % ganancia (entero)
+                      <input id="new-product-margin" type="number" min="0" step="1" class="mt-2 w-full odoo-input form-control" placeholder="Ej: 25" />
+                    </label>
+                    <label class="block text-sm font-semibold text-ink">
+                      Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
+                      <input id="new-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
+                    </label>
+                    {% if weighted_inventory_enabled or weighted_sales_enabled %}
+                    <label class="flex items-center gap-2 text-sm font-semibold text-ink">
+                      <input id="new-product-weighted" class="accent-brand" type="checkbox" name="es_por_peso" />
+                      Producto por peso
+                    </label>
                     {% endif %}
-                    {% endfor %}
-                  </select>
-                </label>
+                    <button id="create-product-btn" class="btn btn-primary w-100" type="submit">
+                      Crear producto
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="new-product-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  % ganancia (entero)
-                  <input id="new-product-margin" type="number" min="0" step="1" class="mt-2 w-full odoo-input form-control" placeholder="Ej: 25" />
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="new-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
-                </label>
-              </div>
-              {% if weighted_inventory_enabled or weighted_sales_enabled %}
-              <div class="col-md-6 d-flex align-items-end">
-                <label class="flex items-center gap-2 text-sm font-semibold text-ink">
-                  <input id="new-product-weighted" class="accent-brand" type="checkbox" name="es_por_peso" />
-                  Producto por peso
-                </label>
-              </div>
-              {% endif %}
             </div>
-            <button id="create-product-btn" class="w-full btn btn-primary btn-sm mt-3" type="submit">
-              Crear producto
-            </button>
           </form>
         </div>
       </div>
@@ -1023,152 +1967,230 @@
       <div id="tab-producto-edit" class="ingreso-panel hidden">
         <div class="odoo-modal-section odoo-compact-card">
           <div class="odoo-modal-title mb-3">Editar producto</div>
-          <form id="product-edit-form" class="space-y-3 text-base" method="post" action="/inventory/product/0/update" target="ingresos-background-frame">
+          <form id="product-edit-form" class="space-y-3 text-base compact-form" method="post" action="/inventory/product/0/update" target="ingresos-background-frame">
             <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
-            <label class="block text-sm font-semibold text-ink">
-              Buscar producto *
-              <select id="edit-product-select" class="mt-2 w-full odoo-input form-select" required>
-                <option value="">Selecciona</option>
-                {% for p in productos %}
-                <option
-                  value="{{ p.id }}"
-                  data-cod="{{ p.cod_producto }}"
-                  data-desc="{{ p.descripcion }}"
-                  data-linea="{{ p.linea_id or '' }}"
-                  data-segmento="{{ p.segmento_id or '' }}"
-                  data-tipo-producto="{{ p.tipo_producto or 'DIRECTO' }}"
-                  data-precio1="{% if inventory_cs_only %}{{ "%.2f"|format(p.precio_venta1 or 0) }}{% else %}{{ "%.2f"|format(p.precio_venta1_usd or 0) }}{% endif %}"
-                  data-precio2="{{ "%.2f"|format(p.precio_venta2_usd or 0) }}"
-                  data-precio3="{{ "%.2f"|format(p.precio_venta3_usd or 0) }}"
-                  data-costo="{% if inventory_cs_only %}{{ "%.2f"|format(p.costo_producto or 0) }}{% elif p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0.00{% endif %}"
-                  data-activo="{{ 1 if p.activo else 0 }}"
-                  data-es-por-peso="{{ 1 if p.es_por_peso else 0 }}"
-                  data-unidad-medida-id="{{ p.unidad_medida_id or '' }}"
-                >
-                  {{ p.cod_producto }} - {{ p.descripcion }}
-                </option>
-                {% endfor %}
-              </select>
-            </label>
-            <div class="row g-3">
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Codigo
-                  <input id="edit-codigo" class="mt-2 w-full odoo-input form-control bg-slate-50" disabled />
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Descripcion *
-                  <input id="edit-descripcion" name="descripcion" class="mt-2 w-full odoo-input form-control" required />
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Linea
-                  <select id="edit-linea" name="linea_id" class="mt-2 w-full odoo-input form-select select2 odoo-select2">
-                    <option value="">Selecciona</option>
-                    {% for linea in lineas %}
-                    <option value="{{ linea.id }}">{{ linea.linea }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
-              </div>
-              <div class="col-md-6">
-                <label class="block text-sm font-semibold text-ink">
-                  Segmento
-                  <select id="edit-segmento" name="segmento_id" class="mt-2 w-full odoo-input form-select select2 odoo-select2">
-                    <option value="">Selecciona</option>
-                    {% for seg in segmentos %}
-                    <option value="{{ seg.id }}">{{ seg.segmento }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
-              </div>
-              <div class="col-md-4">
-                <label class="block text-sm font-semibold text-ink">
-                  Tipo de producto
-                  <select id="edit-product-type" name="tipo_producto" class="mt-2 w-full odoo-input form-select">
-                    {% for option in product_type_options %}
-                    <option value="{{ option.value }}" {% if option.value == 'DIRECTO' %}selected{% endif %}>{{ option.label }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
-              </div>
-              <div class="col-md-4">
-                <label class="block text-sm font-semibold text-ink">
-                  Unidad base
-                  <select id="edit-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
-                    {% for unidad in unidades_medida %}
-                    <option value="{{ unidad.id }}" {% if unidad.codigo == 'UNIDAD' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
-                    {% endfor %}
-                  </select>
-                </label>
-              </div>
-              <div class="col-md-4">
-                <label class="block text-sm font-semibold text-ink">
-                  Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="edit-costo" name="costo_producto_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
-                </label>
-              </div>
-              <div class="col-md-4">
-                <label class="block text-sm font-semibold text-ink">
-                  % ganancia (entero)
-                  <input id="edit-product-margin" type="number" min="0" step="1" class="mt-2 w-full odoo-input form-control" placeholder="Ej: 25" />
-                </label>
-              </div>
-              <div class="col-md-4">
-                <label class="block text-sm font-semibold text-ink">
-                  Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="edit-precio1" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
-                </label>
-              </div>
-              <div class="col-md-4">
-                <label class="block text-sm font-semibold text-ink">
-                  Precio 2 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="edit-precio2" name="precio_venta2_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
-                </label>
-              </div>
-              <div class="col-md-4">
-                <label class="block text-sm font-semibold text-ink">
-                  Precio 3 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
-                  <input id="edit-precio3" name="precio_venta3_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" />
-                </label>
-              </div>
-              <div class="col-md-6 d-flex align-items-end">
-                <label class="flex items-center gap-2 text-sm font-semibold text-ink">
-                  <input id="edit-activo" class="accent-brand" type="checkbox" name="activo" />
-                  Activo
-                </label>
-              </div>
-              {% if weighted_inventory_enabled or weighted_sales_enabled %}
-              <div class="col-md-6 d-flex align-items-end">
-                <label class="flex items-center gap-2 text-sm font-semibold text-ink">
-                  <input id="edit-weighted" class="accent-brand" type="checkbox" name="es_por_peso" />
-                  Producto por peso
-                </label>
-              </div>
-              {% endif %}
+            <div class="selector-hero mb-3">
+              <label class="block text-sm font-semibold text-ink">
+                Buscar producto *
+                <select id="edit-product-select" class="mt-2 w-full odoo-input form-select" required>
+                  <option value="">Selecciona</option>
+                  {% for p in productos %}
+                  <option
+                    value="{{ p.id }}"
+                    data-cod="{{ p.cod_producto }}"
+                    data-desc="{{ p.descripcion }}"
+                    data-linea="{{ p.linea_id or '' }}"
+                    data-segmento="{{ p.segmento_id or '' }}"
+                    data-tipo-producto="{{ p.tipo_producto or 'DIRECTO' }}"
+                    data-activo="{{ 1 if p.activo else 0 }}"
+                    data-unidad-medida-id="{{ p.unidad_medida_id or '' }}"
+                  >
+                    {{ p.cod_producto }} - {{ p.descripcion }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </label>
             </div>
-            <button class="w-full btn btn-primary btn-sm">
+            <div class="desktop-form-grid">
+              <div class="desktop-form-main">
+                <div class="field-card">
+                  <h6>Ficha del producto</h6>
+                  <div class="row g-3 price-grid">
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Codigo
+                        <input id="edit-codigo" class="mt-2 w-full odoo-input form-control bg-slate-50" disabled />
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Descripcion *
+                        <input id="edit-descripcion" name="descripcion" class="mt-2 w-full odoo-input form-control" required />
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Linea
+                        <select id="edit-linea" name="linea_id" class="mt-2 w-full odoo-input form-select select2 odoo-select2">
+                          <option value="">Selecciona</option>
+                          {% for linea in lineas %}
+                          <option value="{{ linea.id }}">{{ linea.linea }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Segmento
+                        <select id="edit-segmento" name="segmento_id" class="mt-2 w-full odoo-input form-select select2 odoo-select2">
+                          <option value="">Selecciona</option>
+                          {% for seg in segmentos %}
+                          <option value="{{ seg.id }}">{{ seg.segmento }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Tipo de producto
+                        <select id="edit-product-type" name="tipo_producto" class="mt-2 w-full odoo-input form-select">
+                          {% for option in product_type_options %}
+                          <option value="{{ option.value }}" {% if option.value == 'DIRECTO' %}selected{% endif %}>{{ option.label }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="block text-sm font-semibold text-ink">
+                        Unidad base
+                        <select id="edit-unit" name="unidad_medida_id" class="mt-2 w-full odoo-input form-select">
+                          {% for unidad in unidades_medida %}
+                          <option value="{{ unidad.id }}" {% if unidad.codigo == 'UNIDAD' %}selected{% endif %}>{{ unidad.nombre }} ({{ unidad.abreviatura }})</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="desktop-form-side">
+                <div class="field-card">
+                  <h6>Estado del producto</h6>
+                  <div class="form-shell">
+                    <label class="flex items-center gap-2 text-sm font-semibold text-ink">
+                      <input id="edit-activo" class="accent-brand" type="checkbox" name="activo" />
+                      Activo
+                    </label>
+                    <div class="small text-muted">
+                      Esta edicion solo modifica datos maestros del producto. Los precios, colores, tallas y existencias se gestionan en sus modulos respectivos.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-primary mt-3" type="submit">
               Guardar cambios
             </button>
           </form>
         </div>
       </div>
 
+      {% if shoes_mode %}
+      <div id="tab-shoes-pricing" class="ingreso-panel hidden">
+        <div class="odoo-modal-section odoo-compact-card">
+          <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+            <div>
+              <div class="odoo-modal-title">Actualizacion masiva de precios para zapatos</div>
+              <div class="text-muted small">Usa el mismo criterio de busqueda de variantes de ventas, revisa precio anterior vs nuevo y aplica el cambio de una sola vez.</div>
+            </div>
+            <span class="badge text-bg-primary">BD Zapatos</span>
+          </div>
+          <div class="row g-3 mb-3 price-grid">
+            <div class="col-md-4">
+              <label class="block text-sm font-semibold text-ink">
+                Buscar
+                <input id="shoes-price-search-q" type="text" class="mt-2 w-full odoo-input form-control text-uppercase" placeholder="Codigo variante, codigo producto o descripcion" autocomplete="off" />
+              </label>
+            </div>
+            <div class="col-md-2">
+              <label class="block text-sm font-semibold text-ink">
+                Color
+                <input id="shoes-price-search-color" type="text" class="mt-2 w-full odoo-input form-control text-uppercase" placeholder="Color" autocomplete="off" />
+              </label>
+            </div>
+            <div class="col-md-2">
+              <label class="block text-sm font-semibold text-ink">
+                Talla
+                <input id="shoes-price-search-size" type="text" class="mt-2 w-full odoo-input form-control text-uppercase" placeholder="Talla" autocomplete="off" />
+              </label>
+            </div>
+            <div class="col-md-2">
+              <label class="block text-sm font-semibold text-ink">
+                Lista actual
+                <select id="shoes-price-list-select" class="mt-2 w-full odoo-input form-select">
+                  {% for tier in range(1, 8) %}
+                  <option value="{{ tier }}" {% if tier == 1 %}selected{% endif %}>Precio {{ tier }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <button id="shoes-price-search-run" type="button" class="btn btn-primary w-100">Buscar variantes</button>
+            </div>
+          </div>
+          <div class="row g-3 mb-3 price-grid">
+            <div class="col-md-2">
+              <label class="block text-sm font-semibold text-ink">
+                Base P1
+                <input id="shoes-price-base" type="number" step="0.01" min="0" class="mt-2 w-full odoo-input form-control" placeholder="0.00" />
+              </label>
+            </div>
+            <div class="col-md-2">
+              <label class="block text-sm font-semibold text-ink">
+                Rebaja por nivel (C$)
+                <input id="shoes-price-step" type="number" step="0.01" min="0" class="mt-2 w-full odoo-input form-control" placeholder="10.00" />
+              </label>
+            </div>
+            {% for tier in range(1, 8) %}
+            <div class="col-md">
+              <label class="block text-sm font-semibold text-ink">
+                P{{ tier }}
+                <input id="shoes-new-price-{{ tier }}" type="number" step="0.01" min="0" class="mt-2 w-full odoo-input form-control" placeholder="0.00" />
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div id="shoes-price-status" class="small text-muted">Escribe para buscar variantes, revisa el orden por color y talla, y desmarca solo los items que no quieras afectar.</div>
+            <div class="d-flex flex-wrap gap-2">
+              <button id="shoes-price-generate-btn" type="button" class="btn btn-outline-secondary btn-sm">Generar escala</button>
+              <button id="shoes-price-apply-btn" type="button" class="btn btn-primary btn-sm">Aplicar cambio a seleccionados</button>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th class="text-center"><input id="shoes-price-check-all" type="checkbox" /></th>
+                  <th>Codigo variante</th>
+                  <th>Producto</th>
+                  <th class="text-center">Color</th>
+                  <th class="text-center">Talla</th>
+                  <th class="text-end">Precio actual</th>
+                  <th class="text-end">Precio nuevo</th>
+                  <th class="text-center">Existencia global</th>
+                  <th>Escala actual</th>
+                  <th>Escala nueva</th>
+                </tr>
+              </thead>
+              <tbody id="shoes-price-body">
+                <tr><td colspan="10" class="text-center text-slate">Escribe para buscar variantes.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
       <div id="tab-linea" class="ingreso-panel hidden">
         <div class="odoo-modal-section odoo-compact-card">
           <div class="odoo-modal-title mb-3">Nueva linea</div>
-          <form class="space-y-3" method="post" action="/inventory/linea" target="ingresos-background-frame">
+          <form class="space-y-3 compact-form" method="post" action="/inventory/linea" target="ingresos-background-frame">
             <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
-            <div class="text-muted small">Codigo automatico</div>
-            <input name="linea" class="w-full odoo-input form-control" placeholder="Linea" />
-            <label class="flex items-center gap-2 text-sm text-slate">
-              <input class="accent-brand" type="checkbox" name="activo" checked />
-              Activo
-            </label>
-            <button class="w-full btn btn-primary btn-sm">
+            <div class="form-card-note text-muted small">Codigo automatico</div>
+            <div class="form-shell two-col">
+              <label class="block text-sm font-semibold text-ink">
+                Linea
+                <input name="linea" class="mt-2 w-full odoo-input form-control" placeholder="Linea" />
+              </label>
+              <div class="form-card-note d-flex align-items-center">
+                <label class="flex items-center gap-2 text-sm text-slate mb-0">
+                  <input class="accent-brand" type="checkbox" name="activo" checked />
+                  Activo
+                </label>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">
               Guardar linea
             </button>
           </form>
@@ -1178,10 +2200,15 @@
       <div id="tab-segmento" class="ingreso-panel hidden">
         <div class="odoo-modal-section odoo-compact-card">
           <div class="odoo-modal-title mb-3">Nuevo segmento</div>
-          <form class="space-y-3" method="post" action="/inventory/segmento" target="ingresos-background-frame">
+          <form class="space-y-3 compact-form" method="post" action="/inventory/segmento" target="ingresos-background-frame">
             <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
-            <input name="segmento" class="w-full odoo-input form-control" placeholder="Segmento" />
-            <button class="w-full btn btn-primary btn-sm">
+            <div class="form-shell two-col">
+              <label class="block text-sm font-semibold text-ink">
+                Segmento
+                <input name="segmento" class="mt-2 w-full odoo-input form-control" placeholder="Segmento" />
+              </label>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">
               Guardar segmento
             </button>
           </form>
@@ -1199,10 +2226,15 @@
             <i class="bi bi-download"></i>
             Descargar formato CSV
           </a>
-          <form class="mt-3 space-y-3" method="post" action="/inventory/import" enctype="multipart/form-data" target="ingresos-background-frame">
+          <form class="mt-3 space-y-3 compact-form" method="post" action="/inventory/import" enctype="multipart/form-data" target="ingresos-background-frame">
             <input type="hidden" name="redirect_to" value="/inventory/ingresos" />
-            <input name="file" type="file" accept=".csv" class="w-full odoo-input form-control bg-white text-sm" required />
-            <button class="w-full btn btn-primary btn-sm d-inline-flex items-center justify-content-center gap-2">
+            <div class="form-shell two-col">
+              <label class="block text-sm font-semibold text-ink">
+                Archivo CSV
+                <input name="file" type="file" accept=".csv" class="mt-2 w-full odoo-input form-control bg-white text-sm" required />
+              </label>
+            </div>
+            <button class="btn btn-primary btn-sm d-inline-flex items-center justify-content-center gap-2" type="submit">
               <i class="bi bi-upload"></i>
               Importar CSV
             </button>
@@ -1211,13 +2243,24 @@
     </div>
         </div>
       </div>
-  </div>
 </section>
 <section id="ingreso-list-section" class="hidden">
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
-    <div class="odoo-section-title">Ingresos registrados</div>
-    <div class="d-flex flex-wrap align-items-center gap-3 text-sm text-slate">
-      <form class="d-flex flex-wrap align-items-center gap-2" method="get" action="/inventory/ingresos">
+  <div class="inventory-soft-card p-3 p-lg-4 shadow-lg">
+  <div class="inventory-record-toolbar mb-3">
+    <div>
+      <div class="eyebrow"><i class="bi bi-archive"></i> Historial operativo</div>
+      <div class="odoo-section-title">Ingresos registrados</div>
+      <div class="text-muted small mt-1">Consulta documentos, filtra por periodo y reimprime etiquetas o PDF desde el historial.</div>
+    </div>
+    <div class="d-flex justify-content-lg-end">
+      <span class="inventory-status-pill">
+        <i class="bi bi-list-check"></i>
+        {{ ingresos|length }} registros
+      </span>
+    </div>
+  </div>
+  <div class="inventory-filter-wrap mb-3">
+      <form class="inventory-filter-form" method="get" action="/inventory/ingresos">
         <input type="hidden" name="view" value="list" />
         <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
           <span class="input-group-text bg-white border-0"><i class="bi bi-calendar-range text-brand"></i></span>
@@ -1253,14 +2296,9 @@
           Ultimos 30 dias
         </a>
       </form>
-      <span class="odoo-pill success">
-        <i class="bi bi-list-check"></i>
-        {{ ingresos|length }} registros
-      </span>
-    </div>
   </div>
-  <div class="table-responsive">
-    <table id="ingresos-table" class="table table-striped table-sm align-middle text-sm odoo-table">
+  <div class="inventory-records-table table-responsive">
+    <table id="ingresos-table" class="table table-hover table-striped table-sm align-middle text-sm odoo-table mb-0">
       <thead class="text-xs uppercase tracking-[0.15em] text-slate bg-slate-50">
         <tr>
           <th class="text-left px-4 py-3">Fecha</th>
@@ -1281,23 +2319,23 @@
           data-product-ids="{{ ingreso.items | map(attribute='producto_id') | join(',') }}"
         >
           <td class="px-4 py-3 text-slate">{{ ingreso.fecha }}</td>
-          <td class="px-4 py-3 font-semibold text-ink">{{ ingreso.tipo.nombre if ingreso.tipo else "-" }}</td>
+          <td class="px-4 py-3 font-semibold text-ink"><span class="inventory-chip-cell">{{ ingreso.tipo.nombre if ingreso.tipo else "-" }}</span></td>
           <td class="px-4 py-3 text-slate">{{ ingreso.bodega.name if ingreso.bodega else "-" }}</td>
           <td class="px-4 py-3 text-slate">{{ ingreso.proveedor.nombre if ingreso.proveedor else "-" }}</td>
-          {% if not inventory_cs_only %}<td class="px-4 py-3 text-right text-slate">$ {{ "%.2f"|format(ingreso.total_usd or 0) }}</td>{% endif %}
-          <td class="px-4 py-3 text-right text-slate">C$ {{ "%.2f"|format(ingreso.total_cs or 0) }}</td>
+          {% if not inventory_cs_only %}<td class="px-4 py-3 text-right inventory-amount">$ {{ "%.2f"|format(ingreso.total_usd or 0) }}</td>{% endif %}
+          <td class="px-4 py-3 text-right inventory-amount">C$ {{ "%.2f"|format(ingreso.total_cs or 0) }}</td>
           <td class="px-4 py-3 text-slate">{{ ingreso.observacion or "-" }}</td>
           <td class="px-4 py-3 text-center">
-            <div class="d-inline-flex flex-wrap justify-content-center gap-2">
+            <div class="d-inline-flex flex-wrap justify-content-center gap-2 inventory-action-stack">
               <a class="btn btn-outline-secondary btn-sm" href="/inventory/ingresos/{{ ingreso.id }}/pdf" target="_blank" rel="noopener">
                 <i class="bi bi-printer"></i>
                 PDF
               </a>
               {% if shoes_mode %}
-              <button type="button" class="btn btn-outline-dark btn-sm" data-open-labels-preview="{{ ingreso.id }}">
+              <a class="btn btn-outline-dark btn-sm" href="/inventory/ingresos/{{ ingreso.id }}/labels/preview" data-open-labels-preview="{{ ingreso.id }}" title="Reimprimir etiquetas de este ingreso">
                 <i class="bi bi-upc-scan"></i>
-                Etiquetas
-              </button>
+                Reimprimir etiquetas
+              </a>
               {% endif %}
             </div>
           </td>
@@ -1307,6 +2345,7 @@
         {% endif %}
       </tbody>
     </table>
+  </div>
   </div>
   <div class="text-end text-slate text-sm mt-4">Version {{ version }}</div>
 </section>
@@ -1319,9 +2358,9 @@
     <div class="modal-content border-0 shadow-lg">
       <div class="modal-header border-0 pb-0">
         <div>
-          <div class="text-uppercase text-muted small">Inventario / Etiquetas</div>
-          <h5 class="modal-title mb-1">Preview de etiquetas Code128</h5>
-          <div class="small text-muted">Vista previa antes de imprimir.</div>
+          <div class="text-uppercase text-muted small">Inventario / Reimpresion de etiquetas</div>
+          <h5 class="modal-title mb-1">Reimprimir etiquetas Code128</h5>
+          <div class="small text-muted">Vista previa antes de volver a imprimir.</div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
@@ -1329,7 +2368,7 @@
         <div class="labels-preview-modal-card p-3">
           <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
             <div class="small text-muted">
-              Revisa el diseno y la cantidad de etiquetas antes de abrir la impresion.
+              Revisa el diseno y la cantidad de etiquetas antes de volver a imprimir.
             </div>
             <div class="d-flex flex-wrap gap-2">
               <a id="labels-preview-open-page" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener">
@@ -1563,15 +2602,22 @@
   const editDescripcion = document.getElementById("edit-descripcion");
   const editLinea = document.getElementById("edit-linea");
   const editSegmento = document.getElementById("edit-segmento");
-  const editPrecio1 = document.getElementById("edit-precio1");
-  const editPrecio2 = document.getElementById("edit-precio2");
-  const editPrecio3 = document.getElementById("edit-precio3");
-  const editProductMargin = document.getElementById("edit-product-margin");
-  const editCosto = document.getElementById("edit-costo");
   const editProductType = document.getElementById("edit-product-type");
-  const editWeighted = document.getElementById("edit-weighted");
   const editUnit = document.getElementById("edit-unit");
   const editActivo = document.getElementById("edit-activo");
+  const shoesPriceSearchQ = document.getElementById("shoes-price-search-q");
+  const shoesPriceSearchColor = document.getElementById("shoes-price-search-color");
+  const shoesPriceSearchSize = document.getElementById("shoes-price-search-size");
+  const shoesPriceListSelect = document.getElementById("shoes-price-list-select");
+  const shoesPriceSearchRun = document.getElementById("shoes-price-search-run");
+  const shoesPriceBase = document.getElementById("shoes-price-base");
+  const shoesPriceStep = document.getElementById("shoes-price-step");
+  const shoesPriceGenerateBtn = document.getElementById("shoes-price-generate-btn");
+  const shoesPriceApplyBtn = document.getElementById("shoes-price-apply-btn");
+  const shoesPriceStatus = document.getElementById("shoes-price-status");
+  const shoesPriceBody = document.getElementById("shoes-price-body");
+  const shoesPriceCheckAll = document.getElementById("shoes-price-check-all");
+  const shoesNewPriceInputs = [1, 2, 3, 4, 5, 6, 7].map((tier) => document.getElementById(`shoes-new-price-${tier}`));
   const editProveedorSelect = document.getElementById("edit-proveedor-select");
   const editProveedorForm = document.getElementById("proveedor-edit-form");
   const editProveedorNombre = document.getElementById("edit-proveedor-nombre");
@@ -1686,7 +2732,6 @@
 
   bindAutoPriceFromCost(newProductCosto, newProductPrecio, newProductMargin);
   bindAutoPriceFromCost(quickProductCosto, quickProductPrecio, quickProductMargin);
-  bindAutoPriceFromCost(editCosto, editPrecio1, editProductMargin);
   let handleAddItem = null;
   let loadEditProductFn = null;
   const ingresoForm = document.getElementById("ingreso-form");
@@ -2158,7 +3203,9 @@
   };
 
   document.querySelectorAll("[data-open-labels-preview]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+      if (!labelsPreviewModal || !labelsPreviewFrame) return;
+      event.preventDefault();
       openLabelsPreview(button.getAttribute("data-open-labels-preview"));
     });
   });
@@ -2211,23 +3258,8 @@
           $(editSegmento).val(editSegmento.value || null).trigger("change");
         }
       }
-      if (editPrecio1) {
-        editPrecio1.value = inventoryCsOnly ? ((parseFloat(data.precio_venta1_usd || 0) * rateToday).toFixed(2)) : (data.precio_venta1_usd || "");
-      }
-      if (editPrecio2) {
-        editPrecio2.value = inventoryCsOnly ? ((parseFloat(data.precio_venta2_usd || 0) * rateToday).toFixed(2)) : (data.precio_venta2_usd || "");
-      }
-      if (editPrecio3) {
-        editPrecio3.value = inventoryCsOnly ? ((parseFloat(data.precio_venta3_usd || 0) * rateToday).toFixed(2)) : (data.precio_venta3_usd || "");
-      }
-      if (editCosto) {
-        editCosto.value = inventoryCsOnly ? ((parseFloat(data.costo_usd || 0) * rateToday).toFixed(2)) : (data.costo_usd || "");
-      }
       if (editProductType) {
         editProductType.value = data.tipo_producto || "DIRECTO";
-      }
-      if (editWeighted) {
-        editWeighted.checked = data.es_por_peso === true || data.es_por_peso === "1" || data.es_por_peso === 1;
       }
       if (editUnit) {
         editUnit.value = data.unidad_medida_id ? String(data.unidad_medida_id) : editUnit.value;
@@ -2265,10 +3297,7 @@
         linea_id: option.dataset.linea || "",
         segmento_id: option.dataset.segmento || "",
         tipo_producto: option.dataset.tipoProducto || "DIRECTO",
-        precio_venta1_usd: option.dataset.precio1 || "",
-        precio_venta2_usd: option.dataset.precio2 || "",
-        precio_venta3_usd: option.dataset.precio3 || "",
-        costo_usd: option.dataset.costo || "",
+        unidad_medida_id: option.dataset.unidadMedidaId || "",
         activo: option.dataset.activo || "",
       });
       fetchEditProduct(option.value);
@@ -2285,6 +3314,212 @@
       $(editSelect).select2("destroy");
     }
   }
+
+  const shoesPriceCurrencyLabel = "C$";
+  let shoesPriceItems = [];
+
+  const shoesPriceValue = (variant, tier) => {
+    const key = `precio_venta${tier}`;
+    return Number(variant?.[key] || 0);
+  };
+
+  const buildShoesPriceSearchUrl = () => {
+    const params = new URLSearchParams();
+    const q = (shoesPriceSearchQ?.value || "").trim();
+    const color = (shoesPriceSearchColor?.value || "").trim();
+    const talla = (shoesPriceSearchSize?.value || "").trim();
+    const priceList = String(shoesPriceListSelect?.value || "1");
+    if (q) params.set("q", q);
+    if (color) params.set("color", color);
+    if (talla) params.set("talla", talla);
+    params.set("price_list", priceList);
+    return `/sales/shoes/variants/search?${params.toString()}`;
+  };
+
+  const shoesScaleSummary = (values, mode) => {
+    const rows = values.map((value, index) => `<span>P${index + 1}: ${shoesPriceCurrencyLabel} ${Number(value || 0).toFixed(2)}</span>`);
+    return `<div class="price-scale-stack ${mode}">${rows.join("")}</div>`;
+  };
+
+  const shoesSizeSortKey = (rawValue) => {
+    const text = String(rawValue || "").trim().toUpperCase();
+    if (!text) return { rank: 9, numeric: Number.POSITIVE_INFINITY, text: "" };
+    const normalized = text.replace(",", ".");
+    const numericMatch = normalized.match(/^(\d+(?:\.\d+)?)$/);
+    if (numericMatch) {
+      return { rank: 0, numeric: Number(numericMatch[1]), text: normalized };
+    }
+    const mixedMatch = normalized.match(/^(\d+(?:\.\d+)?)([A-Z]+)$/);
+    if (mixedMatch) {
+      return { rank: 1, numeric: Number(mixedMatch[1]), text: mixedMatch[2] };
+    }
+    return { rank: 5, numeric: Number.POSITIVE_INFINITY, text: normalized };
+  };
+
+  const sortShoesPriceItems = (items) => {
+    return [...(items || [])].sort((left, right) => {
+      const leftCode = String(left?.cod_producto || "");
+      const rightCode = String(right?.cod_producto || "");
+      const byCode = leftCode.localeCompare(rightCode, undefined, { numeric: true, sensitivity: "base" });
+      if (byCode !== 0) return byCode;
+      const leftColor = String(left?.color || "");
+      const rightColor = String(right?.color || "");
+      const byColor = leftColor.localeCompare(rightColor, undefined, { numeric: true, sensitivity: "base" });
+      if (byColor !== 0) return byColor;
+      const leftSize = shoesSizeSortKey(left?.talla);
+      const rightSize = shoesSizeSortKey(right?.talla);
+      if (leftSize.rank !== rightSize.rank) return leftSize.rank - rightSize.rank;
+      if (leftSize.numeric !== rightSize.numeric) return leftSize.numeric - rightSize.numeric;
+      const bySizeText = leftSize.text.localeCompare(rightSize.text, undefined, { numeric: true, sensitivity: "base" });
+      if (bySizeText !== 0) return bySizeText;
+      const leftVariant = String(left?.cod_variante || "");
+      const rightVariant = String(right?.cod_variante || "");
+      return leftVariant.localeCompare(rightVariant, undefined, { numeric: true, sensitivity: "base" });
+    });
+  };
+
+  const renderShoesPriceRows = (items) => {
+    if (!shoesPriceBody) return;
+    if (!items.length) {
+      shoesPriceBody.innerHTML = `<tr><td colspan="10" class="text-center text-slate">Sin resultados.</td></tr>`;
+      if (shoesPriceCheckAll) shoesPriceCheckAll.checked = false;
+      return;
+    }
+    const orderedItems = sortShoesPriceItems(items);
+    const nextPrices = shoesNewPriceInputs.map((input) => Number(input?.value || 0));
+    shoesPriceBody.innerHTML = orderedItems.map((item) => {
+      const currentTier = Number(shoesPriceListSelect?.value || 1);
+      const currentPrice = shoesPriceValue(item, currentTier);
+      const nextPrice = nextPrices[currentTier - 1] || 0;
+      const currentScale = [1, 2, 3, 4, 5, 6, 7].map((tier) => shoesPriceValue(item, tier));
+      return `
+        <tr data-product-id="${Number(item.producto_id || 0)}" data-variant-id="${Number(item.variant_id || 0)}">
+          <td class="text-center"><input class="form-check-input shoes-price-check" type="checkbox" value="${Number(item.producto_id || 0)}" checked /></td>
+          <td class="fw-semibold">${String(item.cod_variante || "")}</td>
+          <td>
+            <div class="fw-semibold">${String(item.cod_producto || "")}</div>
+            <div class="text-slate">${String(item.descripcion || "")}</div>
+          </td>
+          <td class="text-center">${String(item.color || "")}</td>
+          <td class="text-center">${String(item.talla || "")}</td>
+          <td class="text-end"><span class="price-before-chip">${shoesPriceCurrencyLabel} ${currentPrice.toFixed(2)}</span></td>
+          <td class="text-end"><span class="price-after-chip">${shoesPriceCurrencyLabel} ${nextPrice.toFixed(2)}</span></td>
+          <td class="text-center"><span class="stock-total-chip">Existencia ${Number(item.existencia_global || 0).toFixed(0)}</span></td>
+          <td>${shoesScaleSummary(currentScale, "old")}</td>
+          <td>${shoesScaleSummary(nextPrices, "new")}</td>
+        </tr>
+      `;
+    }).join("");
+    if (shoesPriceCheckAll) shoesPriceCheckAll.checked = true;
+  };
+
+  const runShoesPriceSearch = async () => {
+    if (!shoesPriceBody || !shoesPriceStatus) return;
+    const q = (shoesPriceSearchQ?.value || "").trim();
+    const color = (shoesPriceSearchColor?.value || "").trim();
+    const talla = (shoesPriceSearchSize?.value || "").trim();
+    if (!q && !color && !talla) {
+      shoesPriceStatus.textContent = "Escribe para buscar variantes.";
+      shoesPriceBody.innerHTML = `<tr><td colspan="10" class="text-center text-slate">Escribe para buscar variantes.</td></tr>`;
+      return;
+    }
+    shoesPriceStatus.textContent = "Buscando variantes...";
+    try {
+      const response = await fetch(buildShoesPriceSearchUrl(), { headers: { "Accept": "application/json" } });
+      const payload = await response.json().catch(() => null);
+      shoesPriceItems = payload?.ok ? (payload.items || []) : [];
+      renderShoesPriceRows(shoesPriceItems);
+      shoesPriceStatus.textContent = shoesPriceItems.length ? `${shoesPriceItems.length} variante(s) encontradas. Todas quedaron seleccionadas por defecto.` : "Sin resultados.";
+    } catch (error) {
+      shoesPriceItems = [];
+      shoesPriceBody.innerHTML = `<tr><td colspan="10" class="text-center text-danger">No se pudo buscar.</td></tr>`;
+      shoesPriceStatus.textContent = "Error buscando variantes.";
+    }
+  };
+
+  shoesPriceGenerateBtn?.addEventListener("click", () => {
+    const base = parseFloat(shoesPriceBase?.value || "0");
+    const step = parseFloat(shoesPriceStep?.value || "0");
+    if (!Number.isFinite(base) || base <= 0) {
+      if (shoesPriceStatus) shoesPriceStatus.textContent = "Indica una base valida para Precio 1.";
+      return;
+    }
+    if (!Number.isFinite(step) || step < 0) {
+      if (shoesPriceStatus) shoesPriceStatus.textContent = "La rebaja por nivel debe ser 0 o mayor.";
+      return;
+    }
+    shoesNewPriceInputs.forEach((input, index) => {
+      if (!input) return;
+      input.value = Math.max(0, base - (step * index)).toFixed(2);
+    });
+    if (shoesPriceStatus) shoesPriceStatus.textContent = "Escala generada. Revisa el grid antes de aplicar.";
+    renderShoesPriceRows(shoesPriceItems);
+  });
+
+  shoesPriceSearchRun?.addEventListener("click", runShoesPriceSearch);
+  [shoesPriceSearchQ, shoesPriceSearchColor, shoesPriceSearchSize].forEach((input) => {
+    input?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        runShoesPriceSearch();
+      }
+    });
+  });
+  shoesNewPriceInputs.forEach((input) => input?.addEventListener("input", () => renderShoesPriceRows(shoesPriceItems)));
+  shoesPriceListSelect?.addEventListener("change", () => renderShoesPriceRows(shoesPriceItems));
+  shoesPriceCheckAll?.addEventListener("change", () => {
+    document.querySelectorAll(".shoes-price-check").forEach((checkbox) => {
+      checkbox.checked = shoesPriceCheckAll.checked;
+    });
+  });
+
+  shoesPriceApplyBtn?.addEventListener("click", async () => {
+    const checked = Array.from(document.querySelectorAll(".shoes-price-check:checked")).map((el) => Number(el.value || 0)).filter((value) => value > 0);
+    const uniqueIds = Array.from(new Set(checked));
+    if (!uniqueIds.length) {
+      if (shoesPriceStatus) shoesPriceStatus.textContent = "Selecciona al menos un item del grid para aplicar el cambio.";
+      return;
+    }
+    const nextPrices = shoesNewPriceInputs.map((input) => Number(input?.value || 0));
+    if (nextPrices.some((value) => !Number.isFinite(value) || value < 0)) {
+      if (shoesPriceStatus) shoesPriceStatus.textContent = "La nueva escala contiene valores invalidos.";
+      return;
+    }
+    const previousLabel = shoesPriceApplyBtn.innerHTML;
+    try {
+      shoesPriceApplyBtn.disabled = true;
+      shoesPriceApplyBtn.innerHTML = "Aplicando...";
+      const formData = new FormData();
+      formData.set("product_ids", uniqueIds.join(","));
+      nextPrices.forEach((value, index) => formData.set(`precio_venta${index + 1}`, Number(value || 0).toFixed(2)));
+      const response = await fetch("/inventory/shoes/prices/apply", {
+        method: "POST",
+        headers: { "X-Requested-With": "fetch", "Accept": "application/json" },
+        body: formData,
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.message || "No se pudo aplicar el cambio");
+      }
+      if (shoesPriceStatus) shoesPriceStatus.textContent = `${payload.message}. Repite la busqueda para confirmar los cambios.`;
+      if (typeof Swal !== "undefined") {
+        Swal.fire({
+          icon: "success",
+          title: "Precios actualizados",
+          text: `${payload.message}. Codigos: ${(payload.sample_codes || []).join(", ")}`,
+        });
+      }
+      await runShoesPriceSearch();
+    } catch (error) {
+      if (shoesPriceStatus) shoesPriceStatus.textContent = error.message || "No se pudo aplicar el cambio.";
+      if (typeof Swal !== "undefined") {
+        Swal.fire({ icon: "error", title: "Error", text: error.message || "No se pudo aplicar el cambio" });
+      }
+    } finally {
+      shoesPriceApplyBtn.disabled = false;
+      shoesPriceApplyBtn.innerHTML = previousLabel || "Aplicar cambio a seleccionados";
+    }
+  });
 
   if (editProveedorSelect) {
     editProveedorSelect.addEventListener("change", (event) => {
@@ -2477,13 +3712,8 @@
           option.dataset.desc = payload.descripcion || "";
           option.dataset.linea = config.lineaInput?.value || "";
           option.dataset.segmento = config.segmentoInput?.value || "";
-          option.dataset.precio1 = parseFloat(inventoryCsOnly ? (payload.precio_venta1 || 0) : (payload.precio_venta1_usd || 0)).toFixed(2);
-          option.dataset.precio2 = "0.00";
-          option.dataset.precio3 = "0.00";
-          option.dataset.costo = parseFloat(inventoryCsOnly ? (payload.costo_cs || 0) : (payload.costo_usd || 0)).toFixed(2);
           option.dataset.activo = "1";
           option.dataset.tipoProducto = payload.tipo_producto || "DIRECTO";
-          option.dataset.esPorPeso = payload.es_por_peso ? "1" : "0";
           option.dataset.unidadMedidaId = payload.unidad_medida_id || "";
           editSelect.append(option);
         }

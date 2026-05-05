@@ -1389,7 +1389,7 @@
                 <div class="text-center text-muted small py-5">La orden se registrara al agregar el primer producto.</div>
               </div>
               <div class="d-grid gap-2 pt-3">
-                <button class="btn btn-lb-primary restaurant-register-order-btn" type="button" onclick="document.getElementById('restaurant-inline-menu')?.scrollIntoView({behavior:'smooth', block:'start'}); document.getElementById('menu-search')?.focus();">
+                <button class="btn btn-lb-primary restaurant-register-order-btn" type="button" onclick="document.getElementById('restaurant-inline-menu')?.scrollIntoView({behavior:'smooth', block:'start'});">
                   Registrar orden
                 </button>
                 <div class="small text-muted text-center" id="restaurant-register-order-help">Para registrar la orden, agrega el primer producto del pedido.</div>
@@ -2137,7 +2137,6 @@
         }
         window.setTimeout(() => {
           restaurantInlineMenu?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          menuSearch?.focus();
         }, 180);
       });
     });
@@ -3341,8 +3340,6 @@
   if (isDraftModePage && !hasSelectedOrderPage && restaurantInlineMenu) {
     window.setTimeout(() => {
       restaurantInlineMenu.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      const search = document.getElementById('menu-search');
-      if (search) search.focus();
     }, 260);
   }
   if (shouldOpenTableModal) {
