@@ -178,6 +178,15 @@ def _subscription_payload_valid(payload: dict) -> bool:
 def _users_for_vendedor(db: Session, vendedor: Optional[Vendedor]) -> list[User]:
     if not vendedor:
         return []
+    explicit_vendedor_id = int(getattr(vendedor, "id", 0) or 0)
+    if explicit_vendedor_id > 0:
+        linked_users = (
+            db.query(User)
+            .filter(User.vendedor_id == explicit_vendedor_id, User.is_active.is_(True))
+            .all()
+        )
+        if linked_users:
+            return linked_users
     vendedor_name = (vendedor.nombre or "").strip().lower()
     if not vendedor_name:
         return []
