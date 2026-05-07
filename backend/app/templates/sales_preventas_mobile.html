@@ -731,6 +731,27 @@
       }
     }
 
+    function isIosFamily() {
+      const ua = String(navigator.userAgent || "").toLowerCase();
+      return /iphone|ipad|ipod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    }
+
+    function isStandaloneMobileApp() {
+      const mediaStandalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+      const legacyStandalone = typeof navigator.standalone === "boolean" ? navigator.standalone : false;
+      return !!(mediaStandalone || legacyStandalone);
+    }
+
+    function getPushHelpMessage() {
+      if (isIosFamily() && !isStandaloneMobileApp()) {
+        return "En iPhone debes abrir esta pantalla desde Safari, agregarla a Pantalla de inicio y luego entrar desde el icono instalado.";
+      }
+      if ("Notification" in window && Notification.permission === "denied") {
+        return "Las notificaciones estan bloqueadas en este dispositivo. Debes habilitarlas en Ajustes y volver a entrar.";
+      }
+      return "Recibe aviso cuando una preventa se facture, se congele, se descongele, se borre o pase mas de 2 horas pendiente.";
+    }
+
     function loadSeenAlertKeys() {
       try {
         const raw = localStorage.getItem(pushSeenAlertsKey);
@@ -778,10 +799,20 @@
         setPushUiState("idle", "Este navegador no soporta alertas push en esta vista.");
         return;
       }
+      if (isIosFamily() && !isStandaloneMobileApp()) {
+        pushSubscriptionActive = false;
+        const message = "En iPhone debes agregar esta pagina a Pantalla de inicio y abrirla desde el icono instalado para activar alertas.";
+        setPushUiState("idle", message);
+        notify("info", "Alertas en iPhone", message);
+        return;
+      }
       setPushUiState("loading", "Preparando alertas para esta preventa movil...");
       try {
         const cfgRes = await fetch("/m/preventas/push/config", { headers: { "X-Requested-With": "fetch" } });
-        const cfg = await cfgRes.json();
+        const cfg = await cfgRes.json().catch(() => null);
+        if (!cfgRes.ok || !cfg) {
+          throw new Error("No se pudo leer la configuracion push del servidor.");
+        }
         if (!cfg?.ok || !cfg?.enabled || !cfg?.public_key) {
           pushSubscriptionActive = false;
           setPushUiState("idle", "Las alertas push aun no estan configuradas en este entorno.");
@@ -790,7 +821,10 @@
         const permission = await Notification.requestPermission();
         if (permission !== "granted") {
           pushSubscriptionActive = false;
-          setPushUiState("idle", "Debes permitir notificaciones para recibir el aviso de preventa facturada.");
+          const deniedMessage = permission === "denied"
+            ? "Las notificaciones quedaron bloqueadas. Debes habilitarlas en Ajustes del iPhone/Safari."
+            : "Debes permitir notificaciones para recibir el aviso de preventa.";
+          setPushUiState("idle", deniedMessage);
           return;
         }
         const registration = await navigator.serviceWorker.register("/m-preventas-sw.js");
@@ -823,7 +857,10 @@
         setPushUiState("active", "Alertas activas para facturacion, congelado, borrado y preventas pendientes por mas de 2 horas.");
       } catch (error) {
         pushSubscriptionActive = false;
-        setPushUiState("idle", "No se pudieron activar las alertas en este dispositivo.");
+        const message = error && error.message
+          ? `No se pudieron activar las alertas: ${String(error.message)}`
+          : "No se pudieron activar las alertas en este dispositivo.";
+        setPushUiState("idle", message);
       }
     }
 
@@ -1009,7 +1046,7 @@
     }
     if (pushAlertsBtn) {
       try {
-        setPushUiState("idle", "Recibe aviso cuando una preventa se facture, se congele, se descongele, se borre o pase mas de 2 horas pendiente.");
+        setPushUiState("idle", getPushHelpMessage());
         pushAlertsBtn.addEventListener("click", ensurePushSubscription);
         const canReadNotification = ("Notification" in window);
         let hasStoredPush = false;
