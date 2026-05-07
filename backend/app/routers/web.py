@@ -1259,7 +1259,6 @@ def _preventa_active_conflict(
         .filter(
             Preventa.bodega_id == bodega_id,
             Preventa.estado.in_(["PENDIENTE", "REVISION"]),
-            Preventa.is_frozen.is_(False),
             PreventaItem.producto_id == producto_id,
             Preventa.vendedor_id != vendedor_id,
         )
@@ -1287,7 +1286,6 @@ def _preventa_reserved_by_others(
         .filter(
             Preventa.bodega_id == bodega_id,
             Preventa.estado.in_(["PENDIENTE", "REVISION"]),
-            Preventa.is_frozen.is_(False),
             PreventaItem.producto_id == producto_id,
             Preventa.vendedor_id != vendedor_id,
         )
@@ -1328,7 +1326,6 @@ def _preventa_reserved_bulk_by_others(
         .filter(
             Preventa.bodega_id == bodega_id,
             Preventa.estado.in_(["PENDIENTE", "REVISION"]),
-            Preventa.is_frozen.is_(False),
             PreventaItem.producto_id.in_(producto_ids),
         )
     )

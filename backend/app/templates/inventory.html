@@ -152,7 +152,7 @@
             <i class="bi bi-building text-sky-600"></i>
             {{ card.name }}
           </div>
-          <strong>{{ card.items }} / {{ "%.2f"|format(card.qty) }}</strong>
+          <strong>{{ card["items"] }} / {{ "%.2f"|format(card.qty) }}</strong>
         </div>
         {% endfor %}
       </div>
