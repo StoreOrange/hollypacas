@@ -188,23 +188,44 @@ def _users_for_vendedor(db: Session, vendedor: Optional[Vendedor]) -> list[User]
     )
 
 
-def _build_mobile_preventa_push_payload(*, preventa: Preventa, actor_name: str, branch_name: str) -> dict[str, object]:
-    title = "Preventa facturada"
-    body = f"{preventa.numero} fue facturada por {actor_name or 'Caja'}"
-    if branch_name:
-        body = f"{preventa.numero} fue facturada en {branch_name} por {actor_name or 'Caja'}"
+def _build_mobile_preventa_push_payload(
+    *,
+    preventa: Preventa,
+    actor_name: str,
+    branch_name: str,
+    event_code: str = "FACTURADA",
+) -> dict[str, object]:
+    event_code = (event_code or "FACTURADA").strip().upper()
+    actor = actor_name or "Sistema"
     target_url = f"/m/preventas?focus_preventa={preventa.id}"
+    if event_code == "CONGELADA":
+        title = "Preventa congelada"
+        body = f"{preventa.numero} fue congelada por {actor}"
+    elif event_code == "DESCONGELADA":
+        title = "Preventa descongelada"
+        body = f"{preventa.numero} fue descongelada por {actor}"
+    elif event_code == "ANULADA":
+        title = "Preventa anulada"
+        body = f"{preventa.numero} fue anulada por {actor}"
+    elif event_code == "ATRASADA":
+        title = "Preventa pendiente"
+        body = f"{preventa.numero} sigue pendiente por mas de 2 horas"
+    else:
+        title = "Preventa facturada"
+        body = f"{preventa.numero} fue facturada por {actor}"
+    if branch_name and event_code != "ATRASADA":
+        body = f"{body} en {branch_name}"
     return {
         "title": title,
         "body": body,
         "icon": "/static/logo_hollywood.png",
         "badge": "/static/favicon.ico",
-        "tag": f"preventa-facturada-{preventa.id}",
+        "tag": f"preventa-{event_code.lower()}-{preventa.id}",
         "data": {
             "url": target_url,
             "preventa_id": preventa.id,
             "numero": preventa.numero,
-            "estado": "FACTURADA",
+            "estado": event_code,
         },
     }
 
@@ -215,6 +236,7 @@ def _send_mobile_preventa_push_notifications(
     preventa: Optional[Preventa],
     actor_name: str,
     branch_name: str,
+    event_code: str = "FACTURADA",
 ) -> None:
     if not preventa or not _webpush_enabled():
         return
@@ -237,6 +259,7 @@ def _send_mobile_preventa_push_notifications(
             preventa=preventa,
             actor_name=actor_name,
             branch_name=branch_name,
+            event_code=event_code,
         )
     )
     touched = False
@@ -268,6 +291,40 @@ def _send_mobile_preventa_push_notifications(
             continue
     if touched:
         db.commit()
+
+
+def _preventa_mobile_alert_payload(
+    *,
+    preventa: Preventa,
+    event_code: str,
+    happened_at: Optional[datetime],
+    actor_name: str = "",
+) -> dict[str, object]:
+    branch_name = preventa.branch.name if getattr(preventa, "branch", None) else ""
+    payload = _build_mobile_preventa_push_payload(
+        preventa=preventa,
+        actor_name=actor_name,
+        branch_name=branch_name,
+        event_code=event_code,
+    )
+    occurred = happened_at or preventa.updated_at or preventa.created_at or preventa.fecha or local_now_naive()
+    if occurred.tzinfo is not None:
+        occurred = occurred.replace(tzinfo=None)
+    threshold_at = None
+    if event_code == "ATRASADA":
+        base_dt = preventa.fecha or preventa.created_at or occurred
+        threshold_at = base_dt + timedelta(hours=2)
+    return {
+        "key": f"{event_code}:{preventa.id}:{(threshold_at or occurred).isoformat()}",
+        "preventa_id": preventa.id,
+        "numero": preventa.numero,
+        "event_code": event_code,
+        "title": payload.get("title") or "Preventa",
+        "body": payload.get("body") or "",
+        "url": f"/m/preventas?focus_preventa={preventa.id}",
+        "happened_at": occurred.isoformat(),
+        "threshold_at": threshold_at.isoformat() if threshold_at else None,
+    }
 
 THEME_OPTIONS = [
     {"code": "default", "label": "Default Azul"},
@@ -711,6 +768,12 @@ def _resolve_branch_bodega(db: Session, user: User) -> tuple[Optional[Branch], O
     return branch, bodega
 
 
+def _bodega_permite_facturacion(bodega: Optional[Bodega]) -> bool:
+    if not bodega:
+        return False
+    return bool(getattr(bodega, "permite_facturacion", True))
+
+
 def _vendedores_for_bodega(db: Session, bodega: Optional[Bodega]) -> list[Vendedor]:
     base = db.query(Vendedor).filter(Vendedor.activo.is_(True))
     if not bodega:
@@ -991,6 +1054,19 @@ def _preventa_estado_badge(estado: str) -> dict[str, str]:
     return mapping.get((estado or "").upper(), {"label": estado or "-", "class": "bg-slate-100 text-slate-700"})
 
 
+def _preventa_scope_query(db: Session, user: User):
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    query = (
+        db.query(Preventa)
+        .join(Cliente, Cliente.id == Preventa.cliente_id, isouter=True)
+        .join(Vendedor, Vendedor.id == Preventa.vendedor_id, isouter=True)
+        .join(Branch, Branch.id == Preventa.branch_id, isouter=True)
+    )
+    if scoped_branch_ids:
+        query = query.filter(Preventa.branch_id.in_(scoped_branch_ids))
+    return query
+
+
 def _get_or_create_consumidor_final(db: Session) -> Cliente:
     cliente = (
         db.query(Cliente)
@@ -1174,6 +1250,7 @@ def _preventa_active_conflict(
         .filter(
             Preventa.bodega_id == bodega_id,
             Preventa.estado.in_(["PENDIENTE", "REVISION"]),
+            Preventa.is_frozen.is_(False),
             PreventaItem.producto_id == producto_id,
             Preventa.vendedor_id != vendedor_id,
         )
@@ -1201,6 +1278,7 @@ def _preventa_reserved_by_others(
         .filter(
             Preventa.bodega_id == bodega_id,
             Preventa.estado.in_(["PENDIENTE", "REVISION"]),
+            Preventa.is_frozen.is_(False),
             PreventaItem.producto_id == producto_id,
             Preventa.vendedor_id != vendedor_id,
         )
@@ -1241,6 +1319,7 @@ def _preventa_reserved_bulk_by_others(
         .filter(
             Preventa.bodega_id == bodega_id,
             Preventa.estado.in_(["PENDIENTE", "REVISION"]),
+            Preventa.is_frozen.is_(False),
             PreventaItem.producto_id.in_(producto_ids),
         )
     )
@@ -8091,20 +8170,22 @@ def inventory_page(
     product_ids = [p.id for p in productos]
     bodega_ids = [b.id for b in bodegas]
     balances = _balances_by_bodega(db, bodega_ids, product_ids)
+    selected_bodega_id: Optional[int] = None
+    raw_bodega_id = (request.query_params.get("bodega_id") or "").strip()
+    if raw_bodega_id:
+        try:
+            selected_bodega_id = int(raw_bodega_id)
+        except ValueError:
+            selected_bodega_id = None
     _, current_bodega = _resolve_branch_bodega(db, user)
+    if selected_bodega_id is not None:
+        current_bodega = next((b for b in bodegas if int(b.id) == selected_bodega_id), current_bodega)
     if not current_bodega and bodegas:
         current_bodega = bodegas[0]
     current_bodega_saldos: dict[int, float] = {}
     if current_bodega:
         for producto in productos:
             current_bodega_saldos[producto.id] = float(balances.get((producto.id, current_bodega.id), Decimal("0")) or 0)
-    bodega_central = next((b for b in bodegas if (b.code or "").lower() == "central"), None)
-    if not bodega_central:
-        bodega_central = next((b for b in bodegas if "central" in (b.name or "").lower()), None)
-    bodega_esteli = next((b for b in bodegas if (b.code or "").lower() == "esteli"), None)
-    if not bodega_esteli:
-        bodega_esteli = next((b for b in bodegas if "esteli" in (b.name or "").lower()), None)
-
     def _sum_for_bodega(bodega: Optional[Bodega]) -> tuple[Decimal, int]:
         if not bodega:
             return Decimal("0"), 0
@@ -8117,10 +8198,26 @@ def inventory_page(
                 count_items += 1
         return total_qty, count_items
 
-    central_qty, central_items = _sum_for_bodega(bodega_central)
-    esteli_qty, esteli_items = _sum_for_bodega(bodega_esteli)
-    global_qty = central_qty + esteli_qty
-    global_items = len({p.id for p in productos if (balances.get((p.id, bodega_central.id), Decimal("0")) if bodega_central else Decimal("0")) > 0 or (balances.get((p.id, bodega_esteli.id), Decimal("0")) if bodega_esteli else Decimal("0")) > 0})
+    bodega_summary_cards: list[dict[str, object]] = []
+    for bodega in bodegas:
+        total_qty, count_items = _sum_for_bodega(bodega)
+        bodega_summary_cards.append(
+            {
+                "id": int(bodega.id),
+                "name": bodega.name or f"Bodega {bodega.id}",
+                "items": count_items,
+                "qty": float(total_qty),
+                "selected": bool(current_bodega and int(current_bodega.id) == int(bodega.id)),
+            }
+        )
+    total_global_qty = sum(Decimal(str(card["qty"])) for card in bodega_summary_cards)
+    total_global_items = len(
+        {
+            p.id
+            for p in productos
+            if any(balances.get((p.id, bodega.id), Decimal("0")) > 0 for bodega in bodegas)
+        }
+    )
     inventory_cs_only = _inventory_cs_only_mode(db)
     recipe_explosion_on_ingreso = _recipe_explosion_on_ingreso_mode(db)
     weighted_inventory_enabled = _weighted_inventory_enabled_mode(db)
@@ -8137,12 +8234,10 @@ def inventory_page(
             "bodegas": bodegas,
             "current_bodega": current_bodega,
             "current_bodega_saldos": current_bodega_saldos,
-            "central_qty": float(central_qty),
-            "esteli_qty": float(esteli_qty),
-            "global_qty": float(global_qty),
-            "central_items": central_items,
-            "esteli_items": esteli_items,
-            "global_items": global_items,
+            "selected_bodega_id": str(current_bodega.id) if current_bodega else "all",
+            "bodega_summary_cards": bodega_summary_cards,
+            "total_global_qty": float(total_global_qty),
+            "total_global_items": total_global_items,
             "lineas": lineas,
             "segmentos": segmentos,
             "marcas": marcas,
@@ -9441,98 +9536,51 @@ def inventory_caliente(
     current_scope_label = "Bodega"
     scope = "all"
     bodega_ids: list[int] = []
-    display_bodegas: list[Bodega] = []
     selected_bodega_obj: Optional[Bodega] = None
     bodega_rows_for_all: list[tuple[str, int]] = []
 
+    scoped_bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
+    display_bodegas = [b for b in scoped_bodegas if b.activo]
     if shoes_mode:
-        scoped_bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
-        display_bodegas = [b for b in scoped_bodegas if (b.code or "").strip().lower() != "esteli"]
-        if not display_bodegas:
-            display_bodegas = scoped_bodegas
-        if display_bodegas:
-            central_bodega = next((b for b in display_bodegas if (b.code or "").strip().lower() == "central"), None)
-            default_scope = f"bodega:{(central_bodega.id if central_bodega else display_bodegas[0].id)}"
-            scope_options = [{"value": default_scope, "label": "Central" if central_bodega else display_bodegas[0].name}]
-            scope_options.extend(
-                {"value": f"bodega:{b.id}", "label": b.name}
-                for b in display_bodegas
-                if f"bodega:{b.id}" != default_scope
-            )
-            scope_options.append({"value": "all", "label": "Todas"})
-            valid_values = {opt["value"] for opt in scope_options}
-            if not selected_scope or selected_scope not in valid_values:
-                selected_scope = default_scope
-            if selected_scope == "all":
-                scope = "all"
-                bodega_ids = [b.id for b in display_bodegas]
-                current_scope_label = "Todas las bodegas"
-                bodega_rows_for_all = [(b.name, int(b.id)) for b in display_bodegas]
-            else:
-                scope = "single"
-                selected_bodega_id = int(selected_scope.split(":", 1)[1])
-                selected_bodega = next((b for b in display_bodegas if int(b.id) == selected_bodega_id), None)
-                if selected_bodega:
-                    bodega_ids = [selected_bodega.id]
-                    selected_bodega_obj = selected_bodega
-                    current_scope_label = selected_bodega.name
-    else:
-        branches = _scoped_branches_query(db).all()
-        branch_map = {b.code.lower(): b for b in branches if b.code}
-        central_branch = branch_map.get("central")
-        esteli_branch = branch_map.get("esteli")
-        bodegas_query = db.query(Bodega).filter(Bodega.activo.is_(True))
-        if branches:
-            bodegas_query = bodegas_query.filter(Bodega.branch_id.in_([b.id for b in branches]))
-        bodegas = bodegas_query.all()
-        bodega_map = {b.branch_id: b for b in bodegas}
-        user_branches = list(user.branches or [])
-        allowed_scopes: list[str] = []
-        if user_branches:
-            allowed_scopes = [b.code.lower() for b in user_branches if b.code and b.code.lower() in _allowed_branch_codes(db)]
-        if not allowed_scopes and branch and branch.code:
-            if branch.code.lower() in _allowed_branch_codes(db):
-                allowed_scopes = [branch.code.lower()]
-        if not allowed_scopes:
-            allowed_scopes = ["central"]
-        if len(allowed_scopes) > 1 and all(code in allowed_scopes for code in _allowed_branch_codes(db)):
-            scope_options.append({"value": "ambas", "label": "Ambas"})
-        for code in allowed_scopes:
-            if code == "central":
-                scope_options.append({"value": "central", "label": central_branch.name if central_branch else "Central"})
-            elif code == "esteli":
-                scope_options.append({"value": "esteli", "label": esteli_branch.name if esteli_branch else "Esteli"})
-            else:
-                branch_item = next((b for b in branches if (b.code or "").lower() == code), None)
-                if branch_item:
-                    scope_options.append({"value": code, "label": branch_item.name})
-        if not scope_options:
-            scope_options = [{"value": "central", "label": "Central"}]
+        filtered_bodegas = [b for b in display_bodegas if (b.code or "").strip().lower() != "esteli"]
+        if filtered_bodegas:
+            display_bodegas = filtered_bodegas
+
+    if display_bodegas:
+        default_bodega = None
+        if user_bodega and any(int(b.id) == int(user_bodega.id) for b in display_bodegas):
+            default_bodega = next((b for b in display_bodegas if int(b.id) == int(user_bodega.id)), None)
+        if default_bodega is None:
+            default_bodega = next((b for b in display_bodegas if (b.code or "").strip().lower() == "central"), None)
+        if default_bodega is None:
+            default_bodega = display_bodegas[0]
+
+        default_scope = f"bodega:{int(default_bodega.id)}"
+        scope_options = [{"value": default_scope, "label": default_bodega.name}]
+        scope_options.extend(
+            {"value": f"bodega:{int(b.id)}", "label": b.name}
+            for b in display_bodegas
+            if int(b.id) != int(default_bodega.id)
+        )
+        if len(display_bodegas) > 1:
+            scope_options.append({"value": "all", "label": "Todas las bodegas"})
+
         valid_values = {opt["value"] for opt in scope_options}
         if not selected_scope or selected_scope not in valid_values:
-            selected_scope = scope_options[0]["value"]
-        scope = "all" if selected_scope == "ambas" else "single"
-        if scope == "all":
-            bodega_ids = [b.id for b in bodegas]
-            current_scope_label = "Ambas"
-            if central_branch:
-                central_bodega = bodega_map.get(central_branch.id)
-                if central_bodega:
-                    bodega_rows_for_all.append((central_branch.name, int(central_bodega.id)))
-            if esteli_branch:
-                esteli_bodega = bodega_map.get(esteli_branch.id)
-                if esteli_bodega:
-                    bodega_rows_for_all.append((esteli_branch.name, int(esteli_bodega.id)))
+            selected_scope = default_scope
+
+        if selected_scope == "all":
+            scope = "all"
+            bodega_ids = [int(b.id) for b in display_bodegas]
+            current_scope_label = "Todas las bodegas"
+            bodega_rows_for_all = [(b.name, int(b.id)) for b in display_bodegas]
         else:
-            selected_branch = central_branch if selected_scope == "central" else esteli_branch if selected_scope == "esteli" else branch
-            selected_bodega = None
-            if selected_branch:
-                selected_bodega = bodega_map.get(selected_branch.id)
-            if selected_scope not in {"central", "esteli"} and user_bodega:
-                selected_bodega = user_bodega
-            bodega_ids = [selected_bodega.id] if selected_bodega else []
-            selected_bodega_obj = selected_bodega
-            current_scope_label = selected_branch.name if selected_branch else "Bodega"
+            scope = "single"
+            selected_bodega_id = int(selected_scope.split(":", 1)[1])
+            selected_bodega_obj = next((b for b in display_bodegas if int(b.id) == selected_bodega_id), None)
+            if selected_bodega_obj:
+                bodega_ids = [int(selected_bodega_obj.id)]
+                current_scope_label = selected_bodega_obj.name or "Bodega"
 
     product_ids = [p.id for p in productos]
     balances = _balances_by_bodega(bodega_ids, product_ids)
@@ -10172,6 +10220,8 @@ def sales_page(
         .first()
     )
     branch, bodega = _resolve_branch_bodega(db, user)
+    if bodega and not _bodega_permite_facturacion(bodega):
+        error = error or "La bodega operativa no esta habilitada para facturacion"
     vendedores = _vendedores_for_bodega(db, bodega)
     next_invoice = None
     if branch and bodega:
@@ -10350,7 +10400,7 @@ async def sales_preventas_notifications_stream(
                     )
                     .join(Vendedor, Vendedor.id == Preventa.vendedor_id)
                     .outerjoin(Cliente, Cliente.id == Preventa.cliente_id)
-                    .filter(Preventa.estado == "PENDIENTE", Preventa.id > last_id)
+                    .filter(Preventa.estado == "PENDIENTE", Preventa.id > last_id, Preventa.is_frozen.is_(False))
                     .order_by(Preventa.id.asc())
                     .limit(10)
                 )
@@ -10412,6 +10462,7 @@ def sales_preventas_notifications_poll(
         .filter(
             Preventa.id > last_id,
             Preventa.estado.in_(["PENDIENTE", "REVISION"]),
+            Preventa.is_frozen.is_(False),
         )
     )
     if bodega:
@@ -10512,6 +10563,33 @@ def mobile_preventas_push_config(
     }
 
 
+@router.get("/m-preventas.webmanifest")
+def mobile_preventas_manifest(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    branding = request.state.branding if getattr(request, "state", None) and getattr(request.state, "branding", None) else _company_profile_payload(db)
+    app_name = branding.get("trade_name") or branding.get("app_title") or "ERP Preventas"
+    icon_url = branding.get("logo_url") or "/static/logo_hollywood.png"
+    theme_color = "#0b3b6f"
+    return JSONResponse(
+        {
+            "name": f"{app_name} Preventas Movil",
+            "short_name": "Preventas",
+            "start_url": "/m/preventas",
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#f8fafc",
+            "theme_color": theme_color,
+            "description": "Notificaciones de preventas facturadas y gestion movil de preventas.",
+            "icons": [
+                {"src": f"{icon_url}?v={settings.UI_VERSION}", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+                {"src": f"{icon_url}?v={settings.UI_VERSION}", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+            ],
+        }
+    )
+
+
 @router.get("/m/mis-ventas")
 def mobile_mis_ventas_page(
     request: Request,
@@ -10594,6 +10672,93 @@ async def mobile_preventas_push_subscribe(
     return {"ok": True}
 
 
+@router.get("/m/preventas/alerts")
+def mobile_preventas_alerts(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preventas_mobile_access(request, user)
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        return JSONResponse({"ok": False, "message": "Usuario sin sucursal/bodega asignada"}, status_code=400)
+    vendedor_user_id = _vendedor_id_for_user(db, user, bodega)
+    now_dt = local_now_naive()
+    window_start = now_dt - timedelta(days=3)
+    overdue_cutoff = now_dt - timedelta(hours=2)
+    query = (
+        db.query(Preventa)
+        .filter(Preventa.branch_id == branch.id, Preventa.bodega_id == bodega.id)
+        .filter(
+            or_(
+                Preventa.created_at >= window_start,
+                Preventa.facturada_at >= window_start,
+                Preventa.anulada_at >= window_start,
+                Preventa.frozen_at >= window_start,
+                Preventa.unfrozen_at >= window_start,
+                and_(
+                    Preventa.estado.in_(["PENDIENTE", "REVISION"]),
+                    Preventa.fecha <= overdue_cutoff,
+                ),
+            )
+        )
+    )
+    if vendedor_user_id:
+        query = query.filter(Preventa.vendedor_id == vendedor_user_id)
+    preventas = query.order_by(Preventa.updated_at.desc(), Preventa.id.desc()).limit(120).all()
+    alerts: list[dict[str, object]] = []
+    for preventa in preventas:
+        if preventa.facturada_at and preventa.facturada_at >= window_start:
+            alerts.append(
+                _preventa_mobile_alert_payload(
+                    preventa=preventa,
+                    event_code="FACTURADA",
+                    happened_at=preventa.facturada_at,
+                )
+            )
+        if preventa.anulada_at and preventa.anulada_at >= window_start:
+            alerts.append(
+                _preventa_mobile_alert_payload(
+                    preventa=preventa,
+                    event_code="ANULADA",
+                    happened_at=preventa.anulada_at,
+                    actor_name=preventa.anulada_por or "",
+                )
+            )
+        if preventa.is_frozen and preventa.frozen_at and preventa.frozen_at >= window_start:
+            alerts.append(
+                _preventa_mobile_alert_payload(
+                    preventa=preventa,
+                    event_code="CONGELADA",
+                    happened_at=preventa.frozen_at,
+                )
+            )
+        if (not preventa.is_frozen) and preventa.unfrozen_at and preventa.unfrozen_at >= window_start:
+            alerts.append(
+                _preventa_mobile_alert_payload(
+                    preventa=preventa,
+                    event_code="DESCONGELADA",
+                    happened_at=preventa.unfrozen_at,
+                )
+            )
+        base_dt = preventa.fecha or preventa.created_at
+        if (
+            base_dt
+            and preventa.estado in {"PENDIENTE", "REVISION"}
+            and not bool(getattr(preventa, "is_frozen", False))
+            and base_dt <= overdue_cutoff
+        ):
+            alerts.append(
+                _preventa_mobile_alert_payload(
+                    preventa=preventa,
+                    event_code="ATRASADA",
+                    happened_at=base_dt + timedelta(hours=2),
+                )
+            )
+    alerts.sort(key=lambda item: str(item.get("happened_at") or ""), reverse=True)
+    return {"ok": True, "alerts": alerts[:60], "server_time": now_dt.isoformat()}
+
+
 @router.post("/m/preventas/push/unsubscribe")
 async def mobile_preventas_push_unsubscribe(
     request: Request,
@@ -10639,7 +10804,7 @@ def mobile_preventas_detail(
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch or not bodega:
         return JSONResponse({"ok": False, "message": "Usuario sin sucursal/bodega asignada"}, status_code=400)
-    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    preventa = _preventa_scope_query(db, user).filter(Preventa.id == preventa_id).first()
     if not preventa:
         return JSONResponse({"ok": False, "message": "Preventa no encontrada"}, status_code=404)
     if int(preventa.branch_id or 0) != int(branch.id) or int(preventa.bodega_id or 0) != int(bodega.id):
@@ -11177,6 +11342,7 @@ def sales_preventas_panel(
     today = local_today()
     fecha = (request.query_params.get("fecha") or today.isoformat()).strip()
     estado = (request.query_params.get("estado") or "").strip().upper()
+    frozen = (request.query_params.get("frozen") or "").strip()
     vendedor_id = (request.query_params.get("vendedor_id") or "").strip()
     branch_id = (request.query_params.get("branch_id") or "all").strip()
     error = request.query_params.get("error")
@@ -11186,13 +11352,7 @@ def sales_preventas_panel(
     except ValueError:
         fecha_value = today
 
-    query = (
-        db.query(Preventa)
-        .join(Cliente, Cliente.id == Preventa.cliente_id, isouter=True)
-        .join(Vendedor, Vendedor.id == Preventa.vendedor_id, isouter=True)
-        .join(Branch, Branch.id == Preventa.branch_id, isouter=True)
-        .filter(func.date(Preventa.fecha) == fecha_value)
-    )
+    query = _preventa_scope_query(db, user).filter(func.date(Preventa.fecha) == fecha_value)
     if branch_id and branch_id != "all":
         if branch_id.isdigit():
             query = query.filter(Preventa.branch_id == int(branch_id))
@@ -11200,6 +11360,10 @@ def sales_preventas_panel(
         query = query.filter(Preventa.vendedor_id == int(vendedor_id))
     if estado:
         query = query.filter(Preventa.estado == estado)
+    if frozen == "1":
+        query = query.filter(Preventa.is_frozen.is_(True))
+    elif frozen == "0":
+        query = query.filter(Preventa.is_frozen.is_(False))
     preventas = query.order_by(Preventa.id.desc()).all()
     repaired_any = False
     for p in preventas:
@@ -11226,6 +11390,7 @@ def sales_preventas_panel(
             "total_usd": float(p.total_usd or 0),
             "total_cs": float(p.total_cs or 0),
             "estado": p.estado,
+            "is_frozen": bool(getattr(p, "is_frozen", False)),
             "badge": _preventa_estado_badge(p.estado),
         }
         for p in preventas
@@ -11238,6 +11403,7 @@ def sales_preventas_panel(
             "rows": rows,
             "fecha": fecha_value.isoformat(),
             "estado": estado,
+            "frozen": frozen,
             "vendedor_id": vendedor_id,
             "branch_id": branch_id,
             "branches": branches,
@@ -11307,6 +11473,7 @@ def sales_preventas_detail(
                 "id": preventa.id,
                 "numero": preventa.numero,
                 "estado": preventa.estado,
+                "is_frozen": bool(getattr(preventa, "is_frozen", False)),
                 "cliente": preventa.cliente.nombre if preventa.cliente else "Consumidor final",
                 "vendedor": preventa.vendedor.nombre if preventa.vendedor else "-",
                 "fecha": preventa.fecha.isoformat() if preventa.fecha else "",
@@ -11328,7 +11495,7 @@ async def sales_preventas_anular(
     _enforce_permission(request, user, "access.sales.preventas")
     if _is_vendedor_role(user):
         return RedirectResponse("/sales/preventas?error=Rol+vendedor+no+puede+anular+preventas", status_code=303)
-    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    preventa = _preventa_scope_query(db, user).filter(Preventa.id == preventa_id).first()
     if not preventa:
         return RedirectResponse("/sales/preventas?error=Preventa+no+encontrada", status_code=303)
     if preventa.estado == "FACTURADA":
@@ -11337,6 +11504,16 @@ async def sales_preventas_anular(
     preventa.anulada_at = local_now_naive()
     preventa.anulada_por = user.full_name
     db.commit()
+    try:
+        _send_mobile_preventa_push_notifications(
+            db,
+            preventa=preventa,
+            actor_name=user.full_name or user.email or "Administracion",
+            branch_name=preventa.branch.name if preventa.branch else "",
+            event_code="ANULADA",
+        )
+    except Exception:
+        pass
     return RedirectResponse("/sales/preventas?success=Preventa+anulada", status_code=303)
 
 
@@ -11349,7 +11526,7 @@ async def sales_preventas_usar_en_factura(
 ):
     _enforce_permission(request, user, "access.sales.preventas")
     _enforce_permission(request, user, "access.sales.registrar")
-    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    preventa = _preventa_scope_query(db, user).filter(Preventa.id == preventa_id).first()
     if not preventa:
         return RedirectResponse("/sales/preventas?error=Preventa+no+encontrada", status_code=303)
     if preventa.estado not in {"PENDIENTE", "REVISION"}:
@@ -11387,7 +11564,7 @@ async def sales_preventas_release_from_sales(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.registrar")
-    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    preventa = _preventa_scope_query(db, user).filter(Preventa.id == preventa_id).first()
     if not preventa:
         return JSONResponse({"ok": False, "message": "Preventa no encontrada"}, status_code=404)
     if preventa.estado == "FACTURADA":
@@ -11401,7 +11578,52 @@ async def sales_preventas_release_from_sales(
     preventa.anulada_at = local_now_naive()
     preventa.anulada_por = user.full_name or user.email
     db.commit()
+    try:
+        _send_mobile_preventa_push_notifications(
+            db,
+            preventa=preventa,
+            actor_name=user.full_name or user.email or "Administracion",
+            branch_name=preventa.branch.name if preventa.branch else "",
+            event_code="ANULADA",
+        )
+    except Exception:
+        pass
     return JSONResponse({"ok": True, "message": f"Preventa {preventa.numero} liberada"})
+
+
+@router.post("/sales/preventas/{preventa_id}/freeze")
+async def sales_preventas_toggle_freeze(
+    request: Request,
+    preventa_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.preventas")
+    preventa = _preventa_scope_query(db, user).filter(Preventa.id == preventa_id).first()
+    if not preventa:
+        return RedirectResponse("/sales/preventas?error=Preventa+no+encontrada", status_code=303)
+    if preventa.estado not in {"PENDIENTE", "REVISION"}:
+        return RedirectResponse("/sales/preventas?error=Solo+puedes+congelar+preventas+activas", status_code=303)
+    now_dt = local_now_naive()
+    preventa.is_frozen = not bool(getattr(preventa, "is_frozen", False))
+    if preventa.is_frozen:
+        preventa.frozen_at = now_dt
+    else:
+        preventa.unfrozen_at = now_dt
+    db.commit()
+    action = "congelada" if preventa.is_frozen else "descongelada"
+    event_code = "CONGELADA" if preventa.is_frozen else "DESCONGELADA"
+    try:
+        _send_mobile_preventa_push_notifications(
+            db,
+            preventa=preventa,
+            actor_name=user.full_name or user.email or "Administracion",
+            branch_name=preventa.branch.name if preventa.branch else "",
+            event_code=event_code,
+        )
+    except Exception:
+        pass
+    return RedirectResponse(f"/sales/preventas?success=Preventa+{preventa.numero}+{action}", status_code=303)
 
 
 @router.get("/sales/utilitario")
@@ -15470,6 +15692,7 @@ def _build_inventory_matrix_payload(
         "selected_branch": branch_id,
         "selected_branch_name": selected_branch.name if selected_branch else "Todas",
         "selected_bodega": bodega_id,
+        "selected_bodega_name": next((b.name for b in bodegas if str(b.id) == str(bodega_id)), "Todas"),
         "producto_q": producto_q,
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
@@ -15923,6 +16146,95 @@ def report_inventory_matrix(
             "request": request,
             "user": user,
             **payload,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/reports/saldos-bodega")
+def report_saldos_bodega(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    branch_id = (request.query_params.get("branch_id") or "all").strip()
+    producto_q = (request.query_params.get("producto") or "").strip()
+
+    branches = _scoped_branches_query(db).order_by(Branch.name).all()
+    selected_branch = None
+    selected_branch_id: Optional[int] = None
+    if branch_id != "all":
+        try:
+            selected_branch_id = int(branch_id)
+        except ValueError:
+            selected_branch_id = None
+    if selected_branch_id is not None:
+        selected_branch = next((b for b in branches if int(b.id) == selected_branch_id), None)
+        if selected_branch is None:
+            selected_branch_id = None
+            branch_id = "all"
+
+    bodegas_q = _scoped_bodegas_query(db)
+    if selected_branch_id is not None:
+        bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch_id)
+    bodegas = bodegas_q.order_by(Bodega.name.asc()).all()
+
+    productos_q = db.query(Producto).filter(Producto.activo.is_(True))
+    if producto_q:
+        like = f"%{producto_q.lower()}%"
+        productos_q = productos_q.filter(
+            or_(
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+            )
+        )
+    productos = productos_q.order_by(Producto.descripcion.asc()).all()
+    product_ids = [int(p.id) for p in productos]
+    bodega_ids = [int(b.id) for b in bodegas]
+    balances = _balances_by_bodega(db, bodega_ids, product_ids)
+
+    rows: list[dict[str, object]] = []
+    totals_by_bodega: dict[int, Decimal] = {int(b.id): Decimal("0") for b in bodegas}
+    total_global = Decimal("0")
+    for producto in productos:
+        per_bodega: list[float] = []
+        row_total = Decimal("0")
+        has_any = False
+        for bodega in bodegas:
+            qty = Decimal(str(balances.get((int(producto.id), int(bodega.id)), Decimal("0")) or 0))
+            per_bodega.append(float(qty))
+            row_total += qty
+            totals_by_bodega[int(bodega.id)] += qty
+            if qty != 0:
+                has_any = True
+        if not has_any and not producto_q:
+            continue
+        total_global += row_total
+        rows.append(
+            {
+                "codigo": producto.cod_producto or "",
+                "descripcion": producto.descripcion or "",
+                "linea": producto.linea.linea if producto.linea else "-",
+                "segmento": producto.segmento.segmento if producto.segmento else "-",
+                "saldos": per_bodega,
+                "total": float(row_total),
+            }
+        )
+
+    return request.app.state.templates.TemplateResponse(
+        "report_saldos_bodega.html",
+        {
+            "request": request,
+            "user": user,
+            "branches": branches,
+            "bodegas": bodegas,
+            "rows": rows,
+            "producto_q": producto_q,
+            "selected_branch": branch_id,
+            "selected_branch_name": selected_branch.name if selected_branch else "Todas las sucursales",
+            "totals_by_bodega": [float(totals_by_bodega.get(int(b.id), Decimal("0"))) for b in bodegas],
+            "total_global": float(total_global),
             "version": settings.UI_VERSION,
         },
     )
@@ -16495,7 +16807,7 @@ def _depositos_report_query(
 def _kardex_report_filters(request: Request):
     start_raw = request.query_params.get("start_date")
     end_raw = request.query_params.get("end_date")
-    branch_id = request.query_params.get("branch_id")
+    bodega_id = request.query_params.get("bodega_id")
     producto_q = (request.query_params.get("producto") or "").strip()
 
     today = local_today()
@@ -16511,10 +16823,10 @@ def _kardex_report_filters(request: Request):
             start_date = today
             end_date = today
 
-    if not branch_id:
-        branch_id = "all"
+    if not bodega_id:
+        bodega_id = "all"
 
-    return start_date, end_date, branch_id, producto_q
+    return start_date, end_date, bodega_id, producto_q
 
 
 def _inventory_consolidated_filters(request: Request) -> str:
@@ -17292,7 +17604,7 @@ def _build_kardex_movements(
     db: Session,
     start_date: date,
     end_date: date,
-    branch_id: str | None,
+    bodega_id: str | None,
     producto_q: str,
 ):
     start_dt = datetime.combine(start_date, datetime.min.time())
@@ -17306,14 +17618,63 @@ def _build_kardex_movements(
             func.lower(Producto.descripcion).like(like),
         )
 
-    branch_filter = None
-    if branch_id and branch_id != "all":
+    bodega_filter = None
+    if bodega_id and bodega_id != "all":
         try:
-            branch_filter = int(branch_id)
+            bodega_filter = int(bodega_id)
         except ValueError:
-            branch_filter = None
+            bodega_filter = None
 
     movimientos = []
+    opening_balances: dict[tuple[int, int], Decimal] = {}
+
+    opening_ing_q = (
+        db.query(IngresoItem.producto_id, IngresoInventario.bodega_id, func.sum(IngresoItem.cantidad))
+        .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
+        .join(Producto, Producto.id == IngresoItem.producto_id)
+        .join(Bodega, Bodega.id == IngresoInventario.bodega_id)
+        .join(Branch, Branch.id == Bodega.branch_id)
+        .filter(IngresoInventario.fecha < start_date)
+    )
+    if bodega_filter:
+        opening_ing_q = opening_ing_q.filter(Bodega.id == bodega_filter)
+    if producto_filter is not None:
+        opening_ing_q = opening_ing_q.filter(producto_filter)
+    for producto_id, opening_bodega_id, qty in opening_ing_q.group_by(IngresoItem.producto_id, IngresoInventario.bodega_id).all():
+        opening_balances[(int(producto_id), int(opening_bodega_id))] = Decimal(str(qty or 0))
+
+    opening_egr_q = (
+        db.query(EgresoItem.producto_id, EgresoInventario.bodega_id, func.sum(EgresoItem.cantidad))
+        .join(EgresoInventario, EgresoInventario.id == EgresoItem.egreso_id)
+        .join(Producto, Producto.id == EgresoItem.producto_id)
+        .join(Bodega, Bodega.id == EgresoInventario.bodega_id)
+        .join(Branch, Branch.id == Bodega.branch_id)
+        .filter(EgresoInventario.fecha < start_date)
+    )
+    if bodega_filter:
+        opening_egr_q = opening_egr_q.filter(Bodega.id == bodega_filter)
+    if producto_filter is not None:
+        opening_egr_q = opening_egr_q.filter(producto_filter)
+    for producto_id, opening_bodega_id, qty in opening_egr_q.group_by(EgresoItem.producto_id, EgresoInventario.bodega_id).all():
+        key = (int(producto_id), int(opening_bodega_id))
+        opening_balances[key] = opening_balances.get(key, Decimal("0")) - Decimal(str(qty or 0))
+
+    opening_vta_q = (
+        db.query(VentaItem.producto_id, VentaFactura.bodega_id, func.sum(VentaItem.cantidad))
+        .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+        .join(Producto, Producto.id == VentaItem.producto_id)
+        .join(Bodega, Bodega.id == VentaFactura.bodega_id)
+        .join(Branch, Branch.id == Bodega.branch_id)
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(VentaFactura.fecha < start_dt)
+    )
+    if bodega_filter:
+        opening_vta_q = opening_vta_q.filter(Bodega.id == bodega_filter)
+    if producto_filter is not None:
+        opening_vta_q = opening_vta_q.filter(producto_filter)
+    for producto_id, opening_bodega_id, qty in opening_vta_q.group_by(VentaItem.producto_id, VentaFactura.bodega_id).all():
+        key = (int(producto_id), int(opening_bodega_id))
+        opening_balances[key] = opening_balances.get(key, Decimal("0")) - Decimal(str(qty or 0))
 
     ingresos_q = (
         db.query(IngresoInventario, IngresoItem, Producto, Bodega, Branch, IngresoTipo)
@@ -17324,8 +17685,8 @@ def _build_kardex_movements(
         .join(IngresoTipo, IngresoTipo.id == IngresoInventario.tipo_id, isouter=True)
         .filter(IngresoInventario.fecha >= start_date, IngresoInventario.fecha <= end_date)
     )
-    if branch_filter:
-        ingresos_q = ingresos_q.filter(Branch.id == branch_filter)
+    if bodega_filter:
+        ingresos_q = ingresos_q.filter(Bodega.id == bodega_filter)
     if producto_filter is not None:
         ingresos_q = ingresos_q.filter(producto_filter)
 
@@ -17350,7 +17711,9 @@ def _build_kardex_movements(
                 "source_id": ingreso.id,
                 "source_url": source_url,
                 "branch": branch.name if branch else "-",
+                "branch_id": branch.id if branch else None,
                 "bodega": bodega.name if bodega else "-",
+                "bodega_id": bodega.id if bodega else None,
                 "producto_id": producto.id,
                 "codigo": producto.cod_producto,
                 "descripcion": producto.descripcion,
@@ -17370,8 +17733,8 @@ def _build_kardex_movements(
         .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id, isouter=True)
         .filter(EgresoInventario.fecha >= start_date, EgresoInventario.fecha <= end_date)
     )
-    if branch_filter:
-        egresos_q = egresos_q.filter(Branch.id == branch_filter)
+    if bodega_filter:
+        egresos_q = egresos_q.filter(Bodega.id == bodega_filter)
     if producto_filter is not None:
         egresos_q = egresos_q.filter(producto_filter)
 
@@ -17396,7 +17759,9 @@ def _build_kardex_movements(
                 "source_id": egreso.id,
                 "source_url": source_url,
                 "branch": branch.name if branch else "-",
+                "branch_id": branch.id if branch else None,
                 "bodega": bodega.name if bodega else "-",
+                "bodega_id": bodega.id if bodega else None,
                 "producto_id": producto.id,
                 "codigo": producto.cod_producto,
                 "descripcion": producto.descripcion,
@@ -17417,8 +17782,8 @@ def _build_kardex_movements(
         .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
         .filter(VentaFactura.estado != "ANULADA")
     )
-    if branch_filter:
-        ventas_q = ventas_q.filter(Branch.id == branch_filter)
+    if bodega_filter:
+        ventas_q = ventas_q.filter(Bodega.id == bodega_filter)
     if producto_filter is not None:
         ventas_q = ventas_q.filter(producto_filter)
 
@@ -17443,7 +17808,9 @@ def _build_kardex_movements(
                 "source_id": factura.id,
                 "source_url": source_url,
                 "branch": branch.name if branch else "-",
+                "branch_id": branch.id if branch else None,
                 "bodega": bodega.name if bodega else "-",
+                "bodega_id": bodega.id if bodega else None,
                 "producto_id": producto.id,
                 "codigo": producto.cod_producto,
                 "descripcion": producto.descripcion,
@@ -17454,17 +17821,27 @@ def _build_kardex_movements(
             }
         )
 
-    movimientos.sort(key=lambda row: (row["fecha"], row["tipo"]))
+    movement_priority = {"Ingreso": 0, "Venta": 1, "Egreso": 2}
+    movimientos.sort(
+        key=lambda row: (
+            row["fecha"],
+            int(row.get("branch_id") or 0),
+            int(row.get("bodega_id") or 0),
+            int(row.get("producto_id") or 0),
+            movement_priority.get(str(row.get("tipo_base") or ""), 9),
+            int(row.get("source_id") or 0),
+        )
+    )
 
-    saldos = {}
+    saldos = dict(opening_balances)
     rows = []
     for mov in movimientos:
-        key = (mov["producto_id"], mov["bodega"])
-        saldo = saldos.get(key, Decimal("0"))
+        key = (int(mov["producto_id"]), int(mov["bodega_id"] or 0))
+        saldo_anterior = saldos.get(key, Decimal("0"))
         cantidad_mov = Decimal(str(mov.get("cantidad") or 0))
         entrada = cantidad_mov if cantidad_mov > 0 else Decimal("0")
         salida = abs(cantidad_mov) if cantidad_mov < 0 else Decimal("0")
-        saldo += cantidad_mov
+        saldo = saldo_anterior + cantidad_mov
         saldos[key] = saldo
         costo_unit_cs = mov["costo_unit_cs"]
         costo_unit_usd = mov["costo_unit_usd"]
@@ -17473,6 +17850,7 @@ def _build_kardex_movements(
                 **mov,
                 "entrada": entrada,
                 "salida": salida,
+                "saldo_anterior": saldo_anterior,
                 "saldo": saldo,
                 "costo_total_cs": saldo * costo_unit_cs,
                 "costo_total_usd": saldo * costo_unit_usd,
@@ -17485,6 +17863,13 @@ def _build_kardex_movements(
         "total_ingresos": sum((r["cantidad"] for r in rows if r.get("tipo_base") == "Ingreso"), Decimal("0")),
         "total_egresos": sum((abs(r["cantidad"]) for r in rows if r.get("tipo_base") == "Egreso"), Decimal("0")),
         "total_ventas": sum((abs(r["cantidad"]) for r in rows if r.get("tipo_base") == "Venta"), Decimal("0")),
+        "saldo_antes_ultimo": Decimal(str(rows[-1]["saldo_anterior"])) if rows else Decimal("0"),
+        "saldo_final_ultimo": Decimal(str(rows[-1]["saldo"])) if rows else Decimal("0"),
+        "ultimo_producto": (
+            f"{rows[-1].get('codigo') or ''} - {rows[-1].get('descripcion') or ''}".strip(" -")
+            if rows
+            else ""
+        ),
     }
 
     return rows, resumen
@@ -18540,9 +18925,21 @@ def report_kardex(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
-    start_date, end_date, branch_id, producto_q = _kardex_report_filters(request)
-    rows, resumen = _build_kardex_movements(db, start_date, end_date, branch_id, producto_q)
-    branches = _scoped_branches_query(db).order_by(Branch.name).all()
+    start_date, end_date, bodega_id, producto_q = _kardex_report_filters(request)
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    bodegas_q = db.query(Bodega).join(Branch, Branch.id == Bodega.branch_id).filter(Bodega.activo.is_(True), Branch.activo.is_(True))
+    if scoped_branch_ids:
+        bodegas_q = bodegas_q.filter(Bodega.branch_id.in_(scoped_branch_ids))
+    bodegas = bodegas_q.order_by(Bodega.name).all()
+    scoped_bodega_ids = {int(b.id) for b in bodegas}
+    if bodega_id not in {"", "all", None}:
+        try:
+            if int(bodega_id) not in scoped_bodega_ids:
+                bodega_id = "all"
+        except ValueError:
+            bodega_id = "all"
+    rows, resumen = _build_kardex_movements(db, start_date, end_date, bodega_id, producto_q)
+    selected_bodega = next((b for b in bodegas if str(b.id) == str(bodega_id)), None)
 
     return request.app.state.templates.TemplateResponse(
         "report_kardex.html",
@@ -18551,10 +18948,11 @@ def report_kardex(
             "user": user,
             "rows": rows,
             "resumen": resumen,
-            "branches": branches,
+            "bodegas": bodegas,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
-            "selected_branch": branch_id or "",
+            "selected_bodega": bodega_id or "",
+            "bodega_label": selected_bodega.name if selected_bodega else "Todas las bodegas",
             "producto_q": producto_q,
             "version": settings.UI_VERSION,
         },
@@ -18569,83 +18967,141 @@ def report_kardex_export(
 ):
     _enforce_permission(request, user, "access.reports")
     company_profile = _company_profile_payload(db)
-    start_date, end_date, branch_id, producto_q = _kardex_report_filters(request)
-    rows, resumen = _build_kardex_movements(db, start_date, end_date, branch_id, producto_q)
-    branches = _scoped_branches_query(db).order_by(Branch.name).all()
-    selected_branch = None
-    if branch_id and branch_id != "all":
+    start_date, end_date, bodega_id, producto_q = _kardex_report_filters(request)
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    bodegas_q = db.query(Bodega).join(Branch, Branch.id == Bodega.branch_id).filter(Bodega.activo.is_(True), Branch.activo.is_(True))
+    if scoped_branch_ids:
+        bodegas_q = bodegas_q.filter(Bodega.branch_id.in_(scoped_branch_ids))
+    bodegas = bodegas_q.order_by(Bodega.name).all()
+    scoped_bodega_ids = {int(b.id) for b in bodegas}
+    if bodega_id not in {"", "all", None}:
         try:
-            selected_branch = next((b for b in branches if b.id == int(branch_id)), None)
+            if int(bodega_id) not in scoped_bodega_ids:
+                bodega_id = "all"
         except ValueError:
-            selected_branch = None
+            bodega_id = "all"
+    rows, resumen = _build_kardex_movements(db, start_date, end_date, bodega_id, producto_q)
+    selected_bodega = next((b for b in bodegas if str(b.id) == str(bodega_id)), None)
 
     buffer = io.BytesIO()
-    width = 380
     from reportlab.pdfgen import canvas
-    from reportlab.lib.pagesizes import portrait
+    from reportlab.lib.pagesizes import A4, landscape
 
-    c = canvas.Canvas(buffer, pagesize=portrait((width, 700)))
-    y = 660
+    width, height = landscape(A4)
+    margin = 20
+    c = canvas.Canvas(buffer, pagesize=(width, height))
+    y = height - 30
     logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
     if logo_path.exists():
-        c.drawImage(str(logo_path), 24, y - 40, width=90, height=40, mask="auto")
-    c.setFont("Times-Bold", 11)
-    c.drawString(120, y - 8, "Reporte Kardex por producto")
-    c.drawString(120, y - 24, "Movimientos de inventario")
-    y -= 50
+        c.drawImage(str(logo_path), margin, y - 36, width=82, height=36, mask="auto")
+    c.setFont("Times-Bold", 12)
+    c.drawString(margin + 96, y - 6, "Reporte Kardex por producto")
+    c.drawString(margin + 96, y - 22, "Movimientos de inventario")
+    y -= 44
     c.setFont("Times-Roman", 9)
     c.setFillColor(colors.HexColor("#4b5563"))
-    if selected_branch:
-        c.drawString(24, y, f"Sucursal: {selected_branch.name}")
+    if selected_bodega:
+        c.drawString(margin, y, f"Bodega: {selected_bodega.name}")
         y -= 14
-    c.drawString(24, y, f"Rango: {start_date} a {end_date}")
+    else:
+        c.drawString(margin, y, "Bodega: Todas las bodegas")
+        y -= 14
+    c.drawString(margin, y, f"Rango: {start_date} a {end_date}")
     y -= 14
-    c.drawString(24, y, f"Producto: {producto_q or 'Todos'}")
+    c.drawString(margin, y, f"Producto: {producto_q or 'Todos'}")
     y -= 14
-    c.drawString(24, y, f"Dias: {resumen['dias']}")
+    c.drawString(margin, y, f"Dias: {resumen['dias']}")
     y -= 14
-    c.drawString(24, y, f"Ingresos: {resumen['total_ingresos']}")
+    c.drawString(margin, y, f"Ingresos: {resumen['total_ingresos']}")
     y -= 14
-    c.drawString(24, y, f"Egresos: {resumen['total_egresos']}")
+    c.drawString(margin, y, f"Egresos: {resumen['total_egresos']}")
     y -= 14
-    c.drawString(24, y, f"Ventas: {resumen['total_ventas']}")
+    c.drawString(margin, y, f"Ventas: {resumen['total_ventas']}")
     y -= 14
+    c.drawString(margin + 220, y + 28, f"Antes del ultimo mov.: {float(resumen.get('saldo_antes_ultimo') or 0):.2f}")
+    c.drawString(margin + 220, y + 14, f"Saldo final: {float(resumen.get('saldo_final_ultimo') or 0):.2f}")
     c.setFillColor(colors.black)
-    c.line(24, y, width - 24, y)
+    c.line(margin, y, width - margin, y)
     y -= 12
 
     c.setFont("Times-Bold", 8)
-    c.drawString(24, y, "Fecha")
-    c.drawString(70, y, "Tipo")
-    c.drawString(116, y, "Sucursal/Bodega")
-    c.drawString(196, y, "Producto")
-    c.drawRightString(252, y, "Entr.")
-    c.drawRightString(284, y, "Sal.")
-    c.drawRightString(316, y, "Saldo")
-    c.drawRightString(352, y, "C.Unit")
-    c.drawRightString(404, y, "C.Total")
-    c.drawString(392, y, "Vendedor")
+    x_icon = margin
+    x_fecha = margin + 12
+    x_tipo = 84
+    x_bodega = 208
+    x_producto = 356
+    x_saldo_ant = 575
+    x_entr = 640
+    x_sal = 690
+    x_saldo = 740
+    x_cunit = 804
+    x_ctotal = 876
+    x_vendedor = 900
+    c.drawString(x_fecha, y, "Fecha")
+    c.drawString(x_tipo, y, "Tipo")
+    c.drawString(x_bodega, y, "Sucursal/Bodega")
+    c.drawString(x_producto, y, "Producto")
+    c.drawRightString(x_saldo_ant, y, "Saldo Ant.")
+    c.drawRightString(x_entr, y, "Entr.")
+    c.drawRightString(x_sal, y, "Sal.")
+    c.drawRightString(x_saldo, y, "Saldo")
+    c.drawRightString(x_cunit, y, "C.Unit")
+    c.drawRightString(x_ctotal, y, "C.Total")
+    c.drawString(x_vendedor, y, "Vendedor")
     y -= 12
     c.setFont("Times-Roman", 8)
 
+    def _draw_header():
+        nonlocal y
+        c.setFillColor(colors.HexColor("#1e3a8a"))
+        c.rect(margin, y - 10, width - (margin * 2), 16, fill=1, stroke=0)
+        c.setFillColor(colors.white)
+        c.setFont("Times-Bold", 8)
+        c.drawString(x_fecha, y - 7, "Fecha")
+        c.drawString(x_tipo, y - 7, "Tipo")
+        c.drawString(x_bodega, y - 7, "Sucursal/Bodega")
+        c.drawString(x_producto, y - 7, "Producto")
+        c.drawRightString(x_saldo_ant, y - 7, "Saldo Ant.")
+        c.drawRightString(x_entr, y - 7, "Entr.")
+        c.drawRightString(x_sal, y - 7, "Sal.")
+        c.drawRightString(x_saldo, y - 7, "Saldo")
+        c.drawRightString(x_cunit, y - 7, "C.Unit")
+        c.drawRightString(x_ctotal, y - 7, "C.Total")
+        c.drawString(x_vendedor, y - 7, "Vendedor")
+        c.setFillColor(colors.black)
+        c.setFont("Times-Roman", 8)
+        y -= 18
+
+    y += 12
+    _draw_header()
+
     for row in rows:
-        if y < 70:
+        if y < 45:
             c.showPage()
-            y = 660
+            y = height - 30
+            _draw_header()
         fecha_text = row["fecha"].strftime("%d/%m/%Y") if row["fecha"] else ""
         tipo_text = row.get("concepto") or row.get("tipo") or "-"
         sucursal_text = f"{row['branch']} / {row['bodega']}"
-        prod_text = f"{row['codigo']} {row['descripcion'][:10]}"
-        c.drawString(24, y, fecha_text)
-        c.drawString(70, y, tipo_text[:18])
-        c.drawString(116, y, sucursal_text[:16])
-        c.drawString(196, y, prod_text)
-        c.drawRightString(252, y, f"{float(row.get('entrada') or 0):.2f}")
-        c.drawRightString(284, y, f"{float(row.get('salida') or 0):.2f}")
-        c.drawRightString(316, y, f"{row['saldo']:.2f}")
-        c.drawRightString(352, y, f"{row['costo_unit_cs']:.2f}")
-        c.drawRightString(404, y, f"{row['costo_total_cs']:.2f}")
-        c.drawString(392, y, (row.get("vendedor") or "-")[:10])
+        prod_text = f"{row['codigo']} {row['descripcion']}"
+        if row.get("tipo_base") == "Ingreso":
+            c.setFillColor(colors.HexColor("#16a34a"))
+            c.circle(x_icon + 4, y + 2, 3, fill=1, stroke=0)
+        elif row.get("tipo_base") in {"Egreso", "Venta"}:
+            c.setFillColor(colors.HexColor("#dc2626"))
+            c.circle(x_icon + 4, y + 2, 3, fill=1, stroke=0)
+        c.setFillColor(colors.black)
+        c.drawString(x_fecha, y, fecha_text)
+        c.drawString(x_tipo, y, tipo_text[:22])
+        c.drawString(x_bodega, y, sucursal_text[:24])
+        c.drawString(x_producto, y, prod_text[:38])
+        c.drawRightString(x_saldo_ant, y, f"{float(row.get('saldo_anterior') or 0):.2f}")
+        c.drawRightString(x_entr, y, f"{float(row.get('entrada') or 0):.2f}")
+        c.drawRightString(x_sal, y, f"{float(row.get('salida') or 0):.2f}")
+        c.drawRightString(x_saldo, y, f"{float(row.get('saldo') or 0):.2f}")
+        c.drawRightString(x_cunit, y, f"{float(row.get('costo_unit_cs') or 0):.2f}")
+        c.drawRightString(x_ctotal, y, f"{float(row.get('costo_total_cs') or 0):.2f}")
+        c.drawString(x_vendedor, y, (row.get("vendedor") or "-")[:12])
         y -= 12
 
     c.showPage()
@@ -21241,6 +21697,7 @@ def data_create_bodega(
     name: str = Form(...),
     branch_id: int = Form(...),
     activo: Optional[str] = Form(None),
+    permite_facturacion: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -21261,7 +21718,15 @@ def data_create_bodega(
     )
     if exists:
         return RedirectResponse("/data/bodegas?error=Bodega+ya+existe", status_code=303)
-    db.add(Bodega(code=code, name=name, branch_id=branch.id, activo=activo == "on"))
+    db.add(
+        Bodega(
+            code=code,
+            name=name,
+            branch_id=branch.id,
+            activo=activo == "on",
+            permite_facturacion=permite_facturacion == "on",
+        )
+    )
     db.commit()
     return RedirectResponse("/data/bodegas?success=Bodega+creada", status_code=303)
 
@@ -21274,6 +21739,7 @@ def data_update_bodega(
     name: str = Form(...),
     branch_id: int = Form(...),
     activo: Optional[str] = Form(None),
+    permite_facturacion: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -21302,6 +21768,7 @@ def data_update_bodega(
     bodega.name = name
     bodega.branch_id = branch.id
     bodega.activo = activo == "on"
+    bodega.permite_facturacion = permite_facturacion == "on"
     db.commit()
     return RedirectResponse("/data/bodegas?success=Bodega+actualizada", status_code=303)
 
@@ -21847,9 +22314,13 @@ def data_create_usuario(
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
     if not branch:
         return RedirectResponse("/data/usuarios?error=Sucursal+no+valida", status_code=303)
+    if not bool(branch.activo):
+        return RedirectResponse("/data/usuarios?error=Sucursal+inactiva", status_code=303)
     bodega = db.query(Bodega).filter(Bodega.id == bodega_id).first()
     if not bodega or bodega.branch_id != branch.id:
         return RedirectResponse("/data/usuarios?error=Bodega+no+corresponde+a+la+sucursal", status_code=303)
+    if not bool(bodega.activo):
+        return RedirectResponse("/data/usuarios?error=Bodega+inactiva", status_code=303)
     vendedor = None
     if vendedor_id:
         vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first()
@@ -21926,9 +22397,13 @@ def data_update_usuario(
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
     if not branch:
         return RedirectResponse("/data/usuarios?error=Sucursal+no+valida", status_code=303)
+    if not bool(branch.activo):
+        return RedirectResponse("/data/usuarios?error=Sucursal+inactiva", status_code=303)
     bodega = db.query(Bodega).filter(Bodega.id == bodega_id).first()
     if not bodega or bodega.branch_id != branch.id:
         return RedirectResponse("/data/usuarios?error=Bodega+no+corresponde+a+la+sucursal", status_code=303)
+    if not bool(bodega.activo):
+        return RedirectResponse("/data/usuarios?error=Bodega+inactiva", status_code=303)
     vendedor = None
     if vendedor_id:
         vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first()
@@ -25241,6 +25716,10 @@ async def inventory_create_egreso(
     item_qtys = form.getlist("item_cantidad")
     item_costs = form.getlist("item_costo")
     item_prices = form.getlist("item_precio")
+    result_item_ids = form.getlist("result_item_producto_id")
+    result_item_qtys = form.getlist("result_item_cantidad")
+    result_item_costs = form.getlist("result_item_costo")
+    result_item_prices = form.getlist("result_item_precio")
 
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
@@ -25254,12 +25733,14 @@ async def inventory_create_egreso(
     if not tipo:
         return RedirectResponse(f"{redirect_to}?error=Tipo+no+valido", status_code=303)
     es_traslado = "traslado" in (tipo.nombre or "").lower()
+    es_abierta = "produccion de abierta" in (tipo.nombre or "").lower()
     bodega_destino_obj = None
-    if es_traslado:
+    if es_traslado or es_abierta:
         moneda = "CS"
         if not bodega_destino_id:
-            return RedirectResponse(f"{redirect_to}?error=Selecciona+bodega+destino+para+traslado", status_code=303)
-        if int(bodega_destino_id) == int(bodega_id):
+            error_msg = "Selecciona+bodega+destino+para+traslado" if es_traslado else "Selecciona+bodega+de+ingreso+para+resultado+de+abierta"
+            return RedirectResponse(f"{redirect_to}?error={error_msg}", status_code=303)
+        if es_traslado and int(bodega_destino_id) == int(bodega_id):
             return RedirectResponse(f"{redirect_to}?error=La+bodega+destino+debe+ser+distinta+al+origen", status_code=303)
         bodega_destino_obj = (
             db.query(Bodega)
@@ -25268,6 +25749,9 @@ async def inventory_create_egreso(
         )
         if not bodega_destino_obj:
             return RedirectResponse(f"{redirect_to}?error=Bodega+destino+no+valida", status_code=303)
+        if not _bodega_permite_facturacion(bodega_destino_obj) and es_abierta:
+            # El ingreso puede ir a una bodega no facturable; no bloquear operacion interna.
+            pass
 
     rate_today = (
         db.query(ExchangeRate)
@@ -25286,15 +25770,15 @@ async def inventory_create_egreso(
         except ValueError:
             return 0.0
 
-    tasa = 0.0 if es_traslado else (float(rate_today.rate) if rate_today else 0.0)
+    tasa = 0.0 if (es_traslado or es_abierta) else (float(rate_today.rate) if rate_today else 0.0)
     fecha_value = date.fromisoformat(str(fecha).split("T")[0])
     egreso = EgresoInventario(
         tipo_id=int(tipo_id),
         bodega_id=int(bodega_id),
         bodega_destino_id=int(bodega_destino_id) if bodega_destino_id else None,
         fecha=fecha_value,
-        moneda="CS" if es_traslado else moneda,
-        tasa_cambio=None if es_traslado else (tasa if moneda == "USD" else None),
+        moneda="CS" if (es_traslado or es_abierta) else moneda,
+        tasa_cambio=None if (es_traslado or es_abierta) else (tasa if moneda == "USD" else None),
         observacion=observacion,
         usuario_registro=user.full_name,
     )
@@ -25355,7 +25839,7 @@ async def inventory_create_egreso(
             return RedirectResponse(f"{redirect_to}?error={mensaje}", status_code=303)
         balances[(producto.id, int(bodega_id))] = Decimal(str(existencia)) - to_decimal(qty)
 
-        if es_traslado:
+        if es_traslado or es_abierta:
             costo_cs = cost
             costo_usd = 0.0
         elif moneda == "USD":
@@ -25365,7 +25849,7 @@ async def inventory_create_egreso(
             costo_cs = cost
             costo_usd = cost / tasa if tasa else 0
 
-        subtotal_usd = 0.0 if es_traslado else (costo_usd * qty)
+        subtotal_usd = 0.0 if (es_traslado or es_abierta) else (costo_usd * qty)
         subtotal_cs = costo_cs * qty
         total_usd += subtotal_usd
         total_cs += subtotal_cs
@@ -25469,7 +25953,84 @@ async def inventory_create_egreso(
                         )
                     )
 
-    egreso.total_usd = 0 if es_traslado else total_usd
+    if es_abierta:
+        result_rows: list[dict[str, float | int]] = []
+        for index, product_id in enumerate(result_item_ids):
+            if not str(product_id).isdigit():
+                continue
+            qty = to_float(result_item_qtys[index] if index < len(result_item_qtys) else 0)
+            cost = to_float(result_item_costs[index] if index < len(result_item_costs) else 0)
+            price = to_float(result_item_prices[index] if index < len(result_item_prices) else 0)
+            if qty <= 0:
+                continue
+            result_rows.append(
+                {
+                    "producto_id": int(product_id),
+                    "cantidad": qty,
+                    "costo_unitario_cs": cost,
+                    "precio_cs": price,
+                    "subtotal_cs": cost * qty,
+                }
+            )
+        if not result_rows:
+            db.rollback()
+            return RedirectResponse(f"{redirect_to}?error=Agrega+items+de+resultado+para+produccion+de+abierta", status_code=303)
+        ingreso_tipo = (
+            db.query(IngresoTipo)
+            .filter(func.lower(IngresoTipo.nombre) == "produccion")
+            .first()
+        )
+        if not ingreso_tipo:
+            ingreso_tipo = IngresoTipo(nombre="Produccion", requiere_proveedor=False)
+            db.add(ingreso_tipo)
+            db.flush()
+        bodega_origen_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
+        abierta_obs = (
+            f"Resultado de Produccion de Abierta desde {bodega_origen_obj.name if bodega_origen_obj else 'origen'} "
+            f"hacia {bodega_destino_obj.name if bodega_destino_obj else 'destino'}. Egreso #{egreso.id}"
+        )
+        if observacion:
+            abierta_obs = f"{abierta_obs} | {observacion}"
+        ingreso_resultado = IngresoInventario(
+            tipo_id=ingreso_tipo.id,
+            bodega_id=int(bodega_destino_obj.id),
+            proveedor_id=None,
+            fecha=fecha_value,
+            moneda="CS",
+            tasa_cambio=None,
+            total_usd=0,
+            total_cs=sum(float(row["subtotal_cs"]) for row in result_rows),
+            observacion=abierta_obs[:300],
+            usuario_registro=user.full_name,
+        )
+        db.add(ingreso_resultado)
+        db.flush()
+        for row in result_rows:
+            db.add(
+                IngresoItem(
+                    ingreso_id=ingreso_resultado.id,
+                    producto_id=int(row["producto_id"]),
+                    cantidad=float(row["cantidad"]),
+                    costo_unitario_usd=0,
+                    costo_unitario_cs=float(row["costo_unitario_cs"]),
+                    subtotal_usd=0,
+                    subtotal_cs=float(row["subtotal_cs"]),
+                )
+            )
+            producto_result = db.query(Producto).filter(Producto.id == int(row["producto_id"])).first()
+            if producto_result and producto_result.saldo:
+                producto_result.saldo.existencia = to_decimal(producto_result.saldo.existencia) + to_decimal(float(row["cantidad"]))
+            elif producto_result:
+                db.add(SaldoProducto(producto_id=producto_result.id, existencia=to_decimal(float(row["cantidad"]))))
+            if producto_result:
+                if float(row["costo_unitario_cs"] or 0) > 0:
+                    producto_result.costo_producto = float(row["costo_unitario_cs"])
+                if float(row["precio_cs"] or 0) > 0:
+                    producto_result.precio_venta1 = float(row["precio_cs"])
+                    if tasa > 0:
+                        producto_result.precio_venta1_usd = float(row["precio_cs"]) / float(tasa)
+
+    egreso.total_usd = 0 if (es_traslado or es_abierta) else total_usd
     egreso.total_cs = total_cs
     bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
     auto_amount = to_decimal(total_cs)
@@ -26247,6 +26808,8 @@ async def restaurant_order_invoice(
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch or not bodega or int(order.bodega_id or 0) != int(bodega.id):
         return RedirectResponse("/sales?error=Orden+fuera+de+tu+bodega", status_code=303)
+    if not _bodega_permite_facturacion(bodega):
+        return RedirectResponse("/sales?error=La+bodega+operativa+no+esta+habilitada+para+facturacion", status_code=303)
     if not forma_pago_id.isdigit():
         forma_pago = db.query(FormaPago).order_by(FormaPago.id.asc()).first()
         forma_pago_id = str(forma_pago.id) if forma_pago else ""
@@ -26491,6 +27054,8 @@ async def sales_create_invoice(
         return RedirectResponse("/sales?error=Usuario+sin+sucursal+asignada", status_code=303)
     if not bodega:
         return RedirectResponse("/sales?error=Bodega+no+configurada+para+la+sucursal", status_code=303)
+    if not _bodega_permite_facturacion(bodega):
+        return RedirectResponse("/sales?error=La+bodega+operativa+no+esta+habilitada+para+facturacion", status_code=303)
     last_factura = (
         db.query(VentaFactura)
         .filter(VentaFactura.bodega_id == bodega.id)
@@ -26770,6 +27335,7 @@ async def sales_create_invoice(
                 preventa=preventa,
                 actor_name=user.full_name or "Caja",
                 branch_name=branch.name if branch else "",
+                event_code="FACTURADA",
             )
         except Exception:
             pass

@@ -325,7 +325,7 @@
                     <div class="col-12 col-md-6 col-xl-3 d-none movement-meta-item" id="bodega-destino-wrap">
                       <label class="form-label text-sm font-semibold text-ink">
                         <i class="bi bi-arrow-left-right text-brand me-1"></i>
-                        Bodega destino *
+                        <span id="bodega-destino-label">Bodega destino *</span>
                       </label>
                       <select id="field-bodega-destino" name="bodega_destino_id" class="odoo-input form-select form-select-sm select2 odoo-select2 w-100">
                         <option value="">Selecciona destino</option>
@@ -786,11 +786,15 @@
     const isTraslado = isTrasladoSelected();
     const isAbierta = isAbiertaSelected();
     if (bodegaDestinoWrap) {
-      bodegaDestinoWrap.classList.toggle("d-none", !isTraslado);
+      bodegaDestinoWrap.classList.toggle("d-none", !(isTraslado || isAbierta));
+    }
+    const bodegaDestinoLabel = document.getElementById("bodega-destino-label");
+    if (bodegaDestinoLabel) {
+      bodegaDestinoLabel.textContent = isAbierta ? "Bodega de ingreso resultado *" : "Bodega destino *";
     }
     if (bodegaDestinoField) {
-      bodegaDestinoField.required = !!isTraslado;
-      if (!isTraslado) {
+      bodegaDestinoField.required = !!(isTraslado || isAbierta);
+      if (!isTraslado && !isAbierta) {
         bodegaDestinoField.value = "";
       }
     }
@@ -1657,6 +1661,7 @@
     const isTraslado = isTrasladoSelected();
     const isAbierta = isAbiertaSelected();
     if (isTraslado && !bodegaDestinoField?.value) missing.push("Bodega destino");
+    if (isAbierta && !bodegaDestinoField?.value) missing.push("Bodega de ingreso resultado");
     if (isTraslado && bodegaField?.value && bodegaDestinoField?.value && bodegaField.value === bodegaDestinoField.value) {
       missing.push("Destino distinto al origen");
     }

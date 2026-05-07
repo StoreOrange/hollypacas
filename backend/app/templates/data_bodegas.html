@@ -53,6 +53,12 @@
                   {% endfor %}
                 </select>
               </div>
+              <div class="col-md-6 d-flex align-items-end">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="permite_facturacion" id="permite_facturacion" {% if not edit_item or edit_item.permite_facturacion %}checked{% endif %} />
+                  <label class="form-check-label" for="permite_facturacion">Permitir facturacion en esta bodega</label>
+                </div>
+              </div>
               <div class="col-md-4 d-flex align-items-end">
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" name="activo" id="activo" {% if edit_item and edit_item.activo %}checked{% endif %} />
@@ -78,6 +84,7 @@
                     <th>Nombre</th>
                     <th>Sucursal</th>
                     <th>Estado sucursal</th>
+                    <th>Facturacion</th>
                     <th>Estado</th>
                     <th class="text-end">Acciones</th>
                   </tr>
@@ -94,6 +101,9 @@
                       {% else %}
                         -
                       {% endif %}
+                    </td>
+                    <td>
+                      <span class="odoo-pill {{ 'success' if item.permite_facturacion else '' }}">{{ "Permitida" if item.permite_facturacion else "Bloqueada" }}</span>
                     </td>
                     <td>
                       <span class="odoo-pill {{ 'success' if item.activo else '' }}">{{ "Activo" if item.activo else "Inactivo" }}</span>

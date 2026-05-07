@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+  .saldo-grid-shell {
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 18px;
+    background: linear-gradient(180deg, #ffffff, #f8fbff);
+    box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08);
+    overflow: hidden;
+  }
+  .saldo-grid-scroll {
+    overflow: auto;
+    max-height: 72vh;
+  }
+  .saldo-grid-scroll::-webkit-scrollbar { height: 10px; width: 10px; }
+  .saldo-grid-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 999px; }
+  .saldo-grid-table {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+  }
+  .saldo-grid-table th,
+  .saldo-grid-table td {
+    padding: .7rem .85rem;
+    border-bottom: 1px solid #e2e8f0;
+    white-space: nowrap;
+  }
+  .saldo-grid-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: linear-gradient(180deg, #dbeafe, #eff6ff);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    font-size: 10.5px;
+    color: #0f172a;
+  }
+  .saldo-grid-table .sticky-code,
+  .saldo-grid-table .sticky-name {
+    position: sticky;
+    background: #fff;
+    z-index: 4;
+  }
+  .saldo-grid-table .sticky-code { left: 0; min-width: 135px; }
+  .saldo-grid-table .sticky-name { left: 135px; min-width: 320px; }
+  .saldo-grid-table tbody tr:nth-child(odd) td { background: rgba(248, 250, 252, 0.75); }
+  .saldo-grid-table tbody tr:hover td { background: #eff6ff; }
+  .saldo-grid-table .saldo-cell { text-align: right; font-weight: 700; color: #0f172a; }
+  .saldo-grid-table .saldo-zero { color: #94a3b8; }
+  .saldo-grid-table .saldo-positive { color: #0f766e; }
+  .saldo-grid-table .total-col { background: #f8fafc; }
+  .saldo-toolbar {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) auto;
+    gap: 1rem;
+    align-items: center;
+  }
+  @media (max-width: 992px) {
+    .saldo-toolbar { grid-template-columns: 1fr; }
+    .saldo-grid-table .sticky-name { min-width: 240px; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Informes</li>
+                <li class="breadcrumb-item active" aria-current="page">Saldos por bodega</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Saldos por bodega</div>
+            <div class="odoo-subtitle mt-1 text-sm">Vista inteligente por articulo con una columna de saldo para cada bodega activa.</div>
+            <div class="text-sm text-slate mt-1">
+              Sucursal: <strong class="text-ink">{{ selected_branch_name }}</strong>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="odoo-pill primary">
+              <i class="bi bi-columns-gap"></i>
+              Bodegas: {{ bodegas|length }}
+            </div>
+            <div class="odoo-pill">
+              <i class="bi bi-box-seam"></i>
+              Items: {{ rows|length }}
+            </div>
+            <div class="odoo-pill primary">
+              <i class="bi bi-stack"></i>
+              Saldo global: {{ "{:,.2f}".format(total_global or 0) }}
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item"><a class="nav-link" href="/reports">Informes</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/ventas">Ventas detallado</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/kardex">Kardex</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/matriz-inventario">Matriz de inventario</a></li>
+          <li class="nav-item"><a class="nav-link active" href="/reports/saldos-bodega">Saldos por bodega</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/inventario-rotacion">Inventario y rotacion</a></li>
+        </ul>
+      </div>
+
+      <div class="odoo-card mb-3">
+        <form class="row g-2 align-items-end" method="get" action="/reports/saldos-bodega">
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-5">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Buscar articulo</label>
+            <input name="producto" class="form-control form-control-sm" placeholder="Codigo o descripcion" value="{{ producto_q }}">
+          </div>
+          <div class="col-12 col-md-auto">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">
+              <i class="bi bi-search"></i>
+              Filtrar
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="odoo-card">
+        <div class="saldo-toolbar mb-3">
+          <div class="input-group input-group-sm shadow-sm rounded-pill overflow-hidden bg-white">
+            <span class="input-group-text bg-white border-0"><i class="bi bi-search"></i></span>
+            <input id="saldo-grid-filter" class="form-control border-0" type="text" placeholder="Filtro inteligente sobre codigo, descripcion, linea o segmento">
+          </div>
+          <div class="d-flex flex-wrap gap-2 justify-content-md-end">
+            {% for bodega in bodegas %}
+            <span class="odoo-pill">{{ bodega.name }}</span>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="saldo-grid-shell">
+          <div class="saldo-grid-scroll">
+            <table class="table table-sm align-middle mb-0 saldo-grid-table" id="saldo-grid-table">
+              <thead>
+                <tr>
+                  <th class="sticky-code">Codigo</th>
+                  <th class="sticky-name">Descripcion</th>
+                  <th>Linea</th>
+                  <th>Segmento</th>
+                  {% for bodega in bodegas %}
+                  <th class="text-end">{{ bodega.name }}</th>
+                  {% endfor %}
+                  <th class="text-end total-col">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in rows %}
+                <tr data-filter="{{ (row.codigo ~ ' ' ~ row.descripcion ~ ' ' ~ row.linea ~ ' ' ~ row.segmento)|lower }}">
+                  <td class="sticky-code fw-semibold">{{ row.codigo }}</td>
+                  <td class="sticky-name">{{ row.descripcion }}</td>
+                  <td>{{ row.linea }}</td>
+                  <td>{{ row.segmento }}</td>
+                  {% for saldo in row.saldos %}
+                  <td class="saldo-cell {% if saldo > 0 %}saldo-positive{% elif saldo == 0 %}saldo-zero{% endif %}">{{ "{:,.2f}".format(saldo or 0) }}</td>
+                  {% endfor %}
+                  <td class="saldo-cell total-col">{{ "{:,.2f}".format(row.total or 0) }}</td>
+                </tr>
+                {% endfor %}
+                {% if rows|length == 0 %}
+                <tr>
+                  <td colspan="{{ 5 + (bodegas|length) }}" class="text-center py-4 text-slate">Sin datos para los filtros indicados.</td>
+                </tr>
+                {% endif %}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th class="sticky-code">TOTAL</th>
+                  <th class="sticky-name">Consolidado visible</th>
+                  <th></th>
+                  <th></th>
+                  {% for total in totals_by_bodega %}
+                  <th class="text-end">{{ "{:,.2f}".format(total or 0) }}</th>
+                  {% endfor %}
+                  <th class="text-end total-col">{{ "{:,.2f}".format(total_global or 0) }}</th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-end text-slate text-sm mt-4">Version {{ version }}</div>
+    </div>
+  </main>
+</div>
+
+<script>
+  (() => {
+    const input = document.getElementById("saldo-grid-filter");
+    const rows = Array.from(document.querySelectorAll("#saldo-grid-table tbody tr[data-filter]"));
+    if (!input || !rows.length) return;
+    const applyFilter = () => {
+      const term = String(input.value || "").trim().toLowerCase();
+      rows.forEach((row) => {
+        const haystack = String(row.dataset.filter || "");
+        row.classList.toggle("d-none", !!term && !haystack.includes(term));
+      });
+    };
+    input.addEventListener("input", applyFilter);
+  })();
+</script>
+{% endblock %}

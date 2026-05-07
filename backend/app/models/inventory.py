@@ -272,6 +272,7 @@ class Bodega(Base):
     name = Column(String(120), nullable=False)
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
     activo = Column(Boolean, default=True)
+    permite_facturacion = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, server_default=func.now())
 
     branch = relationship(Branch)

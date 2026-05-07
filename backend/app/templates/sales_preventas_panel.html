@@ -34,6 +34,20 @@
     display: block !important;
     background: rgba(15, 23, 42, 0.55);
   }
+  .preventa-row-frozen td {
+    background: linear-gradient(180deg, #eff6ff, #eef2ff) !important;
+  }
+  .freeze-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .15rem .55rem;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: .72rem;
+    font-weight: 700;
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -94,6 +108,14 @@
               <option value="ANULADA" {% if estado == 'ANULADA' %}selected{% endif %}>Anulada</option>
             </select>
           </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label">Congelada</label>
+            <select class="form-select" name="frozen">
+              <option value="" {% if not frozen %}selected{% endif %}>Todas</option>
+              <option value="0" {% if frozen == '0' %}selected{% endif %}>Normales</option>
+              <option value="1" {% if frozen == '1' %}selected{% endif %}>Congeladas</option>
+            </select>
+          </div>
           <div class="col-12 col-md-1 d-grid">
             <button class="btn btn-primary" type="submit">
               <i class="bi bi-search"></i>
@@ -115,12 +137,13 @@
                 <th class="text-end">Total USD</th>
                 <th class="text-end">Total C$</th>
                 <th>Estado</th>
+                <th>Congelada</th>
                 <th class="text-end">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {% for row in rows %}
-              <tr data-preventa-row data-preventa-id="{{ row.id }}">
+              <tr data-preventa-row data-preventa-id="{{ row.id }}" class="{% if row.is_frozen %}preventa-row-frozen{% endif %}">
                 <td class="fw-semibold">{{ row.numero }}</td>
                 <td>{{ row.fecha.strftime('%Y-%m-%d %H:%M') if row.fecha else '-' }}</td>
                 <td>{{ row.vendedor }}</td>
@@ -131,11 +154,25 @@
                 <td>
                   <span class="badge rounded-pill {{ row.badge.class }}">{{ row.badge.label }}</span>
                 </td>
+                <td>
+                  {% if row.is_frozen %}
+                  <span class="freeze-chip"><i class="bi bi-snow"></i> Congelada</span>
+                  {% else %}
+                  <span class="text-muted small">Activa</span>
+                  {% endif %}
+                </td>
                 <td class="text-end">
                   <div class="btn-group btn-group-sm">
                     <button class="btn btn-outline-secondary js-preview-detail" type="button" data-preventa-id="{{ row.id }}">
                       <i class="bi bi-eye"></i>
                     </button>
+                    {% if row.estado in ['PENDIENTE','REVISION'] %}
+                    <form method="post" action="/sales/preventas/{{ row.id }}/freeze">
+                      <button class="btn {% if row.is_frozen %}btn-outline-info{% else %}btn-outline-warning{% endif %}" type="submit" title="{% if row.is_frozen %}Descongelar preventa{% else %}Congelar preventa{% endif %}">
+                        <i class="bi {% if row.is_frozen %}bi-unlock{% else %}bi-snow{% endif %}"></i>
+                      </button>
+                    </form>
+                    {% endif %}
                     {% if row.estado in ['PENDIENTE','REVISION'] %}
                     <form method="post" action="/sales/preventas/{{ row.id }}/usar">
                       <button class="btn btn-outline-primary" type="submit" title="Cargar a factura virtual">
@@ -156,7 +193,7 @@
               {% endfor %}
               {% if rows|length == 0 %}
               <tr>
-                <td colspan="9" class="text-center text-muted py-4">Sin preventas para los filtros seleccionados.</td>
+                <td colspan="10" class="text-center text-muted py-4">Sin preventas para los filtros seleccionados.</td>
               </tr>
               {% endif %}
             </tbody>

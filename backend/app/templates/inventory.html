@@ -53,6 +53,14 @@
               <span class="input-group-text bg-white border-0"><i class="bi bi-search"></i></span>
               <input id="filter-input" class="form-control border-0" type="text" placeholder="Filtrar por codigo, nombre o precio" />
             </div>
+            <form method="get" action="/inventory" class="d-flex align-items-center gap-2">
+              <input type="hidden" name="show_inactive" value="{{ 1 if show_inactive else 0 }}">
+              <select name="bodega_id" class="form-select form-select-sm shadow-sm" onchange="this.form.submit()">
+                {% for bodega in bodegas %}
+                <option value="{{ bodega.id }}" {% if selected_bodega_id == bodega.id|string %}selected{% endif %}>{{ bodega.name }}</option>
+                {% endfor %}
+              </select>
+            </form>
             <a class="btn btn-outline-secondary btn-sm shadow-sm" href="/inventory">
               <i class="bi bi-eraser"></i>
               Limpiar
@@ -87,6 +95,13 @@
       </div>
 
       <div class="odoo-kpis">
+        <div class="odoo-kpi">
+          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
+            <i class="bi bi-house-door text-brand"></i>
+            Bodega activa
+          </div>
+          <strong>{{ current_bodega.name if current_bodega else "Sin bodega" }}</strong>
+        </div>
         <div class="odoo-kpi">
           <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
             <i class="bi bi-box-seam text-blue-600"></i>
@@ -126,25 +141,20 @@
       <div class="odoo-kpis">
         <div class="odoo-kpi">
           <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
-            <i class="bi bi-building text-sky-600"></i>
-            Central (items / saldo)
-          </div>
-          <strong>{{ central_items|default(0) }} / {{ "%.2f"|format(central_qty|default(0)) }}</strong>
-        </div>
-        <div class="odoo-kpi">
-          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
-            <i class="bi bi-geo-alt text-indigo-600"></i>
-            Esteli (items / saldo)
-          </div>
-          <strong>{{ esteli_items|default(0) }} / {{ "%.2f"|format(esteli_qty|default(0)) }}</strong>
-        </div>
-        <div class="odoo-kpi">
-          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
             <i class="bi bi-diagram-2 text-emerald-600"></i>
             Global (items / saldo)
           </div>
-          <strong>{{ global_items|default(0) }} / {{ "%.2f"|format(global_qty|default(0)) }}</strong>
+          <strong>{{ total_global_items|default(0) }} / {{ "%.2f"|format(total_global_qty|default(0)) }}</strong>
         </div>
+        {% for card in bodega_summary_cards %}
+        <div class="odoo-kpi {% if card.selected %}border border-brand-subtle bg-brand-soft{% endif %}">
+          <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
+            <i class="bi bi-building text-sky-600"></i>
+            {{ card.name }}
+          </div>
+          <strong>{{ card.items }} / {{ "%.2f"|format(card.qty) }}</strong>
+        </div>
+        {% endfor %}
       </div>
 
     {% if error %}
@@ -190,6 +200,7 @@
             <input id="filter-input-panel" class="form-control border-0" type="text" placeholder="Filtrar en panel" />
           </div>
           <form method="get" action="/inventory" class="d-flex align-items-center gap-2 text-sm text-slate">
+            <input type="hidden" name="bodega_id" value="{{ selected_bodega_id }}">
             <label class="d-inline-flex align-items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"

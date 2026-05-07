@@ -430,7 +430,10 @@
         <i class="bi bi-bell me-1"></i>
         Activar alertas
       </button>
-      <div id="pushAlertsHint" class="push-alert-hint">Recibe aviso cuando caja convierta tu preventa en factura.</div>
+      <div id="pushAlertsHint" class="push-alert-hint">Recibe aviso cuando una preventa se facture, se congele, se descongele, se borre o pase mas de 2 horas pendiente.</div>
+    </div>
+    <div class="mt-2 small text-muted">
+      Compatible con Chrome, Brave y Safari. En iPhone/iPad usa Safari y agrega esta pantalla al inicio para que las alertas push trabajen correctamente.
     </div>
   </div>
 
@@ -685,7 +688,10 @@
     let comboParent = null;
     let comboGifts = [];
     let isSubmittingPreventa = false;
+    let pushSubscriptionActive = false;
+    let alertsPollTimer = null;
     const pushStorageKey = "m_preventas_push_endpoint";
+    const pushSeenAlertsKey = "m_preventas_seen_alerts_v1";
 
     function notify(icon, title, text) {
       if (typeof Swal !== "undefined") {
@@ -725,6 +731,35 @@
       }
     }
 
+    function loadSeenAlertKeys() {
+      try {
+        const raw = localStorage.getItem(pushSeenAlertsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.map((item) => String(item || "")) : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function hasSeenAlert(alertKey) {
+      if (!alertKey) return false;
+      return loadSeenAlertKeys().includes(String(alertKey));
+    }
+
+    function markAlertSeen(alertKey) {
+      if (!alertKey) return;
+      const seen = loadSeenAlertKeys().filter(Boolean);
+      const normalized = String(alertKey);
+      if (!seen.includes(normalized)) {
+        seen.unshift(normalized);
+      }
+      try {
+        localStorage.setItem(pushSeenAlertsKey, JSON.stringify(seen.slice(0, 180)));
+      } catch (_) {
+        // noop
+      }
+    }
+
     function urlBase64ToUint8Array(base64String) {
       const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
       const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -739,6 +774,7 @@
     async function ensurePushSubscription() {
       if (!pushAlertsBtn) return;
       if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+        pushSubscriptionActive = false;
         setPushUiState("idle", "Este navegador no soporta alertas push en esta vista.");
         return;
       }
@@ -747,11 +783,13 @@
         const cfgRes = await fetch("/m/preventas/push/config", { headers: { "X-Requested-With": "fetch" } });
         const cfg = await cfgRes.json();
         if (!cfg?.ok || !cfg?.enabled || !cfg?.public_key) {
+          pushSubscriptionActive = false;
           setPushUiState("idle", "Las alertas push aun no estan configuradas en este entorno.");
           return;
         }
         const permission = await Notification.requestPermission();
         if (permission !== "granted") {
+          pushSubscriptionActive = false;
           setPushUiState("idle", "Debes permitir notificaciones para recibir el aviso de preventa facturada.");
           return;
         }
@@ -781,10 +819,85 @@
         } catch (_) {
           // noop
         }
-        setPushUiState("active", "Te avisaremos cuando una preventa tuya sea facturada desde caja o administracion.");
+        pushSubscriptionActive = true;
+        setPushUiState("active", "Alertas activas para facturacion, congelado, borrado y preventas pendientes por mas de 2 horas.");
       } catch (error) {
+        pushSubscriptionActive = false;
         setPushUiState("idle", "No se pudieron activar las alertas en este dispositivo.");
       }
+    }
+
+    async function showAlertNotification(alertItem) {
+      if (!alertItem?.title || !("Notification" in window) || Notification.permission !== "granted") {
+        return false;
+      }
+      const options = {
+        body: String(alertItem.body || ""),
+        icon: "/static/logo_hollywood.png",
+        badge: "/static/favicon.ico",
+        tag: `m-preventas-local-${String(alertItem.key || alertItem.event_code || "alert")}`,
+        data: {
+          url: String(alertItem.url || "/m/preventas"),
+          preventa_id: alertItem.preventa_id || null,
+          numero: alertItem.numero || "",
+          estado: alertItem.event_code || "",
+        },
+        renotify: true,
+      };
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.showNotification(String(alertItem.title), options);
+        return true;
+      } catch (_) {
+        try {
+          new Notification(String(alertItem.title), options);
+          return true;
+        } catch (__){
+          return false;
+        }
+      }
+    }
+
+    async function pollPreventaAlerts() {
+      if (!("Notification" in window) || Notification.permission !== "granted") {
+        return;
+      }
+      try {
+        const res = await fetch("/m/preventas/alerts", {
+          headers: { "X-Requested-With": "fetch" },
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok || !Array.isArray(data?.alerts)) {
+          return;
+        }
+        const queue = [...data.alerts].reverse();
+        for (const alertItem of queue) {
+          const alertKey = String(alertItem?.key || "");
+          if (!alertKey || hasSeenAlert(alertKey)) {
+            continue;
+          }
+          const eventCode = String(alertItem?.event_code || "").toUpperCase();
+          const shouldUseLocalPopup = !pushSubscriptionActive || eventCode === "ATRASADA";
+          if (shouldUseLocalPopup) {
+            const shown = await showAlertNotification(alertItem);
+            if (!shown) {
+              continue;
+            }
+          }
+          markAlertSeen(alertKey);
+        }
+      } catch (_) {
+        // noop
+      }
+    }
+
+    function startPreventaAlertsPolling() {
+      if (alertsPollTimer) {
+        window.clearInterval(alertsPollTimer);
+      }
+      pollPreventaAlerts();
+      alertsPollTimer = window.setInterval(pollPreventaAlerts, 60000);
     }
 
     function renderPreventaDetail(data) {
@@ -896,7 +1009,7 @@
     }
     if (pushAlertsBtn) {
       try {
-        setPushUiState("idle", "Recibe aviso cuando caja convierta tu preventa en factura.");
+        setPushUiState("idle", "Recibe aviso cuando una preventa se facture, se congele, se descongele, se borre o pase mas de 2 horas pendiente.");
         pushAlertsBtn.addEventListener("click", ensurePushSubscription);
         const canReadNotification = ("Notification" in window);
         let hasStoredPush = false;
@@ -905,13 +1018,21 @@
         } catch (_) {
           hasStoredPush = false;
         }
-        if (canReadNotification && Notification.permission === "granted" && hasStoredPush) {
-          setPushUiState("active", "Alertas push activas para esta vista movil.");
+        if (canReadNotification && Notification.permission === "granted") {
+          if (hasStoredPush) {
+            pushSubscriptionActive = true;
+            setPushUiState("active", "Alertas activas en este dispositivo.");
+          } else {
+            window.setTimeout(() => {
+              ensurePushSubscription();
+            }, 350);
+          }
         }
       } catch (_) {
         // No bloquear la preventa movil si falla la configuracion de alertas.
       }
     }
+    startPreventaAlertsPolling();
 
     function hideNoItems() {
       if (noItemsRow) noItemsRow.style.display = "none";

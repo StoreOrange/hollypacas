@@ -18,7 +18,7 @@
             </ol>
           </nav>
           <h1 class="h5 mb-1">Mi inventario en caliente</h1>
-          <p class="text-muted mb-0">Vista en vivo con existencias y precio en C$ por defecto.</p>
+          <p class="text-muted mb-0">Vista en vivo con existencias reales por bodega y precio en C$ por defecto.</p>
         </div>
         <div class="d-flex align-items-center gap-2">
           <a class="btn btn-outline-secondary btn-sm d-inline-flex d-lg-none" href="/home">
@@ -71,6 +71,10 @@
                 {{ current_scope_label }}
               </span>
               {% endif %}
+            </div>
+            <div class="col-lg-2 text-muted small">
+              <i class="bi bi-building"></i>
+              Bodega: <strong>{{ current_scope_label }}</strong>
             </div>
             <div class="col-auto text-muted small">
               {% if rate_today %}

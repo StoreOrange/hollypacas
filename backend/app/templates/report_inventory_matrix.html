@@ -178,6 +178,7 @@
           <li class="nav-item"><a class="nav-link" href="/reports/ventas-especial">Ventas especial</a></li>
           <li class="nav-item"><a class="nav-link" href="/reports/kardex">Kardex</a></li>
           <li class="nav-item"><a class="nav-link active" href="/reports/matriz-inventario">Matriz de inventario</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/saldos-bodega">Saldos por bodega</a></li>
         </ul>
       </div>
 
@@ -238,6 +239,7 @@
       <div class="odoo-card mt-3 matrix-theme">
         <div class="d-flex flex-wrap gap-2 mb-2">
           <span class="odoo-pill">Sucursal: {{ selected_branch_name or "Todas" }}</span>
+          <span class="odoo-pill">Bodega: {{ selected_bodega_name or "Todas" }}</span>
           <span class="odoo-pill">Saldo inicial total: {{ "{:,.2f}".format(totals_opening or 0) }}</span>
           <span class="odoo-pill primary">Saldo actual total: {{ "{:,.2f}".format(totals_current or 0) }}</span>
           <span class="odoo-pill">{{ rows|length }} productos</span>

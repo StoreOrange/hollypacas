@@ -474,6 +474,7 @@ def _seed_bodegas(db: Session) -> None:
                     name=name,
                     branch_id=branches[branch_code].id,
                     activo=True,
+                    permite_facturacion=True,
                 )
             )
         elif code in existing and branch_code in branches:
@@ -1603,6 +1604,24 @@ def init_db() -> None:
         if "vendedor_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN vendedor_id INTEGER"))
+    if "bodegas" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("bodegas")}
+        if "permite_facturacion" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bodegas ADD COLUMN permite_facturacion BOOLEAN DEFAULT TRUE"))
+                conn.execute(text("UPDATE bodegas SET permite_facturacion = TRUE WHERE permite_facturacion IS NULL"))
+    if "ventas_preventas" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("ventas_preventas")}
+        if "is_frozen" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_preventas ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("UPDATE ventas_preventas SET is_frozen = FALSE WHERE is_frozen IS NULL"))
+        if "frozen_at" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_preventas ADD COLUMN frozen_at TIMESTAMP"))
+        if "unfrozen_at" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_preventas ADD COLUMN unfrozen_at TIMESTAMP"))
     if "company_profile_settings" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("company_profile_settings")}
         if "ruc" not in columns:

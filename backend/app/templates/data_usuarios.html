@@ -77,8 +77,8 @@
                 <select class="form-select odoo-input" name="bodega_id" id="usuario-bodega-select" required>
                   <option value="">Selecciona</option>
                   {% for bodega in bodegas %}
-                  <option value="{{ bodega.id }}" {% if edit_item and edit_item.default_bodega_id == bodega.id %}selected{% endif %}>
-                    {{ bodega.name }}
+                  <option value="{{ bodega.id }}" data-branch-id="{{ bodega.branch_id }}" {% if edit_item and edit_item.default_bodega_id == bodega.id %}selected{% endif %}>
+                    {{ bodega.name }}{% if not bodega.permite_facturacion %} [SIN FACTURACION]{% endif %}
                   </option>
                   {% endfor %}
                 </select>
@@ -208,7 +208,30 @@
     const branchSelect = document.getElementById('usuario-branch-select');
     const bodegaSelect = document.getElementById('usuario-bodega-select');
     const vendedorSelect = document.getElementById('usuario-vendedor-select');
-    if (!bodegaSelect || !vendedorSelect) return;
+    if (!branchSelect || !bodegaSelect || !vendedorSelect) return;
+
+    const applyBodegaScope = () => {
+      const selectedBranch = String(branchSelect.value || '').trim();
+      const currentBodega = String(bodegaSelect.value || '').trim();
+      let keepCurrent = !currentBodega;
+      Array.from(bodegaSelect.options).forEach((option, index) => {
+        if (index === 0 || !option.value) {
+          option.hidden = false;
+          option.disabled = false;
+          return;
+        }
+        const optionBranch = String(option.dataset.branchId || '').trim();
+        const visible = !selectedBranch || !optionBranch || optionBranch === selectedBranch;
+        option.hidden = !visible;
+        option.disabled = !visible;
+        if (visible && option.value === currentBodega) {
+          keepCurrent = true;
+        }
+      });
+      if (!keepCurrent) {
+        bodegaSelect.value = '';
+      }
+    };
 
     const applyVendedorScope = () => {
       const selectedBodega = String(bodegaSelect.value || '').trim();
@@ -238,8 +261,12 @@
       }
     };
 
-    branchSelect?.addEventListener('change', applyVendedorScope);
+    branchSelect.addEventListener('change', () => {
+      applyBodegaScope();
+      applyVendedorScope();
+    });
     bodegaSelect.addEventListener('change', applyVendedorScope);
+    applyBodegaScope();
     applyVendedorScope();
   })();
 </script>
