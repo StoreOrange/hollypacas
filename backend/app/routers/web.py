@@ -2085,14 +2085,18 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
         except AttributeError:
             fecha_str = str(fecha_base)
 
-    moneda = factura.moneda or "CS"
-    currency_label = "C$" if moneda == "CS" else "$"
-    total_amount = float(factura.total_cs or 0) if moneda == "CS" else float(factura.total_usd or 0)
+    moneda_origen = (factura.moneda or "CS").upper()
+    moneda = "CS"
+    currency_label = "C$"
+    total_amount = float(factura.total_cs or 0)
+    total_amount_usd = float(factura.total_usd or 0)
+    if total_amount_usd <= 0 and float(factura.tasa_cambio or 0) > 0:
+        total_amount_usd = total_amount / float(factura.tasa_cambio or 0)
     subtotal_amount = total_amount
 
     pagos = factura.pagos or []
     total_paid = sum(
-        float(pago.monto_cs or 0) if moneda == "CS" else float(pago.monto_usd or 0)
+        float(pago.monto_cs or 0)
         for pago in pagos
     )
     saldo = total_paid - total_amount
@@ -2123,6 +2127,9 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     if not is_amajo_mode:
         add_line(f"Tipo: {(factura.condicion_venta or 'CONTADO').upper()}", "left", True)
     add_line(f"Fecha: {fecha_str} {hora_str}".strip())
+    add_line(f"Moneda origen: {moneda_origen}", "left")
+    if factura.tasa_cambio:
+        add_line(f"Tasa aplicada: C$ {format_amount(float(factura.tasa_cambio or 0))}", "left")
     add_line(f"Cliente: {cliente}")
     add_line(f"Identificacion R/C: {cliente_id}")
     add_line(f"Vendedor: {vendedor}")
@@ -2143,16 +2150,8 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
         elif item.combo_role == "parent":
             combo_label = " [OFERTA]"
         qty = float(item.cantidad or 0)
-        price = (
-            float(item.precio_unitario_cs or 0)
-            if moneda == "CS"
-            else float(item.precio_unitario_usd or 0)
-        )
-        subtotal = (
-            float(item.subtotal_cs or 0)
-            if moneda == "CS"
-            else float(item.subtotal_usd or 0)
-        )
+        price = float(item.precio_unitario_cs or 0)
+        subtotal = float(item.subtotal_cs or 0)
         total_unidades += qty
         if show_item_code:
             add_line(f"Codigo: {codigo}{combo_label}", "left", True, normal_size)
@@ -2172,6 +2171,7 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     add_line(f"Subtotal: {currency_label} {format_amount(subtotal_amount)}", "right", True, normal_size)
     add_line(f"Descuentos: {currency_label} 0.00", "right", False, normal_size)
     add_line(f"Total: {currency_label} {format_amount(total_amount)}", "right", True, title_size)
+    add_line(f"Equivalente USD: $ {format_amount(total_amount_usd)}", "right", False, normal_size)
 
     if pagos:
         add_line("-" * 32, "center")
@@ -2182,8 +2182,6 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
             label = f"{forma} {banco}".strip()
             monto = (
                 float(pago.monto_cs or 0)
-                if moneda == "CS"
-                else float(pago.monto_usd or 0)
             )
             add_line(f"{label}: {currency_label} {format_amount(monto)}", "left", False, normal_size)
 
@@ -23876,7 +23874,7 @@ def sales_invoice_pdf(
     pdf.drawString(
         margin + 200,
         height - 174,
-        f"Moneda: {factura.moneda}",
+        f"Moneda origen: {(factura.moneda or 'CS').upper()}",
     )
     pdf.drawString(
         margin,
@@ -23889,8 +23887,8 @@ def sales_invoice_pdf(
         f"Tasa: {('C$ %.4f' % float(factura.tasa_cambio)) if factura.tasa_cambio else '-'}",
     )
 
-    moneda = (factura.moneda or "USD").upper()
-    currency_suffix = "C$" if moneda == "CS" else "USD"
+    moneda = "CS"
+    currency_suffix = "C$"
     x_code = margin
     x_desc = margin + 84
     x_qty = margin + 344
@@ -23965,8 +23963,8 @@ def sales_invoice_pdf(
 
         cantidad = float(item.cantidad or 0)
         total_unidades += cantidad
-        precio = float(item.precio_unitario_cs or 0) if moneda == "CS" else float(item.precio_unitario_usd or 0)
-        subtotal = float(item.subtotal_cs or 0) if moneda == "CS" else float(item.subtotal_usd or 0)
+        precio = float(item.precio_unitario_cs or 0)
+        subtotal = float(item.subtotal_cs or 0)
 
         pdf.drawString(x_code, y, codigo[:18])
         for idx, line in enumerate(desc_lines):
@@ -23990,13 +23988,19 @@ def sales_invoice_pdf(
     pdf.drawRightString(x_subtotal, y, _fmt_num(total_unidades))
     y -= 12
     pdf.drawRightString(x_price, y, f"Total {currency_suffix}:")
-    total_factura = float(factura.total_cs or 0) if moneda == "CS" else float(factura.total_usd or 0)
+    total_factura = float(factura.total_cs or 0)
     pdf.drawRightString(x_subtotal, y, _fmt_num(total_factura))
+    total_factura_usd = float(factura.total_usd or 0)
+    if total_factura_usd <= 0 and float(factura.tasa_cambio or 0) > 0:
+        total_factura_usd = total_factura / float(factura.tasa_cambio or 0)
+    y -= 12
+    pdf.setFont("Helvetica", 9)
+    pdf.drawRightString(x_price, y, "Equivalente USD:")
+    pdf.drawRightString(x_subtotal, y, _fmt_num(total_factura_usd))
 
     pago = factura.pagos[0] if factura.pagos else None
     if pago:
         y -= 18
-        pdf.setFont("Helvetica", 9)
         pdf.drawString(
             margin,
             y,
