@@ -1169,12 +1169,16 @@ def _recalc_restaurant_order(order: RestaurantOrder) -> None:
 
 
 def _restaurant_order_payload(order: RestaurantOrder) -> dict[str, object]:
+    location_name = _restaurant_table_location_name(order.table) if order.table else (order.mesa_nombre or "")
     return {
         "id": order.id,
         "numero": order.numero,
         "table_id": order.table_id,
         "service_type": order.service_type,
         "mesa_nombre": order.mesa_nombre or "",
+        "location_name": location_name,
+        "table_sector": _restaurant_table_sector_name(order.table) if order.table else "",
+        "table_name": order.table.name if order.table else "",
         "estado": order.estado,
         "moneda": order.moneda,
         "cliente_id": order.cliente_id,
@@ -1202,12 +1206,31 @@ def _restaurant_order_payload(order: RestaurantOrder) -> dict[str, object]:
     }
 
 
+def _restaurant_table_sector_name(table: Optional[RestaurantTable]) -> str:
+    if not table:
+        return "Salon"
+    return (table.sector or "Salon").strip() or "Salon"
+
+
+def _restaurant_table_location_name(table: Optional[RestaurantTable]) -> str:
+    if not table:
+        return ""
+    area_name = _restaurant_table_sector_name(table)
+    table_name = (table.name or "Mesa").strip() or "Mesa"
+    if table_name.lower().startswith(area_name.lower()):
+        return table_name
+    return f"{area_name} - {table_name}"
+
+
 def _restaurant_table_payload(table: RestaurantTable, active_order: Optional[RestaurantOrder]) -> dict[str, object]:
+    sector_name = _restaurant_table_sector_name(table)
+    location_name = _restaurant_table_location_name(table)
     return {
         "id": table.id,
         "code": table.code,
         "name": table.name,
-        "sector": table.sector or "Salon",
+        "sector": sector_name,
+        "location_name": location_name,
         "shape": (table.shape or "ROUND").upper(),
         "seats": int(table.seats or 0),
         "sort_order": int(table.sort_order or 0),
@@ -1577,6 +1600,11 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
 
 
 def _inventory_cs_only_mode(db: Session) -> bool:
+    # Los entornos de Pacas/Holl trabajan inventario base en USD.
+    # Aunque exista un flag global en el perfil empresarial, no debe
+    # forzar interpretacion en C$ para estos entornos.
+    if _is_hollpacas_mode():
+        return False
     profile = _company_profile_payload(db)
     return bool(profile.get("inventory_cs_only"))
 
@@ -9978,6 +10006,7 @@ def inventory_egresos_page(
     error = request.query_params.get("error")
     success = request.query_params.get("success")
     print_id = request.query_params.get("print_id")
+    print_result_id = request.query_params.get("print_result_id")
     print_mode = (request.query_params.get("print_mode") or "").strip().lower()
     rate_today = (
         db.query(ExchangeRate)
@@ -10004,6 +10033,7 @@ def inventory_egresos_page(
             "selected_product_query": selected_product_query,
             "success": success,
             "print_id": print_id,
+            "print_result_id": print_result_id,
             "print_mode": print_mode,
             "inventory_cs_only": inventory_cs_only,
             "version": settings.UI_VERSION,
@@ -20771,6 +20801,62 @@ def data_restaurant_tables_update(
     return RedirectResponse("/data/mesas?success=Mesa+actualizada", status_code=303)
 
 
+@router.post("/data/mesas/layout")
+def data_restaurant_tables_layout_save(
+    request: Request,
+    layout_json: str = Form("[]"),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if (get_active_company_key() or "").strip().lower() != "barrera":
+        raise HTTPException(status_code=404, detail="Catalogo no disponible")
+    try:
+        payload = json.loads(layout_json or "[]")
+        if not isinstance(payload, list):
+            payload = []
+    except json.JSONDecodeError:
+        return RedirectResponse("/data/mesas?error=Plano+invalido", status_code=303)
+
+    touched_ids: set[int] = set()
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        item_id = int(row.get("id") or 0)
+        if item_id <= 0:
+            continue
+        item = db.query(RestaurantTable).filter(RestaurantTable.id == item_id).first()
+        if not item:
+            continue
+        item.pos_x = max(min(int(row.get("pos_x") or 10), 94), 0)
+        item.pos_y = max(min(int(row.get("pos_y") or 10), 94), 0)
+        item.sort_order = max(int(row.get("sort_order") or 0), 0)
+        touched_ids.add(item_id)
+    if touched_ids:
+        db.commit()
+        return RedirectResponse("/data/mesas?success=Plano+de+mesas+actualizado", status_code=303)
+    return RedirectResponse("/data/mesas?error=No+se+recibieron+mesas+validas", status_code=303)
+
+
+@router.post("/data/mesas/{item_id}/toggle")
+def data_restaurant_tables_toggle(
+    request: Request,
+    item_id: int,
+    active: int = Form(0),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if (get_active_company_key() or "").strip().lower() != "barrera":
+        raise HTTPException(status_code=404, detail="Catalogo no disponible")
+    item = db.query(RestaurantTable).filter(RestaurantTable.id == item_id).first()
+    if not item:
+        return RedirectResponse("/data/mesas?error=Mesa+no+existe", status_code=303)
+    item.active = bool(int(active or 0))
+    db.commit()
+    return RedirectResponse("/data/mesas?success=Estado+de+mesa+actualizado", status_code=303)
+
+
 @router.get("/data/menu")
 def data_menu_layout(
     request: Request,
@@ -23011,6 +23097,241 @@ def inventory_ingreso_pdf(
     return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
 
 
+@router.get("/inventory/egresos/abierta/resultado/pdf")
+def inventory_abierta_resultado_pdf(
+    request: Request,
+    egreso_id: int,
+    ingreso_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.egresos")
+    company_profile = _company_profile_payload(db)
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+    except ImportError as exc:
+        raise HTTPException(status_code=500, detail="ReportLab no esta instalado") from exc
+
+    egreso = db.query(EgresoInventario).filter(EgresoInventario.id == egreso_id).first()
+    if not egreso:
+        raise HTTPException(status_code=404, detail="Egreso no encontrado")
+    ingreso = db.query(IngresoInventario).filter(IngresoInventario.id == ingreso_id).first()
+    if not ingreso:
+        raise HTTPException(status_code=404, detail="Ingreso resultado no encontrado")
+    egreso_total_bultos = sum(float(item.cantidad or 0) for item in (egreso.items or []))
+    ingreso_total_bultos = sum(float(item.cantidad or 0) for item in (ingreso.items or []))
+    egreso_total_items = len(egreso.items or [])
+    ingreso_total_items = len(ingreso.items or [])
+    egreso_total_cs = float(egreso.total_cs or 0)
+    ingreso_total_cs = float(ingreso.total_cs or 0)
+    diferencia_cs = ingreso_total_cs - egreso_total_cs
+    diferencia_bultos = ingreso_total_bultos - egreso_total_bultos
+    resultado_label = "Ganancia" if diferencia_cs > 0 else ("Perdida" if diferencia_cs < 0 else "Equilibrado")
+    resultado_color = (
+        (0.09, 0.33, 0.82)
+        if diferencia_cs > 0
+        else ((0.78, 0.12, 0.12) if diferencia_cs < 0 else (0.19, 0.24, 0.31))
+    )
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    margin = 36
+    table_top_offset = 232
+
+    def draw_footer() -> None:
+        pdf.setFont("Helvetica", 8)
+        pdf.drawRightString(width - margin, margin - 18, f"Pagina {pdf.getPageNumber()}")
+
+    def start_page() -> float:
+        if pdf.getPageNumber() > 1:
+            pdf.showPage()
+        logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
+        if logo_path.exists():
+            pdf.drawImage(
+                str(logo_path),
+                margin,
+                height - 78,
+                width=90,
+                height=60,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+
+        info_x = margin + 110
+        info_y = height - 44
+        branch = egreso.bodega.branch if egreso.bodega else None
+        identity = _company_identity(branch, company_profile)
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(info_x, info_y, identity["company_name"])
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(info_x, info_y - 14, f"Telf. {identity['telefono']}")
+        pdf.drawString(info_x, info_y - 28, f"Direccion: {identity['direccion']}")
+
+        pdf.setFont("Helvetica-Bold", 14)
+        pdf.drawString(margin, height - 120, "Informe de Produccion de Abierta")
+        pdf.setFont("Helvetica", 11)
+        pdf.drawString(margin, height - 136, f"Proceso #{egreso.id} / Resultado #{ingreso.id}")
+        pdf.setStrokeColorRGB(0.75, 0.75, 0.75)
+        pdf.setLineWidth(0.6)
+        pdf.line(margin, height - 146, width - margin, height - 146)
+
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(margin, height - 160, f"Fecha: {egreso.fecha.isoformat()}")
+        pdf.drawString(margin + 200, height - 160, f"Tipo: {egreso.tipo.nombre if egreso.tipo else '-'}")
+        pdf.drawString(margin, height - 174, f"Bodega origen: {egreso.bodega.name if egreso.bodega else '-'}")
+        pdf.drawString(margin + 260, height - 174, f"Bodega resultado: {ingreso.bodega.name if ingreso.bodega else '-'}")
+        pdf.drawString(margin, height - 188, f"Egreso #: {egreso.id}")
+        pdf.drawString(margin + 200, height - 188, f"Ingreso resultado #: {ingreso.id}")
+        observacion = (egreso.observacion or ingreso.observacion or "-").strip()
+        if len(observacion) > 120:
+            observacion = f"{observacion[:117]}..."
+        pdf.drawString(margin, height - 202, f"Detalle: {observacion}")
+        return height - table_top_offset
+
+    def ensure_space(y_pos: float, needed: float) -> float:
+        if y_pos >= margin + needed:
+            return y_pos
+        draw_footer()
+        return start_page()
+
+    def draw_section_title(y_pos: float, title: str) -> float:
+        y_pos = ensure_space(y_pos, 44)
+        pdf.setFillColorRGB(0.93, 0.95, 0.99)
+        pdf.roundRect(margin, y_pos - 4, width - (margin * 2), 18, 6, fill=1, stroke=0)
+        pdf.setFillColorRGB(0.08, 0.18, 0.38)
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(margin + 8, y_pos + 2, title)
+        pdf.setFillColorRGB(0, 0, 0)
+        return y_pos - 22
+
+    def draw_items_table_header(y_pos: float) -> float:
+        pdf.setFont("Helvetica-Bold", 9)
+        pdf.drawString(margin, y_pos, "Codigo")
+        pdf.drawString(margin + 80, y_pos, "Descripcion")
+        pdf.drawRightString(margin + 340, y_pos, "Cant.")
+        pdf.drawRightString(margin + 420, y_pos, "Costo C$")
+        pdf.drawRightString(margin + 500, y_pos, "Subtotal C$")
+        return y_pos - 12
+
+    def draw_items_section(
+        y_pos: float,
+        section_title: str,
+        rows: list[tuple[str, str, float, float, float]],
+        total_bultos: float,
+        total_items: int,
+        total_cs: float,
+    ) -> float:
+        y_pos = draw_section_title(y_pos, section_title)
+        y_pos = ensure_space(y_pos, 42)
+        y_pos = draw_items_table_header(y_pos)
+        pdf.setFont("Helvetica", 8)
+        if not rows:
+            y_pos = ensure_space(y_pos, 28)
+            pdf.drawString(margin, y_pos, "Sin movimientos cargados en esta seccion.")
+            y_pos -= 14
+        for codigo, descripcion, cantidad, costo, subtotal in rows:
+            if y_pos < margin + 60:
+                draw_footer()
+                y_pos = start_page()
+                y_pos = draw_section_title(y_pos, section_title)
+                y_pos = draw_items_table_header(y_pos)
+                pdf.setFont("Helvetica", 8)
+            if len(descripcion) > 48:
+                descripcion = f"{descripcion[:45]}..."
+            pdf.drawString(margin, y_pos, codigo)
+            pdf.drawString(margin + 80, y_pos, descripcion)
+            pdf.drawRightString(margin + 340, y_pos, f"{cantidad:,.2f}")
+            pdf.drawRightString(margin + 420, y_pos, f"{costo:,.2f}")
+            pdf.drawRightString(margin + 500, y_pos, f"{subtotal:,.2f}")
+            y_pos -= 12
+
+        y_pos -= 8
+        pdf.setFont("Helvetica-Bold", 9)
+        pdf.drawRightString(margin + 420, y_pos, "Total bultos:")
+        pdf.drawRightString(margin + 500, y_pos, f"{total_bultos:,.2f}")
+        y_pos -= 12
+        pdf.drawRightString(margin + 420, y_pos, "Total items:")
+        pdf.drawRightString(margin + 500, y_pos, f"{total_items:d}")
+        y_pos -= 12
+        pdf.drawRightString(margin + 420, y_pos, "Total C$:")
+        pdf.drawRightString(margin + 500, y_pos, f"{total_cs:,.2f}")
+        return y_pos - 18
+
+    def draw_balance_summary(y_pos: float) -> float:
+        y_pos = ensure_space(y_pos, 124)
+        pdf.setFillColorRGB(0.95, 0.97, 1)
+        pdf.roundRect(margin, y_pos - 8, width - (margin * 2), 96, 8, fill=1, stroke=0)
+        pdf.setFillColorRGB(0.08, 0.18, 0.38)
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(margin + 10, y_pos + 74, "Resumen del resultado de abierta")
+        pdf.setFillColorRGB(0, 0, 0)
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(margin + 10, y_pos + 58, f"Total costo egresado C$: {egreso_total_cs:,.2f}")
+        pdf.drawString(margin + 250, y_pos + 58, f"Total costo ingresado C$: {ingreso_total_cs:,.2f}")
+        pdf.drawString(margin + 10, y_pos + 42, f"Bultos egresados: {egreso_total_bultos:,.2f}")
+        pdf.drawString(margin + 250, y_pos + 42, f"Bultos ingresados: {ingreso_total_bultos:,.2f}")
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(margin + 10, y_pos + 22, "Balance final:")
+        pdf.setFillColorRGB(*resultado_color)
+        pdf.drawString(margin + 98, y_pos + 22, resultado_label)
+        pdf.drawRightString(width - margin - 10, y_pos + 22, f"C$ {diferencia_cs:,.2f}")
+        pdf.setFillColorRGB(0, 0, 0)
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(margin + 10, y_pos + 6, "Formula: costo ingresado - costo egresado")
+        pdf.drawRightString(width - margin - 10, y_pos + 6, f"Diferencia bultos: {diferencia_bultos:,.2f}")
+        return y_pos - 52
+
+    egreso_rows = [
+        (
+            item.producto.cod_producto if item.producto else "",
+            item.producto.descripcion if item.producto else "",
+            float(item.cantidad or 0),
+            float(item.costo_unitario_cs or 0),
+            float(item.subtotal_cs or 0),
+        )
+        for item in (egreso.items or [])
+    ]
+    ingreso_rows = [
+        (
+            item.producto.cod_producto if item.producto else "",
+            item.producto.descripcion if item.producto else "",
+            float(item.cantidad or 0),
+            float(item.costo_unitario_cs or 0),
+            float(item.subtotal_cs or 0),
+        )
+        for item in (ingreso.items or [])
+    ]
+
+    y = start_page()
+    y = draw_items_section(
+        y,
+        "Detalle de egreso",
+        egreso_rows,
+        egreso_total_bultos,
+        egreso_total_items,
+        egreso_total_cs,
+    )
+    y = draw_items_section(
+        y,
+        "Detalle de ingreso resultado",
+        ingreso_rows,
+        ingreso_total_bultos,
+        ingreso_total_items,
+        ingreso_total_cs,
+    )
+    y = draw_balance_summary(y)
+
+    draw_footer()
+    pdf.save()
+    buffer.seek(0)
+    headers = {
+        "Content-Disposition": f"inline; filename=abierta_resultado_{egreso.id}_{ingreso.id}.pdf"
+    }
+    return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
+
+
 def _ingreso_labels_payload(ingreso: IngresoInventario) -> tuple[list[dict[str, object]], int]:
     grouped: dict[str, dict[str, object]] = {}
     total_labels = 0
@@ -24084,6 +24405,10 @@ def inventory_update_product(
     segmento_id: Optional[str] = Form(None),
     tipo_producto: Optional[str] = Form("DIRECTO"),
     unidad_medida_id: Optional[str] = Form(None),
+    precio_venta1_usd: float = Form(0),
+    precio_venta2_usd: float = Form(0),
+    precio_venta3_usd: float = Form(0),
+    costo_producto_usd: float = Form(0),
     image_file: Optional[UploadFile] = File(None),
     activo: Optional[str] = Form(None),
     redirect_to: Optional[str] = Form(None),
@@ -24107,6 +24432,10 @@ def inventory_update_product(
     descripcion = descripcion.strip()
     if not descripcion:
         return _error("Faltan datos obligatorios")
+    if float(precio_venta1_usd or 0) <= 0:
+        return _error("Precio de venta obligatorio")
+    if float(costo_producto_usd or 0) <= 0:
+        return _error("Costo obligatorio")
     tipo_producto_normalized = (tipo_producto or "DIRECTO").strip().upper()
     if tipo_producto_normalized not in {"DIRECTO", "MATERIA_PRIMA", "RECETA"}:
         tipo_producto_normalized = "DIRECTO"
@@ -24120,14 +24449,50 @@ def inventory_update_product(
     if not producto:
         return _error("Producto no encontrado")
 
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    if not rate_today:
+        return _error("Tasa de cambio no configurada")
+    tasa = float(rate_today.rate or 0)
+    if tasa <= 0:
+        return _error("Tasa de cambio no configurada")
+
     selected_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=False) or producto.unidad_medida or _default_product_unit(db)
     if not selected_unit:
         return _error("Unidad de medida invalida")
     product_images_enabled = _product_images_enabled(db)
+    inventory_cs_only = _inventory_cs_only_mode(db)
+    if inventory_cs_only:
+        precio_venta1_cs = float(precio_venta1_usd or 0)
+        precio_venta2_cs = float(precio_venta2_usd or 0)
+        precio_venta3_cs = float(precio_venta3_usd or 0)
+        costo_producto_cs = float(costo_producto_usd or 0)
+        precio_venta1_usd = (precio_venta1_cs / tasa) if tasa else 0
+        precio_venta2_usd = (precio_venta2_cs / tasa) if tasa else 0
+        precio_venta3_usd = (precio_venta3_cs / tasa) if tasa else 0
+        costo_producto_usd = (costo_producto_cs / tasa) if tasa else 0
+    else:
+        precio_venta1_cs = float(precio_venta1_usd or 0) * tasa
+        precio_venta2_cs = float(precio_venta2_usd or 0) * tasa
+        precio_venta3_cs = float(precio_venta3_usd or 0) * tasa
+        costo_producto_cs = float(costo_producto_usd or 0) * tasa
+
     producto.descripcion = descripcion
     producto.linea_id = _to_int(linea_id)
     producto.segmento_id = _to_int(segmento_id)
     producto.tipo_producto = tipo_producto_normalized
+    producto.precio_venta1 = precio_venta1_cs
+    producto.precio_venta2 = precio_venta2_cs
+    producto.precio_venta3 = precio_venta3_cs
+    producto.precio_venta1_usd = float(precio_venta1_usd or 0)
+    producto.precio_venta2_usd = float(precio_venta2_usd or 0)
+    producto.precio_venta3_usd = float(precio_venta3_usd or 0)
+    producto.costo_producto = costo_producto_cs
+    producto.tasa_cambio = tasa
     try:
         uploaded_image_url = _save_product_asset(image_file) if product_images_enabled else None
     except ValueError as exc:
@@ -24146,6 +24511,10 @@ def inventory_update_product(
                 "id": producto.id,
                 "cod_producto": producto.cod_producto,
                 "descripcion": producto.descripcion,
+                "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
+                "precio_venta1": float(producto.precio_venta1 or 0),
+                "costo_usd": float(costo_producto_usd or 0),
+                "costo_cs": float(producto.costo_producto or 0),
                 "activo": bool(producto.activo),
                 "image_url": (producto.image_url or "") if product_images_enabled else "",
                 "tipo_producto": producto.tipo_producto or "DIRECTO",
@@ -25778,6 +26147,7 @@ async def inventory_create_egreso(
 
     tasa = 0.0 if (es_traslado or es_abierta) else (float(rate_today.rate) if rate_today else 0.0)
     fecha_value = date.fromisoformat(str(fecha).split("T")[0])
+    ingreso_resultado_id: Optional[int] = None
     egreso = EgresoInventario(
         tipo_id=int(tipo_id),
         bodega_id=int(bodega_id),
@@ -26011,6 +26381,7 @@ async def inventory_create_egreso(
         )
         db.add(ingreso_resultado)
         db.flush()
+        ingreso_resultado_id = int(ingreso_resultado.id)
         for row in result_rows:
             db.add(
                 IngresoItem(
@@ -26052,6 +26423,11 @@ async def inventory_create_egreso(
     if auto_entry:
         db.add(auto_entry)
     db.commit()
+    if es_abierta and ingreso_resultado_id:
+        return RedirectResponse(
+            f"{redirect_to}?success=Egreso+registrado&print_id={egreso.id}&print_result_id={ingreso_resultado_id}&print_mode=abierta&focus_egreso_id={egreso.id}",
+            status_code=303,
+        )
     return RedirectResponse(
         f"{redirect_to}?success=Egreso+registrado&print_id={egreso.id}&print_mode={'ticket' if es_traslado else 'pdf'}",
         status_code=303,
@@ -26421,7 +26797,7 @@ async def restaurant_order_create_with_item(
     elif service_type == "DELIVERY":
         mesa_nombre = "Delivery"
     elif table:
-        mesa_nombre = table.name
+        mesa_nombre = _restaurant_table_location_name(table)
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch or not bodega:
         if is_fetch:
@@ -26758,7 +27134,7 @@ async def restaurant_order_change_table(
 
     old_table_payload = _restaurant_table_payload(previous_table, None) if previous_table else None
     order.table_id = target_table.id
-    order.mesa_nombre = target_table.name
+    order.mesa_nombre = _restaurant_table_location_name(target_table)
     db.flush()
     db.commit()
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order.id).first()

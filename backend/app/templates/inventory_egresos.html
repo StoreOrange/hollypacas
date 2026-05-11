@@ -1209,7 +1209,7 @@
   {% if print_mode == "ticket" %}
   const basePrintUrl = "/inventory/egresos/{{ print_id }}/ticket/print?copies=1&return_to=/inventory/egresos";
   {% elif print_mode == "abierta" %}
-  const basePrintUrl = "/inventory/egresos/{{ print_id }}/pdf";
+  const basePrintUrl = "/inventory/egresos/abierta/resultado/pdf?egreso_id={{ print_id }}&ingreso_id={{ print_result_id or print_id }}";
   {% else %}
   const basePrintUrl = "/inventory/egresos/{{ print_id }}/pdf";
   {% endif %}

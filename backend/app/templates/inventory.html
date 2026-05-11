@@ -23,6 +23,70 @@
     font-weight: 800;
     color: rgba(84,116,155,.82);
   }
+  #inventory-modal {
+    align-items: flex-start;
+    padding-top: .9rem;
+    padding-bottom: .9rem;
+  }
+  #inventory-modal .odoo-modal-inventory {
+    height: min(860px, calc(100vh - 28px));
+    max-height: calc(100vh - 28px);
+    min-height: 720px;
+  }
+  #inventory-modal .odoo-modal-header {
+    align-items: flex-start;
+    gap: 1rem;
+    padding-top: .95rem !important;
+    padding-bottom: .95rem !important;
+  }
+  #inventory-modal .odoo-modal-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .55rem;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding: .1rem 0 .45rem;
+    margin-bottom: .15rem;
+    -webkit-overflow-scrolling: touch;
+  }
+  #inventory-modal .odoo-modal-tabs .btn {
+    flex: 0 0 auto;
+    min-height: 38px;
+    padding: .42rem .82rem;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+  #inventory-modal .odoo-modal-body {
+    flex: 1 1 auto;
+    max-height: calc(100vh - 228px);
+    min-height: 480px;
+    padding-top: .7rem !important;
+  }
+  #inventory-modal .modal-panel:not(.hidden) {
+    min-height: 420px;
+  }
+  @media (max-width: 991.98px) {
+    #inventory-modal {
+      padding-top: .4rem;
+      padding-bottom: .4rem;
+    }
+    #inventory-modal .odoo-modal-inventory {
+      height: calc(100vh - 10px);
+      max-height: calc(100vh - 10px);
+      min-height: calc(100vh - 10px);
+    }
+    #inventory-modal .odoo-modal-tabs {
+      flex-wrap: nowrap;
+      padding-bottom: .35rem;
+    }
+    #inventory-modal .odoo-modal-body {
+      max-height: none;
+      min-height: 0;
+    }
+    #inventory-modal .modal-panel:not(.hidden) {
+      min-height: 0;
+    }
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -656,6 +720,7 @@
             </div>
             {% endif %}
           </div>
+          </div>
           <div class="odoo-action-bar">
             <span class="odoo-help">Campos obligatorios *</span>
             <div class="d-flex align-items-center gap-2">
@@ -671,85 +736,142 @@
         </form>
       </div>
       <div id="tab-linea" class="modal-panel hidden">
-        <form class="space-y-3" method="post" action="/inventory/linea">
-          <div class="text-sm text-slate">Codigo automatico</div>
-          <input name="linea" class="w-full rounded-xl border border-slate-200 px-3 py-2" placeholder="Linea" />
-          <label class="flex items-center gap-2 text-sm text-slate">
-            <input class="accent-brand" type="checkbox" name="activo" checked />
-            Activo
-          </label>
-          <button class="w-full rounded-xl border border-emerald-200 bg-emerald-50 py-2 font-semibold text-emerald-900 hover:bg-emerald-100">
-            Guardar linea
-          </button>
-        </form>
+        <div class="row g-4">
+          <div class="col-lg-5">
+            <div class="odoo-modal-section h-100">
+              <div class="odoo-modal-title mb-3">Nueva linea</div>
+              <form method="post" action="/inventory/linea" class="d-grid gap-3">
+                <div class="small text-muted">Codigo automatico</div>
+                <input name="linea" class="form-control odoo-input" placeholder="Nombre de la linea" />
+                <label class="d-inline-flex align-items-center gap-2 small text-muted">
+                  <input class="accent-brand" type="checkbox" name="activo" checked />
+                  Activo
+                </label>
+                <button class="btn btn-outline-success w-100" type="submit">Guardar linea</button>
+              </form>
+            </div>
+          </div>
+          <div class="col-lg-7">
+            <div class="odoo-modal-section h-100">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="odoo-modal-title mb-0">Lineas registradas</div>
+                <span class="odoo-pill">{{ lineas|length }}</span>
+              </div>
+              <div class="d-grid gap-2" style="max-height: 360px; overflow:auto;">
+                {% for linea in lineas %}
+                <button class="modal-tab btn btn-outline-secondary text-start d-flex align-items-center justify-content-between gap-3" data-target="tab-linea-edit" type="button" data-linea-shortcut="{{ linea.id }}">
+                  <span>
+                    <strong>{{ linea.linea }}</strong>
+                    <span class="d-block small text-muted">{{ linea.cod_linea }}</span>
+                  </span>
+                  <span class="badge {% if linea.activo %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ 'Activa' if linea.activo else 'Inactiva' }}</span>
+                </button>
+                {% else %}
+                <div class="small text-muted text-center py-4">Sin lineas registradas.</div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div id="tab-segmento" class="modal-panel hidden">
-        <form class="space-y-3" method="post" action="/inventory/segmento">
-          <input name="segmento" class="w-full rounded-xl border border-slate-200 px-3 py-2" placeholder="Segmento" />
-          <button class="w-full rounded-xl border border-violet-200 bg-violet-50 py-2 font-semibold text-violet-900 hover:bg-violet-100">
-            Guardar segmento
-          </button>
-        </form>
+        <div class="row g-4">
+          <div class="col-lg-5">
+            <div class="odoo-modal-section h-100">
+              <div class="odoo-modal-title mb-3">Nuevo segmento</div>
+              <form method="post" action="/inventory/segmento" class="d-grid gap-3">
+                <input name="segmento" class="form-control odoo-input" placeholder="Nombre del segmento" />
+                <button class="btn btn-outline-primary w-100" type="submit">Guardar segmento</button>
+              </form>
+            </div>
+          </div>
+          <div class="col-lg-7">
+            <div class="odoo-modal-section h-100">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="odoo-modal-title mb-0">Segmentos registrados</div>
+                <span class="odoo-pill">{{ segmentos|length }}</span>
+              </div>
+              <div class="d-grid gap-2" style="max-height: 360px; overflow:auto;">
+                {% for seg in segmentos %}
+                <button class="modal-tab btn btn-outline-secondary text-start d-flex align-items-center justify-content-between gap-3" data-target="tab-segmento-edit" type="button" data-segmento-shortcut="{{ seg.id }}">
+                  <span>
+                    <strong>{{ seg.segmento }}</strong>
+                    <span class="d-block small text-muted">Click para editar este segmento</span>
+                  </span>
+                  <i class="bi bi-pencil-square"></i>
+                </button>
+                {% else %}
+                <div class="small text-muted text-center py-4">Sin segmentos registrados.</div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div id="tab-linea-edit" class="modal-panel hidden">
-        <form id="linea-edit-form" class="space-y-3" method="post" action="/inventory/linea/0/update">
-          <label class="block text-sm font-semibold text-ink">
-            Selecciona linea *
-            <select id="edit-linea-select" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 select2" required>
-              <option value="">Selecciona</option>
-              {% for linea in lineas %}
-              <option value="{{ linea.id }}" data-linea="{{ linea.linea }}" data-activo="{{ 1 if linea.activo else 0 }}">{{ linea.linea }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label class="block text-sm font-semibold text-ink">
-            Linea *
-            <input id="edit-linea-name" name="linea" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2" required />
-          </label>
-          <label class="flex items-center gap-2 text-sm text-slate">
-            <input id="edit-linea-activo" class="accent-brand" type="checkbox" name="activo" checked />
-            Activo
-          </label>
-          <button class="w-full rounded-xl border border-emerald-200 bg-emerald-50 py-2 font-semibold text-emerald-900 hover:bg-emerald-100">
-            Guardar cambios
-          </button>
-        </form>
+        <div class="odoo-modal-section odoo-compact-card">
+          <div class="odoo-modal-title mb-3">Editar linea</div>
+          <form id="linea-edit-form" class="d-grid gap-3" method="post" action="/inventory/linea/0/update">
+            <label class="small fw-semibold text-dark">
+              Selecciona linea *
+              <select id="edit-linea-select" class="form-select odoo-input mt-2 select2" required>
+                <option value="">Selecciona</option>
+                {% for linea in lineas %}
+                <option value="{{ linea.id }}" data-linea="{{ linea.linea }}" data-activo="{{ 1 if linea.activo else 0 }}">{{ linea.linea }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="small fw-semibold text-dark">
+              Linea *
+              <input id="edit-linea-name" name="linea" class="form-control odoo-input mt-2" required />
+            </label>
+            <label class="d-inline-flex align-items-center gap-2 small text-muted">
+              <input id="edit-linea-activo" class="accent-brand" type="checkbox" name="activo" checked />
+              Activo
+            </label>
+            <button class="btn btn-outline-success w-100" type="submit">Guardar cambios</button>
+          </form>
+        </div>
       </div>
       <div id="tab-segmento-edit" class="modal-panel hidden">
-        <form id="segmento-edit-form" class="space-y-3" method="post" action="/inventory/segmento/0/update">
-          <label class="block text-sm font-semibold text-ink">
-            Selecciona segmento *
-            <select id="edit-segmento-select" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 select2" required>
-              <option value="">Selecciona</option>
-              {% for seg in segmentos %}
-              <option value="{{ seg.id }}" data-segmento="{{ seg.segmento }}">{{ seg.segmento }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label class="block text-sm font-semibold text-ink">
-            Segmento *
-            <input id="edit-segmento-name" name="segmento" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2" required />
-          </label>
-          <button class="w-full rounded-xl border border-violet-200 bg-violet-50 py-2 font-semibold text-violet-900 hover:bg-violet-100">
-            Guardar cambios
-          </button>
-        </form>
+        <div class="odoo-modal-section odoo-compact-card">
+          <div class="odoo-modal-title mb-3">Editar segmento</div>
+          <form id="segmento-edit-form" class="d-grid gap-3" method="post" action="/inventory/segmento/0/update">
+            <label class="small fw-semibold text-dark">
+              Selecciona segmento *
+              <select id="edit-segmento-select" class="form-select odoo-input mt-2 select2" required>
+                <option value="">Selecciona</option>
+                {% for seg in segmentos %}
+                <option value="{{ seg.id }}" data-segmento="{{ seg.segmento }}">{{ seg.segmento }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="small fw-semibold text-dark">
+              Segmento *
+              <input id="edit-segmento-name" name="segmento" class="form-control odoo-input mt-2" required />
+            </label>
+            <button class="btn btn-outline-primary w-100" type="submit">Guardar cambios</button>
+          </form>
+        </div>
       </div>
       <div id="tab-import" class="modal-panel hidden">
-        <p class="text-xs text-slate">
-          Excel con columnas: codigo, descripcion, linea, segmento, costo_usd, precio_usd, precio_cs, saldo_central, saldo_esteli.
-        </p>
-        <a class="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-sky-800" href="/inventory/import/template">
-          <i class="bi bi-download"></i>
-          Descargar plantilla Excel
-        </a>
-        <form class="mt-3 space-y-3" method="post" action="/inventory/import" enctype="multipart/form-data">
-          <input name="file" type="file" accept=".xlsx" class="w-full rounded-xl border border-slate-200 px-3 py-2 bg-white text-sm" required />
-          <button class="w-full rounded-xl border border-sky-200 bg-sky-50 py-2 font-semibold text-sky-900 hover:bg-sky-100 inline-flex items-center justify-center gap-2">
-            <i class="bi bi-upload"></i>
-            Importar Excel
-          </button>
-        </form>
+        <div class="odoo-modal-section odoo-compact-card">
+          <div class="odoo-modal-title mb-3">Importar productos</div>
+          <p class="text-xs text-slate">
+            Excel con columnas: codigo, descripcion, linea, segmento, costo_usd, precio_usd, precio_cs, saldo_central, saldo_esteli.
+          </p>
+          <a class="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-sky-800" href="/inventory/import/template">
+            <i class="bi bi-download"></i>
+            Descargar plantilla Excel
+          </a>
+          <form class="mt-3 space-y-3" method="post" action="/inventory/import" enctype="multipart/form-data">
+            <input name="file" type="file" accept=".xlsx" class="w-full rounded-xl border border-slate-200 px-3 py-2 bg-white text-sm" required />
+            <button class="w-full rounded-xl border border-sky-200 bg-sky-50 py-2 font-semibold text-sky-900 hover:bg-sky-100 inline-flex items-center justify-center gap-2">
+              <i class="bi bi-upload"></i>
+              Importar Excel
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   </div>
@@ -897,6 +1019,7 @@
   const comboSection = document.getElementById("combo-section");
   const recipeSection = document.getElementById("recipe-section");
   const saveProductButton = document.getElementById("save-product");
+  const modalBody = document.querySelector("#inventory-modal .odoo-modal-body");
   let currentProductId = null;
   let originalProductType = "DIRECTO";
   let currentRecipeItems = [];
@@ -975,8 +1098,14 @@
       tab.classList.toggle("btn-outline-secondary", !active);
     });
     modalPanels.forEach((panel) => {
-      panel.classList.toggle("hidden", panel.id !== targetId);
+      const active = panel.id === targetId;
+      panel.classList.toggle("hidden", !active);
+      panel.style.display = active ? "block" : "none";
+      panel.setAttribute("aria-hidden", active ? "false" : "true");
     });
+    if (modalBody) {
+      modalBody.scrollTop = 0;
+    }
   };
 
   const resetProductForm = () => {
@@ -1477,6 +1606,34 @@
       }
     });
   }
+
+  document.querySelectorAll("[data-linea-shortcut]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const lineaId = button.getAttribute("data-linea-shortcut");
+      setActiveTab("tab-linea-edit");
+      if (!editLineaSelect || !lineaId) return;
+      editLineaSelect.value = lineaId;
+      if (window.$ && $.fn.select2) {
+        $(editLineaSelect).val(lineaId).trigger("change");
+      } else {
+        editLineaSelect.dispatchEvent(new Event("change"));
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-segmento-shortcut]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const segmentoId = button.getAttribute("data-segmento-shortcut");
+      setActiveTab("tab-segmento-edit");
+      if (!editSegmentoSelect || !segmentoId) return;
+      editSegmentoSelect.value = segmentoId;
+      if (window.$ && $.fn.select2) {
+        $(editSegmentoSelect).val(segmentoId).trigger("change");
+      } else {
+        editSegmentoSelect.dispatchEvent(new Event("change"));
+      }
+    });
+  });
 
   document.querySelectorAll(".product-row").forEach((row) => {
     row.addEventListener("click", (event) => {
