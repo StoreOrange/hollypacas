@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Churrasco">
+  <defs>
+    <linearGradient id="bg-churrasco" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2a120e">
+        <animate attributeName="stop-color" values="#2a120e;#6f2618;#2a120e" dur="7s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" stop-color="#6f2618">
+        <animate attributeName="stop-color" values="#6f2618;#2a120e;#6f2618" dur="7s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    <radialGradient id="halo-churrasco" cx="50%" cy="38%" r="58%">
+      <stop offset="0%" stop-color="#f7b267" stop-opacity=".70"/>
+      <stop offset="100%" stop-color="#ff6b35" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur-churrasco" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect width="640" height="480" rx="36" fill="url(#bg-churrasco)"/>
+  <circle cx="320" cy="210" r="154" fill="url(#halo-churrasco)" filter="url(#blur-churrasco)">
+    <animate attributeName="r" values="146;164;146" dur="3.6s" repeatCount="indefinite"/>
+  </circle>
+  <path d="M58 84c118-62 406-74 522 10" stroke="rgba(255,255,255,.10)" stroke-width="24" fill="none" stroke-linecap="round"/>
+  <path d="M84 368c136 64 346 64 472 0" stroke="rgba(255,255,255,.08)" stroke-width="28" fill="none" stroke-linecap="round"/>
+  <g opacity=".16">
+    <circle cx="114" cy="118" r="14" fill="#fff"/>
+    <circle cx="544" cy="120" r="10" fill="#fff"/>
+    <circle cx="84" cy="322" r="8" fill="#fff"/>
+    <circle cx="572" cy="306" r="12" fill="#fff"/>
+  </g>
+  
+  <g transform="translate(0 2)">
+    <ellipse cx="320" cy="222" rx="104" ry="72" fill="rgba(255,255,255,.18)" stroke="rgba(255,255,255,.65)" stroke-width="6"/>
+    <path d="M256 238c0-44 34-78 74-78 28 0 42 12 54 28 10 12 14 26 14 42 0 44-34 78-74 78-42 0-68-26-68-70z" fill="rgba(255,255,255,.25)"/>
+    <ellipse cx="338" cy="214" rx="26" ry="18" fill="rgba(255,255,255,.58)"/>
+    <path d="M246 142c-10-18 2-36 18-42-2 18 10 26 18 40 8 10 6 26-6 34-14-4-22-16-30-32z" fill="#ffd37a">
+      <animateTransform attributeName="transform" type="translate" dur="1.5s" repeatCount="indefinite" values="0 0;0 -6;0 0"/>
+    </path>
+    <path d="M288 126c-8-20 6-38 20-46 0 18 12 30 18 44 6 12 0 24-12 30-12-6-20-14-26-28z" fill="#ff8f5a">
+      <animateTransform attributeName="transform" type="translate" dur="1.2s" repeatCount="indefinite" values="0 0;0 -8;0 0"/>
+    </path>
+    <path d="M332 126c-8-20 6-38 20-46 0 18 12 30 18 44 6 12 0 24-12 30-12-6-20-14-26-28z" fill="#ffe29a">
+      <animateTransform attributeName="transform" type="translate" dur="1.7s" repeatCount="indefinite" values="0 0;0 -7;0 0"/>
+    </path>
+  </g>
+
+  <g transform="translate(48 42)">
+    <rect x="0" y="0" width="236" height="36" rx="18" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.18)"/>
+    <text x="18" y="24" fill="#eef7ff" font-size="15" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="2">CORTES PREMIUM</text>
+  </g>
+  <g transform="translate(48 330)">
+    <text x="0" y="0" fill="#ffffff" font-size="38" font-family="Segoe UI, Arial, sans-serif" font-weight="800">Churrasco</text>
+    <text x="0" y="42" fill="rgba(255,255,255,.84)" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="600">C$ 450.00</text>
+    <text x="0" y="76" fill="rgba(255,255,255,.54)" font-size="13" font-family="Consolas, monospace" font-weight="700" letter-spacing="2">CHURRASCO</text>
+  </g>
+</svg>

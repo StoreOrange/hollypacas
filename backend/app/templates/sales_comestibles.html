@@ -481,8 +481,8 @@
                   Moneda de la factura *
                 </label>
                 <select id="venta-moneda" name="moneda" class="mt-2 w-full odoo-input form-select select2" form="sales-form" required>
-                  <option value="CS" selected>C$</option>
-                  <option value="USD">USD</option>
+                  <option value="CS" {% if default_sales_currency == "CS" %}selected{% endif %}>C$</option>
+                  <option value="USD" {% if default_sales_currency == "USD" %}selected{% endif %}>USD</option>
                 </select>
               </div>
               <div class="mt-4">
@@ -888,6 +888,7 @@
   const payHora = document.getElementById("pay-hora");
   const payTotalUsd = document.getElementById("pay-total-usd");
   const payTotalCs = document.getElementById("pay-total-cs");
+  const defaultSalesCurrency = {{ (default_sales_currency or "CS") | tojson }};
   const confirmSale = document.getElementById("confirm-sale");
   const addPayment = document.getElementById("add-payment");
   const productListPanel = document.getElementById("product-list-panel");
@@ -3221,8 +3222,8 @@
       if (payTotalUsd) payTotalUsd.textContent = formatMoney(currentTotals.usd, "USD");
       if (payTotalCs) payTotalCs.textContent = formatMoney(currentTotals.cs, "CS");
       renderPaymentList();
-      if (monedaField) monedaField.value = "CS";
-      if (pagoMoneda) pagoMoneda.value = "CS";
+      if (monedaField) monedaField.value = defaultSalesCurrency || "CS";
+      if (pagoMoneda) pagoMoneda.value = defaultSalesCurrency || "CS";
       if (formaPagoField) {
         const efectivoOption = Array.from(formaPagoField.options).find((opt) =>
           opt.textContent?.toLowerCase().includes("efectivo")

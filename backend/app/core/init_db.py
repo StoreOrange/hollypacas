@@ -583,11 +583,36 @@ def _seed_restaurant_tables(db: Session) -> None:
     bodega = db.query(Bodega).filter(func.lower(Bodega.code) == "central").first()
     if not branch or not bodega:
         return
-    defaults = [
-        ("M-01", "Mesa 1", "Salon principal", "ROUND", 4, 10, 10, 18, 1, 1),
-        ("M-02", "Mesa 2", "Salon principal", "ROUND", 4, 20, 38, 18, 1, 1),
-        ("M-03", "Mesa 3", "Salon principal", "ROUND", 4, 30, 66, 18, 1, 1),
+    area_specs = [
+        ("Food Court", "FC", 12, 12),
+        ("Terraza", "TR", 38, 12),
+        ("Pista", "PI", 12, 58),
+        ("Jardin", "JA", 38, 58),
     ]
+    defaults: list[tuple[str, str, str, str, int, int, int, int, int, int]] = []
+    sort_order = 10
+    for area_name, area_code, start_x, start_y in area_specs:
+        for index in range(10):
+            row = index // 5
+            col = index % 5
+            table_number = index + 1
+            pos_x = start_x + (col * 6)
+            pos_y = start_y + (row * 10)
+            defaults.append(
+                (
+                    f"{area_code}-{table_number:02d}",
+                    f"Mesa {table_number}",
+                    area_name,
+                    "ROUND" if row == 0 else "SQUARE",
+                    4,
+                    sort_order,
+                    pos_x,
+                    pos_y,
+                    1,
+                    1,
+                )
+            )
+            sort_order += 10
     existing = {
         (int(item.branch_id), (item.code or "").strip().upper()): item
         for item in db.query(RestaurantTable).all()

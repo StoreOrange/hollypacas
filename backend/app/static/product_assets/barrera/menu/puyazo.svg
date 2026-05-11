@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Puyazo">
+  <defs>
+    <linearGradient id="bg-puyazo" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2a120e">
+        <animate attributeName="stop-color" values="#2a120e;#6f2618;#2a120e" dur="7s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" stop-color="#6f2618">
+        <animate attributeName="stop-color" values="#6f2618;#2a120e;#6f2618" dur="7s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    <radialGradient id="halo-puyazo" cx="50%" cy="38%" r="58%">
+      <stop offset="0%" stop-color="#f7b267" stop-opacity=".70"/>
+      <stop offset="100%" stop-color="#ff6b35" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur-puyazo" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect width="640" height="480" rx="36" fill="url(#bg-puyazo)"/>
+  <circle cx="320" cy="210" r="154" fill="url(#halo-puyazo)" filter="url(#blur-puyazo)">
+    <animate attributeName="r" values="146;164;146" dur="3.6s" repeatCount="indefinite"/>
+  </circle>
+  <path d="M58 84c118-62 406-74 522 10" stroke="rgba(255,255,255,.10)" stroke-width="24" fill="none" stroke-linecap="round"/>
+  <path d="M84 368c136 64 346 64 472 0" stroke="rgba(255,255,255,.08)" stroke-width="28" fill="none" stroke-linecap="round"/>
+  <g opacity=".16">
+    <circle cx="114" cy="118" r="14" fill="#fff"/>
+    <circle cx="544" cy="120" r="10" fill="#fff"/>
+    <circle cx="84" cy="322" r="8" fill="#fff"/>
+    <circle cx="572" cy="306" r="12" fill="#fff"/>
+  </g>
+  
+  <g transform="translate(0 8)">
+    <ellipse cx="320" cy="230" rx="124" ry="62" fill="rgba(255,255,255,.16)" stroke="rgba(255,255,255,.64)" stroke-width="6"/>
+    <rect x="228" y="176" width="184" height="102" rx="48" fill="rgba(255,255,255,.24)" transform="rotate(-8 320 226)"/>
+    <ellipse cx="334" cy="218" rx="24" ry="16" fill="rgba(255,255,255,.56)"/>
+  </g>
+
+  <g transform="translate(48 42)">
+    <rect x="0" y="0" width="236" height="36" rx="18" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.18)"/>
+    <text x="18" y="24" fill="#eef7ff" font-size="15" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="2">CORTES PREMIUM</text>
+  </g>
+  <g transform="translate(48 330)">
+    <text x="0" y="0" fill="#ffffff" font-size="38" font-family="Segoe UI, Arial, sans-serif" font-weight="800">Puyazo</text>
+    <text x="0" y="42" fill="rgba(255,255,255,.84)" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="600">C$ 450.00</text>
+    <text x="0" y="76" fill="rgba(255,255,255,.54)" font-size="13" font-family="Consolas, monospace" font-weight="700" letter-spacing="2">PUYAZO</text>
+  </g>
+</svg>

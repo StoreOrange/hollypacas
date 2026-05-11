@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Gaseosa Botella 500ML">
+  <defs>
+    <linearGradient id="bg-gaseosa-botella-500ml" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#11263c">
+        <animate attributeName="stop-color" values="#11263c;#1f5c8d;#11263c" dur="7s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" stop-color="#1f5c8d">
+        <animate attributeName="stop-color" values="#1f5c8d;#11263c;#1f5c8d" dur="7s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    <radialGradient id="halo-gaseosa-botella-500ml" cx="50%" cy="38%" r="58%">
+      <stop offset="0%" stop-color="#8fd3ff" stop-opacity=".70"/>
+      <stop offset="100%" stop-color="#4cc9f0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur-gaseosa-botella-500ml" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect width="640" height="480" rx="36" fill="url(#bg-gaseosa-botella-500ml)"/>
+  <circle cx="320" cy="210" r="154" fill="url(#halo-gaseosa-botella-500ml)" filter="url(#blur-gaseosa-botella-500ml)">
+    <animate attributeName="r" values="146;164;146" dur="3.6s" repeatCount="indefinite"/>
+  </circle>
+  <path d="M58 84c118-62 406-74 522 10" stroke="rgba(255,255,255,.10)" stroke-width="24" fill="none" stroke-linecap="round"/>
+  <path d="M84 368c136 64 346 64 472 0" stroke="rgba(255,255,255,.08)" stroke-width="28" fill="none" stroke-linecap="round"/>
+  <g opacity=".16">
+    <circle cx="114" cy="118" r="14" fill="#fff"/>
+    <circle cx="544" cy="120" r="10" fill="#fff"/>
+    <circle cx="84" cy="322" r="8" fill="#fff"/>
+    <circle cx="572" cy="306" r="12" fill="#fff"/>
+  </g>
+  
+  <g transform="translate(0 2)">
+    <rect x="286" y="116" width="68" height="166" rx="24" fill="rgba(255,255,255,.16)" stroke="rgba(255,255,255,.68)" stroke-width="6"/>
+    <rect x="298" y="132" width="44" height="116" rx="18" fill="rgba(255,255,255,.20)"/>
+    <rect x="304" y="108" width="32" height="14" rx="6" fill="#dcefff"/>
+    <path d="M298 162h44" stroke="rgba(255,255,255,.64)" stroke-width="6" stroke-linecap="round"/>
+    <path d="M298 194h44" stroke="rgba(255,255,255,.52)" stroke-width="6" stroke-linecap="round"/>
+    <path d="M298 226h44" stroke="rgba(255,255,255,.46)" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="320" cy="210" r="58" fill="rgba(76,201,240,.18)">
+      <animate attributeName="r" values="52;62;52" dur="2.6s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <g transform="translate(48 42)">
+    <rect x="0" y="0" width="236" height="36" rx="18" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.18)"/>
+    <text x="18" y="24" fill="#eef7ff" font-size="15" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="2">BEBIDAS</text>
+  </g>
+  <g transform="translate(48 330)">
+    <text x="0" y="0" fill="#ffffff" font-size="38" font-family="Segoe UI, Arial, sans-serif" font-weight="800">Gaseosa Botella 500ML</text>
+    <text x="0" y="42" fill="rgba(255,255,255,.84)" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="600">C$ 50.00</text>
+    <text x="0" y="76" fill="rgba(255,255,255,.54)" font-size="13" font-family="Consolas, monospace" font-weight="700" letter-spacing="2">GASEOSA BOTELLA 50</text>
+  </g>
+</svg>

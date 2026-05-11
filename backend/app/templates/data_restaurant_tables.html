@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
+{% set area_ns = namespace(items=[]) %}
+{% for item in items if item.active %}
+  {% if (item.sector or 'Salon principal') not in area_ns.items %}
+    {% set _ = area_ns.items.append(item.sector or 'Salon principal') %}
+  {% endif %}
+{% endfor %}
 <style>
   .mesa-config-shell {
     background:
@@ -50,6 +56,46 @@
       linear-gradient(0deg, rgba(126,167,216,.08) 1px, transparent 1px) 0 0 / 40px 40px,
       linear-gradient(180deg, #ffffff, #f5f9ff);
     overflow: hidden;
+  }
+  .mesa-area-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .6rem;
+    margin-bottom: .9rem;
+  }
+  .mesa-area-btn {
+    border: 1px solid rgba(126,167,216,.18);
+    border-radius: 999px;
+    background: rgba(255,255,255,.92);
+    color: #5a7daa;
+    padding: .45rem .85rem;
+    font-size: .82rem;
+    font-weight: 800;
+    transition: all .15s ease;
+  }
+  .mesa-area-btn.active {
+    background: linear-gradient(135deg, #88b2ea, #d8e8ff);
+    color: #1f3553;
+    border-color: rgba(126,167,216,.30);
+    box-shadow: 0 10px 20px rgba(56,86,122,.10);
+  }
+  .mesa-area-zone-label {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    z-index: 1;
+    padding: .45rem .8rem;
+    border-radius: 999px;
+    border: 1px solid rgba(126,167,216,.18);
+    background: rgba(255,255,255,.92);
+    color: #5a7daa;
+    font-size: .74rem;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .mesa-preview-node.d-none {
+    display: none !important;
   }
   .mesa-preview-node {
     position: absolute;
@@ -241,20 +287,26 @@
           </div>
 
           <div class="mesa-config-card p-4">
-            <div class="d-flex align-items-center justify-content-between mb-3">
+              <div class="d-flex align-items-center justify-content-between mb-3">
               <div class="odoo-section-title mb-0">Vista rapida</div>
               <span class="text-muted small">{{ items|length }} mesas registradas</span>
             </div>
             <div class="mesa-preview-board position-relative p-3 mb-4">
               <div class="mesa-preview-toolbar">
-                <div class="small text-muted">Arrastra y suelta mesas para ordenar el plano.</div>
+                <div class="small text-muted">Arrastra y suelta mesas para ordenar el plano. Cambia de area para acomodar cada espacio por separado.</div>
                 <div class="d-flex gap-2">
                   <button type="button" class="btn btn-sm btn-outline-secondary" id="mesa-layout-reset">Reset</button>
                   <button type="button" class="btn btn-sm btn-primary" id="mesa-layout-save">Guardar plano</button>
                 </div>
               </div>
+              <div class="mesa-area-filter" id="mesa-area-filter">
+                <button type="button" class="mesa-area-btn active" data-area-filter="">Todas</button>
+                {% for area_name in area_ns.items %}
+                <button type="button" class="mesa-area-btn" data-area-filter="{{ area_name }}">{{ area_name }}</button>
+                {% endfor %}
+              </div>
               <div class="mesa-preview-canvas" id="mesa-layout-canvas">
-                <div class="position-absolute top-0 start-0 m-3 px-3 py-2 rounded-pill border bg-white text-muted small">Barra</div>
+                <div class="mesa-area-zone-label" id="mesa-area-zone-label">Todas las areas</div>
                 {% for item in items if item.active %}
                 <div
                   class="mesa-preview-node"
@@ -262,6 +314,7 @@
                   data-pos-x="{{ item.pos_x or 10 }}"
                   data-pos-y="{{ item.pos_y or 10 }}"
                   data-sort-order="{{ item.sort_order or 0 }}"
+                  data-area="{{ item.sector or 'Salon principal' }}"
                   style="
                     left: {{ item.pos_x or 10 }}%;
                     top: {{ item.pos_y or 10 }}%;
@@ -270,7 +323,7 @@
                   "
                 >
                   <div class="fw-bold">{{ item.name }}</div>
-                  <div class="small text-muted">{{ item.code }}</div>
+                  <div class="small text-muted">{{ item.code }} - {{ item.sector or 'Salon principal' }}</div>
                   <div class="mesa-chip">({{ item.pos_x or 10 }}%, {{ item.pos_y or 10 }}%)</div>
                 </div>
                 {% endfor %}
@@ -345,15 +398,31 @@
     const resetBtn = document.getElementById('mesa-layout-reset');
     const form = document.getElementById('mesa-layout-form');
     const jsonInput = document.getElementById('mesa-layout-json');
+    const areaLabel = document.getElementById('mesa-area-zone-label');
     if (!canvas || !saveBtn || !form || !jsonInput) return;
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const nodes = Array.from(canvas.querySelectorAll('.mesa-preview-node'));
+    let activeArea = '';
     const initialLayout = nodes.map((node) => ({
       node,
       x: Number(node.dataset.posX || 10),
       y: Number(node.dataset.posY || 10),
     }));
+
+    const syncAreaCanvas = () => {
+      nodes.forEach((node) => {
+        const matches = !activeArea || (node.dataset.area || '') === activeArea;
+        node.classList.toggle('d-none', !matches);
+      });
+      document.querySelectorAll('[data-area-filter]').forEach((button) => {
+        const isActive = (button.dataset.areaFilter || '') === activeArea;
+        button.classList.toggle('active', isActive);
+      });
+      if (areaLabel) {
+        areaLabel.textContent = activeArea || 'Todas las areas';
+      }
+    };
 
     const setNodePosition = (node, x, y) => {
       const nextX = clamp(x, 6, 94);
@@ -369,6 +438,7 @@
     nodes.forEach((node) => {
       let activePointerId = null;
       const onMove = (event) => {
+        if (activeArea && (node.dataset.area || '') !== activeArea) return;
         const rect = canvas.getBoundingClientRect();
         const relativeX = ((event.clientX - rect.left) / rect.width) * 100;
         const relativeY = ((event.clientY - rect.top) / rect.height) * 100;
@@ -384,11 +454,19 @@
         window.removeEventListener('pointerup', onUp);
       };
       node.addEventListener('pointerdown', (event) => {
+        if (activeArea && (node.dataset.area || '') !== activeArea) return;
         activePointerId = event.pointerId;
         node.classList.add('dragging');
         try { node.setPointerCapture(activePointerId); } catch (_) {}
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
+      });
+    });
+
+    document.querySelectorAll('[data-area-filter]').forEach((button) => {
+      button.addEventListener('click', () => {
+        activeArea = button.dataset.areaFilter || '';
+        syncAreaCanvas();
       });
     });
 
@@ -411,6 +489,8 @@
       jsonInput.value = JSON.stringify(payload);
       form.submit();
     });
+
+    syncAreaCanvas();
   })();
 </script>
 {% endblock %}

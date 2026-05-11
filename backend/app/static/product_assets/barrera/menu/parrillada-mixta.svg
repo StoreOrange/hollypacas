@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Parrillada Mixta">
+  <defs>
+    <linearGradient id="bg-parrillada-mixta" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#23161e">
+        <animate attributeName="stop-color" values="#23161e;#5f264a;#23161e" dur="7s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" stop-color="#5f264a">
+        <animate attributeName="stop-color" values="#5f264a;#23161e;#5f264a" dur="7s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    <radialGradient id="halo-parrillada-mixta" cx="50%" cy="38%" r="58%">
+      <stop offset="0%" stop-color="#f4b6c2" stop-opacity=".70"/>
+      <stop offset="100%" stop-color="#ff6f91" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur-parrillada-mixta" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect width="640" height="480" rx="36" fill="url(#bg-parrillada-mixta)"/>
+  <circle cx="320" cy="210" r="154" fill="url(#halo-parrillada-mixta)" filter="url(#blur-parrillada-mixta)">
+    <animate attributeName="r" values="146;164;146" dur="3.6s" repeatCount="indefinite"/>
+  </circle>
+  <path d="M58 84c118-62 406-74 522 10" stroke="rgba(255,255,255,.10)" stroke-width="24" fill="none" stroke-linecap="round"/>
+  <path d="M84 368c136 64 346 64 472 0" stroke="rgba(255,255,255,.08)" stroke-width="28" fill="none" stroke-linecap="round"/>
+  <g opacity=".16">
+    <circle cx="114" cy="118" r="14" fill="#fff"/>
+    <circle cx="544" cy="120" r="10" fill="#fff"/>
+    <circle cx="84" cy="322" r="8" fill="#fff"/>
+    <circle cx="572" cy="306" r="12" fill="#fff"/>
+  </g>
+  
+  <g transform="translate(0 0)">
+    <rect x="202" y="196" width="236" height="30" rx="15" fill="rgba(255,255,255,.24)"/>
+    <path d="M216 210h208" stroke="#f4d8a8" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="242" cy="210" r="24" fill="rgba(255,255,255,.68)"/>
+    <circle cx="294" cy="210" r="22" fill="rgba(255,196,112,.92)"/>
+    <circle cx="346" cy="210" r="22" fill="rgba(255,255,255,.62)"/>
+    <circle cx="398" cy="210" r="24" fill="rgba(255,126,95,.92)"/>
+    <path d="M252 144c-10-20 6-38 20-46 0 18 12 30 18 44 6 12 0 24-12 30-12-6-20-14-26-28z" fill="#ffe08a">
+      <animateTransform attributeName="transform" type="translate" dur="1.35s" repeatCount="indefinite" values="0 0;0 -8;0 0"/>
+    </path>
+    <path d="M324 130c-10-18 2-36 18-42-2 18 10 26 18 40 8 10 6 26-6 34-14-4-22-16-30-32z" fill="#ff9b54">
+      <animateTransform attributeName="transform" type="translate" dur="1.55s" repeatCount="indefinite" values="0 0;0 -6;0 0"/>
+    </path>
+  </g>
+
+  <g transform="translate(48 42)">
+    <rect x="0" y="0" width="236" height="36" rx="18" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.18)"/>
+    <text x="18" y="24" fill="#eef7ff" font-size="15" font-family="Segoe UI, Arial, sans-serif" font-weight="700" letter-spacing="2">COMPARTIENDO SABE MEJOR</text>
+  </g>
+  <g transform="translate(48 330)">
+    <text x="0" y="0" fill="#ffffff" font-size="38" font-family="Segoe UI, Arial, sans-serif" font-weight="800">Parrillada Mixta</text>
+    <text x="0" y="42" fill="rgba(255,255,255,.84)" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="600">C$ 600.00</text>
+    <text x="0" y="76" fill="rgba(255,255,255,.54)" font-size="13" font-family="Consolas, monospace" font-weight="700" letter-spacing="2">PARRILLADA MIXTA</text>
+  </g>
+</svg>

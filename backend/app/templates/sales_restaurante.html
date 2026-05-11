@@ -11,10 +11,17 @@
 {% set draft_observacion = request.query_params.get('draft_observacion') or '' %}
 {% set draft_table_name = request.query_params.get('draft_table_name') or '' %}
 {% set draft_table_meta = request.query_params.get('draft_table_meta') or '' %}
+{% set draft_table_area = request.query_params.get('draft_table_area') or '' %}
 {% set ns = namespace(selected_order=None) %}
 {% for order in restaurant_orders %}
   {% if selected_id_raw and order.id|string == selected_id_raw %}
     {% set ns.selected_order = order %}
+  {% endif %}
+{% endfor %}
+{% set area_ns = namespace(items=[]) %}
+{% for table in restaurant_tables %}
+  {% if table.sector not in area_ns.items %}
+    {% set _ = area_ns.items.append(table.sector) %}
   {% endif %}
 {% endfor %}
 <style>
@@ -396,6 +403,256 @@
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 1rem;
   }
+  .area-selector-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  .area-card {
+    border: 1px solid rgba(126,167,216,.16);
+    border-radius: 24px;
+    padding: 1rem 1.05rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(243,248,255,.95));
+    cursor: pointer;
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+  }
+  .area-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(126,167,216,.28);
+    box-shadow: 0 14px 28px rgba(56,86,122,.08);
+  }
+  .area-card.active {
+    border-color: rgba(126,167,216,.40);
+    background: linear-gradient(180deg, rgba(245,250,255,.99), rgba(230,240,255,.97));
+    box-shadow: 0 16px 34px rgba(56,86,122,.12);
+  }
+  .area-card-kicker {
+    font-size: .72rem;
+    font-weight: 900;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: rgba(73,99,133,.68);
+  }
+  .area-table-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+  .area-table-grid .table-node {
+    min-height: 182px;
+  }
+  .area-table-grid .table-node.d-none {
+    display: none !important;
+  }
+  .area-selection-summary {
+    border: 1px solid rgba(126,167,216,.14);
+    border-radius: 20px;
+    padding: .95rem 1rem;
+    background: rgba(255,255,255,.82);
+  }
+  .compact-floor-shell {
+    display: grid;
+    grid-template-columns: 184px minmax(0, 1fr);
+    gap: .55rem;
+    height: calc(100vh - 118px);
+    min-height: 0;
+    align-items: stretch;
+  }
+  .compact-floor-sidebar {
+    border: 1px solid rgba(126,167,216,.12);
+    border-radius: 16px;
+    padding: .55rem;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(245,249,255,.96));
+    box-shadow: 0 6px 14px rgba(56,86,122,.04);
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: .45rem;
+    min-height: 0;
+  }
+  .compact-floor-sidebar .area-selector-grid {
+    grid-template-columns: 1fr;
+    gap: .45rem;
+    overflow: auto;
+    min-height: 0;
+    padding-right: .1rem;
+  }
+  .compact-floor-stage {
+    border: 1px solid rgba(126,167,216,.12);
+    border-radius: 16px;
+    padding: .55rem;
+    background:
+      radial-gradient(circle at top right, rgba(126,167,216,.10), transparent 22%),
+      linear-gradient(145deg, rgba(255,255,255,.99), rgba(244,248,255,.97));
+    box-shadow: 0 10px 22px rgba(56,86,122,.06);
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+  }
+  .compact-floor-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(76px, 106px));
+    gap: .45rem;
+    margin: .3rem 0 .45rem;
+    justify-content: start;
+  }
+  .compact-floor-kpi {
+    border-radius: 12px;
+    padding: .45rem .6rem;
+    border: 1px solid rgba(126,167,216,.12);
+    background: rgba(255,255,255,.76);
+  }
+  .compact-floor-kpi-label {
+    font-size: .62rem;
+    font-weight: 900;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: rgba(73,99,133,.68);
+  }
+  .compact-floor-kpi-value {
+    margin-top: .08rem;
+    font-size: .95rem;
+    font-weight: 950;
+    color: #24405e;
+  }
+  .compact-floor-canvas {
+    position: relative;
+    min-height: 0;
+    height: 100%;
+    border-radius: 14px;
+    border: 1px dashed rgba(126,167,216,.22);
+    background:
+      linear-gradient(90deg, rgba(126,167,216,.06) 1px, transparent 1px) 0 0 / 42px 42px,
+      linear-gradient(0deg, rgba(126,167,216,.06) 1px, transparent 1px) 0 0 / 42px 42px,
+      linear-gradient(180deg, rgba(255,255,255,.98), rgba(238,246,255,.95));
+    overflow: hidden;
+  }
+  .compact-floor-zone {
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    z-index: 1;
+    padding: .35rem .65rem;
+    border-radius: 999px;
+    border: 1px solid rgba(126,167,216,.12);
+    background: rgba(255,255,255,.84);
+    color: #5479a8;
+    font-size: .68rem;
+    font-weight: 900;
+    letter-spacing: .10em;
+    text-transform: uppercase;
+  }
+  .compact-table-node {
+    position: absolute;
+    z-index: 2;
+    transform: translate(-50%, -50%);
+    width: 66px;
+    height: 66px;
+    border-radius: 14px;
+    border: 1px solid rgba(87,153,232,.34);
+    background: linear-gradient(180deg, rgba(255,255,255,.99), rgba(223,238,255,.98));
+    box-shadow:
+      0 8px 18px rgba(56,86,122,.12),
+      0 0 0 1px rgba(126,167,216,.12),
+      0 0 18px rgba(96,154,229,.14);
+    display: grid;
+    place-items: center;
+    padding: .2rem;
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  }
+  .compact-table-node:hover {
+    transform: translate(-50%, -50%) scale(1.03);
+    box-shadow:
+      0 12px 22px rgba(56,86,122,.14),
+      0 0 22px rgba(96,154,229,.20);
+  }
+  .compact-table-node.d-none {
+    display: none !important;
+  }
+  .compact-table-node.ocupada {
+    border-color: rgba(212,52,79,.44);
+    background: linear-gradient(180deg, rgba(255,242,245,.99), rgba(255,219,227,.98));
+    box-shadow:
+      0 12px 24px rgba(143,52,68,.18),
+      0 0 24px rgba(220,55,83,.22);
+  }
+  .compact-table-icon {
+    font-size: 1.02rem;
+    line-height: 1;
+    color: #2f76d2;
+    text-shadow: 0 0 10px rgba(75,139,223,.30);
+  }
+  .compact-table-node.ocupada .compact-table-icon {
+    color: #d43d57;
+    text-shadow: 0 0 12px rgba(212,61,87,.34);
+  }
+  .compact-table-code {
+    margin-top: .16rem;
+    font-size: .53rem;
+    font-weight: 900;
+    color: #2f5f97;
+    letter-spacing: .06em;
+  }
+  .compact-table-node.ocupada .compact-table-code {
+    color: #ad3d52;
+  }
+  .compact-table-status-dot {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: #4090f2;
+    box-shadow:
+      0 0 0 2px rgba(255,255,255,.84),
+      0 0 12px rgba(64,144,242,.45);
+    animation: freeBlink 1.35s ease-in-out infinite;
+  }
+  .compact-table-node.ocupada .compact-table-status-dot {
+    background: #e13b58;
+    box-shadow:
+      0 0 0 2px rgba(255,255,255,.84),
+      0 0 14px rgba(225,59,88,.52);
+    animation: occupiedBlink 1.1s ease-in-out infinite;
+  }
+  @keyframes freeBlink {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+      box-shadow:
+        0 0 0 2px rgba(255,255,255,.84),
+        0 0 10px rgba(64,144,242,.38);
+    }
+    50% {
+      transform: scale(1.2);
+      opacity: .72;
+      box-shadow:
+        0 0 0 2px rgba(255,255,255,.92),
+        0 0 18px rgba(64,144,242,.62);
+    }
+  }
+  .compact-floor-empty {
+    display: grid;
+    place-items: center;
+    min-height: 100%;
+    color: rgba(73,99,133,.72);
+    font-weight: 700;
+  }
+  #restaurantCompactFloorModal .modal-header {
+    padding: .7rem .9rem !important;
+  }
+  #restaurantCompactFloorModal .modal-body {
+    padding: .55rem !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #restaurantCompactFloorModal .modal-content {
+    overflow: hidden;
+    background: #f6f9fe;
+    height: 100vh;
+  }
   .table-node {
     position: relative;
     overflow: hidden;
@@ -418,9 +675,9 @@
     pointer-events: none;
   }
   .table-node.ocupada {
-    background: linear-gradient(180deg, rgba(255,244,244,.99), rgba(255,232,236,.97));
-    border-color: rgba(143,52,68,.24);
-    box-shadow: 0 18px 34px rgba(143,52,68,.12);
+    background: linear-gradient(180deg, rgba(255,238,240,.99), rgba(255,220,226,.98));
+    border-color: rgba(143,52,68,.42);
+    box-shadow: 0 18px 34px rgba(143,52,68,.18), 0 0 0 2px rgba(143,52,68,.08);
   }
   .table-node.free {
     background: linear-gradient(180deg, rgba(250,253,255,.99), rgba(229,240,255,.96));
@@ -514,6 +771,33 @@
   }
   .table-node-alert.pulse {
     animation: occupiedBlink 1.1s ease-in-out infinite;
+  }
+  .table-occupied-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    width: 100%;
+    border: 1px solid rgba(143,52,68,.28);
+    border-radius: 16px;
+    padding: .65rem .85rem;
+    background: linear-gradient(180deg, rgba(170,41,61,.98), rgba(132,28,45,.98));
+    color: #fff;
+    font-weight: 900;
+    letter-spacing: .04em;
+    box-shadow: 0 12px 22px rgba(143,52,68,.22);
+  }
+  .table-occupied-cta:hover {
+    color: #fff;
+    filter: brightness(1.03);
+  }
+  .table-occupied-cta .table-node-alert {
+    width: 28px;
+    height: 28px;
+    background: rgba(255,255,255,.18);
+    border-color: rgba(255,255,255,.28);
+    color: #fff;
+    flex-shrink: 0;
   }
   .table-admin-launch {
     border-radius: 24px;
@@ -992,6 +1276,38 @@
     from { opacity: 0; transform: translateY(16px) scale(.985); filter: blur(3px); }
     to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
   }
+  .restaurant-product-pick {
+    min-width: 0;
+  }
+  .restaurant-product-code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .restaurant-product-title {
+    font-size: .92rem;
+    line-height: 1.18;
+    min-height: 2.36em;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-clamp: 2;
+    overflow: hidden;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .restaurant-product-category {
+    min-height: 1.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .restaurant-product-media {
+    height: 138px;
+    border-radius: 18px;
+    border: 1px solid rgba(126,167,216,.16);
+    background: linear-gradient(180deg,#fff,#f1f6ff);
+  }
   @media (max-width: 991.98px) {
     .restaurant-shell main { padding: 1rem !important; }
     .restaurant-card, .restaurant-glass, .table-sector { border-radius: 22px; }
@@ -1001,6 +1317,41 @@
     .table-floor-canvas { min-height: 440px; }
     .table-sector-grid { grid-template-columns: 1fr; }
     .restaurant-empty-state-kpis { grid-template-columns: 1fr; }
+    .area-selector-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .compact-floor-shell { grid-template-columns: 1fr; }
+    .compact-floor-sidebar {
+      grid-template-rows: auto auto;
+      padding: .55rem;
+    }
+    .compact-floor-sidebar .area-selector-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      overflow: visible;
+    }
+    .compact-floor-kpis {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      justify-content: stretch;
+    }
+    .compact-floor-shell {
+      height: auto;
+      min-height: calc(100vh - 116px);
+    }
+    .compact-floor-stage {
+      grid-template-rows: auto auto minmax(340px, 1fr);
+    }
+    .compact-floor-canvas {
+      min-height: 320px;
+      height: 320px;
+    }
+    .compact-table-node {
+      width: 58px;
+      height: 58px;
+      border-radius: 12px;
+    }
+    .compact-table-icon { font-size: .92rem; }
+    .compact-table-code { font-size: .52rem; }
+    .restaurant-product-title {
+      font-size: .88rem;
+    }
   }
 </style>
 <div id="layout" class="restaurant-shell grid lg:grid-cols-[260px_1fr]">
@@ -1485,18 +1836,18 @@
                   <div class="menu-card h-100 d-flex flex-column justify-content-between gap-3">
                     <div class="restaurant-product-pick" role="button" tabindex="0" aria-label="Agregar {{ producto.descripcion }}" style="cursor:pointer;">
                       {% if producto.image_url %}
-                      <div class="w-100 mb-3 d-flex align-items-center justify-content-center p-2" style="height:150px;border-radius:18px;border:1px solid rgba(126,167,216,.16);background:linear-gradient(180deg,#fff,#f1f6ff);">
+                      <div class="w-100 mb-3 d-flex align-items-center justify-content-center p-2 restaurant-product-media">
                         <img class="w-100 h-100" src="{{ producto.image_url }}" alt="{{ producto.descripcion }}" style="object-fit:contain;border-radius:14px;background:#fff;">
                       </div>
                       {% else %}
-                      <div class="w-100 mb-3 restaurant-image-fallback">
+                      <div class="w-100 mb-3 restaurant-image-fallback restaurant-product-media d-flex align-items-center justify-content-center">
                         <i class="bi bi-cup-hot-fill icon-main"></i>
                         <i class="bi bi-cup-straw icon-accent"></i>
                       </div>
                       {% endif %}
-                      <div class="small fw-bold text-uppercase text-muted">{{ producto.cod_producto }}</div>
-                      <div class="fw-bold" style="font-size:1.04rem;line-height:1.2;">{{ producto.descripcion }}</div>
-                      <div class="mt-1 small text-muted">{{ category_name }}</div>
+                      <div class="small fw-bold text-uppercase text-muted restaurant-product-code">{{ producto.cod_producto }}</div>
+                      <div class="fw-bold restaurant-product-title">{{ producto.descripcion }}</div>
+                      <div class="mt-1 small text-muted restaurant-product-category">{{ category_name }}</div>
                       <div class="mt-2 fw-bold" style="color:#365984;">C$ {{ '%.2f'|format(producto.precio_venta1 or 0) }}</div>
                     </div>
                     <form method="post" action="/sales/restaurante/orders/with-item" class="d-flex align-items-center gap-2 restaurant-draft-add-item-form">
@@ -1643,18 +1994,18 @@
                   <div class="menu-card h-100 d-flex flex-column justify-content-between gap-3">
                     <div class="restaurant-product-pick" role="button" tabindex="0" aria-label="Agregar {{ producto.descripcion }}" style="cursor:pointer;">
                       {% if producto.image_url %}
-                      <div class="w-100 mb-3 d-flex align-items-center justify-content-center p-2" style="height:150px;border-radius:18px;border:1px solid rgba(126,167,216,.16);background:linear-gradient(180deg,#fff,#f1f6ff);">
+                      <div class="w-100 mb-3 d-flex align-items-center justify-content-center p-2 restaurant-product-media">
                         <img class="w-100 h-100" src="{{ producto.image_url }}" alt="{{ producto.descripcion }}" style="object-fit:contain;border-radius:14px;background:#fff;">
                       </div>
                       {% else %}
-                      <div class="w-100 mb-3 restaurant-image-fallback">
+                      <div class="w-100 mb-3 restaurant-image-fallback restaurant-product-media d-flex align-items-center justify-content-center">
                         <i class="bi bi-cup-hot-fill icon-main"></i>
                         <i class="bi bi-cup-straw icon-accent"></i>
                       </div>
                       {% endif %}
-                      <div class="small fw-bold text-uppercase text-muted">{{ producto.cod_producto }}</div>
-                      <div class="fw-bold" style="font-size:1.04rem;line-height:1.2;">{{ producto.descripcion }}</div>
-                      <div class="mt-1 small text-muted">{{ category_name }}</div>
+                      <div class="small fw-bold text-uppercase text-muted restaurant-product-code">{{ producto.cod_producto }}</div>
+                      <div class="fw-bold restaurant-product-title">{{ producto.descripcion }}</div>
+                      <div class="mt-1 small text-muted restaurant-product-category">{{ category_name }}</div>
                       <div class="mt-2 fw-bold" style="color:#365984;">C$ {{ '%.2f'|format(producto.precio_venta1 or 0) }}</div>
                     </div>
                     <form method="post" action="/sales/restaurante/orders/{{ ns.selected_order.id }}/items" class="d-flex align-items-center gap-2 restaurant-add-item-form">
@@ -1789,8 +2140,8 @@
         </div>
         <div id="table-selection-panel" class="table-selection-box d-flex justify-content-between align-items-center gap-3 mt-3">
           <div>
-            <div class="fw-bold" id="selected-table-name">{% if ns.selected_order and ns.selected_order.mesa_nombre %}{{ ns.selected_order.mesa_nombre }}{% else %}{{ draft_table_name or 'Sin mesa seleccionada' }}{% endif %}</div>
-            <div class="small text-muted" id="selected-table-meta">{% if ns.selected_order and ns.selected_order.table_id %}Mesa activa asignada a esta cuenta.{% else %}{{ draft_table_meta or 'Elige una mesa disponible para abrir la cuenta del salon.' }}{% endif %}</div>
+            <div class="fw-bold" id="selected-table-name">{% if ns.selected_order and ns.selected_order.location_name %}{{ ns.selected_order.location_name }}{% elif ns.selected_order and ns.selected_order.mesa_nombre %}{{ ns.selected_order.mesa_nombre }}{% else %}{{ draft_table_name or 'Sin mesa seleccionada' }}{% endif %}</div>
+            <div class="small text-muted" id="selected-table-meta">{% if ns.selected_order and ns.selected_order.table_id %}Area y mesa activas asignadas a esta cuenta.{% else %}{{ draft_table_meta or 'Primero elige el area y luego la mesa para abrir la cuenta del salon.' }}{% endif %}</div>
           </div>
           <button class="btn btn-lb-soft" type="button" data-bs-toggle="modal" data-bs-target="#restaurantTableModal">Cambiar mesa</button>
         </div>
@@ -1804,6 +2155,9 @@
           </div>
           <button class="btn btn-lb-primary px-4" type="button" data-bs-toggle="modal" data-bs-target="#restaurantTableModal">
             <i class="bi bi-grid-3x3-gap"></i> Plano de mesas
+          </button>
+          <button class="btn btn-lb-soft px-4" type="button" data-bs-toggle="modal" data-bs-target="#restaurantCompactFloorModal">
+            <i class="bi bi-bounding-box"></i> Mapa visual
           </button>
         </div>
       </div>
@@ -1824,52 +2178,79 @@
         {% if restaurant_tables %}
         <div class="table-modal-layout">
           <div class="table-board">
-            <div class="table-board-bar"><i class="bi bi-cup-straw"></i> Barra - Facturacion directa</div>
-            <div class="small text-muted mt-3">Plano operativo del salon: doble clic en una mesa libre para seleccionarla. Doble clic en una ocupada para abrir detalle.</div>
+            <div class="table-board-bar"><i class="bi bi-geo-alt"></i> Flujo de salon: area primero, mesa despues</div>
+            <div class="small text-muted mt-3">Selecciona una de las 4 areas y luego elige la mesa. Las ocupadas se pueden abrir para retomar la cuenta, las libres sirven para levantar una nueva orden.</div>
             <div class="table-legend">
               <div class="table-legend-item"><span class="table-legend-dot" style="background:#d6e8ff;border:1px solid rgba(126,167,216,.35);"></span> Mesa libre para nueva orden</div>
               <div class="table-legend-item"><span class="table-legend-dot" style="background:#ffe4e8;border:1px solid rgba(143,52,68,.24);"></span> Mesa ocupada con cuenta abierta</div>
-              <div class="table-legend-item"><span class="table-legend-dot" style="background:#eef5ff;border:1px solid rgba(126,167,216,.22);"></span> Posicion real segun catalogo de mesas</div>
+              <div class="table-legend-item"><span class="table-legend-dot" style="background:#eef5ff;border:1px solid rgba(126,167,216,.22);"></span> Area activa en el selector</div>
             </div>
-            <div class="table-floor-canvas mt-3" id="restaurant-table-floor-canvas">
-              <div class="table-floor-zone" style="left: 16px; top: 16px;">Barra</div>
+            <div class="area-selector-grid mt-3" id="restaurant-area-selector">
+              {% for area_name in area_ns.items %}
+              {% set area_tables = restaurant_tables|selectattr('sector', 'equalto', area_name)|list %}
+              {% set area_free = area_tables|selectattr('status', 'equalto', 'LIBRE')|list|length %}
+              {% set area_busy = area_tables|selectattr('status', 'equalto', 'OCUPADA')|list|length %}
+              <button
+                class="area-card text-start"
+                type="button"
+                data-area-card="{{ area_name }}"
+              >
+                <div class="area-card-kicker">Area</div>
+                <div class="fw-bold fs-5 mt-1">{{ area_name }}</div>
+                <div class="small text-muted mt-2">{{ area_tables|length }} mesas configuradas</div>
+                <div class="small text-muted">{{ area_free }} libres  /  {{ area_busy }} ocupadas</div>
+              </button>
+              {% endfor %}
+            </div>
+            <div class="area-selection-summary mt-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+              <div>
+                <div class="lb-section-title mb-1">Paso 2</div>
+                <div class="fw-bold" id="restaurant-area-selection-title">Selecciona un area para mostrar sus mesas</div>
+                <div class="small text-muted" id="restaurant-area-selection-subtitle">Cuando elijas un area veras solo sus mesas disponibles y ocupadas.</div>
+              </div>
+              <div class="small text-muted text-end">
+                <div>Barra y otros servicios siguen en facturacion directa.</div>
+                <div>Doble clic en una ocupada para retomar la cuenta.</div>
+              </div>
+            </div>
+            <div class="area-table-grid mt-3" id="restaurant-area-table-grid">
               {% for table in restaurant_tables %}
               <div
-                class="table-floor-node table-node-admin {{ 'ocupada' if table.status == 'OCUPADA' else 'free' }}"
+                class="table-node table-node-admin {{ 'ocupada' if table.status == 'OCUPADA' else 'free' }}"
                 data-table-id="{{ table.id }}"
                 data-table-name="{{ table.name }}"
+                data-table-location-name="{{ table.location_name }}"
                 data-table-code="{{ table.code }}"
                 data-table-sector="{{ table.sector }}"
                 data-table-seats="{{ table.seats }}"
                 data-table-meta="{{ table.code }} - {{ table.sector }} - {{ table.seats }} puestos"
+                data-table-area="{{ table.sector }}"
                 {% if table.active_order %}
                 data-order='{{ table.active_order|tojson }}'
                 {% endif %}
-                style="
-                  left: {{ table.pos_x or 10 }}%;
-                  top: {{ table.pos_y or 10 }}%;
-                  width: {{ 92 * (table.width_units or 1) }}px;
-                  min-height: {{ 80 * (table.height_units or 1) }}px;
-                "
               >
                 <div class="d-flex justify-content-between align-items-start gap-2">
                   <div>
-                    <div class="fw-bold">{{ table.name }}</div>
+                    <div class="fw-bold">{{ table.location_name }}</div>
                     <div class="meta">{{ table.code }} - {{ table.sector }}</div>
                   </div>
                   <span class="mesa-status {{ 'ocupada' if table.status == 'OCUPADA' else 'libre' }}">{{ table.status }}</span>
                 </div>
                 {% if table.active_order_id %}
                 <div class="meta">{{ table.seats }} puestos - {{ table.active_order_number }} - C$ {{ '%.2f'|format(table.active_order_total_cs) }}</div>
-                <div class="meta">Doble clic: detalle de cuenta</div>
+                <button class="table-occupied-cta restaurant-table-detail-trigger" type="button">
+                  <span class="table-node-alert pulse"><i class="bi bi-bell-fill"></i></span>
+                  <span>Mesa ocupada</span>
+                </button>
                 {% else %}
                 <div class="meta">{{ table.seats }} puestos</div>
                 <button
                   class="btn btn-sm btn-lb-primary w-100 restaurant-table-select"
                   type="button"
                   data-table-id="{{ table.id }}"
-                  data-table-name="{{ table.name }}"
+                  data-table-name="{{ table.location_name }}"
                   data-table-meta="{{ table.code }} - {{ table.sector }} - {{ table.seats }} puestos"
+                  data-table-area="{{ table.sector }}"
                 >
                   Elegir mesa
                 </button>
@@ -1881,8 +2262,9 @@
           <div class="table-floor-side d-grid gap-3">
             <div>
               <div class="lb-section-title mb-1">Interaccion rapida</div>
-              <div class="small text-muted">Doble clic en libre: selecciona mesa para la orden actual.</div>
-              <div class="small text-muted">Doble clic en ocupada: abre detalle para retomar y cobrar.</div>
+              <div class="small text-muted">1. Elige el area donde esta sentado el cliente.</div>
+              <div class="small text-muted">2. Elige la mesa exacta para levantar la orden.</div>
+              <div class="small text-muted">3. Si la mesa ya esta ocupada, abre su detalle para retomar la cuenta.</div>
             </div>
             <div class="table-sector-panel">
               <div class="lb-section-title mb-2">Resumen</div>
@@ -1903,6 +2285,99 @@
       <div class="modal-footer px-4 py-3">
         <div class="small text-muted me-auto">Las mesas ocupadas se retoman desde aqui. Las libres se asignan a la nueva cuenta del salon.</div>
         <a class="btn btn-lb-soft" href="/data/mesas">Configurar mesas</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade menu-modal" id="restaurantCompactFloorModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-fullscreen">
+    <div class="modal-content">
+      <div class="modal-header px-4 py-3">
+        <div>
+          <div class="lb-section-title mb-1">Mapa visual del restaurante</div>
+          <h3 class="h4 mb-0" style="font-weight:900;">Vista compacta de mesitas por area</h3>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body px-4 py-3">
+        {% if restaurant_tables %}
+        <div class="compact-floor-shell">
+          <aside class="compact-floor-sidebar">
+            <div>
+              <div class="table-board-bar"><i class="bi bi-diagram-3"></i> Selector de areas</div>
+              <div class="small text-muted mt-1">Elige un area.</div>
+            </div>
+            <div class="area-selector-grid" id="restaurant-compact-area-selector">
+              {% for area_name in area_ns.items %}
+              {% set area_tables = restaurant_tables|selectattr('sector', 'equalto', area_name)|list %}
+              {% set area_free = area_tables|selectattr('status', 'equalto', 'LIBRE')|list|length %}
+              {% set area_busy = area_tables|selectattr('status', 'equalto', 'OCUPADA')|list|length %}
+              <button class="area-card text-start" type="button" data-compact-area-card="{{ area_name }}">
+                <div class="area-card-kicker">Area</div>
+                <div class="fw-bold fs-5 mt-1">{{ area_name }}</div>
+                <div class="small text-muted mt-2">{{ area_tables|length }} mesas</div>
+                <div class="small text-muted">{{ area_free }} libres  /  {{ area_busy }} ocupadas</div>
+              </button>
+              {% endfor %}
+            </div>
+          </aside>
+          <section class="compact-floor-stage">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+              <div>
+                <div class="lb-section-title mb-1">Mapa visual</div>
+                <div class="fw-bold fs-4" id="restaurant-compact-area-title">Selecciona un area</div>
+                <div class="small text-muted" id="restaurant-compact-area-subtitle">Mesitas compactas del area elegida.</div>
+              </div>
+            </div>
+            <div class="compact-floor-kpis">
+              <div class="compact-floor-kpi">
+                <div class="compact-floor-kpi-label">Mesitas</div>
+                <div class="compact-floor-kpi-value" id="restaurant-compact-total-count">0</div>
+              </div>
+              <div class="compact-floor-kpi">
+                <div class="compact-floor-kpi-label">Libres</div>
+                <div class="compact-floor-kpi-value" id="restaurant-compact-free-count">0</div>
+              </div>
+              <div class="compact-floor-kpi">
+                <div class="compact-floor-kpi-label">Ocupadas</div>
+                <div class="compact-floor-kpi-value" id="restaurant-compact-busy-count">0</div>
+              </div>
+            </div>
+            <div class="compact-floor-canvas" id="restaurant-compact-floor-canvas">
+              <div class="compact-floor-zone" id="restaurant-compact-floor-zone">Area</div>
+              {% for table in restaurant_tables %}
+              <div
+                class="compact-table-node {{ 'ocupada' if table.status == 'OCUPADA' else 'free' }}"
+                data-table-id="{{ table.id }}"
+                data-table-name="{{ table.location_name }}"
+                data-table-location-name="{{ table.location_name }}"
+                data-table-code="{{ table.code }}"
+                data-table-sector="{{ table.sector }}"
+                data-table-seats="{{ table.seats }}"
+                data-pos-x="{{ table.pos_x or 10 }}"
+                data-pos-y="{{ table.pos_y or 10 }}"
+                data-table-meta="{{ table.code }} - {{ table.sector }} - {{ table.seats }} puestos"
+                data-table-area="{{ table.sector }}"
+                {% if table.active_order %}
+                data-order='{{ table.active_order|tojson }}'
+                {% endif %}
+                style="left: {{ table.pos_x or 10 }}%; top: {{ table.pos_y or 10 }}%;"
+              >
+                <span class="compact-table-status-dot"></span>
+                <div class="text-center">
+                  <div class="compact-table-icon"><i class="bi bi-grid-3x3-gap-fill"></i></div>
+                  <div class="compact-table-code">{{ table.code }}</div>
+                </div>
+              </div>
+              {% endfor %}
+              <div id="restaurant-compact-floor-empty" class="compact-floor-empty d-none">No hay mesas visibles para esta area.</div>
+            </div>
+          </section>
+        </div>
+        {% else %}
+        <div class="alert alert-warning rounded-4 mb-0">Aun no hay mesas activas registradas en el catalogo.</div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -2064,7 +2539,7 @@
   function setRestaurantTableSelection(id, name, meta) {
     if (tableIdSelect) tableIdSelect.value = id || '';
     if (selectedTableName) selectedTableName.textContent = name || 'Sin mesa seleccionada';
-    if (selectedTableMeta) selectedTableMeta.textContent = meta || 'Elige una mesa disponible para abrir la cuenta del salon.';
+    if (selectedTableMeta) selectedTableMeta.textContent = meta || 'Primero elige el area y luego la mesa para abrir la cuenta del salon.';
     if (mesaNombreInput) {
       mesaNombreInput.value = id ? (name || '') : '';
     }
@@ -2078,6 +2553,7 @@
         const tableId = button.dataset.tableId || '';
         const tableName = button.dataset.tableName || '';
         const tableMeta = button.dataset.tableMeta || '';
+        const tableArea = button.dataset.tableArea || '';
         const modal = document.getElementById('restaurantTableModal');
         const currentMode = serviceTypeSelect?.value || 'MESA';
 
@@ -2123,6 +2599,7 @@
         }
 
         setRestaurantTableSelection(tableId, tableName, tableMeta);
+        setRestaurantAreaSelection(tableArea, { keepCurrentIfEmpty: false });
         if (modal && window.bootstrap) {
           window.bootstrap.Modal.getOrCreateInstance(modal).hide();
         }
@@ -2131,6 +2608,7 @@
             tableId,
             tableName,
             tableMeta,
+            tableArea,
             mesaNombre: tableName,
           });
           return;
@@ -2146,6 +2624,44 @@
       node.addEventListener('dblclick', () => {
         const button = node.querySelector('.restaurant-table-select');
         if (button) button.click();
+      });
+    });
+  }
+
+  function bindRestaurantCompactTableNodes(scope = document) {
+    scope.querySelectorAll('.compact-table-node').forEach((node) => {
+      if (node.dataset.bound === '1') return;
+      node.dataset.bound = '1';
+      node.addEventListener('click', () => {
+        if (node.classList.contains('ocupada')) {
+          const orderJson = node.dataset.order;
+          if (!orderJson) return;
+          try {
+            openRestaurantTableDetail(JSON.parse(orderJson));
+          } catch (error) {
+            /* no-op */
+          }
+          return;
+        }
+        const tableId = node.dataset.tableId || '';
+        const tableName = node.dataset.tableName || '';
+        const tableMeta = node.dataset.tableMeta || '';
+        const tableArea = node.dataset.tableArea || '';
+        const modal = document.getElementById('restaurantCompactFloorModal');
+        setRestaurantTableSelection(tableId, tableName, tableMeta);
+        setRestaurantAreaSelection(tableArea, { keepCurrentIfEmpty: false });
+        if (modal && window.bootstrap) {
+          window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+        }
+        if (!hasSelectedOrderPage && !isDraftModePage && (serviceTypeSelect?.value || 'MESA') === 'MESA') {
+          window.location.href = buildRestaurantDraftUrl('MESA', {
+            tableId,
+            tableName,
+            tableMeta,
+            tableArea,
+            mesaNombre: tableName,
+          });
+        }
       });
     });
   }
@@ -2179,10 +2695,22 @@
   const tableIdSelect = document.getElementById('table-id-select');
   const mesaNombreInput = document.getElementById('mesa-nombre-input');
   const restaurantOrderForm = document.getElementById('restaurant-order-form');
+  const restaurantAreaSelectionTitle = document.getElementById('restaurant-area-selection-title');
+  const restaurantAreaSelectionSubtitle = document.getElementById('restaurant-area-selection-subtitle');
+  const restaurantAreaTableGrid = document.getElementById('restaurant-area-table-grid');
+  const restaurantCompactAreaTitle = document.getElementById('restaurant-compact-area-title');
+  const restaurantCompactAreaSubtitle = document.getElementById('restaurant-compact-area-subtitle');
+  const restaurantCompactFloorZone = document.getElementById('restaurant-compact-floor-zone');
+  const restaurantCompactFloorEmpty = document.getElementById('restaurant-compact-floor-empty');
+  const restaurantCompactTotalCount = document.getElementById('restaurant-compact-total-count');
+  const restaurantCompactFreeCount = document.getElementById('restaurant-compact-free-count');
+  const restaurantCompactBusyCount = document.getElementById('restaurant-compact-busy-count');
   let hasSelectedOrderPage = {{ 'true' if ns.selected_order else 'false' }};
   let isDraftModePage = {{ 'true' if draft_mode else 'false' }};
   let restaurantCurrentOrder = {% if ns.selected_order %}{{ ns.selected_order|tojson }}{% else %}null{% endif %};
   let restaurantPaymentItems = [];
+  let selectedRestaurantArea = {% if ns.selected_order and ns.selected_order.table_sector %}'{{ ns.selected_order.table_sector }}'{% elif draft_table_area %}'{{ draft_table_area }}'{% elif area_ns.items %}'{{ area_ns.items[0] }}'{% else %}''{% endif %};
+  let selectedCompactArea = {% if ns.selected_order and ns.selected_order.table_sector %}'{{ ns.selected_order.table_sector }}'{% elif draft_table_area %}'{{ draft_table_area }}'{% elif area_ns.items %}'{{ area_ns.items[0] }}'{% else %}''{% endif %};
   const restaurantRegisterOrderHelp = document.getElementById('restaurant-register-order-help');
 
   function syncOrderStartButtonState() {
@@ -2227,6 +2755,7 @@
     const tableId = extras.tableId ?? tableIdSelect?.value;
     const tableName = extras.tableName ?? selectedTableName?.textContent;
     const tableMeta = extras.tableMeta ?? selectedTableMeta?.textContent;
+    const tableArea = extras.tableArea ?? selectedRestaurantArea;
 
     if (clienteId) params.set('draft_cliente_id', clienteId);
     if (vendedorId) params.set('draft_vendedor_id', vendedorId);
@@ -2235,10 +2764,114 @@
     if (observacion) params.set('draft_observacion', observacion);
     if (tableId) params.set('draft_table_id', tableId);
     if (tableName && tableName !== 'Sin mesa seleccionada') params.set('draft_table_name', tableName);
+    if (tableArea) params.set('draft_table_area', tableArea);
     if (tableMeta && !tableMeta.includes('Elige una mesa disponible') && !tableMeta.includes('La cuenta no usara mesa')) {
       params.set('draft_table_meta', tableMeta);
     }
     return `/sales?${params.toString()}`;
+  }
+
+  function syncRestaurantAreaGrid() {
+    document.querySelectorAll('[data-area-card]').forEach((card) => {
+      const isActive = (card.dataset.areaCard || '') === selectedRestaurantArea;
+      card.classList.toggle('active', isActive);
+    });
+    document.querySelectorAll('#restaurant-area-table-grid .table-node-admin').forEach((node) => {
+      const matchesArea = !selectedRestaurantArea || (node.dataset.tableArea || '') === selectedRestaurantArea;
+      node.classList.toggle('d-none', !matchesArea);
+    });
+    if (restaurantAreaSelectionTitle) {
+      restaurantAreaSelectionTitle.textContent = selectedRestaurantArea
+        ? `Mesas disponibles en ${selectedRestaurantArea}`
+        : 'Selecciona un area para mostrar sus mesas';
+    }
+    if (restaurantAreaSelectionSubtitle) {
+      restaurantAreaSelectionSubtitle.textContent = selectedRestaurantArea
+        ? `Ahora elige la mesa exacta dentro de ${selectedRestaurantArea}.`
+        : 'Cuando elijas un area veras solo sus mesas disponibles y ocupadas.';
+    }
+  }
+
+  function setRestaurantAreaSelection(areaName, options = {}) {
+    if (!areaName && options.keepCurrentIfEmpty) {
+      syncRestaurantAreaGrid();
+      return;
+    }
+    selectedRestaurantArea = areaName || '';
+    syncRestaurantAreaGrid();
+    if (options.scrollToTables !== false && restaurantAreaTableGrid) {
+      window.setTimeout(() => {
+        restaurantAreaTableGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const firstVisibleTable = restaurantAreaTableGrid.querySelector('.table-node-admin:not(.d-none) .restaurant-table-select');
+        if (firstVisibleTable) {
+          firstVisibleTable.focus({ preventScroll: true });
+        }
+      }, 120);
+    }
+  }
+
+  function syncRestaurantCompactMap() {
+    document.querySelectorAll('[data-compact-area-card]').forEach((card) => {
+      const isActive = (card.dataset.compactAreaCard || '') === selectedCompactArea;
+      card.classList.toggle('active', isActive);
+    });
+    let totalCount = 0;
+    let freeCount = 0;
+    let busyCount = 0;
+    const visibleNodes = [];
+    document.querySelectorAll('.compact-table-node').forEach((node) => {
+      const matchesArea = !selectedCompactArea || (node.dataset.tableArea || '') === selectedCompactArea;
+      node.classList.toggle('d-none', !matchesArea);
+      if (!matchesArea) return;
+      visibleNodes.push(node);
+      totalCount += 1;
+      if (node.classList.contains('ocupada')) busyCount += 1;
+      else freeCount += 1;
+    });
+    if (visibleNodes.length) {
+      const xs = visibleNodes.map((node) => Number(node.dataset.posX || 10));
+      const ys = visibleNodes.map((node) => Number(node.dataset.posY || 10));
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const rangeX = Math.max(maxX - minX, 1);
+      const rangeY = Math.max(maxY - minY, 1);
+      const padX = 20;
+      const spanX = 56;
+      const padY = 18;
+      const spanY = 40;
+      visibleNodes.forEach((node) => {
+        const rawX = Number(node.dataset.posX || 10);
+        const rawY = Number(node.dataset.posY || 10);
+        const nextX = visibleNodes.length === 1 ? 50 : padX + (((rawX - minX) / rangeX) * spanX);
+        const nextY = rangeY <= 1 ? 32 : padY + (((rawY - minY) / rangeY) * spanY);
+        node.style.left = `${nextX}%`;
+        node.style.top = `${nextY}%`;
+      });
+    }
+    if (restaurantCompactAreaTitle) {
+      restaurantCompactAreaTitle.textContent = selectedCompactArea || 'Selecciona un area';
+    }
+    if (restaurantCompactAreaSubtitle) {
+      restaurantCompactAreaSubtitle.textContent = selectedCompactArea
+        ? `Mesitas de ${selectedCompactArea}.`
+        : 'Mesitas del area elegida.';
+    }
+    if (restaurantCompactFloorZone) {
+      restaurantCompactFloorZone.textContent = selectedCompactArea || 'Area';
+    }
+    if (restaurantCompactTotalCount) restaurantCompactTotalCount.textContent = String(totalCount);
+    if (restaurantCompactFreeCount) restaurantCompactFreeCount.textContent = String(freeCount);
+    if (restaurantCompactBusyCount) restaurantCompactBusyCount.textContent = String(busyCount);
+    if (restaurantCompactFloorEmpty) {
+      restaurantCompactFloorEmpty.classList.toggle('d-none', totalCount > 0);
+    }
+  }
+
+  function setRestaurantCompactArea(areaName) {
+    selectedCompactArea = areaName || '';
+    syncRestaurantCompactMap();
   }
 
   function syncRestaurantServiceMode() {
@@ -2303,6 +2936,19 @@
   });
 
   bindRestaurantTableSelectButtons();
+  bindRestaurantCompactTableNodes();
+  document.querySelectorAll('[data-area-card]').forEach((card) => {
+    card.addEventListener('click', () => {
+      setRestaurantAreaSelection(card.dataset.areaCard || '', { scrollToTables: true });
+    });
+  });
+  setRestaurantAreaSelection(selectedRestaurantArea, { scrollToTables: false, keepCurrentIfEmpty: true });
+  document.querySelectorAll('[data-compact-area-card]').forEach((card) => {
+    card.addEventListener('click', () => {
+      setRestaurantCompactArea(card.dataset.compactAreaCard || '');
+    });
+  });
+  syncRestaurantCompactMap();
 
   document.querySelectorAll('.restaurant-client-pick').forEach((button) => {
     button.addEventListener('click', () => {
@@ -2391,10 +3037,13 @@
   }
 
   if (restaurantOrderForm) {
-    restaurantOrderForm.addEventListener('submit', (event) => {
+    restaurantOrderForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       if (hasSelectedOrderPage) {
-        window.location.href = '/sales';
+        await restaurantFinalizeVirtualOrderFlow({
+          title: 'Orden registrada',
+          text: 'La orden queda guardada y la vista virtual se limpio para que puedas registrar otra orden nueva.',
+        });
         return;
       }
       if ((serviceTypeSelect?.value || 'MESA') === 'MESA' && !String(tableIdSelect?.value || '').trim()) {
@@ -2405,6 +3054,12 @@
         return;
       }
       if (!hasSelectedOrderPage) {
+        await restaurantShowUiNotice({
+          icon: 'info',
+          title: 'Continua con la orden',
+          text: 'Ahora agrega el primer producto para abrir formalmente la cuenta del pedido.',
+          timer: 2200,
+        });
         window.location.href = buildRestaurantDraftUrl(serviceTypeSelect?.value || 'MESA');
         return;
       }
@@ -2486,6 +3141,40 @@
 
   const fmtMoney = (value) => Number(value || 0).toFixed(2);
   const restaurantRateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
+
+  async function restaurantShowUiNotice({
+    icon = 'success',
+    title = 'Proceso completado',
+    text = '',
+    timer = 1800,
+  } = {}) {
+    if (typeof Swal !== 'undefined') {
+      await Swal.fire({
+        icon,
+        title,
+        text,
+        timer,
+        timerProgressBar: true,
+        showConfirmButton: false,
+        background: '#ffffff',
+      });
+      return;
+    }
+    if (text) {
+      window.alert(`${title}\n\n${text}`);
+      return;
+    }
+    window.alert(title);
+  }
+
+  async function restaurantFinalizeVirtualOrderFlow({
+    title = 'Orden registrada',
+    text = 'La vista de facturacion virtual se cerrara para dejar el sistema listo para una nueva orden.',
+    redirectUrl = '/sales?success=Orden+registrada',
+  } = {}) {
+    await restaurantShowUiNotice({ title, text });
+    window.location.href = redirectUrl;
+  }
 
   function restaurantFormatMoney(value, currency) {
     const amount = Number(value || 0);
@@ -2654,14 +3343,13 @@
     if (!tableId) return;
     const node = document.querySelector(`.table-node-admin[data-table-id="${tableId}"]`);
     if (!node) return;
-    const tableName = node.dataset.tableName || 'Mesa';
+    const tableName = node.dataset.tableLocationName || node.dataset.tableName || 'Mesa';
     const tableCode = node.dataset.tableCode || '';
     const tableSector = node.dataset.tableSector || 'Salon';
     const tableSeats = node.dataset.tableSeats || '0';
     node.classList.remove('ocupada');
     node.classList.add('free');
     node.classList.add('state-transition');
-    node.classList.add('table-floor-node');
     node.removeAttribute('data-order');
     node.dataset.tableMeta = `${tableCode} - ${tableSector} - ${tableSeats} puestos`;
     node.innerHTML = `
@@ -2689,6 +3377,13 @@
     `;
     window.setTimeout(() => node.classList.remove('state-transition'), 460);
     bindRestaurantTableSelectButtons(node);
+    const compactNode = document.querySelector(`.compact-table-node[data-table-id="${tableId}"]`);
+    if (compactNode) {
+      compactNode.classList.remove('ocupada');
+      compactNode.classList.add('free');
+      compactNode.removeAttribute('data-order');
+    }
+    syncRestaurantCompactMap();
   }
 
   function restaurantMarkTableAsOccupied(table, order) {
@@ -2698,13 +3393,13 @@
     node.classList.remove('free');
     node.classList.add('ocupada');
     node.classList.add('state-transition');
-    node.classList.add('table-floor-node');
     node.dataset.order = JSON.stringify(order);
     node.dataset.tableMeta = `${table.code || ''} - ${table.sector || 'Salon'} - ${table.seats || 0} puestos`;
+    node.dataset.tableLocationName = table.location_name || order.location_name || order.mesa_nombre || table.name || 'Mesa';
     node.innerHTML = `
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div>
-          <div class="fw-bold">${table.name || order.mesa_nombre || "Mesa"}</div>
+          <div class="fw-bold">${table.location_name || order.location_name || order.mesa_nombre || table.name || "Mesa"}</div>
           <div class="meta">${table.code || ""} - ${table.sector || "Salon"}</div>
         </div>
         <div class="d-flex align-items-center gap-2">
@@ -2714,7 +3409,10 @@
       <div class="meta">${table.seats || 0} puestos - ${order.numero || ""} - C$ ${fmtMoney(order.total_cs || 0)}</div>
       <div>
         <div class="d-grid gap-2">
-          <button class="btn btn-sm btn-lb-soft w-100 restaurant-table-detail-trigger" type="button">Ver detalle</button>
+          <button class="table-occupied-cta restaurant-table-detail-trigger" type="button">
+            <span class="table-node-alert pulse"><i class="bi bi-bell-fill"></i></span>
+            <span>Mesa ocupada</span>
+          </button>
           <a class="btn btn-sm btn-lb-soft w-100" href="/sales?restaurant_order_id=${order.id}">Editar orden</a>
           <a class="btn btn-sm btn-lb-primary w-100" href="/sales?restaurant_order_id=${order.id}&focus_payment=1">Gestionar pago final</a>
         </div>
@@ -2742,6 +3440,13 @@
         <div class="small mt-1" style="color:#617a9a;">${order.numero || ""}  -  ${order.service_type || ""}  -  ${order.opened_at || ""}</div>
       `;
     });
+    const compactNode = document.querySelector(`.compact-table-node[data-table-id="${table.id}"]`);
+    if (compactNode) {
+      compactNode.classList.remove('free');
+      compactNode.classList.add('ocupada');
+      compactNode.dataset.order = JSON.stringify(order);
+    }
+    syncRestaurantCompactMap();
   }
 
   function restaurantHandleDeletedOrder(payload) {
@@ -2909,10 +3614,11 @@
       const tableCode = activeTableNode?.dataset.tableCode || '';
       const tableSector = activeTableNode?.dataset.tableSector || 'Salon';
       const tableSeats = activeTableNode?.dataset.tableSeats || '';
+      setRestaurantAreaSelection(tableSector, { keepCurrentIfEmpty: false });
       const tableMeta = tableCode
         ? `${tableCode}  -  ${tableSector}  -  ${tableSeats} puestos`
         : 'Mesa activa asignada a esta cuenta.';
-      setRestaurantTableSelection(order.table_id || '', order.mesa_nombre || 'Mesa activa', tableMeta);
+      setRestaurantTableSelection(order.table_id || '', order.location_name || order.mesa_nombre || 'Mesa activa', tableMeta);
     } else {
       setRestaurantTableSelection('', 'Sin mesa seleccionada', 'La cuenta no usara mesa en este modo de servicio.');
     }
@@ -3151,18 +3857,11 @@
 
   document.querySelectorAll('.restaurant-update-order-btn').forEach((button) => {
     button.addEventListener('click', async () => {
-      if (typeof Swal !== 'undefined') {
-        await Swal.fire({
-          icon: 'success',
-          title: 'Orden actualizada',
-          text: 'La edicion de la cuenta fue cerrada correctamente.',
-          timer: 3000,
-          timerProgressBar: true,
-          showConfirmButton: false,
-          background: '#ffffff',
-        });
-      }
-      window.location.href = '/sales?success=Orden+actualizada';
+      await restaurantFinalizeVirtualOrderFlow({
+        title: 'Orden actualizada',
+        text: 'La edicion de la cuenta fue cerrada correctamente y la vista queda lista para iniciar otra orden.',
+        redirectUrl: '/sales?success=Orden+actualizada',
+      });
     });
   });
 

@@ -10401,7 +10401,7 @@ def sales_page(
             "restaurant_orders": restaurant_orders,
             "restaurant_tables": restaurant_tables,
             "sales_interface_code": interface_code,
-            "default_sales_currency": "USD" if _is_hollpacas_mode() else "CS",
+            "default_sales_currency": "CS" if _inventory_cs_only_mode(db) else "USD",
             "weighted_sales_enabled": _weighted_sales_enabled_mode(db),
             "version": settings.UI_VERSION,
         },
