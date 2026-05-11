@@ -24117,14 +24117,17 @@ def sales_ticket_print(
         except AttributeError:
             fecha_str = str(fecha_base)
 
-    moneda = factura.moneda or "CS"
-    currency_label = "C$" if moneda == "CS" else "$"
-    total_amount = float(factura.total_cs or 0) if moneda == "CS" else float(factura.total_usd or 0)
+    moneda = "CS"
+    currency_label = "C$"
+    total_amount = float(factura.total_cs or 0)
     subtotal_amount = total_amount
+    usd_equivalent_amount = float(factura.total_usd or 0)
+    if usd_equivalent_amount <= 0 and float(factura.tasa_cambio or 0) > 0:
+        usd_equivalent_amount = total_amount / float(factura.tasa_cambio or 0)
 
     pagos = factura.pagos or []
     total_paid = sum(
-        float(pago.monto_cs or 0) if moneda == "CS" else float(pago.monto_usd or 0)
+        float(pago.monto_cs or 0)
         for pago in pagos
     )
     saldo = total_paid - total_amount
@@ -24172,16 +24175,8 @@ def sales_ticket_print(
         line_count += len(desc_lines)
         line_count += 1  # qty/price/subtotal
         line_count += 1  # divider
-        price = (
-            float(item.precio_unitario_cs or 0)
-            if moneda == "CS"
-            else float(item.precio_unitario_usd or 0)
-        )
-        subtotal = (
-            float(item.subtotal_cs or 0)
-            if moneda == "CS"
-            else float(item.subtotal_usd or 0)
-        )
+        price = float(item.precio_unitario_cs or 0)
+        subtotal = float(item.subtotal_cs or 0)
         items.append(
             {
                 "codigo": item.producto.cod_producto if item.producto else "-",
@@ -24198,16 +24193,14 @@ def sales_ticket_print(
         forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
         banco = pago.banco.nombre if pago.banco else ""
         label = f"{forma} {banco}".strip()
-        monto = (
-            float(pago.monto_cs or 0)
-            if moneda == "CS"
-            else float(pago.monto_usd or 0)
-        )
+        monto = float(pago.monto_cs or 0)
         pagos_render.append({"label": label, "monto": monto})
     if pagos_render:
         line_count += 2  # divider + title
         line_count += len(pagos_render)
     line_count += 1  # vuelto/saldo
+    if usd_equivalent_amount > 0:
+        line_count += 1  # equivalente USD
     line_count += 4  # footer
 
     # Keep page height tight to content to avoid trailing white space in POS print
@@ -24235,6 +24228,8 @@ def sales_ticket_print(
             "currency_label": currency_label,
             "total_amount": total_amount,
             "subtotal_amount": subtotal_amount,
+            "show_usd_equivalent": usd_equivalent_amount > 0,
+            "usd_equivalent_amount": usd_equivalent_amount,
             "saldo": saldo,
             "total_unidades": total_unidades,
             "items": items,
