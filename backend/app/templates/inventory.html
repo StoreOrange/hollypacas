@@ -501,6 +501,7 @@
     <div class="px-8 pb-6 pt-4 space-y-4 odoo-modal-body">
       <div id="tab-producto" class="modal-panel">
         <form id="product-form" class="space-y-3" method="post" action="/inventory/product" enctype="multipart/form-data">
+          <input id="field-inventory-currency-mode" type="hidden" name="inventory_currency_mode" value="{% if inventory_cs_only %}CS{% else %}USD{% endif %}" />
           <div class="odoo-modal-section">
             <div class="d-flex align-items-center justify-content-between mb-3">
               <div class="odoo-modal-title">Ficha del producto</div>
@@ -986,6 +987,7 @@
   const fieldPrecio3 = document.getElementById("field-precio3");
   const fieldCosto = document.getElementById("field-costo");
   const fieldMargin = document.getElementById("field-margin");
+  const fieldInventoryCurrencyMode = document.getElementById("field-inventory-currency-mode");
   const fieldExistencia = document.getElementById("field-existencia");
   const fieldImageFile = document.getElementById("field-image-file");
   const fieldImagePreview = document.getElementById("field-image-preview");
@@ -1064,14 +1066,22 @@
     const apply = () => {
       fieldMargin.value = (fieldMargin.value || "").replace(/\D+/g, "");
       const computed = calculateAutoPrice(fieldCosto.value, fieldMargin.value);
-      if (computed !== null) {
+      const shouldAutofill = !String(fieldPrecio1.value || "").trim() || fieldPrecio1.dataset.autoManaged === "1";
+      if (computed !== null && shouldAutofill) {
         fieldPrecio1.value = computed;
+        fieldPrecio1.dataset.autoManaged = "1";
       }
     };
     fieldCosto.addEventListener("input", apply);
     fieldCosto.addEventListener("change", apply);
     fieldMargin.addEventListener("input", apply);
     fieldMargin.addEventListener("change", apply);
+    fieldPrecio1.addEventListener("input", () => {
+      fieldPrecio1.dataset.autoManaged = "0";
+    });
+    fieldPrecio1.addEventListener("change", () => {
+      fieldPrecio1.dataset.autoManaged = "0";
+    });
   };
   bindAutoPriceFromCost();
 
@@ -1124,6 +1134,7 @@
     fieldPrecio2.value = "";
     fieldPrecio3.value = "";
     fieldCosto.value = "";
+    fieldPrecio1.dataset.autoManaged = "0";
     if (fieldImageFile) fieldImageFile.value = "";
     renderProductImagePreview("");
     if (fieldMargin) fieldMargin.value = "";
@@ -1140,32 +1151,55 @@
     setActiveTab("tab-producto");
   };
 
-  const fillProductForm = (row) => {
-    const productId = row.dataset.id;
+  const applyProductFormData = (row, payload = null) => {
+    const productId = payload?.id || row?.dataset.id;
     currentProductId = productId;
-    originalProductType = row.dataset.tipoProducto || "DIRECTO";
+    originalProductType = payload?.tipo_producto || row?.dataset.tipoProducto || "DIRECTO";
     productForm.action = `/inventory/product/${productId}/update`;
     fieldCodigo.disabled = true;
-    fieldCodigo.value = row.dataset.cod || "";
-    fieldDescripcion.value = row.dataset.desc || "";
-    fieldLinea.value = row.dataset.lineaId || "";
-    fieldSegmento.value = row.dataset.segmentoId || "";
-    if (fieldTipoProducto) fieldTipoProducto.value = row.dataset.tipoProducto || "DIRECTO";
-    fieldPrecio1.value = row.dataset.precio1Usd || "";
-    fieldPrecio2.value = row.dataset.precio2Usd || "";
-    fieldPrecio3.value = row.dataset.precio3Usd || "";
-    fieldCosto.value = row.dataset.costoUsd || "";
+    fieldCodigo.value = payload?.cod_producto || row?.dataset.cod || "";
+    fieldDescripcion.value = payload?.descripcion || row?.dataset.desc || "";
+    fieldLinea.value = String(payload?.linea_id || row?.dataset.lineaId || "");
+    fieldSegmento.value = String(payload?.segmento_id || row?.dataset.segmentoId || "");
+    if (window.$ && $.fn.select2) {
+      $(fieldLinea).val(fieldLinea.value || "").trigger("change");
+      $(fieldSegmento).val(fieldSegmento.value || "").trigger("change");
+    }
+    if (fieldTipoProducto) fieldTipoProducto.value = payload?.tipo_producto || row?.dataset.tipoProducto || "DIRECTO";
+    fieldPrecio1.value = payload?.precio_venta1_usd ?? row?.dataset.precio1Usd ?? "";
+    fieldPrecio2.value = payload?.precio_venta2_usd ?? row?.dataset.precio2Usd ?? "";
+    fieldPrecio3.value = payload?.precio_venta3_usd ?? row?.dataset.precio3Usd ?? "";
+    fieldCosto.value = payload?.costo_usd ?? row?.dataset.costoUsd ?? "";
+    fieldPrecio1.dataset.autoManaged = "0";
     if (fieldImageFile) fieldImageFile.value = "";
-    renderProductImagePreview(row.dataset.imageUrl || "");
-    fieldExistencia.textContent = row.dataset.existencia || "0";
-    if (fieldEsPorPeso) fieldEsPorPeso.checked = row.dataset.esPorPeso === "1";
-    if (fieldUnidadMedida) fieldUnidadMedida.value = row.dataset.unidadMedidaId || fieldUnidadMedida.value;
-    fieldActivo.checked = row.dataset.activo === "1";
+    renderProductImagePreview(payload?.image_url || row?.dataset.imageUrl || "");
+    fieldExistencia.textContent = row?.dataset.existencia || "0";
+    if (fieldEsPorPeso) fieldEsPorPeso.checked = Boolean(payload?.es_por_peso) || row?.dataset.esPorPeso === "1";
+    if (fieldUnidadMedida) fieldUnidadMedida.value = String(payload?.unidad_medida_id || row?.dataset.unidadMedidaId || fieldUnidadMedida.value);
+    fieldActivo.checked = typeof payload?.activo === "boolean" ? payload.activo : row?.dataset.activo === "1";
     cancelEdit.classList.remove("hidden");
-    modalTitle.textContent = `Editar producto ${row.dataset.cod || ""}`;
+    modalTitle.textContent = `Editar producto ${payload?.cod_producto || row?.dataset.cod || ""}`;
     modalSubtitle.textContent = "Actualiza los datos y guarda los cambios";
     setActiveTab("tab-producto");
     refreshRecipePanel();
+  };
+
+  const fillProductForm = async (row) => {
+    const productId = row?.dataset.id;
+    if (!productId) return;
+    applyProductFormData(row);
+    try {
+      const response = await fetch(`/inventory/product/${productId}/json`, {
+        headers: { "X-Requested-With": "fetch", "Accept": "application/json" },
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.message || "No se pudo cargar el producto");
+      }
+      applyProductFormData(row, payload);
+    } catch (error) {
+      console.warn("No se pudo refrescar el producto desde servidor", error);
+    }
   };
 
   const renderRecipeList = () => {

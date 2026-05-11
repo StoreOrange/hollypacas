@@ -24265,6 +24265,7 @@ def inventory_create_product(
     precio_venta2_usd: float = Form(0),
     precio_venta3_usd: float = Form(0),
     costo_producto_usd: float = Form(0),
+    inventory_currency_mode: Optional[str] = Form(None),
     existencia: float = Form(0),
     image_file: Optional[UploadFile] = File(None),
     activo: Optional[str] = Form(None),
@@ -24328,7 +24329,12 @@ def inventory_create_product(
     if not selected_unit:
         return _error("Unidad de medida invalida")
     product_images_enabled = _product_images_enabled(db)
-    inventory_cs_only = _inventory_cs_only_mode(db)
+    submitted_currency_mode = (inventory_currency_mode or "").strip().upper()
+    inventory_cs_only = (
+        submitted_currency_mode == "CS"
+        if submitted_currency_mode in {"CS", "USD"}
+        else _inventory_cs_only_mode(db)
+    )
     if inventory_cs_only:
         precio_venta1_cs = float(precio_venta1_usd or 0)
         precio_venta2_cs = float(precio_venta2_usd or 0)
@@ -24410,6 +24416,7 @@ def inventory_update_product(
     precio_venta2_usd: float = Form(0),
     precio_venta3_usd: float = Form(0),
     costo_producto_usd: float = Form(0),
+    inventory_currency_mode: Optional[str] = Form(None),
     image_file: Optional[UploadFile] = File(None),
     activo: Optional[str] = Form(None),
     redirect_to: Optional[str] = Form(None),
@@ -24466,7 +24473,12 @@ def inventory_update_product(
     if not selected_unit:
         return _error("Unidad de medida invalida")
     product_images_enabled = _product_images_enabled(db)
-    inventory_cs_only = _inventory_cs_only_mode(db)
+    submitted_currency_mode = (inventory_currency_mode or "").strip().upper()
+    inventory_cs_only = (
+        submitted_currency_mode == "CS"
+        if submitted_currency_mode in {"CS", "USD"}
+        else _inventory_cs_only_mode(db)
+    )
     if inventory_cs_only:
         precio_venta1_cs = float(precio_venta1_usd or 0)
         precio_venta2_cs = float(precio_venta2_usd or 0)
