@@ -23118,19 +23118,80 @@ def inventory_abierta_resultado_pdf(
     ingreso = db.query(IngresoInventario).filter(IngresoInventario.id == ingreso_id).first()
     if not ingreso:
         raise HTTPException(status_code=404, detail="Ingreso resultado no encontrado")
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    fallback_rate = Decimal(str(rate_today.rate or 0)) if rate_today and rate_today.rate else Decimal("0")
     egreso_total_bultos = sum(float(item.cantidad or 0) for item in (egreso.items or []))
     ingreso_total_bultos = sum(float(item.cantidad or 0) for item in (ingreso.items or []))
     egreso_total_items = len(egreso.items or [])
     ingreso_total_items = len(ingreso.items or [])
+    def _item_rate(item_obj, movement_rate: Decimal) -> Decimal:
+        product_rate = Decimal(str(item_obj.producto.tasa_cambio or 0)) if getattr(item_obj, "producto", None) and getattr(item_obj.producto, "tasa_cambio", None) else Decimal("0")
+        if product_rate > 0:
+            return product_rate
+        if movement_rate > 0:
+            return movement_rate
+        return fallback_rate
+
+    def _item_usd_values(item_obj, movement_rate: Decimal) -> tuple[float, float]:
+        qty_dec = Decimal(str(item_obj.cantidad or 0))
+        unit_usd_dec = Decimal(str(item_obj.costo_unitario_usd or 0))
+        subtotal_usd_dec = Decimal(str(item_obj.subtotal_usd or 0))
+        if unit_usd_dec > 0 and subtotal_usd_dec > 0:
+            return float(unit_usd_dec), float(subtotal_usd_dec)
+        rate_dec = _item_rate(item_obj, movement_rate)
+        unit_cs_dec = Decimal(str(item_obj.costo_unitario_cs or 0))
+        if rate_dec > 0:
+            unit_usd_dec = (unit_cs_dec / rate_dec).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        else:
+            unit_usd_dec = Decimal("0")
+        subtotal_usd_dec = (unit_usd_dec * qty_dec).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return float(unit_usd_dec), float(subtotal_usd_dec)
+
+    egreso_rate = Decimal(str(egreso.tasa_cambio or 0)) if egreso.tasa_cambio else Decimal("0")
+    ingreso_rate = Decimal(str(ingreso.tasa_cambio or 0)) if ingreso.tasa_cambio else Decimal("0")
+    diferencia_bultos = ingreso_total_bultos - egreso_total_bultos
+    egreso_rows = []
+    ingreso_rows = []
+    egreso_total_usd = Decimal("0")
+    ingreso_total_usd = Decimal("0")
+    for item in (egreso.items or []):
+        costo_usd, subtotal_usd = _item_usd_values(item, egreso_rate)
+        egreso_total_usd += Decimal(str(subtotal_usd))
+        egreso_rows.append(
+            (
+                item.producto.cod_producto if item.producto else "",
+                item.producto.descripcion if item.producto else "",
+                float(item.cantidad or 0),
+                costo_usd,
+                subtotal_usd,
+            )
+        )
+    for item in (ingreso.items or []):
+        costo_usd, subtotal_usd = _item_usd_values(item, ingreso_rate)
+        ingreso_total_usd += Decimal(str(subtotal_usd))
+        ingreso_rows.append(
+            (
+                item.producto.cod_producto if item.producto else "",
+                item.producto.descripcion if item.producto else "",
+                float(item.cantidad or 0),
+                costo_usd,
+                subtotal_usd,
+            )
+        )
     egreso_total_cs = float(egreso.total_cs or 0)
     ingreso_total_cs = float(ingreso.total_cs or 0)
+    diferencia_usd = float((ingreso_total_usd - egreso_total_usd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     diferencia_cs = ingreso_total_cs - egreso_total_cs
-    diferencia_bultos = ingreso_total_bultos - egreso_total_bultos
-    resultado_label = "Ganancia" if diferencia_cs > 0 else ("Perdida" if diferencia_cs < 0 else "Equilibrado")
+    resultado_label = "Ganancia" if diferencia_usd > 0 else ("Perdida" if diferencia_usd < 0 else "Equilibrado")
     resultado_color = (
         (0.09, 0.33, 0.82)
-        if diferencia_cs > 0
-        else ((0.78, 0.12, 0.12) if diferencia_cs < 0 else (0.19, 0.24, 0.31))
+        if diferencia_usd > 0
+        else ((0.78, 0.12, 0.12) if diferencia_usd < 0 else (0.19, 0.24, 0.31))
     )
 
     buffer = io.BytesIO()
@@ -23210,8 +23271,8 @@ def inventory_abierta_resultado_pdf(
         pdf.drawString(margin, y_pos, "Codigo")
         pdf.drawString(margin + 80, y_pos, "Descripcion")
         pdf.drawRightString(margin + 340, y_pos, "Cant.")
-        pdf.drawRightString(margin + 420, y_pos, "Costo C$")
-        pdf.drawRightString(margin + 500, y_pos, "Subtotal C$")
+        pdf.drawRightString(margin + 420, y_pos, "Costo USD")
+        pdf.drawRightString(margin + 500, y_pos, "Subtotal USD")
         return y_pos - 12
 
     def draw_items_section(
@@ -23220,7 +23281,7 @@ def inventory_abierta_resultado_pdf(
         rows: list[tuple[str, str, float, float, float]],
         total_bultos: float,
         total_items: int,
-        total_cs: float,
+        total_usd: float,
     ) -> float:
         y_pos = draw_section_title(y_pos, section_title)
         y_pos = ensure_space(y_pos, 42)
@@ -23254,8 +23315,8 @@ def inventory_abierta_resultado_pdf(
         pdf.drawRightString(margin + 420, y_pos, "Total items:")
         pdf.drawRightString(margin + 500, y_pos, f"{total_items:d}")
         y_pos -= 12
-        pdf.drawRightString(margin + 420, y_pos, "Total C$:")
-        pdf.drawRightString(margin + 500, y_pos, f"{total_cs:,.2f}")
+        pdf.drawRightString(margin + 420, y_pos, "Total USD:")
+        pdf.drawRightString(margin + 500, y_pos, f"{total_usd:,.2f}")
         return y_pos - 18
 
     def draw_balance_summary(y_pos: float) -> float:
@@ -23270,41 +23331,21 @@ def inventory_abierta_resultado_pdf(
         pdf.drawString(margin + 10, top_y - 16, "Resumen del resultado de abierta")
         pdf.setFillColorRGB(0, 0, 0)
         pdf.setFont("Helvetica", 9)
-        pdf.drawString(margin + 10, top_y - 32, f"Total costo egresado C$: {egreso_total_cs:,.2f}")
-        pdf.drawString(margin + 250, top_y - 32, f"Total costo ingresado C$: {ingreso_total_cs:,.2f}")
+        pdf.drawString(margin + 10, top_y - 32, f"Total costo egresado USD: {float(egreso_total_usd):,.2f}")
+        pdf.drawString(margin + 250, top_y - 32, f"Total costo ingresado USD: {float(ingreso_total_usd):,.2f}")
         pdf.drawString(margin + 10, top_y - 48, f"Bultos egresados: {egreso_total_bultos:,.2f}")
         pdf.drawString(margin + 250, top_y - 48, f"Bultos ingresados: {ingreso_total_bultos:,.2f}")
         pdf.setFont("Helvetica-Bold", 10)
         pdf.drawString(margin + 10, top_y - 68, "Balance final:")
         pdf.setFillColorRGB(*resultado_color)
         pdf.drawString(margin + 98, top_y - 68, resultado_label)
-        pdf.drawRightString(width - margin - 10, top_y - 68, f"C$ {diferencia_cs:,.2f}")
+        pdf.drawRightString(width - margin - 10, top_y - 68, f"$ {diferencia_usd:,.2f}")
         pdf.setFillColorRGB(0, 0, 0)
         pdf.setFont("Helvetica", 8)
-        pdf.drawString(margin + 10, top_y - 84, "Formula: costo ingresado - costo egresado")
-        pdf.drawRightString(width - margin - 10, top_y - 84, f"Diferencia bultos: {diferencia_bultos:,.2f}")
+        pdf.drawString(margin + 10, top_y - 84, "Formula: costo ingresado USD - costo egresado USD")
+        pdf.drawRightString(width - margin - 10, top_y - 84, f"Equivalente C$: {diferencia_cs:,.2f}")
+        pdf.drawRightString(width - margin - 10, top_y - 94, f"Diferencia bultos: {diferencia_bultos:,.2f}")
         return bottom_y - 12
-
-    egreso_rows = [
-        (
-            item.producto.cod_producto if item.producto else "",
-            item.producto.descripcion if item.producto else "",
-            float(item.cantidad or 0),
-            float(item.costo_unitario_cs or 0),
-            float(item.subtotal_cs or 0),
-        )
-        for item in (egreso.items or [])
-    ]
-    ingreso_rows = [
-        (
-            item.producto.cod_producto if item.producto else "",
-            item.producto.descripcion if item.producto else "",
-            float(item.cantidad or 0),
-            float(item.costo_unitario_cs or 0),
-            float(item.subtotal_cs or 0),
-        )
-        for item in (ingreso.items or [])
-    ]
 
     y = start_page()
     y = draw_items_section(
@@ -23313,7 +23354,7 @@ def inventory_abierta_resultado_pdf(
         egreso_rows,
         egreso_total_bultos,
         egreso_total_items,
-        egreso_total_cs,
+        float(egreso_total_usd),
     )
     y = draw_items_section(
         y,
@@ -23321,7 +23362,7 @@ def inventory_abierta_resultado_pdf(
         ingreso_rows,
         ingreso_total_bultos,
         ingreso_total_items,
-        ingreso_total_cs,
+        float(ingreso_total_usd),
     )
     y = draw_balance_summary(y)
 
