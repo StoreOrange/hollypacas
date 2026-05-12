@@ -25736,6 +25736,8 @@ async def inventory_create_ingreso_zapatos(
                 db.add(parent_saldo)
             if costo_cs > 0:
                 parent_product.costo_producto = float(costo_cs)
+                if tasa > 0:
+                    parent_product.tasa_cambio = float(tasa)
             if precio_cs > 0:
                 parent_product.precio_venta1 = float(precios_cs[0])
                 parent_product.precio_venta2 = float(precios_cs[1])
@@ -26038,10 +26040,14 @@ async def inventory_create_ingreso(
                 db.add(SaldoProducto(producto_id=producto.id, existencia=qty_dec))
             if cost > 0:
                 producto.costo_producto = costo_cs
+                if tasa > 0:
+                    producto.tasa_cambio = tasa
             if price > 0:
                 producto.precio_venta1 = precio_cs
                 if precio_usd > 0:
                     producto.precio_venta1_usd = precio_usd
+                if tasa > 0:
+                    producto.tasa_cambio = tasa
 
     recipe_apply_error = _apply_recipe_explosion(
         ingreso_obj=ingreso,
@@ -26414,10 +26420,13 @@ async def inventory_create_egreso(
             if producto_result:
                 if float(row["costo_unitario_cs"] or 0) > 0:
                     producto_result.costo_producto = float(row["costo_unitario_cs"])
+                    if tasa > 0:
+                        producto_result.tasa_cambio = float(tasa)
                 if float(row["precio_cs"] or 0) > 0:
                     producto_result.precio_venta1 = float(row["precio_cs"])
                     if tasa > 0:
                         producto_result.precio_venta1_usd = float(row["precio_cs"]) / float(tasa)
+                        producto_result.tasa_cambio = float(tasa)
 
     egreso.total_usd = 0 if (es_traslado or es_abierta) else total_usd
     egreso.total_cs = total_cs
