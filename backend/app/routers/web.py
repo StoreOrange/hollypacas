@@ -23129,31 +23129,21 @@ def inventory_abierta_resultado_pdf(
     ingreso_total_bultos = sum(float(item.cantidad or 0) for item in (ingreso.items or []))
     egreso_total_items = len(egreso.items or [])
     ingreso_total_items = len(ingreso.items or [])
-    def _item_rate(item_obj, movement_rate: Decimal) -> Decimal:
-        product_rate = Decimal(str(item_obj.producto.tasa_cambio or 0)) if getattr(item_obj, "producto", None) and getattr(item_obj.producto, "tasa_cambio", None) else Decimal("0")
-        if product_rate > 0:
-            return product_rate
-        if movement_rate > 0:
-            return movement_rate
-        return fallback_rate
-
     def _item_usd_values(item_obj, movement_rate: Decimal) -> tuple[float, float]:
         qty_dec = Decimal(str(item_obj.cantidad or 0))
         unit_usd_dec = Decimal(str(item_obj.costo_unitario_usd or 0))
         subtotal_usd_dec = Decimal(str(item_obj.subtotal_usd or 0))
         if unit_usd_dec > 0 and subtotal_usd_dec > 0:
             return float(unit_usd_dec), float(subtotal_usd_dec)
-        rate_dec = _item_rate(item_obj, movement_rate)
-        unit_cs_dec = Decimal(str(item_obj.costo_unitario_cs or 0))
-        if rate_dec > 0:
-            unit_usd_dec = (unit_cs_dec / rate_dec).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        else:
-            unit_usd_dec = Decimal("0")
+        # En abierta de pacas los costos ya se capturan operativamente en dolar;
+        # si la columna USD viene vacia, usar el valor existente tal cual.
+        unit_usd_dec = Decimal(str(item_obj.costo_unitario_cs or 0))
         subtotal_usd_dec = (unit_usd_dec * qty_dec).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         return float(unit_usd_dec), float(subtotal_usd_dec)
 
     egreso_rate = Decimal(str(egreso.tasa_cambio or 0)) if egreso.tasa_cambio else Decimal("0")
     ingreso_rate = Decimal(str(ingreso.tasa_cambio or 0)) if ingreso.tasa_cambio else Decimal("0")
+    result_rate = ingreso_rate if ingreso_rate > 0 else (egreso_rate if egreso_rate > 0 else fallback_rate)
     diferencia_bultos = ingreso_total_bultos - egreso_total_bultos
     egreso_rows = []
     ingreso_rows = []
@@ -23183,10 +23173,8 @@ def inventory_abierta_resultado_pdf(
                 subtotal_usd,
             )
         )
-    egreso_total_cs = float(egreso.total_cs or 0)
-    ingreso_total_cs = float(ingreso.total_cs or 0)
     diferencia_usd = float((ingreso_total_usd - egreso_total_usd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-    diferencia_cs = ingreso_total_cs - egreso_total_cs
+    diferencia_cs = float((Decimal(str(diferencia_usd)) * result_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if result_rate > 0 else 0.0
     resultado_label = "Ganancia" if diferencia_usd > 0 else ("Perdida" if diferencia_usd < 0 else "Equilibrado")
     resultado_color = (
         (0.09, 0.33, 0.82)
