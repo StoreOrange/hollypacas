@@ -9954,7 +9954,7 @@ def inventory_egresos_page(
     selected_product_query = (request.query_params.get("product_q") or "").strip()
     if not start_date and not end_date:
         end_date = local_today()
-        start_date = end_date - timedelta(days=30)
+        start_date = end_date - timedelta(days=7)
     egresos_query = db.query(EgresoInventario)
     if start_date:
         egresos_query = egresos_query.filter(EgresoInventario.fecha >= start_date)
@@ -9977,7 +9977,7 @@ def inventory_egresos_page(
             EgresoInventario.items.any(EgresoItem.producto_id == selected_product_id)
         )
     egresos = (
-        egresos_query.order_by(EgresoInventario.fecha.desc(), EgresoInventario.id.desc())
+        egresos_query.order_by(EgresoInventario.created_at.desc(), EgresoInventario.id.desc())
         .all()
     )
     tipos_query = db.query(EgresoTipo)
@@ -23335,7 +23335,7 @@ def _find_abierta_result_ingreso(db: Session, egreso: EgresoInventario) -> Optio
     if not egreso:
         return None
     tipo_nombre = ((egreso.tipo.nombre if egreso.tipo else "") or "").strip().lower()
-    if "produccion de abierta" not in tipo_nombre:
+    if "abierta" not in tipo_nombre:
         return None
     observacion_pattern = f"%Egreso #{int(egreso.id)}%"
     query = (
@@ -23360,6 +23360,12 @@ def _find_abierta_result_ingreso(db: Session, egreso: EgresoInventario) -> Optio
         fallback_query = fallback_query.filter(IngresoInventario.bodega_id == egreso.bodega_destino_id)
     if egreso.fecha:
         fallback_query = fallback_query.filter(IngresoInventario.fecha == egreso.fecha)
+    fallback_query = fallback_query.filter(
+        or_(
+            IngresoInventario.observacion.ilike("%abierta%"),
+            IngresoInventario.observacion.ilike("%resultado%"),
+        )
+    )
     return fallback_query.order_by(IngresoInventario.id.desc()).first()
 
 
