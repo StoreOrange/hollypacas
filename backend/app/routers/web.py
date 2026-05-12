@@ -23259,28 +23259,31 @@ def inventory_abierta_resultado_pdf(
         return y_pos - 18
 
     def draw_balance_summary(y_pos: float) -> float:
-        y_pos = ensure_space(y_pos, 124)
+        box_height = 96
+        y_pos = ensure_space(y_pos, box_height + 24)
+        top_y = y_pos
+        bottom_y = top_y - box_height
         pdf.setFillColorRGB(0.95, 0.97, 1)
-        pdf.roundRect(margin, y_pos - 8, width - (margin * 2), 96, 8, fill=1, stroke=0)
+        pdf.roundRect(margin, bottom_y, width - (margin * 2), box_height, 8, fill=1, stroke=0)
         pdf.setFillColorRGB(0.08, 0.18, 0.38)
         pdf.setFont("Helvetica-Bold", 10)
-        pdf.drawString(margin + 10, y_pos + 74, "Resumen del resultado de abierta")
+        pdf.drawString(margin + 10, top_y - 16, "Resumen del resultado de abierta")
         pdf.setFillColorRGB(0, 0, 0)
         pdf.setFont("Helvetica", 9)
-        pdf.drawString(margin + 10, y_pos + 58, f"Total costo egresado C$: {egreso_total_cs:,.2f}")
-        pdf.drawString(margin + 250, y_pos + 58, f"Total costo ingresado C$: {ingreso_total_cs:,.2f}")
-        pdf.drawString(margin + 10, y_pos + 42, f"Bultos egresados: {egreso_total_bultos:,.2f}")
-        pdf.drawString(margin + 250, y_pos + 42, f"Bultos ingresados: {ingreso_total_bultos:,.2f}")
+        pdf.drawString(margin + 10, top_y - 32, f"Total costo egresado C$: {egreso_total_cs:,.2f}")
+        pdf.drawString(margin + 250, top_y - 32, f"Total costo ingresado C$: {ingreso_total_cs:,.2f}")
+        pdf.drawString(margin + 10, top_y - 48, f"Bultos egresados: {egreso_total_bultos:,.2f}")
+        pdf.drawString(margin + 250, top_y - 48, f"Bultos ingresados: {ingreso_total_bultos:,.2f}")
         pdf.setFont("Helvetica-Bold", 10)
-        pdf.drawString(margin + 10, y_pos + 22, "Balance final:")
+        pdf.drawString(margin + 10, top_y - 68, "Balance final:")
         pdf.setFillColorRGB(*resultado_color)
-        pdf.drawString(margin + 98, y_pos + 22, resultado_label)
-        pdf.drawRightString(width - margin - 10, y_pos + 22, f"C$ {diferencia_cs:,.2f}")
+        pdf.drawString(margin + 98, top_y - 68, resultado_label)
+        pdf.drawRightString(width - margin - 10, top_y - 68, f"C$ {diferencia_cs:,.2f}")
         pdf.setFillColorRGB(0, 0, 0)
         pdf.setFont("Helvetica", 8)
-        pdf.drawString(margin + 10, y_pos + 6, "Formula: costo ingresado - costo egresado")
-        pdf.drawRightString(width - margin - 10, y_pos + 6, f"Diferencia bultos: {diferencia_bultos:,.2f}")
-        return y_pos - 52
+        pdf.drawString(margin + 10, top_y - 84, "Formula: costo ingresado - costo egresado")
+        pdf.drawRightString(width - margin - 10, top_y - 84, f"Diferencia bultos: {diferencia_bultos:,.2f}")
+        return bottom_y - 12
 
     egreso_rows = [
         (
