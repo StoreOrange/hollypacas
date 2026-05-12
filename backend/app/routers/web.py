@@ -23331,6 +23331,38 @@ def inventory_abierta_resultado_pdf(
     return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
 
 
+def _find_abierta_result_ingreso(db: Session, egreso: EgresoInventario) -> Optional[IngresoInventario]:
+    if not egreso:
+        return None
+    tipo_nombre = ((egreso.tipo.nombre if egreso.tipo else "") or "").strip().lower()
+    if "produccion de abierta" not in tipo_nombre:
+        return None
+    observacion_pattern = f"%Egreso #{int(egreso.id)}%"
+    query = (
+        db.query(IngresoInventario)
+        .join(IngresoTipo, IngresoTipo.id == IngresoInventario.tipo_id)
+        .filter(func.lower(IngresoTipo.nombre) == "produccion")
+        .filter(IngresoInventario.observacion.ilike(observacion_pattern))
+    )
+    if egreso.bodega_destino_id:
+        query = query.filter(IngresoInventario.bodega_id == egreso.bodega_destino_id)
+    if egreso.fecha:
+        query = query.filter(IngresoInventario.fecha == egreso.fecha)
+    ingreso = query.order_by(IngresoInventario.id.desc()).first()
+    if ingreso:
+        return ingreso
+    fallback_query = (
+        db.query(IngresoInventario)
+        .join(IngresoTipo, IngresoTipo.id == IngresoInventario.tipo_id)
+        .filter(func.lower(IngresoTipo.nombre) == "produccion")
+    )
+    if egreso.bodega_destino_id:
+        fallback_query = fallback_query.filter(IngresoInventario.bodega_id == egreso.bodega_destino_id)
+    if egreso.fecha:
+        fallback_query = fallback_query.filter(IngresoInventario.fecha == egreso.fecha)
+    return fallback_query.order_by(IngresoInventario.id.desc()).first()
+
+
 def _ingreso_labels_payload(ingreso: IngresoInventario) -> tuple[list[dict[str, object]], int]:
     grouped: dict[str, dict[str, object]] = {}
     total_labels = 0
@@ -23546,6 +23578,15 @@ def inventory_egreso_pdf(
     )
     if not egreso:
         raise HTTPException(status_code=404, detail="Egreso no encontrado")
+    ingreso_resultado = _find_abierta_result_ingreso(db, egreso)
+    if ingreso_resultado:
+        return inventory_abierta_resultado_pdf(
+            request=request,
+            egreso_id=int(egreso.id),
+            ingreso_id=int(ingreso_resultado.id),
+            db=db,
+            user=user,
+        )
 
     total_items = len(egreso.items or [])
     total_bultos = sum(float(item.cantidad or 0) for item in (egreso.items or []))
