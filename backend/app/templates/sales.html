@@ -305,7 +305,7 @@
                     <i class="bi bi-calendar-event text-brand"></i>
                     Fecha *
                   </label>
-                  <input id="venta-fecha" name="fecha" form="sales-form" type="date" class="mt-2 w-full odoo-input form-control" required />
+                  <input id="venta-fecha" name="fecha" form="sales-form" type="{% if sale_datetime_override_enabled %}datetime-local{% else %}date{% endif %}" {% if sale_datetime_override_enabled %}step="60"{% endif %} class="mt-2 w-full odoo-input form-control" required />
                 </div>
               </div>
             </div>
@@ -2831,12 +2831,45 @@
 
   const getClienteLabel = () => clienteSelectedLabel?.textContent || "Consumidor final";
   const getVendedorLabel = () => vendedorSelect?.selectedOptions[0]?.textContent || "Sin asignar";
-  const getFechaLabel = () => fechaInput?.value || "--";
+  const enableSaleDatetimeOverride = {{ sale_datetime_override_enabled|tojson }};
+  const splitFechaParts = (value) => {
+    const normalized = String(value || "").trim().replace(" ", "T");
+    if (!normalized) {
+      return { fecha: "--", hora: "--" };
+    }
+    const [fechaPart, horaPartRaw = ""] = normalized.split("T");
+    const horaPart = horaPartRaw.slice(0, 5);
+    return {
+      fecha: fechaPart || "--",
+      hora: horaPart || "--",
+    };
+  };
+  const getFechaParts = () => splitFechaParts(fechaInput?.value);
+  const formatLocalDateTime = () => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Managua",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date());
+    const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${byType.year}-${byType.month}-${byType.day}T${byType.hour}:${byType.minute}`;
+  };
+  const normalizeDateTimeLocalValue = (value) => {
+    const normalized = String(value || "").trim().replace(" ", "T");
+    if (!normalized) return "";
+    if (normalized.includes("T")) return normalized.slice(0, 16);
+    const currentTime = formatLocalDateTime().slice(11, 16);
+    return `${normalized}T${currentTime}`;
+  };
 
   const updatePartySummary = () => {
     const clienteLabel = getClienteLabel();
     const vendedorLabel = getVendedorLabel();
-    const fechaLabel = getFechaLabel();
+    const { fecha: fechaLabel, hora: horaLabel } = getFechaParts();
     if (clienteSummary) {
       clienteSummary.textContent = clienteLabel;
     }
@@ -2846,9 +2879,13 @@
     if (fechaSummary) {
       fechaSummary.textContent = fechaLabel;
     }
+    if (enableSaleDatetimeOverride && horaSummary) {
+      horaSummary.textContent = horaLabel;
+    }
     if (payCliente) payCliente.textContent = clienteLabel || "--";
     if (payVendedor) payVendedor.textContent = vendedorLabel || "--";
     if (payFecha) payFecha.textContent = fechaLabel || "--";
+    if (enableSaleDatetimeOverride && payHora) payHora.textContent = horaLabel || "--";
   };
 
   const formatLocalDate = () => {
@@ -2857,12 +2894,12 @@
   };
 
   const updateClock = () => {
+    if (enableSaleDatetimeOverride) return;
     const now = new Date();
     const timeLabel = now.toLocaleTimeString("es-NI", { hour: "2-digit", minute: "2-digit" });
     if (horaSummary) {
       horaSummary.textContent = timeLabel;
     }
-    const payHora = document.getElementById("pay-hora");
     if (payHora) {
       payHora.textContent = timeLabel;
     }
@@ -2876,7 +2913,7 @@
       preventaIdInput.value = String(initialPreventa.id || "");
     }
     if (fechaInput && initialPreventa.fecha) {
-      fechaInput.value = initialPreventa.fecha;
+      fechaInput.value = enableSaleDatetimeOverride ? normalizeDateTimeLocalValue(initialPreventa.fecha) : initialPreventa.fecha;
     }
     if (monedaField && initialPreventa.moneda) {
       monedaField.value = initialPreventa.moneda;
@@ -2941,29 +2978,30 @@
         setClienteSelection("", "Consumidor final");
       });
     }
-  if (vendedorSelect) {
-    vendedorSelect.addEventListener("change", updatePartySummary);
-  }
-  if (fechaInput) {
-    fechaInput.addEventListener("change", updatePartySummary);
-  }
-
-  window.addEventListener("load", () => {
-    if (fechaInput && !fechaInput.value) {
-      const today = formatLocalDate();
-      fechaInput.value = today;
+    if (vendedorSelect) {
+      vendedorSelect.addEventListener("change", updatePartySummary);
     }
-    if (vendedorSelect && !vendedorSelect.value) {
-      const firstOption = Array.from(vendedorSelect.options).find((opt) => opt.value);
-      if (firstOption) {
-        vendedorSelect.value = firstOption.value;
-        if (window.$ && $.fn.select2) {
-          $(vendedorSelect).trigger("change.select2");
-        } else {
-          vendedorSelect.dispatchEvent(new Event("change"));
+    if (fechaInput) {
+      fechaInput.addEventListener("change", updatePartySummary);
+      fechaInput.addEventListener("input", updatePartySummary);
+    }
+
+    window.addEventListener("load", () => {
+      if (fechaInput && !fechaInput.value) {
+        const today = enableSaleDatetimeOverride ? formatLocalDateTime() : formatLocalDate();
+        fechaInput.value = today;
+      }
+      if (vendedorSelect && !vendedorSelect.value) {
+        const firstOption = Array.from(vendedorSelect.options).find((opt) => opt.value);
+        if (firstOption) {
+          vendedorSelect.value = firstOption.value;
+          if (window.$ && $.fn.select2) {
+            $(vendedorSelect).trigger("change.select2");
+          } else {
+            vendedorSelect.dispatchEvent(new Event("change"));
+          }
         }
       }
-    }
       const initPartySelects = () => {
         if (!(window.$ && $.fn.select2)) return;
         const tokenMatcher = (params, data) => {
@@ -3113,15 +3151,17 @@
           }
         });
       }
-    syncPaymentFields();
-    loadInitialPreventa();
-    updatePartySummary();
-    updateTotals();
-    updateClock();
-    setInterval(updateClock, 60000);
-    startPreventaLiveStream();
-    pollPreventaNotifications();
-    preventaPollTimer = setInterval(pollPreventaNotifications, 7000);
+      syncPaymentFields();
+      loadInitialPreventa();
+      updatePartySummary();
+      updateTotals();
+      updateClock();
+      if (!enableSaleDatetimeOverride) {
+        setInterval(updateClock, 60000);
+      }
+      startPreventaLiveStream();
+      pollPreventaNotifications();
+      preventaPollTimer = setInterval(pollPreventaNotifications, 7000);
   });
 
   window.addEventListener("beforeunload", () => {
@@ -3143,7 +3183,7 @@
       updatePartySummary();
       if (payCliente) payCliente.textContent = getClienteLabel() || "--";
       if (payVendedor) payVendedor.textContent = getVendedorLabel() || "--";
-      if (payFecha) payFecha.textContent = getFechaLabel() || "--";
+      if (payFecha) payFecha.textContent = getFechaParts().fecha || "--";
       if (payHora && horaSummary) payHora.textContent = horaSummary.textContent || "--";
       if (payTotalUsd) payTotalUsd.textContent = formatMoney(currentTotals.usd, "USD");
       if (payTotalCs) payTotalCs.textContent = formatMoney(currentTotals.cs, "CS");

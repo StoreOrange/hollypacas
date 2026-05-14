@@ -1600,10 +1600,18 @@ def _company_profile_payload(db: Session) -> dict[str, str]:
 
 
 def _inventory_cs_only_mode(db: Session) -> bool:
-    # Los entornos de Pacas/Holl trabajan inventario base en USD.
-    # Aunque exista un flag global en el perfil empresarial, no debe
-    # forzar interpretacion en C$ para estos entornos.
-    if _is_hollpacas_mode():
+    # Los entornos de Pacas/Holl y Amajo/Comestibles trabajan
+    # inventario base en USD. Aunque exista un flag global en el
+    # perfil empresarial, no debe forzar interpretacion en C$.
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    db_name = _current_db_name().strip().lower()
+    if (
+        _is_hollpacas_mode()
+        or ("amajo" in active_company_key)
+        or ("comestibles" in active_company_key)
+        or ("amajo" in db_name)
+        or ("comestibles" in db_name)
+    ):
         return False
     profile = _company_profile_payload(db)
     return bool(profile.get("inventory_cs_only"))
@@ -1713,6 +1721,11 @@ def _current_db_name() -> str:
 def _is_shoes_mode() -> bool:
     active_company_key = (get_active_company_key() or "").strip().lower()
     return active_company_key == "bdzapatos"
+
+
+def _is_global_company() -> bool:
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    return active_company_key == "bdtrend"
 
 
 def _is_restaurant_business_mode() -> bool:
@@ -2075,7 +2088,7 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     cliente_id = factura.cliente.identificacion if factura.cliente and factura.cliente.identificacion else "-"
     vendedor = factura.vendedor.nombre if factura.vendedor else "-"
 
-    fecha_base = factura.created_at or factura.fecha
+    fecha_base = factura.fecha if _is_global_company() else (factura.created_at or factura.fecha)
     fecha_str = ""
     hora_str = ""
     if fecha_base:
@@ -10399,6 +10412,7 @@ def sales_page(
             "restaurant_orders": restaurant_orders,
             "restaurant_tables": restaurant_tables,
             "sales_interface_code": interface_code,
+            "sale_datetime_override_enabled": _is_global_company(),
             "default_sales_currency": "CS" if _inventory_cs_only_mode(db) else "USD",
             "weighted_sales_enabled": _weighted_sales_enabled_mode(db),
             "version": settings.UI_VERSION,
@@ -20280,7 +20294,7 @@ async def sales_reversion_request(
     bodega_name = factura.bodega.name if factura.bodega else "-"
     cliente = factura.cliente.nombre if factura.cliente else "Consumidor final"
     vendedor = factura.vendedor.nombre if factura.vendedor else "-"
-    fecha_base = factura.created_at or factura.fecha
+    fecha_base = factura.fecha if _is_global_company() else (factura.created_at or factura.fecha)
     fecha_str = ""
     hora_str = ""
     if fecha_base:
@@ -20483,7 +20497,7 @@ async def sales_change_vendedor_request(
     bodega_name = factura.bodega.name if factura.bodega else "-"
     cliente = factura.cliente.nombre if factura.cliente else "Consumidor final"
     vendedor_actual = factura.vendedor.nombre if factura.vendedor else "-"
-    fecha_base = factura.created_at or factura.fecha
+    fecha_base = factura.fecha if _is_global_company() else (factura.created_at or factura.fecha)
     fecha_str = ""
     hora_str = ""
     if fecha_base:
@@ -24186,7 +24200,7 @@ def sales_ticket_print(
     cliente_id = factura.cliente.identificacion if factura.cliente and factura.cliente.identificacion else "-"
     vendedor = factura.vendedor.nombre if factura.vendedor else "-"
 
-    fecha_base = factura.created_at or factura.fecha
+    fecha_base = factura.fecha if _is_global_company() else (factura.created_at or factura.fecha)
     fecha_str = ""
     hora_str = ""
     if fecha_base:
@@ -27549,12 +27563,26 @@ async def sales_create_invoice(
     width = 6
     numero = f"{prefix}-{next_seq:0{width}d}"
 
-    now_local = local_now()
-    try:
-        fecha_value = date.fromisoformat(str(fecha).split("T")[0])
-    except (TypeError, ValueError):
-        fecha_value = local_today()
-    fecha_dt = datetime.combine(fecha_value, now_local.time()).replace(tzinfo=None)
+    now_local = local_now().replace(second=0, microsecond=0)
+    if _is_global_company():
+        fecha_raw = str(fecha or "").strip()
+        try:
+            normalized_fecha = fecha_raw.replace(" ", "T")
+            if "T" in normalized_fecha:
+                fecha_dt = datetime.fromisoformat(normalized_fecha)
+            else:
+                fecha_value = date.fromisoformat(normalized_fecha)
+                fecha_dt = datetime.combine(fecha_value, now_local.time())
+        except (TypeError, ValueError):
+            fecha_dt = now_local
+        fecha_dt = fecha_dt.replace(tzinfo=None, second=0, microsecond=0)
+        fecha_value = fecha_dt.date()
+    else:
+        try:
+            fecha_value = date.fromisoformat(str(fecha).split("T")[0])
+        except (TypeError, ValueError):
+            fecha_value = local_today()
+        fecha_dt = datetime.combine(fecha_value, now_local.time()).replace(tzinfo=None)
     factura = VentaFactura(
         secuencia=next_seq,
         numero=numero,
