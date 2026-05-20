@@ -132,9 +132,12 @@
           <div class="bold">Codigo: {{ item.codigo }}</div>
           {% endif %}
           <div class="item-desc">{{ item.descripcion }}</div>
+          {% if item.es_libreado and item.peso_lbs > 0 %}
+          <div class="small">Peso: {{ "%.2f"|format(item.peso_lbs) }} Lbs</div>
+          {% endif %}
           <div class="row small">
             <span>Cant: {{ "%.2f"|format(item.cantidad) }}</span>
-            {% if show_item_subtotal or (show_item_subtotal_if_multi_qty and item.cantidad >= 2) %}
+            {% if show_item_subtotal or item.es_libreado or (show_item_subtotal_if_multi_qty and item.cantidad >= 2) %}
             <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }} | Subt: {{ currency_label }} {{ format_amount(item.subtotal) }}</span>
             {% else %}
             <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }}</span>

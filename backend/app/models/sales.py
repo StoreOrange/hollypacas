@@ -246,6 +246,7 @@ class VentaItem(Base):
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
     variante_id = Column(Integer, ForeignKey("shoe_product_variants.id"), nullable=True)
     cantidad = Column(Numeric(14, 2), default=0)
+    peso_lbs = Column(Numeric(14, 2), nullable=True)
     precio_unitario_usd = Column(Numeric(14, 2), default=0)
     precio_unitario_cs = Column(Numeric(14, 2), default=0)
     subtotal_usd = Column(Numeric(14, 2), default=0)

@@ -1728,6 +1728,15 @@ def _is_global_company() -> bool:
     return active_company_key == "bdtrend"
 
 
+def _is_pacasholl_company() -> bool:
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    db_name = _current_db_name().strip().lower()
+    return (
+        active_company_key in {"pacasholl", "hollywood_pacas", "hollpacas"}
+        or "hollpacas" in db_name
+    )
+
+
 def _is_restaurant_business_mode() -> bool:
     active_company_key = (get_active_company_key() or "").strip().lower()
     db_name = _current_db_name().strip().lower()
@@ -2153,6 +2162,7 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     for item in factura.items:
         codigo = item.producto.cod_producto if item.producto else "-"
         descripcion = item.producto.descripcion if item.producto else "-"
+        is_libreado_item = bool(getattr(item.producto, "es_libreado", False)) and _is_pacasholl_company()
         if item.variante:
             color_name = item.variante.color.nombre if item.variante.color else "-"
             talla_name = item.variante.talla or "-"
@@ -2172,6 +2182,8 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
             add_line(combo_label.strip(), "left", True, normal_size)
         for part in wrap_text(descripcion, max_desc):
             add_line(part, "left", False, normal_size)
+        if is_libreado_item and float(item.peso_lbs or 0) > 0:
+            add_line(f"Peso: {format_qty(float(item.peso_lbs or 0))} Lbs", "left", False, normal_size)
         add_line(
             f"Cant: {format_qty(qty)}  Precio: {currency_label} {format_amount(price)}  Subtotal: {currency_label} {format_amount(subtotal)}",
             "left",
@@ -8300,6 +8312,8 @@ def inventory_page(
             "auto_price_margin_enabled": auto_price_margin_enabled,
             "auto_price_margin_pct": auto_price_margin_pct,
             "product_type_options": _product_type_options(),
+            "active_company": (get_active_company_key() or "").strip().lower(),
+            "pacasholl_libreado_enabled": _is_pacasholl_company(),
             "is_hollpacas_mode": is_hollpacas_mode,
             "product_images_enabled": product_images_enabled,
             "version": settings.UI_VERSION,
@@ -10413,6 +10427,7 @@ def sales_page(
             "restaurant_tables": restaurant_tables,
             "sales_interface_code": interface_code,
             "sale_datetime_override_enabled": _is_global_company(),
+            "pacasholl_libreado_enabled": _is_pacasholl_company(),
             "default_sales_currency": "CS" if _inventory_cs_only_mode(db) else "USD",
             "weighted_sales_enabled": _weighted_sales_enabled_mode(db),
             "version": settings.UI_VERSION,
@@ -11154,6 +11169,7 @@ async def mobile_preventas_create(
     item_ids = form.getlist("item_producto_id")
     item_variant_ids = form.getlist("item_variante_id")
     item_qtys = form.getlist("item_cantidad")
+    item_peso_lbs = form.getlist("item_peso_lbs")
     item_prices = form.getlist("item_precio")
     item_price_usds = form.getlist("item_precio_usd")
     item_price_css = form.getlist("item_precio_cs")
@@ -20142,6 +20158,7 @@ def sales_detail(
     for item in factura.items:
         color_name = item.variante.color.nombre if item.variante and item.variante.color else ""
         talla_name = item.variante.talla if item.variante and item.variante.talla else ""
+        is_libreado_item = bool(getattr(item.producto, "es_libreado", False)) and _is_pacasholl_company()
         items.append(
             {
                 "producto_id": item.producto_id,
@@ -20150,6 +20167,8 @@ def sales_detail(
                 "color": color_name,
                 "talla": talla_name,
                 "cantidad": float(item.cantidad or 0),
+                "peso_lbs": float(item.peso_lbs or 0),
+                "es_libreado": is_libreado_item,
                 "precio_usd": float(item.precio_unitario_usd or 0),
                 "precio_cs": float(item.precio_unitario_cs or 0),
                 "subtotal_usd": float(item.subtotal_usd or 0),
@@ -22724,6 +22743,7 @@ def sales_products_search(
                 "combo_count": len(producto.combo_children or []),
                 "image_url": (producto.image_url or "") if product_images_enabled else "",
                 "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
+                "es_libreado": bool(getattr(producto, "es_libreado", False)) if _is_pacasholl_company() else False,
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if getattr(producto, "unidad_medida_id", None) else None,
                 "unidad_medida_nombre": producto.unidad_medida.nombre if getattr(producto, "unidad_medida", None) else "",
                 "unidad_medida_abreviatura": producto.unidad_medida.abreviatura if getattr(producto, "unidad_medida", None) else "",
@@ -24040,12 +24060,14 @@ def sales_invoice_pdf(
     for item in factura.items:
         codigo = item.producto.cod_producto if item.producto else "-"
         descripcion = item.producto.descripcion if item.producto else "-"
+        is_libreado_item = bool(getattr(item.producto, "es_libreado", False)) and _is_pacasholl_company()
         if item.variante:
             color_name = item.variante.color.nombre if item.variante.color else "-"
             talla_name = item.variante.talla or "-"
             descripcion = f"{descripcion} [{color_name} / Talla {talla_name}]"
         desc_lines = _wrap_by_width(descripcion, "Helvetica", 8, desc_max_width)
-        row_height = max(1, len(desc_lines)) * line_height + 2
+        detail_lines = 1 if is_libreado_item and float(item.peso_lbs or 0) > 0 else 0
+        row_height = ((max(1, len(desc_lines)) + detail_lines) * line_height) + 2
 
         if y - row_height < min_y:
             pdf.setFont("Helvetica", 8)
@@ -24062,6 +24084,9 @@ def sales_invoice_pdf(
         pdf.drawString(x_code, y, codigo[:18])
         for idx, line in enumerate(desc_lines):
             pdf.drawString(x_desc, y - (idx * line_height), line)
+        details_y = y - (len(desc_lines) * line_height)
+        if is_libreado_item and float(item.peso_lbs or 0) > 0:
+            pdf.drawString(x_desc, details_y, f"Peso: {_fmt_num(float(item.peso_lbs or 0))} Lbs")
         pdf.drawRightString(x_qty, y, _fmt_num(cantidad))
         pdf.drawRightString(x_price, y, _fmt_num(precio))
         pdf.drawRightString(x_subtotal, y, _fmt_num(subtotal))
@@ -24258,6 +24283,8 @@ def sales_ticket_print(
         qty = float(item.cantidad or 0)
         total_unidades += qty
         descripcion = item.producto.descripcion if item.producto else "-"
+        is_libreado_item = bool(getattr(item.producto, "es_libreado", False)) and _is_pacasholl_company()
+        peso_lbs = float(item.peso_lbs or 0)
         if item.variante:
             color_name = item.variante.color.nombre if item.variante.color else "-"
             talla_name = item.variante.talla or "-"
@@ -24266,6 +24293,8 @@ def sales_ticket_print(
         if show_item_code:
             line_count += 1  # codigo
         line_count += len(desc_lines)
+        if is_libreado_item and peso_lbs > 0:
+            line_count += 1  # peso
         line_count += 1  # qty/price/subtotal
         line_count += 1  # divider
         price = float(item.precio_unitario_cs or 0)
@@ -24275,6 +24304,8 @@ def sales_ticket_print(
                 "codigo": item.producto.cod_producto if item.producto else "-",
                 "descripcion": descripcion,
                 "cantidad": qty,
+                "peso_lbs": peso_lbs,
+                "es_libreado": is_libreado_item,
                 "precio": price,
                 "subtotal": subtotal,
             }
@@ -24352,6 +24383,7 @@ def inventory_create_product(
     marca: Optional[str] = Form(None),
     referencia_producto: Optional[str] = Form(None),
     es_por_peso: Optional[str] = Form(None),
+    es_libreado: Optional[str] = Form(None),
     unidad_medida_id: Optional[str] = Form(None),
     precio_venta1_usd: float = Form(0),
     precio_venta2_usd: float = Form(0),
@@ -24417,6 +24449,7 @@ def inventory_create_product(
     tasa = float(rate_today.rate)
     weighted_feature_enabled = _weighted_inventory_enabled_mode(db) or _weighted_sales_enabled_mode(db)
     is_weight_product = weighted_feature_enabled and es_por_peso == "on"
+    is_libreado_product = _is_pacasholl_company() and es_libreado == "on"
     selected_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=False) or _default_product_unit(db)
     if not selected_unit:
         return _error("Unidad de medida invalida")
@@ -24463,7 +24496,8 @@ def inventory_create_product(
         costo_producto=costo_producto_cs,
         image_url=image_url if product_images_enabled else None,
         tipo_producto=tipo_producto_normalized,
-        es_por_peso=is_weight_product,
+        es_por_peso=is_weight_product or is_libreado_product,
+        es_libreado=is_libreado_product,
         unidad_medida_id=selected_unit.id if selected_unit else None,
         activo=active_flag,
 )
@@ -24487,6 +24521,7 @@ def inventory_create_product(
                 "image_url": (producto.image_url or "") if product_images_enabled else "",
                 "tipo_producto": producto.tipo_producto or "DIRECTO",
                 "es_por_peso": bool(producto.es_por_peso),
+                "es_libreado": bool(getattr(producto, "es_libreado", False)),
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
                 "unidad_medida_nombre": producto.unidad_medida.nombre if producto.unidad_medida else "",
             }
@@ -24503,6 +24538,8 @@ def inventory_update_product(
     linea_id: Optional[str] = Form(None),
     segmento_id: Optional[str] = Form(None),
     tipo_producto: Optional[str] = Form("DIRECTO"),
+    es_por_peso: Optional[str] = Form(None),
+    es_libreado: Optional[str] = Form(None),
     unidad_medida_id: Optional[str] = Form(None),
     precio_venta1_usd: float = Form(0),
     precio_venta2_usd: float = Form(0),
@@ -24564,6 +24601,9 @@ def inventory_update_product(
     selected_unit = _resolve_weight_unit(db, unidad_medida_id, fallback_default=False) or producto.unidad_medida or _default_product_unit(db)
     if not selected_unit:
         return _error("Unidad de medida invalida")
+    weighted_feature_enabled = _weighted_inventory_enabled_mode(db) or _weighted_sales_enabled_mode(db)
+    is_weight_product = weighted_feature_enabled and es_por_peso == "on"
+    is_libreado_product = _is_pacasholl_company() and es_libreado == "on"
     product_images_enabled = _product_images_enabled(db)
     submitted_currency_mode = (inventory_currency_mode or "").strip().upper()
     inventory_cs_only = (
@@ -24590,6 +24630,8 @@ def inventory_update_product(
     producto.linea_id = _to_int(linea_id)
     producto.segmento_id = _to_int(segmento_id)
     producto.tipo_producto = tipo_producto_normalized
+    producto.es_libreado = is_libreado_product
+    producto.es_por_peso = is_weight_product or is_libreado_product
     producto.precio_venta1 = precio_venta1_cs
     producto.precio_venta2 = precio_venta2_cs
     producto.precio_venta3 = precio_venta3_cs
@@ -24623,6 +24665,8 @@ def inventory_update_product(
                 "activo": bool(producto.activo),
                 "image_url": (producto.image_url or "") if product_images_enabled else "",
                 "tipo_producto": producto.tipo_producto or "DIRECTO",
+                "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
+                "es_libreado": bool(getattr(producto, "es_libreado", False)),
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
                 "unidad_medida_nombre": producto.unidad_medida.nombre if producto.unidad_medida else "",
             }
@@ -24664,6 +24708,7 @@ def inventory_product_json(
             "image_url": (producto.image_url or "") if product_images_enabled else "",
             "tipo_producto": producto.tipo_producto or "DIRECTO",
             "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
+            "es_libreado": bool(getattr(producto, "es_libreado", False)),
             "unidad_medida_id": int(producto.unidad_medida_id or 0) if producto.unidad_medida_id else None,
         }
     )
@@ -27496,6 +27541,7 @@ async def sales_create_invoice(
     item_ids = form.getlist("item_producto_id")
     item_variant_ids = form.getlist("item_variante_id")
     item_qtys = form.getlist("item_cantidad")
+    item_peso_lbs = form.getlist("item_peso_lbs")
     item_prices = form.getlist("item_precio")
     item_roles = form.getlist("item_role")
     item_combo_groups = form.getlist("item_combo_group")
@@ -27649,6 +27695,7 @@ async def sales_create_invoice(
                     "product_id": int(product_id),
                     "variant_id": variant_id,
                     "qty": to_float(item_qtys[index] if index < len(item_qtys) else 0),
+                    "peso_lbs": to_float(item_peso_lbs[index] if index < len(item_peso_lbs) else 0),
                     "price_usd": None,
                     "price_cs": None,
                     "price_input": to_float(item_prices[index] if index < len(item_prices) else 0),
@@ -27665,14 +27712,13 @@ async def sales_create_invoice(
     total_items = 0.0
     total_cost_cs = Decimal("0")
     weighted_sales_enabled = _weighted_sales_enabled_mode(db)
+    pacasholl_libreado_enabled = _is_pacasholl_company()
     product_ids = [int(it["product_id"]) for it in source_items if int(it["product_id"]) > 0]
     balances = _balances_by_bodega(db, [bodega.id], list(set(product_ids))) if product_ids else {}
     for src in source_items:
         product_id = int(src["product_id"])
         variant_id = int(src.get("variant_id") or 0) or None
         qty = to_float(str(src.get("qty") or 0))
-        if qty <= 0:
-            continue
 
         producto = db.query(Producto).filter(Producto.id == int(product_id)).first()
         if not producto:
@@ -27684,16 +27730,30 @@ async def sales_create_invoice(
                 f"/sales?error={quote_plus(f'El producto {producto.cod_producto} esta configurado como insumo y no puede facturarse')}",
                 status_code=303,
             )
-        if weighted_sales_enabled and bool(getattr(producto, "es_por_peso", False)) and qty <= 0:
+        peso_lbs = to_float(str(src.get("peso_lbs") or 0))
+        is_libreado_product = pacasholl_libreado_enabled and bool(getattr(producto, "es_libreado", False))
+        if is_libreado_product:
+            if peso_lbs <= 0:
+                db.rollback()
+                return RedirectResponse("/sales?error=Debes+definir+el+peso+en+lbs+para+el+producto+libreado", status_code=303)
+            stock_qty = 1.0
+            billable_qty = peso_lbs
+        else:
+            peso_lbs = 0.0
+            stock_qty = qty
+            billable_qty = qty
+        if stock_qty <= 0:
+            continue
+        if weighted_sales_enabled and bool(getattr(producto, "es_por_peso", False)) and billable_qty <= 0:
             db.rollback()
             return RedirectResponse("/sales?error=Debes+definir+el+peso+a+facturar", status_code=303)
 
         existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0)
-        if existencia < qty:
+        if existencia < stock_qty:
             db.rollback()
             mensaje = f"Stock+insuficiente+para+{producto.cod_producto}"
             return RedirectResponse(f"/sales?error={mensaje}", status_code=303)
-        balances[(producto.id, bodega.id)] = Decimal(str(existencia)) - to_decimal(qty)
+        balances[(producto.id, bodega.id)] = Decimal(str(existencia)) - to_decimal(stock_qty)
         if variant_id:
             variant = (
                 db.query(ShoeProductVariant)
@@ -27716,11 +27776,11 @@ async def sales_create_invoice(
                 .first()
             )
             variant_available = float(variant_stock.existencia or 0) if variant_stock else 0.0
-            if variant_available < qty:
+            if variant_available < stock_qty:
                 db.rollback()
                 mensaje = f"Stock+insuficiente+para+variante+{variant.cod_variante}"
                 return RedirectResponse(f"/sales?error={mensaje}", status_code=303)
-            variant_stock.existencia = Decimal(str(variant_available)) - to_decimal(qty)
+            variant_stock.existencia = Decimal(str(variant_available)) - to_decimal(stock_qty)
 
         if preventa:
             precio_usd = to_float(str(src.get("price_usd") or 0))
@@ -27734,13 +27794,13 @@ async def sales_create_invoice(
                 precio_cs = price
                 precio_usd = price / tasa if tasa else 0
 
-        subtotal_usd = precio_usd * qty
-        subtotal_cs = precio_cs * qty
+        subtotal_usd = precio_usd * billable_qty
+        subtotal_cs = precio_cs * billable_qty
         total_usd += subtotal_usd
         total_cs += subtotal_cs
-        total_items += qty
+        total_items += stock_qty
         if not bool(getattr(producto, "servicio_producto", False)):
-            total_cost_cs += (Decimal(str(producto.costo_producto or 0)) * Decimal(str(qty))).quantize(Decimal("0.01"))
+            total_cost_cs += (Decimal(str(producto.costo_producto or 0)) * Decimal(str(stock_qty))).quantize(Decimal("0.01"))
 
         combo_role = src.get("role")
         combo_group = src.get("combo_group")
@@ -27750,7 +27810,8 @@ async def sales_create_invoice(
             factura_id=factura.id,
             producto_id=int(product_id),
             variante_id=int(variant_id) if variant_id else None,
-            cantidad=qty,
+            cantidad=stock_qty,
+            peso_lbs=peso_lbs if peso_lbs > 0 else None,
             precio_unitario_usd=precio_usd,
             precio_unitario_cs=precio_cs,
             subtotal_usd=subtotal_usd,

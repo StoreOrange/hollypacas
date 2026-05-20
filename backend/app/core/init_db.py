@@ -1489,6 +1489,15 @@ def init_db() -> None:
         if "variante_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_items ADD COLUMN variante_id INTEGER"))
+        if "peso_lbs" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_items ADD COLUMN peso_lbs NUMERIC(14, 2)"))
+    if "productos" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("productos")}
+        if "es_libreado" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE productos ADD COLUMN es_libreado BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("UPDATE productos SET es_libreado = FALSE WHERE es_libreado IS NULL"))
     if "ventas_preventas_items" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("ventas_preventas_items")}
         if "combo_role" not in columns:

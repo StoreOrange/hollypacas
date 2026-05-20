@@ -868,6 +868,7 @@
   const rateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
   const activeBodegaId = Number({{ user.default_bodega.id if user.default_bodega else 0 }}) || 0;
   const weighted_sales_enabled = {{ "true" if weighted_sales_enabled else "false" }};
+  const pacashollLibreadoEnabled = {{ pacasholl_libreado_enabled|tojson }};
   const defaultSalesCurrency = {{ (default_sales_currency or "CS") | tojson }};
   const initialPreventa = {{ (initial_preventa or None) | tojson }};
   let preventaLastId = Number(initialPreventa?.id || 0) || 0;
@@ -1203,6 +1204,8 @@
       row.dataset.subtotalCs = payload.subtotalCs.toFixed(2);
       row.dataset.maxQty = payload.maxQty.toFixed(2);
       row.dataset.allowDecimal = payload.qtyStep === "0.01" ? "1" : "0";
+      row.dataset.isLibreado = payload.isLibreado ? "1" : "0";
+      row.dataset.pesoLbs = payload.pesoLbs ? Number(payload.pesoLbs).toFixed(2) : "";
     row.classList.add("sales-item-row");
     if (payload.role === "parent") {
       row.classList.add("combo-parent");
@@ -1228,10 +1231,11 @@
           ${badgeHtml}
         </div>
         <div class="font-semibold text-ink text-base">${payload.name}</div>
+        ${payload.weightLabel ? `<div class="text-xs text-violet-700 fw-semibold mt-1">${payload.weightLabel}</div>` : ""}
         <div class="mt-0.5 flex flex-wrap items-center justify-between gap-2 text-sm">
           <div class="flex items-center gap-2">
             <span class="text-xs text-slate uppercase tracking-[0.18em]">Cantidad</span>
-            <input class="row-qty w-20 text-left border-0 bg-transparent focus:outline-none font-semibold text-ink" type="text" inputmode="decimal" value="${payload.qtyValueDisplay}" />
+            <input class="row-qty w-20 text-left border-0 bg-transparent focus:outline-none font-semibold text-ink" type="text" inputmode="decimal" value="${payload.qtyValueDisplay}" ${payload.qtyReadonly ? "readonly" : ""} />
           </div>
           <div class="flex flex-wrap items-center gap-2 text-right">
             <div class="flex items-center gap-2">
@@ -1256,6 +1260,7 @@
       </td>
       <input type="hidden" name="item_producto_id" value="${payload.productId}" />
       <input type="hidden" name="item_cantidad" value="${payload.qtyValue}" />
+      <input type="hidden" name="item_peso_lbs" value="${payload.pesoLbs ? Number(payload.pesoLbs).toFixed(2) : ""}" />
       <input type="hidden" name="item_role" value="${payload.role || ""}" />
       <input type="hidden" name="item_combo_group" value="${payload.comboGroup || ""}" />
     `;
@@ -1273,24 +1278,45 @@
     return Math.max(1, Math.round(raw));
   };
 
+  const parseWeightedQty = (value) => {
+    const raw = parseFloat(value || 0);
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  };
+
+  const isLibreadoButton = (button) => button?.dataset?.esLibreado === "1";
+  const requiresWeightPrompt = (button) => button?.dataset?.esLibreado === "1" || button?.dataset?.esPorPeso === "1";
+  const getConfirmedWeight = (qtyInput) => {
+    if (!qtyInput || qtyInput.dataset.weightConfirmed !== "1") return null;
+    const parsed = parseFloat(qtyInput.value || 0);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+  const getWeightUnitLabel = (button) => (isLibreadoButton(button) ? "Lbs" : (button?.dataset?.unidadMedida || "lb"));
+
   const promptWeightForItem = async (button, initialValue = "") => {
-    if (!weighted_sales_enabled || button.dataset.esPorPeso !== "1") return null;
-    const unitLabel = button.dataset.unidadMedida || "lb";
+    const isLibreado = isLibreadoButton(button);
+    if (!requiresWeightPrompt(button)) {
+      return { required: false, confirmed: false, value: null };
+    }
+    const unitLabel = getWeightUnitLabel(button);
     if (typeof Swal === "undefined") {
       const raw = window.prompt(`Define ${unitLabel} a facturar`, initialValue || "0.50");
-      if (raw === null) return null;
+      if (raw === null) return { required: true, confirmed: false, value: null };
       const parsed = parseFloat(raw);
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      return {
+        required: true,
+        confirmed: Number.isFinite(parsed) && parsed > 0,
+        value: Number.isFinite(parsed) && parsed > 0 ? parsed : null,
+      };
     }
     const result = await Swal.fire({
-      title: "Producto por peso",
+      title: isLibreado ? "Producto libreado" : "Producto por peso",
       html: `<div class="text-start small text-muted mb-2">${button.dataset.code} - ${button.dataset.name}</div>`,
       input: "number",
-      inputLabel: `Cantidad en ${unitLabel}`,
+      inputLabel: `Peso en ${unitLabel}`,
       inputValue: initialValue || "0.50",
       inputAttributes: { min: "0.01", step: "0.01" },
       showCancelButton: true,
-      confirmButtonText: "Aplicar peso",
+      confirmButtonText: "Aplicar",
       cancelButtonText: "Cancelar",
       inputValidator: (value) => {
         const parsed = parseFloat(value || 0);
@@ -1298,8 +1324,14 @@
         return undefined;
       },
     });
-    if (!result.isConfirmed) return null;
-    return parseFloat(result.value || 0);
+    if (!result.isConfirmed) {
+      return { required: true, confirmed: false, value: null };
+    }
+    return {
+      required: true,
+      confirmed: true,
+      value: parseFloat(result.value || 0),
+    };
   };
 
   const pauseNavForAlert = (config) => {
@@ -1403,8 +1435,22 @@
     const row = button.closest(".product-pick-row");
     if (!row) return false;
     const qtyInput = row.querySelector(".qty-input");
-    const weightedQty = await promptWeightForItem(button, qtyInput?.value || "");
-    const qty = weightedQty ?? parseQty(qtyInput.value);
+    const itemIsLibreado = isLibreadoButton(button);
+    const itemIsWeighted = requiresWeightPrompt(button);
+    let weightedQty = getConfirmedWeight(qtyInput);
+    if (weightedQty === null) {
+      const promptResult = await promptWeightForItem(button, qtyInput?.value || "");
+      if (promptResult.required && !promptResult.confirmed) {
+        return false;
+      }
+      weightedQty = promptResult.confirmed ? promptResult.value : null;
+      if (qtyInput && weightedQty !== null) {
+        qtyInput.value = weightedQty.toFixed(2);
+        qtyInput.dataset.weightConfirmed = "1";
+      }
+    }
+    const qty = weightedQty ?? (itemIsWeighted ? parseWeightedQty(qtyInput.value) : parseQty(qtyInput.value));
+    const stockQty = itemIsLibreado ? 1 : qty;
     const maxQty = parseFloat(button.dataset.existencia || 0);
     let freeQty = parseFloat(button.dataset.freeQty || maxQty || 0);
     let reservedDetails = parseReservedDetails(button.dataset.reservedDetails || "");
@@ -1413,11 +1459,11 @@
       pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "No hay saldo disponible." });
       return false;
     }
-    if (qty > freeQty) {
+    if (stockQty > freeQty) {
       const action = await askReservedAction({
         code: button.dataset.code,
         name: button.dataset.name,
-        requested: qty,
+        requested: stockQty,
         available: freeQty,
         details: reservedDetails,
       });
@@ -1433,12 +1479,12 @@
         }
       }
     }
-    if (qty > freeQty) {
+    if (stockQty > freeQty) {
       pauseNavForAlert({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible libre: ${freeQty}` });
       return false;
     }
     const productId = button.dataset.productId;
-    const existingRow = itemsTable.querySelector(`tr[data-item-row][data-product-id="${productId}"]`);
+    const existingRow = itemIsLibreado ? null : itemsTable.querySelector(`tr[data-item-row][data-product-id="${productId}"]`);
     if (existingRow) {
       const qtyHidden = existingRow.querySelector("input[name='item_cantidad']");
       const currentQty = parseFloat(qtyHidden?.value || 0);
@@ -1453,7 +1499,7 @@
       }
       const qtyInputRow = existingRow.querySelector(".row-qty");
       if (qtyInputRow && qtyHidden) {
-        if (button.dataset.esPorPeso === "1") {
+        if (itemIsWeighted) {
           qtyInputRow.value = newQty.toFixed(2);
           qtyHidden.value = newQty.toFixed(2);
         } else {
@@ -1479,22 +1525,30 @@
     const priceUsd = parseFloat(button.dataset.priceUsd || 0);
     const priceCs = parseFloat(button.dataset.priceCs || 0);
     const price = moneda === "USD" ? priceUsd : priceCs;
-    const subtotal = price * qty;
+    const subtotal = price * (itemIsLibreado ? qty : qty);
     const subtotalUsd = moneda === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
     const subtotalCs = moneda === "USD" ? subtotal * rateToday : subtotal;
     addItemRow({
       productId: button.dataset.productId,
       code: button.dataset.code,
-      name: `${button.dataset.name}${button.dataset.esPorPeso === "1" ? ` (${button.dataset.unidadMedida || "lb"})` : ""}`,
-      qtyValue: button.dataset.esPorPeso === "1" ? qty.toFixed(2) : Math.trunc(qty).toFixed(2),
-      qtyValueDisplay: button.dataset.esPorPeso === "1" ? qty.toFixed(2) : Math.trunc(qty).toString(),
-      qtyStep: button.dataset.esPorPeso === "1" ? "0.01" : "1",
+      name: `${button.dataset.name}${itemIsWeighted ? ` (${getWeightUnitLabel(button)})` : ""}`,
+      weightLabel: itemIsLibreado ? `Peso registrado: ${qty.toFixed(2)} ${getWeightUnitLabel(button)}` : "",
+      pesoLbs: itemIsLibreado ? qty : null,
+      isLibreado: itemIsLibreado,
+      qtyValue: itemIsLibreado ? "1.00" : (itemIsWeighted ? qty.toFixed(2) : Math.trunc(qty).toFixed(2)),
+      qtyValueDisplay: itemIsLibreado ? "1" : (itemIsWeighted ? qty.toFixed(2) : Math.trunc(qty).toString()),
+      qtyStep: itemIsLibreado ? "1" : (itemIsWeighted ? "0.01" : "1"),
+      qtyReadonly: itemIsLibreado,
       maxQty: maxQty,
       priceValue: price.toFixed(2),
       subtotalLabel: formatMoney(subtotal, moneda === "USD" ? "USD" : "CS"),
       subtotalUsd,
       subtotalCs,
     });
+    if (qtyInput) {
+      qtyInput.dataset.weightConfirmed = "0";
+      qtyInput.value = itemIsWeighted ? "0.50" : "1";
+    }
     return true;
   };
 
@@ -2171,7 +2225,7 @@
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="text-xs uppercase tracking-[0.18em] text-slate">Cantidad</span>
-                    <input class="qty-input w-24 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="${weighted_sales_enabled && item.es_por_peso ? "0.01" : "1"}" min="${weighted_sales_enabled && item.es_por_peso ? "0.01" : "1"}" max="${item.free_qty ?? item.existencia}" value="${weighted_sales_enabled && item.es_por_peso ? "0.50" : "1"}" />
+                    <input class="qty-input w-24 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white ${item.es_libreado || (weighted_sales_enabled && item.es_por_peso) ? "cursor-pointer" : ""}" type="number" step="${(item.es_libreado || (weighted_sales_enabled && item.es_por_peso)) ? "0.01" : "1"}" min="${(item.es_libreado || (weighted_sales_enabled && item.es_por_peso)) ? "0.01" : "1"}" max="${item.free_qty ?? item.existencia}" value="${(item.es_libreado || (weighted_sales_enabled && item.es_por_peso)) ? "0.50" : "1"}" data-weight-confirmed="0" />
                   </div>
                 </div>
               </div>
@@ -2189,6 +2243,7 @@
               data-price-usd="${item.precio_venta1_usd.toFixed(2)}"
               data-price-cs="${item.precio_venta1.toFixed(2)}"
               data-es-por-peso="${item.es_por_peso ? "1" : "0"}"
+              data-es-libreado="${item.es_libreado ? "1" : "0"}"
               data-unidad-medida="${item.unidad_medida_abreviatura || "lb"}"
               aria-label="Agregar producto"
             >
@@ -2220,6 +2275,21 @@
 
   if (productList) {
     productList.addEventListener("click", async (event) => {
+      const qtyInput = event.target.closest(".qty-input");
+      if (qtyInput) {
+        const row = qtyInput.closest(".product-pick-row");
+        const button = row?.querySelector(".add-item");
+        if (button && requiresWeightPrompt(button)) {
+          event.preventDefault();
+          event.stopPropagation();
+          const promptResult = await promptWeightForItem(button, qtyInput.value || "");
+          if (promptResult.confirmed && promptResult.value) {
+            qtyInput.value = promptResult.value.toFixed(2);
+            qtyInput.dataset.weightConfirmed = "1";
+          }
+          return;
+        }
+      }
       const button = event.target.closest(".add-item");
       if (!button) return;
       await handleAddItem(button);
@@ -2525,9 +2595,14 @@
       const qtyInput = row.querySelector(".row-qty");
       const priceInput = row.querySelector(".row-price");
       const qtyHidden = row.querySelector("input[name='item_cantidad']");
+      const pesoLbsHidden = row.querySelector("input[name='item_peso_lbs']");
+      const isLibreadoRow = row.dataset.isLibreado === "1";
       let qty = parseFloat(qtyInput ? qtyInput.value : (qtyHidden ? qtyHidden.value : 0));
+      if (isLibreadoRow) {
+        qty = 1;
+      }
       const maxQty = parseFloat(row.dataset.maxQty || 0);
-      if (maxQty && qty > maxQty && qtyInput) {
+      if (!isLibreadoRow && maxQty && qty > maxQty && qtyInput) {
         qty = row.dataset.allowDecimal === "1" ? maxQty : Math.trunc(maxQty);
         qtyInput.value = row.dataset.allowDecimal === "1" ? maxQty.toFixed(2) : Math.trunc(maxQty).toString();
         if (qtyHidden) {
@@ -2541,9 +2616,13 @@
         qtyHidden.value = row.dataset.allowDecimal === "1" ? qty.toFixed(2) : Math.trunc(qty).toFixed(2);
         qtyInput.value = row.dataset.allowDecimal === "1" ? qty.toFixed(2) : Math.trunc(qty).toString();
       }
+      if (pesoLbsHidden && isLibreadoRow) {
+        row.dataset.pesoLbs = pesoLbsHidden.value;
+      }
       const price = parseFloat(priceInput ? priceInput.value : 0);
       const moneda = monedaField.value || "USD";
-      const subtotal = price * qty;
+      const subtotalBaseQty = isLibreadoRow ? parseFloat(pesoLbsHidden?.value || row.dataset.pesoLbs || 0) : qty;
+      const subtotal = price * subtotalBaseQty;
       row.dataset.subtotalUsd = moneda === "USD" ? subtotal.toFixed(2) : (rateToday ? (subtotal / rateToday).toFixed(2) : "0.00");
       row.dataset.subtotalCs = moneda === "USD" ? (subtotal * rateToday).toFixed(2) : subtotal.toFixed(2);
       const subtotalCell = row.querySelector(".subtotal-cell");
@@ -3320,17 +3399,12 @@
       const padding = 54;
       const items = Array.isArray(factura.items) ? factura.items.slice(0, 10) : [];
       const lineHeight = 30;
+      const detailLineHeight = 18;
       const headerBase = 318;
-      const bodyHeight = Math.max(260, (items.length * lineHeight) + 84);
-      const totalY = headerBase + bodyHeight;
-      const footerY = totalY + 94;
-      const height = footerY + 70;
-      const total = factura.moneda === "USD"
-        ? Number(factura.total_usd || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        : Number(factura.total_cs || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const currency = factura.moneda === "USD" ? "$" : "C$";
-      const itemRows = items.map((item, index) => {
-        const y = headerBase + 30 + (index * lineHeight);
+      let bodyCursor = headerBase + 30;
+      const itemRows = items.map((item) => {
+        const y = bodyCursor;
         const descLines = wrapSvgText(item.descripcion || "", 38);
         const desc = descLines.map((line, lineIdx) =>
           `<tspan x="${padding + 190}" dy="${lineIdx === 0 ? 0 : 14}">${escapeXml(line)}</tspan>`
@@ -3339,14 +3413,29 @@
         const qty = Number(item.cantidad || 0).toFixed(2);
         const subtotalRaw = factura.moneda === "USD" ? item.subtotal_usd : item.subtotal_cs;
         const subtotal = Number(subtotalRaw || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const isLibreado = Boolean(item.es_libreado) && Number(item.peso_lbs || 0) > 0;
+        const weightY = y + Math.max(0, (descLines.length - 1) * 14) + 20;
+        const weightLine = isLibreado
+          ? `<text x="${padding + 190}" y="${weightY}" fill="#7c3aed" font-size="17" font-weight="700">Peso: ${Number(item.peso_lbs || 0).toFixed(2)} Lbs</text>`
+          : "";
+        const rowHeight = Math.max(lineHeight, (descLines.length * 14) + (isLibreado ? detailLineHeight + 10 : 0) + 12);
+        bodyCursor += rowHeight;
         return `
           <line x1="${padding}" y1="${y + 13}" x2="${width - padding}" y2="${y + 13}" stroke="#e2e8f0" stroke-width="1" />
           <text x="${padding}" y="${y}" fill="#0f172a" font-size="21" font-weight="700">${code}</text>
           <text y="${y}" fill="#334155" font-size="20">${desc}</text>
+          ${weightLine}
           <text x="${width - 220}" y="${y}" fill="#0f172a" font-size="20" text-anchor="end">${qty}</text>
           <text x="${width - padding}" y="${y}" fill="#0f172a" font-size="20" font-weight="700" text-anchor="end">${currency} ${subtotal}</text>
         `;
       }).join("");
+      const bodyHeight = Math.max(260, (bodyCursor - headerBase) + 54);
+      const totalY = headerBase + bodyHeight;
+      const footerY = totalY + 94;
+      const height = footerY + 70;
+      const total = factura.moneda === "USD"
+        ? Number(factura.total_usd || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : Number(factura.total_cs || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       return `
         <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
           <defs>

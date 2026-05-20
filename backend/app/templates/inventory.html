@@ -384,6 +384,7 @@
                 data-image-url="{% if product_images_enabled %}{{ p.image_url or '' }}{% endif %}"
                 data-tipo-producto="{{ p.tipo_producto or 'DIRECTO' }}"
                 data-es-por-peso="{{ 1 if p.es_por_peso else 0 }}"
+                data-es-libreado="{{ 1 if p.es_libreado else 0 }}"
                 data-unidad-medida-id="{{ p.unidad_medida_id or '' }}"
               >
                 {% if product_images_enabled %}
@@ -607,6 +608,14 @@
                 Producto por peso
               </label>
             </div>
+            {% if pacasholl_libreado_enabled %}
+            <div class="col-md-6 d-flex align-items-center">
+              <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
+                <input id="field-es-libreado" class="accent-brand" type="checkbox" name="es_libreado" />
+                Producto libreado por lbs
+              </label>
+            </div>
+            {% endif %}
             <div class="col-md-6 d-flex align-items-center">
               <label class="d-inline-flex align-items-center gap-2 text-sm fw-semibold text-ink">
                 <input id="field-activo" class="accent-brand" type="checkbox" name="activo" checked />
@@ -993,6 +1002,7 @@
   const fieldImagePreview = document.getElementById("field-image-preview");
   const fieldImageMeta = document.getElementById("field-image-meta");
   const fieldEsPorPeso = document.getElementById("field-es-por-peso");
+  const fieldEsLibreado = document.getElementById("field-es-libreado");
   const fieldUnidadMedida = document.getElementById("field-unidad-medida");
   const fieldActivo = document.getElementById("field-activo");
   const modalTabs = document.querySelectorAll(".modal-tab");
@@ -1140,6 +1150,7 @@
     if (fieldMargin) fieldMargin.value = "";
     fieldExistencia.textContent = "0";
     if (fieldEsPorPeso) fieldEsPorPeso.checked = false;
+    if (fieldEsLibreado) fieldEsLibreado.checked = false;
     if (fieldUnidadMedida) {
       const defaultUnitOption = Array.from(fieldUnidadMedida.options).find((option) => option.textContent.toLowerCase().includes("unidad"));
       fieldUnidadMedida.value = defaultUnitOption?.value || fieldUnidadMedida.value;
@@ -1175,6 +1186,7 @@
     renderProductImagePreview(payload?.image_url || row?.dataset.imageUrl || "");
     fieldExistencia.textContent = row?.dataset.existencia || "0";
     if (fieldEsPorPeso) fieldEsPorPeso.checked = Boolean(payload?.es_por_peso) || row?.dataset.esPorPeso === "1";
+    if (fieldEsLibreado) fieldEsLibreado.checked = Boolean(payload?.es_libreado) || row?.dataset.esLibreado === "1";
     if (fieldUnidadMedida) fieldUnidadMedida.value = String(payload?.unidad_medida_id || row?.dataset.unidadMedidaId || fieldUnidadMedida.value);
     fieldActivo.checked = typeof payload?.activo === "boolean" ? payload.activo : row?.dataset.activo === "1";
     cancelEdit.classList.remove("hidden");

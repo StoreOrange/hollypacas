@@ -162,6 +162,7 @@ class Producto(Base):
     image_url = Column(String(260), nullable=True)
     tipo_producto = Column(String(30), nullable=False, default="DIRECTO")
     es_por_peso = Column(Boolean, default=False)
+    es_libreado = Column(Boolean, default=False)
     unidad_medida_id = Column(Integer, ForeignKey("unidades_medida.id"), nullable=True)
     usuario_registro = Column(String(80), nullable=True)
     maquina_registro = Column(String(80), nullable=True)
