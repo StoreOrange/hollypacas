@@ -891,6 +891,10 @@
     return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
   };
 
+  const roundMoney = (value) => {
+    return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+  };
+
   const parseMoneyValue = (value) => {
     if (!value) return 0;
     const raw = value.toString().replace(/[^0-9.,-]/g, "");
@@ -1035,11 +1039,11 @@
 
   const getRemainingByCurrency = (targetCurrency) => {
     const invoiceCurrency = monedaField?.value || "CS";
-    const totalDue = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
-    const totalPaid = paymentItems.reduce((acc, item) => {
+    const totalDue = roundMoney(invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs);
+    const totalPaid = roundMoney(paymentItems.reduce((acc, item) => {
       return acc + (invoiceCurrency === "USD" ? toUsd(item.monto, item.moneda) : toCs(item.monto, item.moneda));
-    }, 0);
-    const remaining = Math.max(totalDue - totalPaid, 0);
+    }, 0));
+    const remaining = roundMoney(Math.max(totalDue - totalPaid, 0));
     if (targetCurrency === invoiceCurrency) return remaining;
     if (!rateToday) return 0;
     return targetCurrency === "USD" ? remaining / rateToday : remaining * rateToday;
@@ -1075,6 +1079,8 @@
       const qtyValue = row.querySelector("input[name='item_cantidad']")?.value;
       sumQty += parseFloat(qtyValue || 0);
     });
+    sumUsd = roundMoney(sumUsd);
+    sumCs = roundMoney(sumCs);
     totalUsd.textContent = formatMoney(sumUsd, "USD");
     totalCs.textContent = formatMoney(sumCs, "CS");
     currentTotals = { usd: sumUsd, cs: sumCs };
@@ -2464,12 +2470,12 @@
         return;
       }
       const invoiceCurrency = monedaField?.value || "CS";
-      const paidSoFar = paymentItems.reduce((acc, item) => {
+      const paidSoFar = roundMoney(paymentItems.reduce((acc, item) => {
         return acc + (invoiceCurrency === "USD" ? toUsd(item.monto, item.moneda) : toCs(item.monto, item.moneda));
-      }, 0);
-      const due = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
-      const remaining = Math.max(due - paidSoFar, 0);
-      const montoInvoice = invoiceCurrency === "USD" ? toUsd(monto, moneda) : toCs(monto, moneda);
+      }, 0));
+      const due = roundMoney(invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs);
+      const remaining = roundMoney(Math.max(due - paidSoFar, 0));
+      const montoInvoice = roundMoney(invoiceCurrency === "USD" ? toUsd(monto, moneda) : toCs(monto, moneda));
       const isCash = isCashPayment(formaId, formaLabel);
       if (!isCash && montoInvoice > remaining + 0.01) {
         pauseNavForAlert({ icon: "warning", title: "Pago excede el saldo", text: "Solo efectivo permite vuelto." });
@@ -2702,10 +2708,10 @@
         pauseNavForAlert({ icon: "warning", title: "Tasa requerida", text: "Configura la tasa de cambio." });
         return;
       }
-      const totalPaid = paymentItems.reduce((acc, item) => {
+      const totalPaid = roundMoney(paymentItems.reduce((acc, item) => {
         return acc + (invoiceCurrency === "USD" ? toUsd(item.monto, item.moneda) : toCs(item.monto, item.moneda));
-      }, 0);
-      const due = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
+      }, 0));
+      const due = roundMoney(invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs);
       const EPS = 0.01;
       if (totalPaid + EPS < due) {
         pauseNavForAlert({

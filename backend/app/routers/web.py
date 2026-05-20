@@ -27794,8 +27794,12 @@ async def sales_create_invoice(
                 precio_cs = price
                 precio_usd = price / tasa if tasa else 0
 
-        subtotal_usd = precio_usd * billable_qty
-        subtotal_cs = precio_cs * billable_qty
+        subtotal_usd = float(
+            Decimal(str(precio_usd * billable_qty)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        )
+        subtotal_cs = float(
+            Decimal(str(precio_cs * billable_qty)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        )
         total_usd += subtotal_usd
         total_cs += subtotal_cs
         total_items += stock_qty
@@ -27823,6 +27827,8 @@ async def sales_create_invoice(
 
         # No usar saldo global; el stock se calcula por movimientos/bodega.
 
+    total_usd = float(Decimal(str(total_usd)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    total_cs = float(Decimal(str(total_cs)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     factura.total_usd = total_usd
     factura.total_cs = total_cs
     factura.total_items = total_items
@@ -27873,9 +27879,14 @@ async def sales_create_invoice(
         if not pagos:
             db.rollback()
             return RedirectResponse("/sales?error=Agrega+pagos+para+registrar", status_code=303)
-        total_paid = sum(pago.monto_usd for pago in pagos) if moneda == "USD" else sum(pago.monto_cs for pago in pagos)
-        due_total = total_usd if moneda == "USD" else total_cs
-        if float(total_paid) < float(due_total):
+        total_paid = sum(
+            Decimal(str(pago.monto_usd or 0)) for pago in pagos
+        ) if moneda == "USD" else sum(
+            Decimal(str(pago.monto_cs or 0)) for pago in pagos
+        )
+        total_paid = total_paid.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        due_total = Decimal(str(total_usd if moneda == "USD" else total_cs)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if total_paid < due_total:
             db.rollback()
             return RedirectResponse("/sales?error=Pago+incompleto", status_code=303)
         factura.estado_cobranza = "PAGADA"
