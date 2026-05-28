@@ -224,6 +224,13 @@
               <option value="TODAS" {% if estado_q == "TODAS" %}selected{% endif %}>Todas</option>
             </select>
           </div>
+          <div>
+            <label class="odoo-field-label text-xs text-slate">Moneda vista</label>
+            <select class="form-select form-select-sm odoo-input" id="cobranza-moneda">
+              <option value="USD" {% if display_currency == "USD" %}selected{% endif %}>Dolares</option>
+              <option value="CS" {% if display_currency == "CS" %}selected{% endif %}>Cordobas</option>
+            </select>
+          </div>
           <div class="flex-grow-1">
             <label class="odoo-field-label text-xs text-slate">Producto</label>
             <input class="form-control form-control-sm odoo-input" type="text" id="cobranza-product" value="{{ producto_q }}" placeholder="Codigo o descripcion">
@@ -240,6 +247,16 @@
               Exportar
             </button>
           </div>
+          <div class="pt-3">
+            <button class="btn btn-sm btn-primary" type="button" id="cobranza-filtered-detail">
+              <i class="bi bi-list-check"></i>
+              Detalle filtrado
+            </button>
+          </div>
+        </div>
+        <div class="small text-muted mb-2">
+          Vista en {{ "dolares" if display_currency == "USD" else "cordobas" }} con tasa del dia:
+          <strong>{{ "C$ {:,.4f}".format(tasa_actual) }}</strong>
         </div>
 
         {% if selected_cliente %}
@@ -344,13 +361,13 @@
                 <td>{{ factura.vendedor.nombre if factura.vendedor else '-' }}</td>
                 <td>{{ factura.fecha.date() if factura.fecha else '-' }}</td>
                 <td class="text-end">
-                  {{ "C$" if factura.moneda != "USD" else "$" }} {{ "{:,.2f}".format(factura.total_cs if factura.moneda != "USD" else factura.total_usd) }}
+                  {{ display_symbol }} {{ "{:,.2f}".format(row.display_total) }}
                 </td>
                 <td class="text-end">
-                  {{ "C$" if factura.moneda != "USD" else "$" }} {{ "{:,.2f}".format(row.abonos_cs if factura.moneda != "USD" else row.abonos_usd) }}
+                  {{ display_symbol }} {{ "{:,.2f}".format(row.display_abonos) }}
                 </td>
                 <td class="text-end">
-                  {{ "C$" if factura.moneda != "USD" else "$" }} {{ "{:,.2f}".format(row.saldo_cs if factura.moneda != "USD" else row.saldo_usd) }}
+                  {{ display_symbol }} {{ "{:,.2f}".format(row.display_saldo) }}
                 </td>
                 <td>
                   <span class="badge {% if factura.estado_cobranza == 'PAGADA' and ((row.abonos_cs if factura.moneda != 'USD' else row.abonos_usd) > 0) %}bg-primary{% elif factura.estado_cobranza == 'PAGADA' %}bg-success{% else %}bg-warning text-dark{% endif %}">
@@ -396,12 +413,12 @@
             <div class="fw-bold text-ink">{{ "{:,.2f}".format(total_pacas) }}</div>
           </div>
           <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[200px]">
-            <div class="text-xs uppercase tracking-[0.2em] text-slate">Total vendido</div>
-            <div class="fw-bold text-ink">{{ "C$ {:,.2f}".format(total_vendido_cs) }}</div>
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Total vendido {{ display_currency }}</div>
+            <div class="fw-bold text-ink">{{ display_symbol }} {{ "{:,.2f}".format(display_total_vendido) }}</div>
           </div>
           <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[200px]">
-            <div class="text-xs uppercase tracking-[0.2em] text-slate">Total pendiente C$</div>
-            <div class="fw-bold text-ink">{{ "C$ {:,.2f}".format(total_saldo_cs) }}</div>
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Total pendiente {{ display_currency }}</div>
+            <div class="fw-bold text-ink">{{ display_symbol }} {{ "{:,.2f}".format(display_total_saldo) }}</div>
           </div>
           <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[200px]">
             <div class="text-xs uppercase tracking-[0.2em] text-slate">Total pendiente USD</div>
@@ -417,7 +434,7 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content odoo-modal">
       <div class="odoo-modal-header d-flex align-items-center justify-content-between">
-        <div class="odoo-modal-title">Detalle de factura</div>
+        <div class="odoo-modal-title" id="cobranza-detail-title">Detalle de factura</div>
         <button class="btn-close" data-bs-dismiss="modal" type="button"></button>
       </div>
       <div class="odoo-modal-body p-4">
@@ -637,21 +654,27 @@
     };
 
     const filterBtn = document.getElementById("cobranza-filter");
+    const buildCobranzaParams = () => {
+      const start = document.getElementById("cobranza-start").value;
+      const end = document.getElementById("cobranza-end").value;
+      const prod = document.getElementById("cobranza-product").value;
+      const vendedor = document.getElementById("cobranza-vendedor").value;
+      const cliente = document.getElementById("cobranza-cliente").value;
+      const estado = document.getElementById("cobranza-estado").value;
+      const moneda = document.getElementById("cobranza-moneda").value;
+      const params = new URLSearchParams();
+      if (start) params.set("start_date", start);
+      if (end) params.set("end_date", end);
+      if (prod) params.set("producto", prod);
+      if (vendedor) params.set("vendedor_id", vendedor);
+      if (cliente) params.set("cliente", cliente);
+      if (estado) params.set("estado", estado);
+      if (moneda) params.set("moneda", moneda);
+      return params;
+    };
     if (filterBtn) {
       filterBtn.addEventListener("click", () => {
-        const start = document.getElementById("cobranza-start").value;
-        const end = document.getElementById("cobranza-end").value;
-        const prod = document.getElementById("cobranza-product").value;
-        const vendedor = document.getElementById("cobranza-vendedor").value;
-        const cliente = document.getElementById("cobranza-cliente").value;
-        const estado = document.getElementById("cobranza-estado").value;
-        const params = new URLSearchParams();
-        if (start) params.set("start_date", start);
-        if (end) params.set("end_date", end);
-        if (prod) params.set("producto", prod);
-        if (vendedor) params.set("vendedor_id", vendedor);
-        if (cliente) params.set("cliente", cliente);
-        if (estado) params.set("estado", estado);
+        const params = buildCobranzaParams();
         window.location.href = `/sales/cobranza?${params.toString()}`;
       });
     }
@@ -659,19 +682,7 @@
     const exportBtn = document.getElementById("cobranza-export");
     if (exportBtn) {
       exportBtn.addEventListener("click", () => {
-        const start = document.getElementById("cobranza-start").value;
-        const end = document.getElementById("cobranza-end").value;
-        const prod = document.getElementById("cobranza-product").value;
-        const vendedor = document.getElementById("cobranza-vendedor").value;
-        const cliente = document.getElementById("cobranza-cliente").value;
-        const estado = document.getElementById("cobranza-estado").value;
-        const params = new URLSearchParams();
-        if (start) params.set("start_date", start);
-        if (end) params.set("end_date", end);
-        if (prod) params.set("producto", prod);
-        if (vendedor) params.set("vendedor_id", vendedor);
-        if (cliente) params.set("cliente", cliente);
-        if (estado) params.set("estado", estado);
+        const params = buildCobranzaParams();
         params.set("format", "pdf");
         window.open(`/sales/cobranza/export?${params.toString()}`, "_blank", "noopener");
       });
@@ -697,6 +708,64 @@
       return response.json().catch(() => ({ ok: false, message: "Respuesta invalida" }));
     };
 
+    const filteredDetailBtn = document.getElementById("cobranza-filtered-detail");
+    if (filteredDetailBtn) {
+      filteredDetailBtn.addEventListener("click", async () => {
+        const detailModal = getBootstrapModal(detailModalEl);
+        if (!detailModal) {
+          alert("Bootstrap no disponible");
+          return;
+        }
+        const title = document.getElementById("cobranza-detail-title");
+        const target = document.getElementById("cobranza-detail-body");
+        const params = buildCobranzaParams();
+        if (title) title.textContent = "Detalle completo filtrado";
+        target.textContent = "Cargando...";
+        detailModal.show();
+        const payload = await handleFetchJson(`/sales/cobranza/detalle-filtrado?${params.toString()}`);
+        if (!payload || !payload.ok) {
+          target.textContent = payload?.message || "No se pudo cargar el detalle filtrado.";
+          return;
+        }
+        const symbol = payload.symbol || "$";
+        const money = (value, prefix = symbol) => `${prefix} ${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const qty = (value) => Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+        const rows = (payload.rows || []).map((item) => `
+          <tr>
+            <td class="fw-semibold">${item.factura}</td>
+            <td>${item.codigo}</td>
+            <td>${item.descripcion}</td>
+            <td class="text-end">${qty(item.cantidad)}</td>
+            <td class="text-end">${money(item.precio)}</td>
+            <td class="text-end">${money(item.subtotal)}</td>
+          </tr>
+        `).join("");
+        target.innerHTML = `
+          <div class="row g-2 mb-3">
+            <div class="col-md-3"><div class="p-2 rounded border bg-light"><div class="small text-muted">Facturas</div><div class="fw-bold">${payload.summary.facturas}</div></div></div>
+            <div class="col-md-3"><div class="p-2 rounded border bg-light"><div class="small text-muted">Total bultos</div><div class="fw-bold">${qty(payload.summary.total_bultos)}</div></div></div>
+            <div class="col-md-3"><div class="p-2 rounded border bg-light"><div class="small text-muted">Total C$</div><div class="fw-bold">${money(payload.summary.total_cs, "C$")}</div></div></div>
+            <div class="col-md-3"><div class="p-2 rounded border bg-light"><div class="small text-muted">Total USD</div><div class="fw-bold">${money(payload.summary.total_usd, "$")}</div></div></div>
+          </div>
+          <div class="small text-muted mb-2">Moneda de detalle: ${payload.moneda} · Tasa C$ ${Number(payload.tasa || 0).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</div>
+          <div class="table-responsive">
+            <table class="table table-sm odoo-table">
+              <thead><tr><th>Factura</th><th>Codigo</th><th>Producto vendido</th><th class="text-end">Cantidad</th><th class="text-end">Precio</th><th class="text-end">Total</th></tr></thead>
+              <tbody>${rows || '<tr><td colspan="6" class="text-center text-slate py-3">Sin datos para los filtros seleccionados.</td></tr>'}</tbody>
+              <tfoot>
+                <tr>
+                  <th colspan="3" class="text-end">Totales</th>
+                  <th class="text-end">${qty(payload.summary.total_bultos)}</th>
+                  <th class="text-end">${money(payload.summary.total_usd, "$")}</th>
+                  <th class="text-end">${money(payload.summary.total_cs, "C$")}</th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        `;
+      });
+    }
+
     document.addEventListener("click", async (event) => {
       const detailBtn = event.target.closest("[data-detail]");
       if (detailBtn) {
@@ -706,7 +775,9 @@
           return;
         }
         const id = detailBtn.dataset.detail;
+        const title = document.getElementById("cobranza-detail-title");
         const target = document.getElementById("cobranza-detail-body");
+        if (title) title.textContent = "Detalle de factura";
         target.textContent = "Cargando...";
         detailModal.show();
         const payload = await handleFetchJson(`/sales/${id}/detail`);

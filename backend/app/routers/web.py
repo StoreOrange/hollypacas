@@ -3,6 +3,9 @@ from typing import Optional
 import asyncio
 
 import csv
+import hashlib
+import html as html_lib
+import hmac
 import json
 import mimetypes
 import os
@@ -638,6 +641,17 @@ PERMISSION_GROUPS = [
         ],
     },
     {
+        "title": "Movil vendedores",
+        "items": [
+            {"name": "menu.sales.prefactura.mobile", "label": "Mostrar Pre Factura movil"},
+            {"name": "access.sales.prefactura.mobile", "label": "Crear Pre Factura movil"},
+            {"name": "menu.sales.mis_ventas.mobile", "label": "Mostrar Mis ventas movil"},
+            {"name": "access.sales.mis_ventas.mobile", "label": "Ver Mis ventas movil"},
+            {"name": "menu.sales.mis_comisiones.mobile", "label": "Mostrar Mis comisiones movil"},
+            {"name": "access.sales.mis_comisiones.mobile", "label": "Ver Mis comisiones movil"},
+        ],
+    },
+    {
         "title": "Inventarios (visibilidad sub-menu)",
         "items": [
             {"name": "menu.inventory.ingresos", "label": "Ingresos de inventario"},
@@ -878,6 +892,12 @@ def _enforce_preventas_mobile_access(request: Request, user: User) -> None:
     _enforce_permission(request, user, "access.sales.preventas.mobile")
 
 
+def _enforce_prefactura_mobile_access(request: Request, user: User) -> None:
+    if _has_permission(user, "access.sales.prefactura.mobile"):
+        return
+    _enforce_permission(request, user, "access.sales.prefactura.mobile")
+
+
 def _enforce_mobile_sales_access(request: Request, user: User) -> None:
     if (
         _has_permission(user, "access.sales")
@@ -887,6 +907,22 @@ def _enforce_mobile_sales_access(request: Request, user: User) -> None:
     ):
         return
     _enforce_permission(request, user, "access.sales")
+
+
+def _enforce_mobile_vendor_sales_report_access(request: Request, user: User) -> None:
+    if (
+        _has_permission(user, "access.sales.mis_ventas.mobile")
+    ):
+        return
+    _enforce_permission(request, user, "access.sales.mis_ventas.mobile")
+
+
+def _enforce_mobile_vendor_commission_report_access(request: Request, user: User) -> None:
+    if (
+        _has_permission(user, "access.sales.mis_comisiones.mobile")
+    ):
+        return
+    _enforce_permission(request, user, "access.sales.mis_comisiones.mobile")
 
 
 def _build_mobile_vendor_sales_data(
@@ -927,6 +963,7 @@ def _build_mobile_vendor_sales_data(
         .join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True)
         .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
         .filter(VentaFactura.vendedor_id == vendedor_id)
+        .filter(VentaFactura.estado != "ANULADA")
     )
     if start_date:
         sales_rows = sales_rows.filter(func.date(VentaFactura.fecha) >= start_date)
@@ -1053,6 +1090,264 @@ def _build_mobile_vendor_sales_data(
     }
 
 
+def _build_mobile_assigned_commission_data(
+    db: Session,
+    *,
+    branch: Optional[Branch],
+    bodega: Optional[Bodega],
+    vendedor_id: Optional[int],
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+) -> dict[str, object]:
+    empty_payload: dict[str, object] = {
+        "vendor_name": "",
+        "product_rows": [],
+        "summary": {
+            "total_bultos": _format_qty(Decimal("0")),
+            "total_vendido_usd": _format_money(Decimal("0")),
+            "total_comision_usd": _format_money(Decimal("0")),
+            "total_facturas": 0,
+            "total_productos": 0,
+            "total_dias": 0,
+            "fuente": "-",
+        },
+    }
+    if not vendedor_id:
+        return empty_payload
+
+    vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id).first()
+    vendor_name = vendedor.nombre if vendedor else ""
+    vendedor_origen = aliased(Vendedor)
+    vendedor_asignado = aliased(Vendedor)
+    source_start = start_date or local_today()
+    source_end = end_date or source_start
+    branch_scope = str(branch.id) if branch else "all"
+    day_cursor = source_start
+    while day_cursor <= source_end:
+        _ensure_commission_temp_snapshot(db, day_cursor, branch_scope)
+        day_cursor += timedelta(days=1)
+
+    final_rows_query = (
+        db.query(
+            VentaComisionFinal,
+            VentaFactura,
+            Producto,
+            Cliente,
+            vendedor_origen,
+            vendedor_asignado,
+        )
+        .join(VentaFactura, VentaFactura.id == VentaComisionFinal.factura_id, isouter=True)
+        .join(Producto, Producto.id == VentaComisionFinal.producto_id, isouter=True)
+        .join(Cliente, Cliente.id == VentaComisionFinal.cliente_id, isouter=True)
+        .join(vendedor_origen, vendedor_origen.id == VentaComisionFinal.vendedor_origen_id, isouter=True)
+        .join(vendedor_asignado, vendedor_asignado.id == VentaComisionFinal.vendedor_asignado_id, isouter=True)
+        .filter(VentaComisionFinal.vendedor_asignado_id == vendedor_id)
+        .filter(or_(VentaFactura.id.is_(None), VentaFactura.estado != "ANULADA"))
+    )
+    if start_date:
+        final_rows_query = final_rows_query.filter(VentaComisionFinal.fecha >= start_date)
+    if end_date:
+        final_rows_query = final_rows_query.filter(VentaComisionFinal.fecha <= end_date)
+    if bodega:
+        final_rows_query = final_rows_query.filter(VentaComisionFinal.bodega_id == bodega.id)
+    elif branch:
+        final_rows_query = final_rows_query.filter(VentaComisionFinal.branch_id == branch.id)
+
+    final_rows = final_rows_query.order_by(
+        VentaComisionFinal.fecha.desc(),
+        VentaFactura.numero.desc(),
+        VentaComisionFinal.id.desc(),
+    ).all()
+
+    finalized_dates = {row.fecha for row, *_ in final_rows if row.fecha}
+    temp_origen = aliased(Vendedor)
+    temp_asignado = aliased(Vendedor)
+    temp_rows_query = (
+        db.query(
+            VentaComisionAsignacion,
+            VentaFactura,
+            Producto,
+            Cliente,
+            temp_origen,
+            temp_asignado,
+            ProductoComision,
+        )
+        .join(VentaFactura, VentaFactura.id == VentaComisionAsignacion.factura_id, isouter=True)
+        .join(Producto, Producto.id == VentaComisionAsignacion.producto_id, isouter=True)
+        .join(Cliente, Cliente.id == VentaComisionAsignacion.cliente_id, isouter=True)
+        .join(temp_origen, temp_origen.id == VentaComisionAsignacion.vendedor_origen_id, isouter=True)
+        .join(temp_asignado, temp_asignado.id == VentaComisionAsignacion.vendedor_asignado_id, isouter=True)
+        .join(ProductoComision, ProductoComision.producto_id == VentaComisionAsignacion.producto_id, isouter=True)
+        .filter(VentaComisionAsignacion.vendedor_asignado_id == vendedor_id)
+        .filter(or_(VentaFactura.id.is_(None), VentaFactura.estado != "ANULADA"))
+    )
+    if start_date:
+        temp_rows_query = temp_rows_query.filter(VentaComisionAsignacion.fecha >= start_date)
+    if end_date:
+        temp_rows_query = temp_rows_query.filter(VentaComisionAsignacion.fecha <= end_date)
+    if finalized_dates:
+        temp_rows_query = temp_rows_query.filter(VentaComisionAsignacion.fecha.notin_(finalized_dates))
+    if bodega:
+        temp_rows_query = temp_rows_query.filter(VentaComisionAsignacion.bodega_id == bodega.id)
+    elif branch:
+        temp_rows_query = temp_rows_query.filter(VentaComisionAsignacion.branch_id == branch.id)
+
+    temp_rows = temp_rows_query.order_by(
+        VentaComisionAsignacion.fecha.desc(),
+        VentaFactura.numero.desc(),
+        VentaComisionAsignacion.id.desc(),
+    ).all()
+    if not final_rows and not temp_rows:
+        empty_payload["vendor_name"] = vendor_name
+        return empty_payload
+
+    grouped_products: dict[int, dict[str, object]] = {}
+    total_bultos = Decimal("0")
+    total_vendido_usd = Decimal("0")
+    total_comision_usd = Decimal("0")
+    facturas_unicas: set[str] = set()
+    dias_unicos: set[date] = set()
+    fuentes: set[str] = set()
+
+    def add_commission_row(
+        row,
+        factura,
+        producto,
+        cliente,
+        origen,
+        asignado,
+        commission_unit: Decimal,
+        commission_total: Decimal,
+        source_label: str,
+    ) -> None:
+        nonlocal vendor_name, total_bultos, total_vendido_usd, total_comision_usd
+        qty = Decimal(str(row.cantidad or 0))
+        subtotal_usd = Decimal(str(row.subtotal_usd or 0))
+        producto_id = int(row.producto_id)
+        fecha_value = row.fecha
+        if not vendor_name and asignado and asignado.nombre:
+            vendor_name = asignado.nombre
+
+        if producto_id not in grouped_products:
+            grouped_products[producto_id] = {
+                "producto_id": producto_id,
+                "codigo": (producto.cod_producto if producto else "") or "-",
+                "descripcion": (producto.descripcion if producto else "") or "Producto",
+                "cantidad_total": Decimal("0"),
+                "total_vendido_usd": Decimal("0"),
+                "total_comision_usd": Decimal("0"),
+                "last_fecha": fecha_value,
+                "details": [],
+            }
+        bucket = grouped_products[producto_id]
+        bucket["cantidad_total"] += qty
+        bucket["total_vendido_usd"] += subtotal_usd
+        bucket["total_comision_usd"] += commission_total
+        if fecha_value and (not bucket["last_fecha"] or fecha_value > bucket["last_fecha"]):
+            bucket["last_fecha"] = fecha_value
+        bucket["details"].append(
+            {
+                "fecha_label": fecha_value.strftime("%d/%m/%Y") if fecha_value else "-",
+                "factura_numero": (factura.numero if factura else "") or "-",
+                "cliente": (cliente.nombre if cliente else "") or "Consumidor final",
+                "vendedor_origen": (origen.nombre if origen else "") or "-",
+                "cantidad": _format_qty(qty),
+                "subtotal_usd": _format_money(subtotal_usd),
+                "comision_unit_usd": _format_money(commission_unit),
+                "comision_total_usd": _format_money(commission_total),
+                "source_label": source_label,
+                "_fecha": fecha_value,
+            }
+        )
+
+        total_bultos += qty
+        total_vendido_usd += subtotal_usd
+        total_comision_usd += commission_total
+        factura_key = str(row.factura_id or (factura.numero if factura else "") or "").strip()
+        if factura_key:
+            facturas_unicas.add(factura_key)
+        if fecha_value:
+            dias_unicos.add(fecha_value)
+        fuentes.add(source_label)
+
+    for final_row, factura, producto, cliente, origen, asignado in final_rows:
+        add_commission_row(
+            final_row,
+            factura,
+            producto,
+            cliente,
+            origen,
+            asignado,
+            Decimal(str(final_row.comision_unit_usd or 0)),
+            Decimal(str(final_row.comision_total_usd or 0)),
+            "Final",
+        )
+
+    for temp_row, factura, producto, cliente, origen, asignado, producto_comision in temp_rows:
+        commission_unit = Decimal(str(producto_comision.comision_usd or 0)) if producto_comision else Decimal("0")
+        qty = Decimal(str(temp_row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        add_commission_row(
+            temp_row,
+            factura,
+            producto,
+            cliente,
+            origen,
+            asignado,
+            commission_unit,
+            commission_unit * qty,
+            "Asignacion automatica",
+        )
+
+    product_rows: list[dict[str, object]] = []
+    for bucket in grouped_products.values():
+        details = sorted(
+            bucket["details"],
+            key=lambda item: item["_fecha"] or date.min,
+            reverse=True,
+        )
+        for detail in details:
+            detail.pop("_fecha", None)
+        product_rows.append(
+            {
+                "producto_id": bucket["producto_id"],
+                "codigo": bucket["codigo"],
+                "descripcion": bucket["descripcion"],
+                "cantidad_total": _format_qty(bucket["cantidad_total"]),
+                "total_vendido_usd": _format_money(bucket["total_vendido_usd"]),
+                "total_comision_usd": _format_money(bucket["total_comision_usd"]),
+                "details": details,
+                "detalle_count": len(details),
+                "_last_fecha": bucket["last_fecha"],
+                "last_fecha_label": bucket["last_fecha"].strftime("%d/%m/%Y") if bucket["last_fecha"] else "-",
+            }
+        )
+
+    product_rows.sort(
+        key=lambda item: (item["_last_fecha"] or date.min, item["codigo"]),
+        reverse=True,
+    )
+    for item in product_rows:
+        item.pop("_last_fecha", None)
+
+    return {
+        "vendor_name": vendor_name,
+        "product_rows": product_rows,
+        "summary": {
+            "total_bultos": _format_qty(total_bultos),
+            "total_vendido_usd": _format_money(total_vendido_usd),
+            "total_comision_usd": _format_money(total_comision_usd),
+            "total_facturas": len(facturas_unicas),
+            "total_productos": len(product_rows),
+            "total_dias": len(dias_unicos),
+            "fuente": " + ".join(sorted(fuentes)) if fuentes else "-",
+        },
+    }
+
+
+def _commission_previous_fortnight_range(start_date: date, end_date: date) -> tuple[date, date]:
+    return start_date - timedelta(days=15), end_date - timedelta(days=15)
+
+
 def _preventa_estado_badge(estado: str) -> dict[str, str]:
     mapping = {
         "PENDIENTE": {"label": "Pendiente", "class": "bg-pink-100 text-pink-800"},
@@ -1132,6 +1427,29 @@ def _next_preventa_number(db: Session, branch: Branch) -> tuple[int, str]:
     seq = (last.secuencia if last else 0) + 1
     prefix = _branch_sales_series_letter(branch.code)
     return seq, f"PV{prefix}-{seq:06d}"
+
+
+def _next_prefactura_number(db: Session, branch: Branch) -> tuple[int, str]:
+    last = (
+        db.query(Preventa)
+        .filter(Preventa.branch_id == branch.id)
+        .order_by(Preventa.secuencia.desc())
+        .first()
+    )
+    seq = (last.secuencia if last else 0) + 1
+    prefix = _branch_sales_series_letter(branch.code)
+    return seq, f"PF{prefix}-{seq:06d}"
+
+
+def _prefactura_validation_code(preventa_id: int, numero: str) -> str:
+    payload = f"{int(preventa_id)}:{numero or ''}".encode("utf-8")
+    return hmac.new(SECRET_KEY.encode("utf-8"), payload, hashlib.sha256).hexdigest()[:18]
+
+
+def _prefactura_validation_url(request: Request, preventa: Preventa) -> str:
+    code = _prefactura_validation_code(int(preventa.id), preventa.numero)
+    base_url = str(request.base_url).rstrip("/")
+    return f"{base_url}/m/pre-factura/validar/{int(preventa.id)}?code={code}"
 
 
 def _next_restaurant_order_number(db: Session, branch: Branch) -> str:
@@ -10654,13 +10972,474 @@ def mobile_preventas_manifest(
     )
 
 
+@router.get("/m/pre-factura")
+def mobile_prefactura_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_prefactura_mobile_access(request, user)
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        raise HTTPException(status_code=400, detail="Usuario sin sucursal/bodega asignada")
+    vendedor_id = _vendedor_id_for_user(db, user, bodega) or _default_vendedor_id(db, bodega)
+    vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id).first() if vendedor_id else None
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    tasa = Decimal(str(rate_today.rate if rate_today else 0))
+    branding = request.state.branding if getattr(request, "state", None) and getattr(request.state, "branding", None) else _company_profile_payload(db)
+    return request.app.state.templates.TemplateResponse(
+        "sales_prefactura_mobile.html",
+        {
+            "request": request,
+            "user": user,
+            "branch": branch,
+            "bodega": bodega,
+            "vendedor": vendedor,
+            "tasa": _format_money(tasa),
+            "tasa_raw": float(tasa or 0),
+            "rate_date": rate_today.effective_date.strftime("%d/%m/%Y") if rate_today else "",
+            "branding": branding,
+            "today": local_today().isoformat(),
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/m/pre-factura/productos/search")
+def mobile_prefactura_products_search(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_prefactura_mobile_access(request, user)
+    query = (q or "").strip()
+    if len(query) < 2:
+        return JSONResponse({"ok": True, "items": []})
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not bodega:
+        return JSONResponse({"ok": False, "message": "Usuario sin bodega asignada"}, status_code=400)
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    tasa = Decimal(str(rate_today.rate if rate_today else 0))
+    like = f"%{query.lower()}%"
+    productos = (
+        _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
+        .filter(
+            or_(
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+            )
+        )
+        .order_by(Producto.descripcion)
+        .limit(80)
+        .all()
+    )
+    balances = _balances_by_bodega(db, [bodega.id], [p.id for p in productos]) if productos else {}
+    items = []
+    for producto in productos:
+        price_usd = Decimal(str(producto.precio_venta1_usd or 0))
+        price_cs = Decimal(str(producto.precio_venta1 or 0))
+        if price_usd <= 0 and price_cs > 0 and tasa > 0:
+            price_usd = (price_cs / tasa).quantize(Decimal("0.01"))
+        if price_cs <= 0 and price_usd > 0 and tasa > 0:
+            price_cs = (price_usd * tasa).quantize(Decimal("0.01"))
+        existencia = Decimal(str(balances.get((producto.id, bodega.id), Decimal("0")) or 0))
+        items.append(
+            {
+                "id": int(producto.id),
+                "cod_producto": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "precio_usd": float(price_usd),
+                "precio_cs": float(price_cs),
+                "existencia": float(existencia),
+            }
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "items": items,
+            "tasa": float(tasa or 0),
+            "branch": branch.name if branch else "-",
+            "bodega": bodega.name,
+        }
+    )
+
+
+@router.get("/m/pre-factura/clientes/search")
+def mobile_prefactura_clientes_search(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_prefactura_mobile_access(request, user)
+    query = (q or "").strip().lower()
+    if len(query) < 2:
+        return JSONResponse({"ok": True, "items": []})
+    like = f"%{query}%"
+    rows = (
+        db.query(Cliente)
+        .filter(
+            or_(
+                func.lower(Cliente.nombre).like(like),
+                func.lower(Cliente.telefono).like(like),
+                func.lower(Cliente.identificacion).like(like),
+            )
+        )
+        .order_by(Cliente.nombre)
+        .limit(50)
+        .all()
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "items": [
+                {
+                    "id": int(cliente.id),
+                    "nombre": cliente.nombre,
+                    "telefono": cliente.telefono or "",
+                    "direccion": cliente.direccion or "",
+                }
+                for cliente in rows
+            ],
+        }
+    )
+
+
+@router.post("/m/pre-factura")
+async def mobile_prefactura_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_prefactura_mobile_access(request, user)
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "message": "Datos invalidos"}, status_code=400)
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        return JSONResponse({"ok": False, "message": "Usuario sin sucursal/bodega asignada"}, status_code=400)
+    vendedor_id = _vendedor_id_for_user(db, user, bodega) or _default_vendedor_id(db, bodega)
+    vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first() if vendedor_id else None
+    if not vendedor:
+        return JSONResponse({"ok": False, "message": "Vendedor no asignado al usuario"}, status_code=400)
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    tasa = Decimal(str(rate_today.rate if rate_today else 0))
+    if tasa <= 0:
+        return JSONResponse({"ok": False, "message": "Tasa de cambio no configurada"}, status_code=400)
+
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        return JSONResponse({"ok": False, "message": "Agrega productos a la Pre Factura"}, status_code=400)
+
+    def _json_dec(value: object, places: str = "0.01") -> Decimal:
+        try:
+            return Decimal(str(value or 0)).quantize(Decimal(places))
+        except Exception:
+            return Decimal("0").quantize(Decimal(places))
+
+    product_ids: list[int] = []
+    for item in raw_items:
+        if isinstance(item, dict) and str(item.get("producto_id") or "").isdigit():
+            product_ids.append(int(item.get("producto_id")))
+    if not product_ids:
+        return JSONResponse({"ok": False, "message": "No hay productos validos"}, status_code=400)
+    productos = {
+        int(producto.id): producto
+        for producto in _sellable_product_query(
+            db.query(Producto).filter(Producto.id.in_(set(product_ids)), Producto.activo.is_(True))
+        ).all()
+    }
+    balances = _balances_by_bodega(db, [bodega.id], list(set(product_ids)))
+    parsed_items: list[dict[str, object]] = []
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            continue
+        producto_id_raw = raw.get("producto_id")
+        if not str(producto_id_raw or "").isdigit():
+            continue
+        producto_id = int(producto_id_raw)
+        producto = productos.get(producto_id)
+        if not producto:
+            return JSONResponse({"ok": False, "message": "Producto no encontrado o no vendible"}, status_code=400)
+        qty = _json_dec(raw.get("cantidad"), "1")
+        if qty <= 0:
+            continue
+        existencia = Decimal(str(balances.get((producto.id, bodega.id), Decimal("0")) or 0))
+        reserved_qty, reserved_details = _preventa_reserved_by_others(
+            db,
+            bodega_id=bodega.id,
+            producto_id=producto.id,
+            vendedor_id=vendedor.id,
+        )
+        libre = max(Decimal("0"), existencia - reserved_qty)
+        if qty > libre:
+            if reserved_details:
+                detail_txt = "; ".join(
+                    f"{vend} ({numero}): {int(det_qty) if det_qty == det_qty.to_integral() else det_qty}"
+                    for numero, vend, det_qty in reserved_details
+                )
+                msg = f"Saldo libre insuficiente para {producto.cod_producto}. Libre {libre}. Reservado: {detail_txt}."
+            else:
+                msg = f"Saldo insuficiente para {producto.cod_producto}. Disponible {existencia}."
+            return JSONResponse({"ok": False, "message": msg}, status_code=400)
+
+        base_usd = Decimal(str(producto.precio_venta1_usd or 0))
+        base_cs = Decimal(str(producto.precio_venta1 or 0))
+        if base_usd <= 0 and base_cs > 0:
+            base_usd = (base_cs / tasa).quantize(Decimal("0.01"))
+        price_usd = _json_dec(raw.get("precio_usd"), "0.01")
+        if price_usd < base_usd:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "message": f"No puedes bajar el precio de {producto.cod_producto}. Minimo ${_format_money(base_usd)}.",
+                },
+                status_code=400,
+            )
+        price_cs = (price_usd * tasa).quantize(Decimal("0.01"))
+        parsed_items.append(
+            {
+                "producto": producto,
+                "cantidad": qty,
+                "base_usd": base_usd,
+                "precio_usd": price_usd,
+                "precio_cs": price_cs,
+                "subtotal_usd": (price_usd * qty).quantize(Decimal("0.01")),
+                "subtotal_cs": (price_cs * qty).quantize(Decimal("0.01")),
+            }
+        )
+    if not parsed_items:
+        return JSONResponse({"ok": False, "message": "No hay items validos"}, status_code=400)
+
+    cliente_id = None
+    cliente_nombre = str(payload.get("cliente_nombre") or "").strip()
+    cliente_telefono = str(payload.get("cliente_telefono") or "").strip()
+    cliente_direccion = str(payload.get("cliente_direccion") or "").strip()
+    cliente_id_raw = str(payload.get("cliente_id") or "").strip()
+    if cliente_id_raw.isdigit():
+        cliente = db.query(Cliente).filter(Cliente.id == int(cliente_id_raw)).first()
+        if cliente:
+            cliente_id = cliente.id
+            cliente_nombre = cliente.nombre
+            cliente_telefono = cliente.telefono or cliente_telefono
+            cliente_direccion = cliente.direccion or cliente_direccion
+    elif cliente_nombre:
+        cliente = db.query(Cliente).filter(func.lower(Cliente.nombre) == cliente_nombre.lower()).first()
+        if not cliente:
+            cliente = Cliente(
+                nombre=cliente_nombre[:160],
+                telefono=cliente_telefono[:40] or None,
+                direccion=cliente_direccion[:200] or None,
+                activo=True,
+            )
+            db.add(cliente)
+            db.flush()
+        cliente_id = cliente.id
+    if not cliente_id:
+        consumidor = _get_or_create_consumidor_final(db)
+        cliente_id = consumidor.id
+        cliente_nombre = consumidor.nombre
+
+    total_usd = sum((item["subtotal_usd"] for item in parsed_items), Decimal("0"))
+    total_cs = sum((item["subtotal_cs"] for item in parsed_items), Decimal("0"))
+    total_items = sum((item["cantidad"] for item in parsed_items), Decimal("0"))
+    observacion_raw = str(payload.get("observacion") or "").strip()
+    observacion = f"PRE FACTURA MOVIL. {observacion_raw}"[:400]
+    seq, numero = _next_prefactura_number(db, branch)
+    now_local = local_now()
+    preventa = Preventa(
+        secuencia=seq,
+        numero=numero,
+        branch_id=branch.id,
+        bodega_id=bodega.id,
+        cliente_id=int(cliente_id),
+        vendedor_id=vendedor.id,
+        fecha=now_local.replace(tzinfo=None),
+        estado="PENDIENTE",
+        observacion=observacion,
+        total_usd=total_usd,
+        total_cs=total_cs,
+        total_items=total_items,
+        usuario_registro=user.full_name,
+        created_at=local_now_naive(),
+    )
+    db.add(preventa)
+    db.flush()
+    for item in parsed_items:
+        producto = item["producto"]
+        db.add(
+            PreventaItem(
+                preventa_id=preventa.id,
+                producto_id=int(producto.id),
+                cantidad=item["cantidad"],
+                precio_unitario_usd=item["precio_usd"],
+                precio_unitario_cs=item["precio_cs"],
+                subtotal_usd=item["subtotal_usd"],
+                subtotal_cs=item["subtotal_cs"],
+            )
+        )
+    db.commit()
+
+    branding = request.state.branding if getattr(request, "state", None) and getattr(request.state, "branding", None) else _company_profile_payload(db)
+    return JSONResponse(
+        {
+            "ok": True,
+            "message": f"Pre Factura {preventa.numero} registrada",
+            "prefactura": {
+                "id": int(preventa.id),
+                "numero": preventa.numero,
+                "fecha": now_local.strftime("%d/%m/%Y"),
+                "hora": now_local.strftime("%H:%M"),
+                "cliente": cliente_nombre or "Consumidor final",
+                "cliente_telefono": cliente_telefono,
+                "cliente_direccion": cliente_direccion,
+                "vendedor": vendedor.nombre,
+                "sucursal": branch.name,
+                "bodega": bodega.name,
+                "tasa": float(tasa),
+                "total_usd": float(total_usd),
+                "total_cs": float(total_cs),
+                "total_items": float(total_items),
+                "observacion": observacion_raw,
+                "validation_url": _prefactura_validation_url(request, preventa),
+                "qr_url": f"/m/pre-factura/qr/{int(preventa.id)}.svg?code={_prefactura_validation_code(int(preventa.id), preventa.numero)}",
+                "items": [
+                    {
+                        "codigo": item["producto"].cod_producto,
+                        "descripcion": item["producto"].descripcion,
+                        "cantidad": float(item["cantidad"]),
+                        "precio_usd": float(item["precio_usd"]),
+                        "precio_cs": float(item["precio_cs"]),
+                        "subtotal_cs": float(item["subtotal_cs"]),
+                    }
+                    for item in parsed_items
+                ],
+                "company": {
+                    "name": branding.get("trade_name") or branding.get("legal_name") or "Empresa",
+                    "legal_name": branding.get("legal_name") or "",
+                    "ruc": branding.get("ruc") or "",
+                    "phone": branding.get("phone") or "",
+                    "address": branding.get("address") or "",
+                    "email": branding.get("email") or "",
+                    "logo_url": branding.get("pos_logo_url") or branding.get("logo_url") or "",
+                },
+            },
+        }
+    )
+
+
+@router.get("/m/pre-factura/validar/{preventa_id}")
+def mobile_prefactura_validate(
+    request: Request,
+    preventa_id: int,
+    code: str = "",
+    db: Session = Depends(get_db),
+):
+    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    valid = False
+    if preventa:
+        expected = _prefactura_validation_code(int(preventa.id), preventa.numero)
+        valid = hmac.compare_digest((code or "").strip(), expected)
+    branding = request.state.branding if getattr(request, "state", None) and getattr(request.state, "branding", None) else _company_profile_payload(db)
+    status_label = "VALIDA" if valid else "NO VALIDA"
+    status_color = "#166534" if valid else "#991b1b"
+    numero = html_lib.escape(preventa.numero if preventa else "-")
+    cliente = html_lib.escape(preventa.cliente.nombre if preventa and preventa.cliente else "Consumidor final")
+    vendedor = html_lib.escape(preventa.vendedor.nombre if preventa and preventa.vendedor else "-")
+    fecha = html_lib.escape(preventa.fecha.strftime("%d/%m/%Y %H:%M") if preventa and preventa.fecha else "-")
+    total_cs = _format_money(Decimal(str(preventa.total_cs or 0))) if preventa else "0.00"
+    company_name = html_lib.escape(branding.get("trade_name") or branding.get("legal_name") or "Hollywood Pacas")
+    html = f"""
+    <!doctype html>
+    <html lang="es">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Validar Pre Factura {numero}</title>
+      <style>
+        body {{ margin:0; font-family: Arial, sans-serif; background:#fff7f8; color:#0f172a; }}
+        .wrap {{ max-width: 460px; margin: 0 auto; padding: 18px; }}
+        .card {{ background:#fff; border:1px solid #fecdd3; border-radius:20px; padding:18px; box-shadow:0 18px 40px rgba(127,29,29,.12); }}
+        .badge {{ display:inline-block; border-radius:999px; padding:7px 12px; background:{status_color}; color:#fff; font-weight:900; }}
+        h1 {{ margin:14px 0 6px; font-size:26px; }}
+        .muted {{ color:#64748b; font-size:14px; line-height:1.4; }}
+        .row {{ border-top:1px solid #fee2e2; padding:11px 0; display:flex; justify-content:space-between; gap:12px; }}
+        .label {{ color:#64748b; font-weight:800; }}
+        .value {{ font-weight:900; text-align:right; }}
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <div class="card">
+          <span class="badge">{status_label}</span>
+          <h1>{company_name}</h1>
+          <p class="muted">Validacion oficial de autenticidad para Pre Factura movil. Si el QR no abre esta pagina, la imagen no es verificable.</p>
+          <div class="row"><span class="label">Numero</span><span class="value">{numero}</span></div>
+          <div class="row"><span class="label">Cliente</span><span class="value">{cliente}</span></div>
+          <div class="row"><span class="label">Vendedor</span><span class="value">{vendedor}</span></div>
+          <div class="row"><span class="label">Fecha</span><span class="value">{fecha}</span></div>
+          <div class="row"><span class="label">Total C$</span><span class="value">C$ {total_cs}</span></div>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(html)
+
+
+@router.get("/m/pre-factura/qr/{preventa_id}.svg")
+def mobile_prefactura_qr_svg(
+    request: Request,
+    preventa_id: int,
+    code: str = "",
+    db: Session = Depends(get_db),
+):
+    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    if not preventa:
+        raise HTTPException(status_code=404, detail="Pre Factura no encontrada")
+    expected = _prefactura_validation_code(int(preventa.id), preventa.numero)
+    if not hmac.compare_digest((code or "").strip(), expected):
+        raise HTTPException(status_code=403, detail="Codigo invalido")
+    from reportlab.graphics.barcode.qr import QrCodeWidget
+    from reportlab.graphics import renderSVG
+    from reportlab.graphics.shapes import Drawing
+
+    validation_url = _prefactura_validation_url(request, preventa)
+    qr = QrCodeWidget(validation_url)
+    bounds = qr.getBounds()
+    width = bounds[2] - bounds[0]
+    height = bounds[3] - bounds[1]
+    size = 180
+    drawing = Drawing(size, size, transform=[size / width, 0, 0, size / height, 0, 0])
+    drawing.add(qr)
+    svg = renderSVG.drawToString(drawing)
+    return Response(content=svg, media_type="image/svg+xml")
+
+
 @router.get("/m/mis-ventas")
 def mobile_mis_ventas_page(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
-    _enforce_mobile_sales_access(request, user)
+    _enforce_mobile_vendor_sales_report_access(request, user)
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch or not bodega:
         raise HTTPException(status_code=400, detail="Usuario sin sucursal/bodega asignada")
@@ -10700,6 +11479,71 @@ def mobile_mis_ventas_page(
             "product_rows": report_data.get("product_rows") or [],
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/m/mis-comisiones")
+def mobile_mis_comisiones_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_mobile_vendor_commission_report_access(request, user)
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        raise HTTPException(status_code=400, detail="Usuario sin sucursal/bodega asignada")
+    vendedor_id = _vendedor_id_for_user(db, user, bodega)
+    today = local_today()
+    start_values = request.query_params.getlist("start_date")
+    end_values = request.query_params.getlist("end_date")
+    start_raw = str(start_values[-1] if start_values else "").strip()
+    end_raw = str(end_values[-1] if end_values else "").strip()
+    try:
+        start_date = datetime.strptime(start_raw, "%Y-%m-%d").date() if start_raw else today
+    except ValueError:
+        start_date = today
+    try:
+        end_date = datetime.strptime(end_raw, "%Y-%m-%d").date() if end_raw else today
+    except ValueError:
+        end_date = today
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    report_data = _build_mobile_assigned_commission_data(
+        db,
+        branch=branch,
+        bodega=bodega,
+        vendedor_id=vendedor_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    previous_start_date, previous_end_date = _commission_previous_fortnight_range(start_date, end_date)
+    previous_report_data = _build_mobile_assigned_commission_data(
+        db,
+        branch=branch,
+        bodega=bodega,
+        vendedor_id=vendedor_id,
+        start_date=previous_start_date,
+        end_date=previous_end_date,
+    )
+    return request.app.state.templates.TemplateResponse(
+        "sales_mis_comisiones_mobile.html",
+        {
+            "request": request,
+            "user": user,
+            "branch": branch,
+            "bodega": bodega,
+            "vendor_name": report_data.get("vendor_name") or user.full_name or user.username,
+            "summary": report_data.get("summary") or {},
+            "previous_summary": previous_report_data.get("summary") or {},
+            "product_rows": report_data.get("product_rows") or [],
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "previous_start_date": previous_start_date.isoformat(),
+            "previous_end_date": previous_end_date.isoformat(),
+            "previous_start_label": previous_start_date.strftime("%d/%m/%Y"),
+            "previous_end_label": previous_end_date.strftime("%d/%m/%Y"),
             "version": settings.UI_VERSION,
         },
     )
@@ -25948,6 +26792,9 @@ async def inventory_create_ingreso(
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
         moneda = "CS"
+    moneda = (moneda or "CS").strip().upper()
+    if moneda not in {"CS", "USD"}:
+        moneda = "CS"
     if not tipo_id or not bodega_id or not fecha or not moneda:
         return RedirectResponse("/inventory/ingresos?error=Faltan+datos+obligatorios", status_code=303)
     if not item_ids:
@@ -26255,6 +27102,9 @@ async def inventory_create_egreso(
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
         moneda = "CS"
+    moneda = (moneda or "CS").strip().upper()
+    if moneda not in {"CS", "USD"}:
+        moneda = "CS"
     if not tipo_id or not bodega_id or not fecha or not moneda:
         return RedirectResponse(f"{redirect_to}?error=Faltan+datos+obligatorios", status_code=303)
     if not item_ids:
@@ -26266,8 +27116,9 @@ async def inventory_create_egreso(
     es_traslado = "traslado" in (tipo.nombre or "").lower()
     es_abierta = "produccion de abierta" in (tipo.nombre or "").lower()
     bodega_destino_obj = None
-    if es_traslado or es_abierta:
+    if es_traslado:
         moneda = "CS"
+    if es_traslado or es_abierta:
         if not bodega_destino_id:
             error_msg = "Selecciona+bodega+destino+para+traslado" if es_traslado else "Selecciona+bodega+de+ingreso+para+resultado+de+abierta"
             return RedirectResponse(f"{redirect_to}?error={error_msg}", status_code=303)
@@ -26301,7 +27152,7 @@ async def inventory_create_egreso(
         except ValueError:
             return 0.0
 
-    tasa = 0.0 if (es_traslado or es_abierta) else (float(rate_today.rate) if rate_today else 0.0)
+    tasa = 0.0 if es_traslado else (float(rate_today.rate) if rate_today else 0.0)
     fecha_value = date.fromisoformat(str(fecha).split("T")[0])
     ingreso_resultado_id: Optional[int] = None
     egreso = EgresoInventario(
@@ -26309,8 +27160,8 @@ async def inventory_create_egreso(
         bodega_id=int(bodega_id),
         bodega_destino_id=int(bodega_destino_id) if bodega_destino_id else None,
         fecha=fecha_value,
-        moneda="CS" if (es_traslado or es_abierta) else moneda,
-        tasa_cambio=None if (es_traslado or es_abierta) else (tasa if moneda == "USD" else None),
+        moneda="CS" if es_traslado else moneda,
+        tasa_cambio=None if es_traslado else (tasa if moneda == "USD" else None),
         observacion=observacion,
         usuario_registro=user.full_name,
     )
@@ -26371,7 +27222,7 @@ async def inventory_create_egreso(
             return RedirectResponse(f"{redirect_to}?error={mensaje}", status_code=303)
         balances[(producto.id, int(bodega_id))] = Decimal(str(existencia)) - to_decimal(qty)
 
-        if es_traslado or es_abierta:
+        if es_traslado:
             costo_cs = cost
             costo_usd = 0.0
         elif moneda == "USD":
@@ -26381,7 +27232,7 @@ async def inventory_create_egreso(
             costo_cs = cost
             costo_usd = cost / tasa if tasa else 0
 
-        subtotal_usd = 0.0 if (es_traslado or es_abierta) else (costo_usd * qty)
+        subtotal_usd = 0.0 if es_traslado else (costo_usd * qty)
         subtotal_cs = costo_cs * qty
         total_usd += subtotal_usd
         total_cs += subtotal_cs
@@ -26495,13 +27346,26 @@ async def inventory_create_egreso(
             price = to_float(result_item_prices[index] if index < len(result_item_prices) else 0)
             if qty <= 0:
                 continue
+            if moneda == "USD":
+                costo_usd = cost
+                costo_cs = cost * tasa
+                precio_usd = price
+                precio_cs = price * tasa
+            else:
+                costo_cs = cost
+                costo_usd = cost / tasa if tasa else 0
+                precio_cs = price
+                precio_usd = price / tasa if tasa else 0
             result_rows.append(
                 {
                     "producto_id": int(product_id),
                     "cantidad": qty,
-                    "costo_unitario_cs": cost,
-                    "precio_cs": price,
-                    "subtotal_cs": cost * qty,
+                    "costo_unitario_usd": costo_usd,
+                    "costo_unitario_cs": costo_cs,
+                    "precio_usd": precio_usd,
+                    "precio_cs": precio_cs,
+                    "subtotal_usd": costo_usd * qty,
+                    "subtotal_cs": costo_cs * qty,
                 }
             )
         if not result_rows:
@@ -26528,9 +27392,9 @@ async def inventory_create_egreso(
             bodega_id=int(bodega_destino_obj.id),
             proveedor_id=None,
             fecha=fecha_value,
-            moneda="CS",
-            tasa_cambio=None,
-            total_usd=0,
+            moneda=moneda,
+            tasa_cambio=tasa if moneda == "USD" else None,
+            total_usd=sum(float(row["subtotal_usd"]) for row in result_rows),
             total_cs=sum(float(row["subtotal_cs"]) for row in result_rows),
             observacion=abierta_obs[:300],
             usuario_registro=user.full_name,
@@ -26544,9 +27408,9 @@ async def inventory_create_egreso(
                     ingreso_id=ingreso_resultado.id,
                     producto_id=int(row["producto_id"]),
                     cantidad=float(row["cantidad"]),
-                    costo_unitario_usd=0,
+                    costo_unitario_usd=float(row["costo_unitario_usd"]),
                     costo_unitario_cs=float(row["costo_unitario_cs"]),
-                    subtotal_usd=0,
+                    subtotal_usd=float(row["subtotal_usd"]),
                     subtotal_cs=float(row["subtotal_cs"]),
                 )
             )
@@ -26562,11 +27426,15 @@ async def inventory_create_egreso(
                         producto_result.tasa_cambio = float(tasa)
                 if float(row["precio_cs"] or 0) > 0:
                     producto_result.precio_venta1 = float(row["precio_cs"])
-                    if tasa > 0:
+                    if float(row["precio_usd"] or 0) > 0:
+                        producto_result.precio_venta1_usd = float(row["precio_usd"])
+                        if tasa > 0:
+                            producto_result.tasa_cambio = float(tasa)
+                    elif tasa > 0:
                         producto_result.precio_venta1_usd = float(row["precio_cs"]) / float(tasa)
                         producto_result.tasa_cambio = float(tasa)
 
-    egreso.total_usd = 0 if (es_traslado or es_abierta) else total_usd
+    egreso.total_usd = 0 if es_traslado else total_usd
     egreso.total_cs = total_cs
     bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
     auto_amount = to_decimal(total_cs)
@@ -27959,6 +28827,9 @@ def sales_cobranza(
     cliente_q = (request.query_params.get("cliente") or "").strip()
     cliente_estado_q = (request.query_params.get("cliente_estado") or "").strip()
     estado_q = (request.query_params.get("estado") or "TODAS").strip().upper()
+    display_currency = (request.query_params.get("moneda") or "USD").strip().upper()
+    if display_currency not in {"USD", "CS"}:
+        display_currency = "USD"
     if estado_q not in {"PENDIENTE", "PAGADA", "TODAS"}:
         estado_q = "TODAS"
 
@@ -27997,9 +28868,9 @@ def sales_cobranza(
     elif bodega and not include_all_facturas:
         ventas_query = ventas_query.filter(VentaFactura.bodega_id == bodega.id)
     if start_date:
-        ventas_query = ventas_query.filter(VentaFactura.fecha >= start_date)
+        ventas_query = ventas_query.filter(func.date(VentaFactura.fecha) >= start_date)
     if end_date:
-        ventas_query = ventas_query.filter(VentaFactura.fecha <= end_date)
+        ventas_query = ventas_query.filter(func.date(VentaFactura.fecha) <= end_date)
     if estado_q != "TODAS":
         ventas_query = ventas_query.filter(VentaFactura.estado_cobranza == estado_q)
     if vendedor_q:
@@ -28020,11 +28891,36 @@ def sales_cobranza(
         )
     ventas = ventas_query.order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc()).all()
 
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    tasa_actual = Decimal(str(rate_today.rate if rate_today else 0))
+
+    def _money_views(amount_usd: Decimal, amount_cs: Decimal) -> tuple[Decimal, Decimal]:
+        usd = Decimal(str(amount_usd or 0))
+        cs = Decimal(str(amount_cs or 0))
+        if tasa_actual > 0:
+            if usd > 0:
+                cs = (usd * tasa_actual).quantize(Decimal("0.01"))
+            elif cs > 0:
+                usd = (cs / tasa_actual).quantize(Decimal("0.01"))
+        return usd, cs
+
+    def _display_amount(amount_usd: Decimal, amount_cs: Decimal) -> Decimal:
+        usd, cs = _money_views(amount_usd, amount_cs)
+        return usd if display_currency == "USD" else cs
+
     results = []
     total_saldo_cs = Decimal("0")
     total_saldo_usd = Decimal("0")
     total_pacas = Decimal("0")
     total_vendido_cs = Decimal("0")
+    total_vendido_usd = Decimal("0")
+    display_total_vendido = Decimal("0")
+    display_total_saldo = Decimal("0")
     def _abono_factor(tipo_mov: Optional[str]) -> Decimal:
         return Decimal("-1") if (tipo_mov or "").strip().upper() == "NOTA_DEBITO" else Decimal("1")
 
@@ -28045,7 +28941,11 @@ def sales_cobranza(
             saldo_cs = Decimal("0")
         else:
             total_pacas += Decimal(str(factura.total_items or 0))
-            total_vendido_cs += Decimal(str(factura.total_cs or 0))
+            factura_total_usd = Decimal(str(factura.total_usd or 0))
+            factura_total_cs = Decimal(str(factura.total_cs or 0))
+            total_vendido_cs += factura_total_cs
+            total_vendido_usd += factura_total_usd
+            display_total_vendido += _display_amount(factura_total_usd, factura_total_cs)
             total_abono_usd, total_abono_cs = _abonos_signed_totals(list(factura.abonos or []))
             total_due_usd = Decimal(str(factura.total_usd or 0))
             total_due_cs = Decimal(str(factura.total_cs or 0))
@@ -28061,6 +28961,7 @@ def sales_cobranza(
             saldo_cs = max(total_due_cs - total_paid_cs, Decimal("0"))
             total_saldo_cs += saldo_cs
             total_saldo_usd += saldo_usd
+            display_total_saldo += _display_amount(saldo_usd, saldo_cs)
         results.append(
             {
                 "factura": factura,
@@ -28068,15 +28969,15 @@ def sales_cobranza(
                 "abonos_cs": total_abono_cs,
                 "saldo_usd": saldo_usd,
                 "saldo_cs": saldo_cs,
+                "display_total": _display_amount(
+                    Decimal(str(factura.total_usd or 0)),
+                    Decimal(str(factura.total_cs or 0)),
+                ),
+                "display_abonos": _display_amount(total_abono_usd, total_abono_cs),
+                "display_saldo": _display_amount(saldo_usd, saldo_cs),
             }
         )
 
-    rate_today = (
-        db.query(ExchangeRate)
-        .filter(ExchangeRate.effective_date <= local_today())
-        .order_by(ExchangeRate.effective_date.desc())
-        .first()
-    )
     default_bodega = bodega if len(scoped_bodega_ids) == 1 else None
     vendedores = _vendedores_for_bodega(db, default_bodega)
     clientes = (
@@ -28099,6 +29000,8 @@ def sales_cobranza(
         filter_params.append(("cliente", cliente_q))
     if estado_q:
         filter_params.append(("estado", estado_q))
+    if display_currency:
+        filter_params.append(("moneda", display_currency))
     filters_query = urlencode(filter_params)
     base_cobranza_url = f"/sales/cobranza?{filters_query}" if filters_query else "/sales/cobranza"
 
@@ -28179,6 +29082,9 @@ def sales_cobranza(
             "vendedor_q": vendedor_q,
             "cliente_q": cliente_q,
             "estado_q": estado_q,
+            "display_currency": display_currency,
+            "display_symbol": "$" if display_currency == "USD" else "C$",
+            "tasa_actual": float(tasa_actual or 0),
             "vendedores": vendedores,
             "clientes": clientes,
             "selected_cliente": selected_cliente,
@@ -28197,12 +29103,169 @@ def sales_cobranza(
             "total_saldo_usd": float(total_saldo_usd),
             "total_pacas": float(total_pacas),
             "total_vendido_cs": float(total_vendido_cs),
+            "total_vendido_usd": float(total_vendido_usd),
+            "display_total_vendido": float(display_total_vendido),
+            "display_total_saldo": float(display_total_saldo),
             "disable_abono_print_preview": include_all_facturas,
             "base_cobranza_url": base_cobranza_url,
             "estado_cuenta_return_to": estado_cuenta_return_to,
             "shoes_mode": _is_shoes_mode(),
             "version": settings.UI_VERSION,
         },
+    )
+
+
+@router.get("/sales/cobranza/detalle-filtrado")
+def sales_cobranza_detalle_filtrado(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.cobranza")
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    producto_q = (request.query_params.get("producto") or "").strip()
+    vendedor_q = (request.query_params.get("vendedor_id") or "").strip()
+    cliente_q = (request.query_params.get("cliente") or "").strip()
+    estado_q = (request.query_params.get("estado") or "TODAS").strip().upper()
+    display_currency = (request.query_params.get("moneda") or "USD").strip().upper()
+    if estado_q not in {"PENDIENTE", "PAGADA", "TODAS"}:
+        estado_q = "TODAS"
+    if display_currency not in {"USD", "CS"}:
+        display_currency = "USD"
+    try:
+        start_date = date.fromisoformat(start_raw) if start_raw else None
+    except ValueError:
+        start_date = None
+    try:
+        end_date = date.fromisoformat(end_raw) if end_raw else None
+    except ValueError:
+        end_date = None
+    if not start_date and not end_date:
+        start_date = local_today()
+        end_date = start_date
+
+    db_name = _current_db_name()
+    active_company_key = (get_active_company_key() or "").strip().lower()
+    include_all_facturas = (
+        ("holl" in db_name) or ("pacas" in db_name)
+        or ("holl" in active_company_key) or ("pacas" in active_company_key)
+    )
+    scoped_bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
+    scoped_bodega_ids = [int(b.id) for b in scoped_bodegas]
+    if include_all_facturas:
+        scoped_bodega_ids = []
+    _, bodega = _resolve_branch_bodega(db, user)
+    query = db.query(VentaFactura)
+    if not include_all_facturas:
+        query = query.filter(VentaFactura.condicion_venta == "CREDITO")
+    if scoped_bodega_ids:
+        query = query.filter(VentaFactura.bodega_id.in_(scoped_bodega_ids))
+    elif bodega and not include_all_facturas:
+        query = query.filter(VentaFactura.bodega_id == bodega.id)
+    if start_date:
+        query = query.filter(func.date(VentaFactura.fecha) >= start_date)
+    if end_date:
+        query = query.filter(func.date(VentaFactura.fecha) <= end_date)
+    if estado_q != "TODAS":
+        query = query.filter(VentaFactura.estado_cobranza == estado_q)
+    if vendedor_q:
+        try:
+            query = query.filter(VentaFactura.vendedor_id == int(vendedor_q))
+        except ValueError:
+            pass
+    if cliente_q:
+        query = query.join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True).filter(
+            func.lower(func.coalesce(Cliente.nombre, "consumidor final")).like(f"%{cliente_q.lower()}%")
+        )
+    if producto_q:
+        query = query.join(VentaItem).join(Producto).filter(
+            or_(
+                func.lower(Producto.cod_producto).like(f"%{producto_q.lower()}%"),
+                func.lower(Producto.descripcion).like(f"%{producto_q.lower()}%"),
+            )
+        )
+    facturas = query.order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc()).all()
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    tasa_actual = Decimal(str(rate_today.rate if rate_today else 0))
+
+    def _money_views(amount_usd: Decimal, amount_cs: Decimal) -> tuple[Decimal, Decimal]:
+        usd = Decimal(str(amount_usd or 0))
+        cs = Decimal(str(amount_cs or 0))
+        if tasa_actual > 0:
+            if usd > 0:
+                cs = (usd * tasa_actual).quantize(Decimal("0.01"))
+            elif cs > 0:
+                usd = (cs / tasa_actual).quantize(Decimal("0.01"))
+        return usd, cs
+
+    rows = []
+    total_bultos = Decimal("0")
+    total_usd = Decimal("0")
+    total_cs = Decimal("0")
+    seen_items: set[int] = set()
+    for factura in facturas:
+        if factura.estado == "ANULADA":
+            continue
+        for item in factura.items or []:
+            if item.id in seen_items:
+                continue
+            seen_items.add(int(item.id))
+            producto = item.producto
+            qty = Decimal(str(item.cantidad or 0))
+            item_usd, item_cs = _money_views(
+                Decimal(str(item.precio_unitario_usd or 0)),
+                Decimal(str(item.precio_unitario_cs or 0)),
+            )
+            subtotal_usd, subtotal_cs = _money_views(
+                Decimal(str(item.subtotal_usd or 0)),
+                Decimal(str(item.subtotal_cs or 0)),
+            )
+            if producto_q:
+                term = producto_q.lower()
+                code = (producto.cod_producto if producto else "").lower()
+                desc = (producto.descripcion if producto else "").lower()
+                if term not in code and term not in desc:
+                    continue
+            total_bultos += qty
+            total_usd += subtotal_usd
+            total_cs += subtotal_cs
+            rows.append(
+                {
+                    "factura": factura.numero,
+                    "fecha": factura.fecha.date().isoformat() if factura.fecha else "-",
+                    "cliente": factura.cliente.nombre if factura.cliente else "Consumidor final",
+                    "codigo": producto.cod_producto if producto else "",
+                    "descripcion": producto.descripcion if producto else "",
+                    "cantidad": float(qty),
+                    "precio": float(item_usd if display_currency == "USD" else item_cs),
+                    "subtotal": float(subtotal_usd if display_currency == "USD" else subtotal_cs),
+                    "precio_usd": float(item_usd),
+                    "precio_cs": float(item_cs),
+                    "subtotal_usd": float(subtotal_usd),
+                    "subtotal_cs": float(subtotal_cs),
+                }
+            )
+    return JSONResponse(
+        {
+            "ok": True,
+            "moneda": display_currency,
+            "symbol": "$" if display_currency == "USD" else "C$",
+            "tasa": float(tasa_actual or 0),
+            "rows": rows,
+            "summary": {
+                "total_bultos": float(total_bultos),
+                "total_usd": float(total_usd),
+                "total_cs": float(total_cs),
+                "facturas": len({row["factura"] for row in rows}),
+                "lineas": len(rows),
+            },
+        }
     )
 
 

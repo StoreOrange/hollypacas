@@ -406,6 +406,12 @@
   <main class="p-4 sm:p-6 lg:p-8 text-[18px]">
     {% set has_perms = request.state.has_permissions if request and request.state else false %}
     {% set perms = request.state.permission_names if has_perms else [] %}
+    {% set can_sales_hot = (not has_perms) or ('menu.sales.caliente' in perms) or ('access.sales.caliente' in perms) %}
+    {% set can_inventory_hot = (not has_perms) or ('menu.inventory.caliente' in perms) or ('access.inventory.caliente' in perms) %}
+    {% set can_mobile_preventas = (not has_perms) or ('menu.sales.preventas.mobile' in perms) or ('menu.sales.preventas' in perms) or ('access.sales.preventas.mobile' in perms) or ('access.sales.preventas' in perms) %}
+    {% set can_mobile_prefactura = (not has_perms) or ('menu.sales.prefactura.mobile' in perms) or ('access.sales.prefactura.mobile' in perms) %}
+    {% set can_mobile_sales_report = (not has_perms) or ('menu.sales.mis_ventas.mobile' in perms) or ('access.sales.mis_ventas.mobile' in perms) %}
+    {% set can_mobile_commissions = (not has_perms) or ('menu.sales.mis_comisiones.mobile' in perms) or ('access.sales.mis_comisiones.mobile' in perms) %}
     <div class="odoo-page">
       <div class="odoo-header">
       <div class="home-mobile-hero d-lg-none">
@@ -461,7 +467,7 @@
               <i class="bi bi-box-seam"></i>
               Catalogo de productos
             </a>
-            {% if not has_perms or 'menu.sales.preventas.mobile' in perms or 'menu.sales.preventas' in perms %}
+            {% if can_mobile_preventas %}
             <a class="btn btn-outline-primary btn-sm shadow-sm d-inline-flex align-items-center gap-2" href="/m/preventas">
               <i class="bi bi-phone"></i>
               Nueva preventa movil
@@ -482,12 +488,16 @@
           <li class="nav-item">
             <a class="nav-link active" href="/home">Panel</a>
           </li>
+          {% if can_sales_hot %}
           <li class="nav-item">
             <a class="nav-link" href="/sales/ventas-caliente">Ventas en Caliente</a>
           </li>
+          {% endif %}
+          {% if not has_perms or 'menu.reports' in perms or 'access.reports' in perms %}
           <li class="nav-item">
             <a class="nav-link" href="/reports">Informes</a>
           </li>
+          {% endif %}
           </ul>
         </div>
       </div>
@@ -505,13 +515,20 @@
             <i class="bi bi-layout-sidebar-inset"></i>
             Ver modulos
           </button>
-          {% if not has_perms or 'menu.sales.preventas.mobile' in perms or 'menu.sales.preventas' in perms %}
+          {% if can_mobile_preventas %}
           <a class="btn btn-primary btn-sm" href="/m/preventas">
             <i class="bi bi-phone"></i>
             Nueva preventa
           </a>
           {% endif %}
+          {% if can_mobile_prefactura %}
+          <a class="btn btn-danger btn-sm" href="/m/pre-factura">
+            <i class="bi bi-bag-check"></i>
+            Pre Factura
+          </a>
+          {% endif %}
         </div>
+        {% if can_mobile_preventas %}
         <div class="home-mobile-preventas d-lg-none">
           <details>
             <summary class="head">
@@ -543,7 +560,9 @@
             </div>
           </details>
         </div>
+        {% endif %}
         <div class="row g-4">
+          {% if can_sales_hot %}
           <div class="col-md-6 col-xl-4">
             <a class="text-decoration-none" href="/sales/ventas-caliente">
               <div class="home-quick-card border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
@@ -567,6 +586,8 @@
               </div>
             </a>
           </div>
+          {% endif %}
+          {% if can_inventory_hot %}
           <div class="col-md-6 col-xl-4">
             <a class="text-decoration-none" href="/inventory/caliente">
               <div class="home-quick-card inventory-hot border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
@@ -591,7 +612,8 @@
               </div>
             </a>
           </div>
-          {% if not has_perms or 'menu.sales.preventas.mobile' in perms or 'menu.sales.preventas' in perms %}
+          {% endif %}
+          {% if can_mobile_preventas %}
           <div class="col-md-6 col-xl-4">
             <a class="text-decoration-none" href="/m/preventas">
               <div class="home-quick-card preventa-hot border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
@@ -618,6 +640,33 @@
             </a>
           </div>
           {% endif %}
+          {% if can_mobile_prefactura %}
+          <div class="col-md-6 col-xl-4 d-lg-none">
+            <a class="text-decoration-none" href="/m/pre-factura">
+              <div class="home-quick-card border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="d-flex align-items-center gap-3">
+                    <span class="quick-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6.5 8.5h11l-1 10h-9l-1-10Z"/>
+                        <path d="M9 8.5a3 3 0 0 1 6 0"/>
+                        <path d="M9.5 13h5"/>
+                        <path d="M9.5 16h3"/>
+                      </svg>
+                    </span>
+                    <div class="odoo-section-title">Pre Factura</div>
+                  </div>
+                  <span class="odoo-pill primary">
+                    <i class="bi bi-image"></i>
+                    JPG
+                  </span>
+                </div>
+                <p class="text-slate quick-copy">Carrito movil para cotizar, cordobizar y compartir imagen al cliente.</p>
+              </div>
+            </a>
+          </div>
+          {% endif %}
+          {% if can_mobile_sales_report %}
           <div class="col-md-6 col-xl-4 d-lg-none">
             <a class="text-decoration-none" href="/m/mis-ventas">
               <div class="home-quick-card border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
@@ -645,6 +694,33 @@
               </div>
             </a>
           </div>
+          {% endif %}
+          {% if can_mobile_commissions %}
+          <div class="col-md-6 col-xl-4 d-lg-none">
+            <a class="text-decoration-none" href="/m/mis-comisiones">
+              <div class="home-quick-card border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="d-flex align-items-center gap-3">
+                    <span class="quick-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 18.5h16"/>
+                        <path d="M7 15.5l3.5-4 3 2.5 3.5-5"/>
+                        <path d="M17 9h2v2"/>
+                        <path d="M6 6.5h4"/>
+                      </svg>
+                    </span>
+                    <div class="odoo-section-title">Mis Comisiones</div>
+                  </div>
+                  <span class="odoo-pill primary">
+                    <i class="bi bi-percent"></i>
+                    Final
+                  </span>
+                </div>
+                <p class="text-slate quick-copy">Comision real asignada desde el cierre final del registro de comisiones.</p>
+              </div>
+            </a>
+          </div>
+          {% endif %}
           <div class="col-md-6 col-xl-4 d-none d-lg-block">
             <a class="text-decoration-none" href="/reports">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">

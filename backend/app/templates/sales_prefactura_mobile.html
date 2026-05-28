@@ -1,0 +1,726 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  body { background: #f6f7fb; }
+  .pf-mobile { padding: .65rem .65rem 6rem; color: #111827; }
+  .pf-top {
+    border-radius: 18px;
+    padding: .9rem;
+    color: #fff;
+    background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 58%, #f97316 100%);
+    box-shadow: 0 12px 28px rgba(185, 28, 28, .18);
+  }
+  .pf-chip {
+    display: inline-flex; align-items: center; gap: .4rem;
+    border-radius: 999px; padding: .28rem .6rem;
+    background: rgba(255,255,255,.16); font-size: .74rem; font-weight: 900;
+  }
+  .pf-title { margin: .5rem 0 .15rem; font-size: 1.25rem; font-weight: 950; line-height: 1.05; }
+  .pf-sub { opacity: .84; font-size: .78rem; }
+  .pf-meta { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .6rem; }
+  .pf-meta span { border-radius: 999px; background: rgba(255,255,255,.14); padding: .24rem .48rem; font-size: .7rem; font-weight: 800; }
+  .pf-head-title { display: inline-flex; align-items: center; gap: .45rem; min-width: 0; }
+  .pf-head-title i { color: #b91c1c; font-size: 1rem; }
+  .pf-label i, .pf-total-label i { margin-right: .28rem; color: #b91c1c; }
+  .pf-card {
+    margin-top: .65rem; border: 1px solid #e5e7eb; border-radius: 16px;
+    background: rgba(255,255,255,.98); box-shadow: 0 8px 22px rgba(15, 23, 42, .05); overflow: hidden;
+  }
+  .pf-card-head {
+    display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+    padding: .7rem .8rem; border-bottom: 1px solid #f1f5f9; font-weight: 900;
+  }
+  .pf-card-body { padding: .75rem; }
+  .pf-input, .pf-select {
+    width: 100%; min-height: 43px; border: 1px solid #cbd5e1; border-radius: 12px;
+    padding: .52rem .65rem; font-size: 16px; background: #fff;
+  }
+  .pf-label { display: block; margin-bottom: .25rem; color: #64748b; font-size: .66rem; font-weight: 900; text-transform: uppercase; }
+  .pf-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; }
+  .pf-search-results {
+    max-height: 270px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 12px; margin-top: .45rem;
+  }
+  .pf-result {
+    width: 100%; border: 0; border-bottom: 1px solid #f1f5f9; background: #fff; text-align: left;
+    padding: .65rem .7rem; display: flex; justify-content: space-between; gap: .7rem;
+  }
+  .pf-result:last-child { border-bottom: 0; }
+  .pf-result .code { color: #991b1b; font-size: .72rem; font-weight: 950; }
+  .pf-result .name { color: #0f172a; font-size: .86rem; font-weight: 850; line-height: 1.15; }
+  .pf-result .side { text-align: right; white-space: nowrap; color: #475569; font-size: .74rem; font-weight: 800; }
+  .pf-cart-row { border: 1px solid #fee2e2; border-radius: 14px; background: #fff7f8; padding: .65rem; margin-bottom: .55rem; }
+  .pf-cart-top { display: flex; justify-content: space-between; gap: .6rem; }
+  .pf-cart-code { color: #991b1b; font-size: .72rem; font-weight: 950; }
+  .pf-cart-name { color: #0f172a; font-size: .86rem; font-weight: 900; line-height: 1.18; }
+  .pf-cart-remove { border: 0; background: #fee2e2; color: #991b1b; border-radius: 10px; width: 34px; height: 34px; font-weight: 950; }
+  .pf-cart-controls { display: grid; grid-template-columns: .75fr 1fr 1fr; gap: .45rem; margin-top: .55rem; }
+  .pf-cart-controls input { min-width: 0; text-align: right; }
+  .pf-small { color: #64748b; font-size: .68rem; font-weight: 800; }
+  .pf-totals { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: .45rem; }
+  .pf-total-box { border: 1px solid #fecdd3; border-radius: 13px; padding: .55rem; background: #fff7f8; min-width: 0; }
+  .pf-total-label { color: #64748b; font-size: .6rem; font-weight: 900; text-transform: uppercase; }
+  .pf-total-value { margin-top: .12rem; color: #7f1d1d; font-size: .95rem; font-weight: 950; overflow-wrap: anywhere; }
+  .pf-actions {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1030;
+    background: rgba(255,255,255,.96); border-top: 1px solid #fee2e2; backdrop-filter: blur(8px);
+    padding: .6rem .7rem max(.6rem, env(safe-area-inset-bottom)); display: grid; grid-template-columns: 1fr 1fr; gap: .5rem;
+  }
+  .pf-actions .btn { min-height: 48px; border-radius: 14px; font-weight: 900; }
+  .pf-preview {
+    position: fixed; inset: 0; z-index: 1060; background: rgba(15,23,42,.72);
+    display: none; align-items: center; justify-content: center; padding: .8rem;
+  }
+  .pf-preview.is-open { display: flex; }
+  .pf-preview-panel { width: min(100%, 420px); max-height: 96vh; overflow: auto; border-radius: 18px; background: #fff; padding: .75rem; }
+  .pf-preview img { width: 100%; border-radius: 12px; border: 1px solid #e5e7eb; background: #fff; }
+  .pf-preview-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: .6rem; }
+  .pf-confirm {
+    position: fixed; inset: 0; z-index: 1070; display: none; align-items: center; justify-content: center;
+    padding: 1rem; background: rgba(15,23,42,.58); backdrop-filter: blur(5px);
+  }
+  .pf-confirm.is-open { display: flex; }
+  .pf-confirm-card {
+    width: min(100%, 360px); border-radius: 20px; background: #fff; padding: 1rem;
+    border: 1px solid #fee2e2; box-shadow: 0 24px 60px rgba(15,23,42,.24);
+  }
+  .pf-confirm-icon {
+    width: 46px; height: 46px; border-radius: 16px; display: grid; place-items: center;
+    background: #fee2e2; color: #991b1b; font-size: 1.25rem; margin-bottom: .7rem;
+  }
+  .pf-confirm-title { font-size: 1.05rem; font-weight: 950; color: #0f172a; }
+  .pf-confirm-copy { margin-top: .28rem; color: #64748b; font-size: .84rem; line-height: 1.35; }
+  .pf-confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: .9rem; }
+  .pf-confirm-actions .btn { min-height: 44px; border-radius: 13px; font-weight: 900; }
+  @media (max-width: 390px) {
+    .pf-cart-controls { grid-template-columns: 1fr 1fr; }
+    .pf-totals { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+
+<div class="pf-mobile">
+  <div class="pf-top">
+    <div class="d-flex align-items-start justify-content-between gap-2">
+      <div>
+        <span class="pf-chip"><i class="bi bi-bag-check"></i> Movil ecommerce</span>
+        <div class="pf-title">Pre Factura</div>
+        <div class="pf-sub">Carrito de venta para compartir imagen JPG al cliente.</div>
+      </div>
+      <a class="btn btn-light btn-sm fw-bold" href="/home"><i class="bi bi-house-door"></i> Inicio</a>
+    </div>
+    <div class="pf-meta">
+      <span><i class="bi bi-person-badge"></i> {{ vendedor.nombre if vendedor else user.full_name or user.username }}</span>
+      <span><i class="bi bi-building"></i> {{ branch.name if branch else '-' }}</span>
+      <span><i class="bi bi-box-seam"></i> {{ bodega.name if bodega else '-' }}</span>
+      <span><i class="bi bi-currency-exchange"></i> Tasa C$ {{ tasa }}</span>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-head">
+      <span class="pf-head-title"><i class="bi bi-person-lines-fill"></i> Cliente</span>
+      <span class="pf-small"><i class="bi bi-pencil-square"></i> Opcional</span>
+    </div>
+    <div class="pf-card-body">
+      <label class="pf-label" for="clientSearch"><i class="bi bi-search"></i> Buscar o escribir cliente</label>
+      <input id="clientSearch" class="pf-input" type="search" placeholder="Nombre, telefono o cedula">
+      <input id="clientId" type="hidden">
+      <div id="clientResults" class="pf-search-results"></div>
+      <div class="pf-grid-2 mt-2">
+        <div>
+          <label class="pf-label" for="clientPhone"><i class="bi bi-telephone"></i> Telefono</label>
+          <input id="clientPhone" class="pf-input" type="tel" placeholder="Telefono">
+        </div>
+        <div>
+          <label class="pf-label" for="clientAddress"><i class="bi bi-geo-alt"></i> Direccion</label>
+          <input id="clientAddress" class="pf-input" type="text" placeholder="Direccion">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-head">
+      <span class="pf-head-title"><i class="bi bi-search-heart"></i> Productos</span>
+      <span class="pf-small"><i class="bi bi-shield-check"></i> Precio minimo USD</span>
+    </div>
+    <div class="pf-card-body">
+      <label class="pf-label" for="productSearch"><i class="bi bi-upc-scan"></i> Buscar producto</label>
+      <input id="productSearch" class="pf-input" type="search" placeholder="Codigo o nombre">
+      <div id="productResults" class="pf-search-results"></div>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-head">
+      <span class="pf-head-title"><i class="bi bi-cart-check"></i> Carrito</span>
+      <span id="cartCount" class="pf-small"><i class="bi bi-bag"></i> 0 items</span>
+    </div>
+    <div class="pf-card-body">
+      <div id="cartRows">
+        <div class="text-center text-muted small py-3">Agrega productos para crear la Pre Factura.</div>
+      </div>
+      <label class="pf-label mt-2" for="notes"><i class="bi bi-chat-left-text"></i> Observacion</label>
+      <input id="notes" class="pf-input" type="text" placeholder="Comentario para el cliente">
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-body">
+      <div class="pf-totals">
+        <div class="pf-total-box">
+          <div class="pf-total-label"><i class="bi bi-box"></i> Bultos</div>
+          <div id="totalQty" class="pf-total-value">0</div>
+        </div>
+        <div class="pf-total-box">
+          <div class="pf-total-label"><i class="bi bi-currency-dollar"></i> Total USD</div>
+          <div id="totalUsd" class="pf-total-value">$ 0.00</div>
+        </div>
+        <div class="pf-total-box">
+          <div class="pf-total-label"><i class="bi bi-cash-stack"></i> Total C$</div>
+          <div id="totalCs" class="pf-total-value">C$ 0.00</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="pf-actions">
+  <button id="btnClear" class="btn btn-outline-secondary" type="button"><i class="bi bi-trash3"></i> Limpiar</button>
+  <button id="btnCreate" class="btn btn-danger" type="button"><i class="bi bi-image"></i> Generar JPG</button>
+</div>
+
+<div id="previewModal" class="pf-preview" aria-hidden="true">
+  <div class="pf-preview-panel">
+    <img id="previewImage" alt="Pre Factura JPG">
+    <div class="pf-preview-buttons">
+      <button id="btnShare" class="btn btn-danger" type="button"><i class="bi bi-share"></i> Compartir</button>
+      <button id="btnClosePreview" class="btn btn-outline-secondary" type="button"><i class="bi bi-x-lg"></i> Cerrar</button>
+    </div>
+    <a id="downloadLink" class="btn btn-outline-danger w-100 mt-2" download="pre-factura.jpg"><i class="bi bi-download"></i> Descargar JPG</a>
+  </div>
+</div>
+
+<div id="clearConfirm" class="pf-confirm" aria-hidden="true">
+  <div class="pf-confirm-card">
+    <div class="pf-confirm-icon"><i class="bi bi-cart-x"></i></div>
+    <div class="pf-confirm-title">Limpiar carrito</div>
+    <div class="pf-confirm-copy">Se eliminaran todos los productos agregados a esta Pre Factura. Esta accion no se puede deshacer.</div>
+    <div class="pf-confirm-actions">
+      <button id="btnCancelClear" class="btn btn-outline-secondary" type="button"><i class="bi bi-x-lg"></i> Cancelar</button>
+      <button id="btnConfirmClear" class="btn btn-danger" type="button"><i class="bi bi-trash3"></i> Limpiar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const tasa = Number({{ tasa_raw|default(0) }});
+  const vendorName = {{ (vendedor.nombre if vendedor else user.full_name or user.username)|tojson }};
+  const branchName = {{ (branch.name if branch else '-')|tojson }};
+  const bodegaName = {{ (bodega.name if bodega else '-')|tojson }};
+  const company = {
+    name: {{ (branding.trade_name or branding.legal_name or 'Empresa')|tojson }},
+    legalName: {{ (branding.legal_name or '')|tojson }},
+    ruc: {{ (branding.ruc or '')|tojson }},
+    phone: {{ (branding.phone or '')|tojson }},
+    address: {{ (branding.address or '')|tojson }},
+    email: {{ (branding.email or '')|tojson }},
+    logoUrl: {{ (branding.pos_logo_url or branding.logo_url or '')|tojson }}
+  };
+  const state = { cart: [], lastReceipt: null, lastBlob: null };
+  const $ = (id) => document.getElementById(id);
+  const fmtUsd = (n) => "$ " + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtCs = (n) => "C$ " + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const qtyText = (n) => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  const debounce = (fn, ms = 260) => {
+    let timer = null;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), ms);
+    };
+  };
+
+  function totals() {
+    return state.cart.reduce((acc, item) => {
+      acc.qty += Number(item.cantidad || 0);
+      acc.usd += Number(item.cantidad || 0) * Number(item.precio_usd || 0);
+      acc.cs += Number(item.cantidad || 0) * Number(item.precio_usd || 0) * tasa;
+      return acc;
+    }, { qty: 0, usd: 0, cs: 0 });
+  }
+
+  function renderCart() {
+    const wrap = $("cartRows");
+    if (!state.cart.length) {
+      wrap.innerHTML = '<div class="text-center text-muted small py-3">Agrega productos para crear la Pre Factura.</div>';
+    } else {
+      wrap.innerHTML = state.cart.map((item, idx) => {
+        const priceUsd = Number(item.precio_usd || item.base_usd || 0);
+        const subtotalCs = Number(item.cantidad) * priceUsd * tasa;
+        return `
+          <div class="pf-cart-row" data-idx="${idx}">
+            <div class="pf-cart-top">
+              <div>
+                <div class="pf-cart-code">${esc(item.cod_producto)}</div>
+                <div class="pf-cart-name">${esc(item.descripcion)}</div>
+                <div class="pf-small">Min ${fmtUsd(item.base_usd)} · Exist ${qtyText(item.existencia)} · Subtotal ${fmtCs(subtotalCs)}</div>
+              </div>
+              <button class="pf-cart-remove" type="button" data-remove="${idx}">x</button>
+            </div>
+            <div class="pf-cart-controls">
+              <div>
+                <label class="pf-label">Cant.</label>
+                <input class="pf-input" data-qty="${idx}" type="number" min="1" step="1" value="${Number(item.cantidad || 1)}">
+              </div>
+              <div>
+                <label class="pf-label">Precio USD</label>
+                <input class="pf-input" data-price="${idx}" type="number" min="${Number(item.base_usd || 0).toFixed(2)}" step="0.01" value="${item.price_text ?? Number(priceUsd).toFixed(2)}">
+              </div>
+              <div>
+                <label class="pf-label">Precio C$</label>
+                <input class="pf-input" readonly value="${fmtCs(priceUsd * tasa)}">
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+    const total = totals();
+    $("cartCount").textContent = `${state.cart.length} items`;
+    $("totalQty").textContent = qtyText(total.qty);
+    $("totalUsd").textContent = fmtUsd(total.usd);
+    $("totalCs").textContent = fmtCs(total.cs);
+  }
+
+  function addProduct(item) {
+    if (Number(item.existencia || 0) <= 0) {
+      alert("Producto sin existencia disponible.");
+      return;
+    }
+    const existing = state.cart.find((row) => Number(row.producto_id) === Number(item.id));
+    if (existing) {
+      if (Number(existing.cantidad) + 1 > Number(existing.existencia || 0)) {
+        alert("No puedes superar la existencia disponible.");
+        return;
+      }
+      existing.cantidad += 1;
+    } else {
+      state.cart.push({
+        producto_id: Number(item.id),
+        cod_producto: item.cod_producto,
+        descripcion: item.descripcion,
+        existencia: Number(item.existencia || 0),
+        base_usd: Number(item.precio_usd || 0),
+        precio_usd: Number(item.precio_usd || 0),
+        cantidad: 1
+      });
+    }
+    $("productResults").innerHTML = "";
+    $("productSearch").value = "";
+    renderCart();
+  }
+
+  async function searchProducts() {
+    const q = $("productSearch").value.trim();
+    const box = $("productResults");
+    if (q.length < 2) {
+      box.innerHTML = "";
+      return;
+    }
+    box.innerHTML = '<div class="p-2 text-muted small">Buscando...</div>';
+    const res = await fetch(`/m/pre-factura/productos/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" } });
+    const data = await res.json();
+    if (!data.ok) {
+      box.innerHTML = `<div class="p-2 text-danger small">${esc(data.message || "No se pudo buscar")}</div>`;
+      return;
+    }
+    if (!data.items.length) {
+      box.innerHTML = '<div class="p-2 text-muted small">Sin resultados</div>';
+      return;
+    }
+    box.innerHTML = data.items.map((item, idx) => `
+      <button class="pf-result" type="button" data-product-idx="${idx}">
+        <span>
+          <span class="code">${esc(item.cod_producto)}</span>
+          <span class="name d-block">${esc(item.descripcion)}</span>
+        </span>
+        <span class="side">${fmtUsd(item.precio_usd)}<br>Exist ${qtyText(item.existencia)}</span>
+      </button>
+    `).join("");
+    box.querySelectorAll("[data-product-idx]").forEach((btn) => {
+      btn.addEventListener("click", () => addProduct(data.items[Number(btn.dataset.productIdx)]));
+    });
+  }
+
+  async function searchClients() {
+    const q = $("clientSearch").value.trim();
+    const box = $("clientResults");
+    $("clientId").value = "";
+    if (q.length < 2) {
+      box.innerHTML = "";
+      return;
+    }
+    const res = await fetch(`/m/pre-factura/clientes/search?q=${encodeURIComponent(q)}`, { headers: { "X-Requested-With": "fetch" } });
+    const data = await res.json();
+    if (!data.ok || !data.items.length) {
+      box.innerHTML = "";
+      return;
+    }
+    box.innerHTML = data.items.map((client, idx) => `
+      <button class="pf-result" type="button" data-client-idx="${idx}">
+        <span><span class="name">${esc(client.nombre)}</span><span class="code d-block">${esc(client.telefono || "")}</span></span>
+        <span class="side">Usar</span>
+      </button>
+    `).join("");
+    box.querySelectorAll("[data-client-idx]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const client = data.items[Number(btn.dataset.clientIdx)];
+        $("clientId").value = client.id;
+        $("clientSearch").value = client.nombre;
+        $("clientPhone").value = client.telefono || "";
+        $("clientAddress").value = client.direccion || "";
+        box.innerHTML = "";
+      });
+    });
+  }
+
+  $("cartRows").addEventListener("input", (event) => {
+    const qtyIdx = event.target.dataset.qty;
+    const priceIdx = event.target.dataset.price;
+    if (qtyIdx !== undefined) {
+      const item = state.cart[Number(qtyIdx)];
+      let qty = Math.max(1, Math.round(Number(event.target.value || 1)));
+      if (qty > Number(item.existencia || 0)) qty = Number(item.existencia || 0);
+      item.cantidad = qty;
+      event.target.value = qty;
+      renderCart();
+    }
+    if (priceIdx !== undefined) {
+      const item = state.cart[Number(priceIdx)];
+      item.price_text = event.target.value;
+      const price = Number(event.target.value);
+      if (event.target.value !== "" && Number.isFinite(price)) {
+        item.precio_usd = Number(price.toFixed(2));
+        const row = event.target.closest(".pf-cart-row");
+        const csInput = row?.querySelector("input[readonly]");
+        if (csInput) csInput.value = fmtCs(item.precio_usd * tasa);
+      }
+    }
+  });
+
+  $("cartRows").addEventListener("blur", (event) => {
+    const priceIdx = event.target.dataset.price;
+    if (priceIdx === undefined) return;
+    const item = state.cart[Number(priceIdx)];
+    let price = Number(event.target.value);
+    if (!event.target.value || !Number.isFinite(price) || price < Number(item.base_usd || 0)) {
+      price = Number(item.base_usd || 0);
+    }
+    item.precio_usd = Number(price.toFixed(2));
+    item.price_text = item.precio_usd.toFixed(2);
+    renderCart();
+  }, true);
+
+  $("cartRows").addEventListener("click", (event) => {
+    const idx = event.target.dataset.remove;
+    if (idx !== undefined) {
+      state.cart.splice(Number(idx), 1);
+      renderCart();
+    }
+  });
+
+  function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 4) {
+    const words = String(text || "").split(/\s+/).filter(Boolean);
+    let line = "";
+    let lines = 0;
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        ctx.fillText(line, x, y);
+        y += lineHeight;
+        lines += 1;
+        line = word;
+        if (lines >= maxLines) return y;
+      } else {
+        line = test;
+      }
+    }
+    if (line && lines < maxLines) {
+      ctx.fillText(line, x, y);
+      y += lineHeight;
+    }
+    return y;
+  }
+
+  function loadImage(url) {
+    return new Promise((resolve) => {
+      if (!url) return resolve(null);
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = `${url}${url.includes("?") ? "&" : "?"}v={{ version }}`;
+    });
+  }
+
+  async function drawReceipt(receipt) {
+    const width = 720;
+    const rowHeight = 112;
+    const bankBlockHeight = 330;
+    const authBlockHeight = 230;
+    const height = 920 + (receipt.items.length * rowHeight) + (receipt.observacion ? 70 : 0) + bankBlockHeight + authBlockHeight;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = "#7f1d1d";
+    ctx.fillRect(0, 0, width, 220);
+    const logo = await loadImage(receipt.company.logo_url || company.logoUrl);
+    if (logo) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(32, 36, 96, 96);
+      ctx.drawImage(logo, 42, 46, 76, 76);
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 34px Arial";
+    ctx.fillText(receipt.company.name || company.name, logo ? 150 : 32, 68);
+    ctx.font = "700 20px Arial";
+    wrapText(ctx, receipt.company.address || company.address, logo ? 150 : 32, 98, 360, 24, 2);
+    ctx.fillText(`Tel: ${receipt.company.phone || company.phone || "-"}`, logo ? 150 : 32, 156);
+    ctx.textAlign = "right";
+    ctx.font = "900 34px Arial";
+    ctx.fillText("PRE FACTURA", width - 32, 66);
+    ctx.font = "800 25px Arial";
+    ctx.fillText(receipt.numero, width - 32, 108);
+    ctx.font = "700 20px Arial";
+    ctx.fillText(`${receipt.fecha} ${receipt.hora}`, width - 32, 144);
+    ctx.fillText("Imagen verificable por QR", width - 32, 178);
+    ctx.textAlign = "left";
+
+    let y = 260;
+    ctx.fillStyle = "#fff7f8";
+    ctx.fillRect(32, y - 22, width - 64, 138);
+    ctx.fillStyle = "#111827";
+    ctx.font = "900 23px Arial";
+    ctx.fillText("Cliente", 52, y);
+    ctx.fillText("Vendedor", 380, y);
+    y += 30;
+    ctx.font = "700 22px Arial";
+    wrapText(ctx, receipt.cliente || "Consumidor final", 52, y, 285, 26, 2);
+    wrapText(ctx, receipt.vendedor || vendorName, 380, y, 290, 26, 2);
+    y += 72;
+    ctx.fillStyle = "#64748b";
+    ctx.font = "700 18px Arial";
+    ctx.fillText(`Sucursal: ${receipt.sucursal || branchName}`, 52, y);
+    ctx.fillText(`Bodega: ${receipt.bodega || bodegaName}`, 380, y);
+    y += 30;
+    ctx.fillText(`Tasa de venta: C$ ${Number(receipt.tasa || tasa).toFixed(4)}`, 52, y);
+    y += 54;
+
+    ctx.fillStyle = "#fff7f8";
+    ctx.fillRect(32, y, width - 64, 48);
+    ctx.fillStyle = "#7f1d1d";
+    ctx.font = "900 18px Arial";
+    ctx.fillText("Producto", 52, y + 31);
+    ctx.textAlign = "right";
+    ctx.fillText("Cant", 455, y + 31);
+    ctx.fillText("Precio C$", 560, y + 31);
+    ctx.fillText("Subtotal C$", width - 52, y + 31);
+    ctx.textAlign = "left";
+    y += 64;
+
+    receipt.items.forEach((item) => {
+      ctx.fillStyle = "#111827";
+      ctx.font = "900 18px Arial";
+      ctx.fillText(item.codigo || "-", 52, y);
+      ctx.font = "700 20px Arial";
+      wrapText(ctx, item.descripcion || "Producto", 52, y + 26, 340, 24, 2);
+      ctx.textAlign = "right";
+      ctx.font = "800 19px Arial";
+      ctx.fillText(qtyText(item.cantidad), 455, y + 28);
+      ctx.fillText(fmtCs(item.precio_cs).replace("C$ ", ""), 560, y + 28);
+      ctx.fillText(fmtCs(item.subtotal_cs).replace("C$ ", ""), width - 52, y + 28);
+      ctx.textAlign = "left";
+      ctx.strokeStyle = "#fee2e2";
+      ctx.beginPath();
+      ctx.moveTo(32, y + rowHeight - 22);
+      ctx.lineTo(width - 32, y + rowHeight - 22);
+      ctx.stroke();
+      y += rowHeight;
+    });
+
+    if (receipt.observacion) {
+      ctx.fillStyle = "#64748b";
+      ctx.font = "700 18px Arial";
+      y = wrapText(ctx, `Obs: ${receipt.observacion}`, 32, y + 8, width - 64, 24, 2);
+      y += 18;
+    }
+    ctx.fillStyle = "#7f1d1d";
+    ctx.fillRect(32, y, width - 64, 122);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 20px Arial";
+    ctx.fillText(`Items: ${qtyText(receipt.total_items)}`, 58, y + 42);
+    ctx.fillText(`Total USD: ${fmtUsd(receipt.total_usd)}`, 58, y + 84);
+    ctx.textAlign = "right";
+    ctx.font = "950 34px Arial";
+    ctx.fillText(fmtCs(receipt.total_cs), width - 58, y + 72);
+    ctx.textAlign = "left";
+    y += 155;
+
+    ctx.fillStyle = "#fff7f8";
+    ctx.fillRect(32, y, width - 64, bankBlockHeight - 20);
+    ctx.strokeStyle = "#fecdd3";
+    ctx.strokeRect(32, y, width - 64, bankBlockHeight - 20);
+    ctx.fillStyle = "#7f1d1d";
+    ctx.font = "900 22px Arial";
+    ctx.fillText("Cuentas autorizadas para deposito", 52, y + 36);
+    ctx.fillStyle = "#111827";
+    ctx.font = "800 18px Arial";
+    ctx.fillText("PACAS HOLLYWOOD MANAGUA - TU MEJOR CÁLIDAD", 52, y + 68);
+    ctx.font = "700 17px Arial";
+    const accounts = [
+      ["LA FISE", "CÓRDOBAS", "133069262", "DÓLARES", "130270096"],
+      ["BAC", "CÓRDOBAS", "355255589", "DÓLARES", "363315185"],
+      ["BANPRO", "CÓRDOBAS", "10020600108406", "DÓLARES", "10020610060472"],
+    ];
+    let bankY = y + 104;
+    accounts.forEach((row) => {
+      ctx.fillStyle = "#991b1b";
+      ctx.font = "900 17px Arial";
+      ctx.fillText(row[0], 52, bankY);
+      ctx.fillStyle = "#111827";
+      ctx.font = "700 16px Arial";
+      ctx.fillText(`${row[1]}: ${row[2]}`, 185, bankY);
+      ctx.fillText(`${row[3]}: ${row[4]}`, 185, bankY + 26);
+      bankY += 70;
+    });
+    ctx.fillStyle = "#111827";
+    ctx.font = "900 16px Arial";
+    ctx.fillText("A nombre de: DANIEL OCTAVIO PÉREZ RUBIO", 52, y + bankBlockHeight - 42);
+    y += bankBlockHeight;
+
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(32, y, width - 64, authBlockHeight - 22);
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.strokeRect(32, y, width - 64, authBlockHeight - 22);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "900 22px Arial";
+    ctx.fillText("Validacion de autenticidad", 52, y + 38);
+    ctx.font = "700 17px Arial";
+    wrapText(ctx, "Escanee el QR. Debe abrir la pagina oficial donde se origino esta Pre Factura. Si no abre esa URL, no es valida.", 52, y + 70, 405, 23, 4);
+    const qr = await loadImage(receipt.qr_url);
+    if (qr) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(width - 208, y + 28, 156, 156);
+      ctx.drawImage(qr, width - 198, y + 38, 136, 136);
+    }
+    y += authBlockHeight;
+    ctx.fillStyle = "#64748b";
+    ctx.font = "700 16px Arial";
+    wrapText(ctx, `URL oficial: ${receipt.validation_url || ""}`, 32, y, width - 64, 20, 3);
+    ctx.fillText("Pre Factura generada desde modulo movil. Documento no fiscal.", 32, y + 72);
+    return canvas;
+  }
+
+  async function createPreFactura() {
+    if (!state.cart.length) {
+      alert("Agrega al menos un producto.");
+      return;
+    }
+    for (const item of state.cart) {
+      const price = Number(item.price_text ?? item.precio_usd);
+      if (!Number.isFinite(price) || price < Number(item.base_usd || 0)) {
+        alert(`El precio de ${item.cod_producto} no puede estar vacio ni ser menor a ${fmtUsd(item.base_usd)}.`);
+        item.precio_usd = Number(item.base_usd || 0);
+        item.price_text = item.precio_usd.toFixed(2);
+        renderCart();
+        return;
+      }
+      item.precio_usd = Number(price.toFixed(2));
+      item.price_text = item.precio_usd.toFixed(2);
+    }
+    const payload = {
+      cliente_id: $("clientId").value || null,
+      cliente_nombre: $("clientSearch").value.trim(),
+      cliente_telefono: $("clientPhone").value.trim(),
+      cliente_direccion: $("clientAddress").value.trim(),
+      observacion: $("notes").value.trim(),
+      items: state.cart.map((item) => ({
+        producto_id: item.producto_id,
+        cantidad: item.cantidad,
+        precio_usd: item.precio_usd
+      }))
+    };
+    $("btnCreate").disabled = true;
+    $("btnCreate").innerHTML = '<i class="bi bi-hourglass-split"></i> Generando...';
+    try {
+      const res = await fetch("/m/pre-factura", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.message || "No se pudo crear la Pre Factura.");
+        return;
+      }
+      state.lastReceipt = data.prefactura;
+      const canvas = await drawReceipt(data.prefactura);
+      canvas.toBlob((blob) => {
+        state.lastBlob = blob;
+        const url = URL.createObjectURL(blob);
+        $("previewImage").src = url;
+        $("downloadLink").href = url;
+        $("downloadLink").download = `${data.prefactura.numero}.jpg`;
+        $("previewModal").classList.add("is-open");
+        $("previewModal").setAttribute("aria-hidden", "false");
+      }, "image/jpeg", .92);
+    } finally {
+      $("btnCreate").disabled = false;
+      $("btnCreate").innerHTML = '<i class="bi bi-image"></i> Generar JPG';
+    }
+  }
+
+  async function shareJpg() {
+    if (!state.lastBlob || !state.lastReceipt) return;
+    const file = new File([state.lastBlob], `${state.lastReceipt.numero}.jpg`, { type: "image/jpeg" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: state.lastReceipt.numero, text: "Pre Factura" });
+    } else {
+      $("downloadLink").click();
+    }
+  }
+
+  $("productSearch").addEventListener("input", debounce(searchProducts));
+  $("clientSearch").addEventListener("input", debounce(searchClients));
+  $("btnCreate").addEventListener("click", createPreFactura);
+  $("btnClear").addEventListener("click", () => {
+    if (!state.cart.length) {
+      state.cart = [];
+      renderCart();
+      return;
+    }
+    $("clearConfirm").classList.add("is-open");
+    $("clearConfirm").setAttribute("aria-hidden", "false");
+  });
+  $("btnCancelClear").addEventListener("click", () => {
+    $("clearConfirm").classList.remove("is-open");
+    $("clearConfirm").setAttribute("aria-hidden", "true");
+  });
+  $("btnConfirmClear").addEventListener("click", () => {
+    state.cart = [];
+    renderCart();
+    $("clearConfirm").classList.remove("is-open");
+    $("clearConfirm").setAttribute("aria-hidden", "true");
+  });
+  $("btnShare").addEventListener("click", shareJpg);
+  $("btnClosePreview").addEventListener("click", () => {
+    $("previewModal").classList.remove("is-open");
+    $("previewModal").setAttribute("aria-hidden", "true");
+  });
+  renderCart();
+})();
+</script>
+{% endblock %}

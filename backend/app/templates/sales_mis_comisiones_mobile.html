@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% block content %}
+{% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
+<style>
+  body {
+    background: linear-gradient(180deg, #fff7f7 0%, #fff1f2 100%);
+  }
+  .mobile-comisiones {
+    padding-bottom: 1.25rem;
+  }
+  .mobile-comisiones .card {
+    border-radius: 14px;
+    border: 1px solid #f4c7c9;
+    box-shadow: 0 4px 18px rgba(15, 23, 42, 0.05);
+    background: rgba(255, 255, 255, 0.98);
+  }
+  .mobile-comisiones .card-header {
+    padding: .65rem .85rem;
+    background: #fff;
+    border-bottom: 1px solid #fee2e2;
+  }
+  .mobile-comisiones .card-body {
+    padding: .8rem;
+  }
+  .mobile-comisiones .app-topbar {
+    border-radius: 16px;
+    background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 55%, #fb7185 100%);
+    color: #fff;
+    padding: .85rem;
+    box-shadow: 0 10px 24px rgba(185, 28, 28, 0.18);
+  }
+  .mobile-comisiones .app-brand-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .28rem .58rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .14);
+    font-weight: 700;
+  }
+  .mobile-comisiones .app-brand-chip img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+  }
+  .mobile-comisiones .app-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    margin-top: .6rem;
+    font-size: .76rem;
+  }
+  .mobile-comisiones .app-meta span {
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .15);
+    padding: .24rem .45rem;
+  }
+  .mobile-comisiones .range-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .55rem;
+  }
+  .mobile-comisiones .range-form label {
+    display: block;
+    font-size: .66rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: .25rem;
+  }
+  .mobile-comisiones .range-form input {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: .5rem .6rem;
+    font-size: .86rem;
+  }
+  .mobile-comisiones .range-form .actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .4rem;
+  }
+  .mobile-comisiones .range-form .btn {
+    padding: .48rem .55rem;
+    font-size: .86rem;
+  }
+  .mobile-comisiones .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .5rem;
+  }
+  .mobile-comisiones .summary-box {
+    border: 1px solid #fecdd3;
+    border-radius: 12px;
+    padding: .62rem;
+    background: #fff7f8;
+    min-width: 0;
+  }
+  .mobile-comisiones .summary-box .label {
+    font-size: .64rem;
+    text-transform: uppercase;
+    font-weight: 800;
+    color: #64748b;
+  }
+  .mobile-comisiones .summary-box .value {
+    margin-top: .12rem;
+    color: #7f1d1d;
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+  .mobile-comisiones .summary-box .hint {
+    color: #64748b;
+    font-size: .68rem;
+    line-height: 1.2;
+    margin-top: .15rem;
+  }
+  .mobile-comisiones .compare-strip {
+    margin-top: .6rem;
+    border: 1px solid #fecdd3;
+    border-radius: 12px;
+    background: #fff;
+    padding: .65rem;
+  }
+  .mobile-comisiones .compare-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    color: #7f1d1d;
+    font-size: .72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+  .mobile-comisiones .compare-period {
+    color: #64748b;
+    font-size: .68rem;
+    text-transform: none;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .mobile-comisiones .compare-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .45rem;
+    margin-top: .55rem;
+  }
+  .mobile-comisiones .compare-item {
+    border-radius: 10px;
+    background: #fff7f8;
+    border: 1px solid #fee2e2;
+    padding: .5rem;
+  }
+  .mobile-comisiones .compare-label {
+    color: #64748b;
+    font-size: .62rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .mobile-comisiones .compare-value {
+    margin-top: .12rem;
+    color: #991b1b;
+    font-size: .95rem;
+    font-weight: 900;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+  .mobile-comisiones .sales-row {
+    border: 1px solid #fee2e2;
+    border-radius: 13px;
+    margin-bottom: .55rem;
+    overflow: hidden;
+    background: #fff;
+  }
+  .mobile-comisiones .sales-row summary {
+    list-style: none;
+    padding: .7rem;
+  }
+  .mobile-comisiones .sales-row summary::-webkit-details-marker {
+    display: none;
+  }
+  .mobile-comisiones .code {
+    font-weight: 900;
+    color: #b91c1c;
+    font-size: .78rem;
+  }
+  .mobile-comisiones .name {
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.18;
+    font-size: .92rem;
+    margin-top: .1rem;
+  }
+  .mobile-comisiones .meta {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .35rem;
+    margin-top: .55rem;
+  }
+  .mobile-comisiones .meta-item {
+    border-radius: 10px;
+    background: #fff7f8;
+    border: 1px solid #fee2e2;
+    padding: .42rem;
+    min-width: 0;
+  }
+  .mobile-comisiones .meta-label,
+  .mobile-comisiones .detail-grid .label {
+    font-size: .6rem;
+    color: #64748b;
+    text-transform: uppercase;
+    font-weight: 800;
+  }
+  .mobile-comisiones .meta-value,
+  .mobile-comisiones .detail-grid .value {
+    font-weight: 800;
+    color: #0f172a;
+    font-size: .78rem;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+  .mobile-comisiones .detail-list {
+    padding: 0 .7rem .7rem;
+  }
+  .mobile-comisiones .detail-card {
+    border-top: 1px solid #fee2e2;
+    padding: .6rem 0;
+  }
+  .mobile-comisiones .detail-top {
+    display: flex;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .45rem;
+  }
+  .mobile-comisiones .detail-top .invoice {
+    font-weight: 900;
+    color: #991b1b;
+    font-size: .84rem;
+  }
+  .mobile-comisiones .detail-top .date {
+    color: #64748b;
+    font-size: .74rem;
+    white-space: nowrap;
+  }
+  .mobile-comisiones .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .35rem;
+  }
+  .mobile-comisiones .detail-grid .cell {
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: .42rem;
+    min-width: 0;
+  }
+  @media (max-width: 420px) {
+    .mobile-comisiones .summary-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .mobile-comisiones .meta,
+    .mobile-comisiones .detail-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+</style>
+
+<div class="container py-2 mobile-comisiones">
+  <div class="app-topbar mb-2">
+    <div class="d-flex align-items-center justify-content-between gap-3">
+      <div>
+        <span class="app-brand-chip">
+          {% if branding.logo_url %}
+          <img src="{{ branding.logo_url }}" alt="Logo">
+          {% endif %}
+          <span>Mis Comisiones</span>
+        </span>
+        <h5 class="mt-2 mb-1 fw-bold">Comision final asignada</h5>
+        <div class="opacity-75 small">Final cerrado y asignacion automatica pendiente cuando aun no hay cierre.</div>
+      </div>
+      <a class="btn btn-light btn-sm fw-semibold" href="/home">Inicio</a>
+    </div>
+    <div class="app-meta">
+      <span><i class="bi bi-person-badge"></i> {{ vendor_name or user.full_name or user.username }}</span>
+      <span><i class="bi bi-building"></i> {{ branch.name if branch else '-' }}</span>
+      <span><i class="bi bi-box-seam"></i> {{ bodega.nombre if bodega else '-' }}</span>
+    </div>
+  </div>
+
+  <div class="card mb-2">
+    <div class="card-header fw-bold">Rango de fechas</div>
+    <div class="card-body">
+      <form class="range-form" method="get" action="/m/mis-comisiones">
+        <div>
+          <label for="start_date">Desde</label>
+          <input id="start_date" name="start_date" type="date" value="{{ start_date }}">
+        </div>
+        <div>
+          <label for="end_date">Hasta</label>
+          <input id="end_date" name="end_date" type="date" value="{{ end_date }}">
+        </div>
+        <div class="actions">
+          <button class="btn btn-danger fw-semibold" type="submit">Aplicar</button>
+          <a class="btn btn-outline-secondary fw-semibold" href="/m/mis-comisiones">Hoy</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card mb-2">
+    <div class="card-body">
+      <div class="summary-grid">
+        <div class="summary-box">
+          <div class="label">Total Bultos</div>
+          <div class="value">{{ summary.total_bultos }}</div>
+          <div class="hint">Asignados al vendedor</div>
+        </div>
+        <div class="summary-box">
+          <div class="label">Comision USD</div>
+          <div class="value">$ {{ summary.total_comision_usd }}</div>
+          <div class="hint">Monto final a pagar</div>
+        </div>
+        <div class="summary-box">
+          <div class="label">Ventas USD</div>
+          <div class="value">$ {{ summary.total_vendido_usd }}</div>
+          <div class="hint">Base asignada</div>
+        </div>
+        <div class="summary-box">
+          <div class="label">Facturas / Productos</div>
+          <div class="value">{{ summary.total_facturas }} / {{ summary.total_productos }}</div>
+          <div class="hint">{{ summary.total_dias }} dias · {{ summary.fuente or '-' }}</div>
+        </div>
+      </div>
+      <div class="compare-strip">
+        <div class="compare-head">
+          <span>Referencia quincena pasada</span>
+          <span class="compare-period">{{ previous_start_label }} - {{ previous_end_label }}</span>
+        </div>
+        <div class="compare-grid">
+          <div class="compare-item">
+            <div class="compare-label">Venta USD anterior</div>
+            <div class="compare-value">$ {{ previous_summary.total_vendido_usd }}</div>
+          </div>
+          <div class="compare-item">
+            <div class="compare-label">Comision USD anterior</div>
+            <div class="compare-value">$ {{ previous_summary.total_comision_usd }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header d-flex align-items-center justify-content-between">
+      <span class="fw-bold">Detalle por producto</span>
+      <span class="text-muted small">USD</span>
+    </div>
+    <div class="card-body">
+      {% if product_rows %}
+        {% for row in product_rows %}
+        <details class="sales-row">
+          <summary>
+            <div class="code">{{ row.codigo }}</div>
+            <div class="name">{{ row.descripcion }}</div>
+            <div class="meta">
+              <div class="meta-item">
+                <div class="meta-label">Bultos</div>
+                <div class="meta-value">{{ row.cantidad_total }}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Venta / comision</div>
+                <div class="meta-value">$ {{ row.total_vendido_usd }} / $ {{ row.total_comision_usd }}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Ultima fecha</div>
+                <div class="meta-value">{{ row.last_fecha_label }}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Lineas</div>
+                <div class="meta-value">{{ row.detalle_count }}</div>
+              </div>
+            </div>
+          </summary>
+          <div class="detail-list">
+            {% for detail in row.details %}
+            <div class="detail-card">
+              <div class="detail-top">
+                <div class="invoice">Factura {{ detail.factura_numero }}</div>
+                <div class="date">{{ detail.fecha_label }}</div>
+              </div>
+              <div class="detail-grid">
+                <div class="cell">
+                  <div class="label">Cliente</div>
+                  <div class="value">{{ detail.cliente }}</div>
+                </div>
+                <div class="cell">
+                  <div class="label">Origen</div>
+                  <div class="value">{{ detail.vendedor_origen }}</div>
+                </div>
+                <div class="cell">
+                  <div class="label">Bultos</div>
+                  <div class="value">{{ detail.cantidad }}</div>
+                </div>
+                <div class="cell">
+                  <div class="label">Comision</div>
+                  <div class="value">$ {{ detail.comision_total_usd }}</div>
+                </div>
+                <div class="cell">
+                  <div class="label">Fuente</div>
+                  <div class="value">{{ detail.source_label }}</div>
+                </div>
+                <div class="cell">
+                  <div class="label">Comision unit</div>
+                  <div class="value">$ {{ detail.comision_unit_usd }}</div>
+                </div>
+                <div class="cell">
+                  <div class="label">Venta USD</div>
+                  <div class="value">$ {{ detail.subtotal_usd }}</div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endfor %}
+      {% else %}
+        <div class="text-center py-4">
+          <div class="fw-semibold text-dark">Aun no hay comisiones finales asignadas.</div>
+          <div class="text-muted small mt-1">Cuando existan ventas asignadas automatica o manualmente, aqui se mostrara el detalle.</div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

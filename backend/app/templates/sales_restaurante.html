@@ -1047,12 +1047,13 @@
     border-radius: 28px;
     background: linear-gradient(180deg, rgba(255,255,255,.99), rgba(246,250,255,.96));
     box-shadow: 0 18px 42px rgba(56,86,122,.10);
-    overflow: hidden;
+    overflow: visible;
   }
   .pos-order-sheet-inner {
-    display: grid;
-    grid-template-rows: auto 1fr auto auto;
-    min-height: 78vh;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-height: auto;
   }
   .pos-order-header {
     border-bottom: 1px solid rgba(126,167,216,.14);
@@ -1061,7 +1062,7 @@
   }
   .pos-order-lines {
     max-height: none;
-    overflow: auto;
+    overflow: visible;
     padding-right: .35rem;
   }
   .pos-order-item {
@@ -1110,6 +1111,7 @@
     background: linear-gradient(180deg, rgba(244,249,255,.92), rgba(235,244,255,.98));
     border-radius: 22px;
     padding: 1rem;
+    margin-top: 1rem;
   }
   .pos-order-total {
     font-size: 2.2rem;
@@ -1308,6 +1310,230 @@
     border: 1px solid rgba(126,167,216,.16);
     background: linear-gradient(180deg,#fff,#f1f6ff);
   }
+  .restaurant-floating-menu-search {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translate(-50%, -12px);
+    width: min(560px, calc(100vw - 2rem));
+    z-index: 1080;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .restaurant-floating-menu-search.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, 0);
+  }
+  .restaurant-floating-menu-search .floating-search-shell {
+    border: 1px solid rgba(126,167,216,.22);
+    border-radius: 999px;
+    background: rgba(255,255,255,.96);
+    box-shadow: 0 16px 34px rgba(56,86,122,.18);
+    backdrop-filter: blur(14px);
+    padding: .45rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .restaurant-floating-menu-search .floating-search-shell::before {
+    content: "";
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: 0;
+    height: 4px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(137,87,255,.28), rgba(149,74,255,.9), rgba(214,112,255,.32));
+  }
+  .restaurant-floating-menu-search .form-control {
+    min-height: 48px;
+    border-radius: 999px;
+    border: 0;
+    box-shadow: none !important;
+    font-size: .98rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    background: transparent;
+  }
+  .restaurant-floating-menu-search .floating-search-hint {
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #8b5cf6;
+    margin-bottom: .3rem;
+    padding-left: .7rem;
+  }
+  .menu-product.search-hit .menu-card {
+    border-color: rgba(149,74,255,.34);
+    box-shadow: 0 0 0 2px rgba(149,74,255,.14), 0 16px 28px rgba(126,167,216,.12);
+  }
+  .menu-product.search-target .menu-card {
+    border-color: rgba(149,74,255,.54);
+    box-shadow: 0 0 0 3px rgba(149,74,255,.18), 0 18px 34px rgba(149,74,255,.18);
+    animation: restaurantSearchPulse 1.15s ease;
+  }
+  @keyframes restaurantSearchPulse {
+    0% { transform: scale(.985); }
+    45% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+  }
+  .restaurant-qty-input {
+    max-width: 98px !important;
+    min-height: 46px;
+    padding: .55rem .7rem;
+    text-align: center;
+    font-size: 1.08rem;
+    font-weight: 800;
+    border-radius: 14px;
+  }
+  @media (min-width: 768px) and (max-width: 1199.98px) {
+    #restaurant-active-order-shell {
+      --bs-gutter-x: 1rem;
+      --bs-gutter-y: 1rem;
+    }
+    .restaurant-order-column,
+    .restaurant-menu-column,
+    .restaurant-summary-column {
+      width: 100%;
+    }
+    .restaurant-order-column .pos-order-sheet,
+    .restaurant-menu-column .pos-menu-browser,
+    .restaurant-summary-column .position-sticky {
+      height: 100%;
+    }
+    .restaurant-order-column .pos-order-sheet,
+    .restaurant-menu-column .pos-menu-browser,
+    .restaurant-summary-column .pos-side-card {
+      border-radius: 24px;
+    }
+    .restaurant-order-column .pos-order-sheet {
+      position: sticky;
+      top: 1rem;
+    }
+    .restaurant-order-column .pos-order-sheet-inner,
+    .restaurant-menu-column .pos-menu-browser-inner {
+      min-height: calc(100vh - 130px);
+    }
+    .restaurant-order-column .pos-order-header,
+    .restaurant-menu-column .menu-browser-header {
+      margin-bottom: .85rem;
+      padding-bottom: .85rem;
+    }
+    .restaurant-order-column .pos-order-lines,
+    .restaurant-menu-column .pos-menu-grid {
+      padding-right: .2rem;
+    }
+    .restaurant-order-column .pos-order-item {
+      padding: .8rem .85rem;
+    }
+    .restaurant-order-column .pos-order-actions {
+      gap: .65rem;
+    }
+    .restaurant-order-column .pos-order-action {
+      min-height: 84px;
+      padding: .85rem .75rem;
+      text-align: center;
+      justify-content: center;
+    }
+    .restaurant-order-column .pos-order-action small {
+      line-height: 1.2;
+    }
+    .restaurant-order-column .pos-order-total {
+      font-size: 2rem;
+    }
+    .restaurant-menu-column .menu-browser-header > div:first-child {
+      flex: 1 1 280px;
+      min-width: 0;
+    }
+    .restaurant-menu-column .menu-browser-header > .d-flex {
+      flex: 0 0 240px;
+      width: 240px;
+    }
+    .restaurant-menu-column .menu-browser-header .form-control.lb-input {
+      width: 100% !important;
+      min-height: 48px;
+    }
+    .restaurant-menu-column .menu-category-strip {
+      gap: .45rem;
+      margin-bottom: .85rem;
+    }
+    .restaurant-menu-column .menu-category-btn {
+      min-height: 42px;
+      padding: .55rem .85rem;
+    }
+    .restaurant-menu-column .pos-menu-grid {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .85rem;
+    }
+    .restaurant-menu-column .pos-menu-grid > .menu-product {
+      width: 100%;
+      margin: 0;
+    }
+    .restaurant-menu-column .menu-card {
+      min-height: 198px;
+      padding: 1rem;
+    }
+    .restaurant-menu-column .restaurant-product-media {
+      height: 132px;
+    }
+    .restaurant-menu-column .restaurant-product-title {
+      font-size: .96rem;
+      line-height: 1.25;
+      min-height: 2.4em;
+    }
+    .restaurant-menu-column .restaurant-add-item-form,
+    .restaurant-menu-column .restaurant-draft-add-item-form {
+      gap: .6rem !important;
+    }
+    .restaurant-menu-column .restaurant-qty-input {
+      max-width: 102px !important;
+      min-height: 48px;
+      text-align: center;
+      font-size: 1.1rem;
+    }
+    .restaurant-menu-column .restaurant-add-item-form .btn,
+    .restaurant-menu-column .restaurant-draft-add-item-form .btn {
+      min-height: 44px;
+      font-size: .94rem;
+    }
+    .restaurant-summary-column .position-sticky {
+      position: static !important;
+    }
+    .restaurant-summary-column .row {
+      --bs-gutter-x: 1rem;
+      --bs-gutter-y: 1rem;
+    }
+    .restaurant-summary-column .col-lg-4,
+    .restaurant-summary-column .col-lg-8 {
+      width: 100%;
+    }
+    .restaurant-summary-column .pos-side-card {
+      padding: 1rem;
+    }
+    .restaurant-summary-column .btn.btn-lb-primary,
+    .restaurant-summary-column .btn.btn-lb-danger {
+      min-height: 48px;
+    }
+  }
+  @media (max-width: 1199.98px) {
+    .restaurant-floating-menu-search {
+      width: min(620px, calc(100vw - 1.5rem));
+      top: .85rem;
+    }
+    .restaurant-topbar .d-flex.justify-content-between {
+      align-items: flex-start !important;
+    }
+    .restaurant-topbar-stat {
+      min-width: 108px;
+      flex: 1 1 160px;
+    }
+    .menu-modal .modal-dialog.modal-xl {
+      max-width: 96vw;
+    }
+  }
   @media (max-width: 991.98px) {
     .restaurant-shell main { padding: 1rem !important; }
     .restaurant-card, .restaurant-glass, .table-sector { border-radius: 22px; }
@@ -1351,6 +1577,341 @@
     .compact-table-code { font-size: .52rem; }
     .restaurant-product-title {
       font-size: .88rem;
+    }
+    .restaurant-topbar {
+      border-radius: 22px;
+      padding: 1rem !important;
+    }
+    .restaurant-topbar-stat {
+      flex: 1 1 calc(50% - .5rem);
+      min-width: 0;
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav {
+      display: grid !important;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: .7rem !important;
+      align-items: stretch;
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav .nav-link {
+      min-height: 88px;
+      padding: .8rem .65rem !important;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      flex-direction: column;
+      gap: .45rem !important;
+      border-radius: 18px !important;
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav .nav-link i {
+      font-size: 1.1rem !important;
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav .nav-link .nav-text {
+      font-size: .72rem;
+      line-height: 1.18;
+      font-weight: 800;
+      white-space: normal;
+    }
+    .menu-launcher,
+    .compact-panel,
+    .account-summary,
+    .restaurant-stat,
+    .mesa-card,
+    .menu-card {
+      border-radius: 20px;
+    }
+    .menu-modal .modal-body {
+      max-height: calc(100vh - 170px);
+      padding-left: 1rem !important;
+      padding-right: 1rem !important;
+    }
+    .menu-modal .modal-header,
+    .menu-modal .modal-footer {
+      padding-left: 1rem !important;
+      padding-right: 1rem !important;
+    }
+    .pos-order-action,
+    .btn-lb-primary,
+    .btn-lb-soft,
+    .btn-lb-danger {
+      min-height: 46px;
+    }
+    .pos-order-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    #restaurant-inline-menu .row {
+      --bs-gutter-x: .85rem;
+      --bs-gutter-y: .85rem;
+    }
+    .pos-menu-grid {
+      display: grid !important;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: .85rem;
+    }
+    .pos-menu-grid > .menu-product {
+      width: 100%;
+      margin: 0;
+    }
+    .pos-side-card .d-grid.gap-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 767.98px) {
+    .restaurant-floating-menu-search {
+      width: calc(100vw - 1rem);
+      top: .7rem;
+    }
+    .restaurant-floating-menu-search .floating-search-shell {
+      padding: .38rem;
+    }
+    .restaurant-floating-menu-search .form-control {
+      min-height: 44px;
+      font-size: .94rem;
+    }
+    .restaurant-shell main { padding: .8rem !important; }
+    .restaurant-topbar {
+      border-radius: 18px;
+      margin-bottom: 1rem !important;
+    }
+    .restaurant-topbar .d-flex.align-items-center.gap-3,
+    .restaurant-topbar .d-flex.flex-wrap.align-items-center.justify-content-end.gap-2 {
+      width: 100%;
+    }
+    .restaurant-topbar h1 {
+      font-size: 1.35rem;
+    }
+    .restaurant-topbar-stat {
+      flex: 1 1 100%;
+    }
+    .floor-grid,
+    .area-selector-grid,
+    .compact-floor-sidebar .area-selector-grid {
+      grid-template-columns: 1fr;
+    }
+    .service-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .75rem;
+    }
+    .compact-floor-kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .65rem !important;
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav .nav-link {
+      min-height: 82px;
+      padding: .75rem .55rem !important;
+      border-radius: 16px !important;
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav .nav-link .nav-text {
+      font-size: .69rem;
+    }
+    .service-card,
+    .mesa-card,
+    .menu-card,
+    .restaurant-card,
+    .restaurant-glass,
+    .table-sector,
+    .compact-panel,
+    .menu-launcher,
+    .account-summary {
+      border-radius: 18px;
+    }
+    .service-card,
+    .mesa-card,
+    .menu-card {
+      min-height: 0;
+    }
+    .mesa-shape {
+      width: 56px;
+      height: 56px;
+    }
+    .mesa-shape.oval {
+      width: 74px;
+    }
+    .table-board,
+    .compact-floor-shell,
+    .compact-floor-stage,
+    .compact-floor-sidebar,
+    .compact-floor-canvas {
+      border-radius: 18px;
+    }
+    .compact-floor-shell {
+      min-height: calc(100vh - 160px);
+    }
+    .compact-floor-canvas,
+    .table-floor-canvas {
+      min-height: 260px;
+      height: 260px;
+    }
+    .menu-modal .modal-dialog,
+    .menu-modal .modal-dialog.modal-xl,
+    .menu-modal .modal-dialog.modal-lg {
+      max-width: 100vw;
+      margin: 0;
+      min-height: 100vh;
+    }
+    .menu-modal .modal-content {
+      min-height: 100vh;
+      border-radius: 0;
+    }
+    .menu-modal .modal-body {
+      max-height: none;
+      padding-bottom: 1rem !important;
+    }
+    .menu-modal .modal-footer {
+      flex-direction: column;
+      align-items: stretch;
+      gap: .75rem;
+    }
+    .menu-modal .modal-footer .btn {
+      width: 100%;
+    }
+    .restaurant-product-media {
+      height: 116px;
+    }
+    .restaurant-product-title {
+      min-height: 0;
+    }
+    .order-pill,
+    .order-line,
+    .menu-highlight {
+      border-radius: 18px;
+    }
+    .pos-order-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .6rem;
+    }
+    .pos-order-action,
+    .btn-lb-primary,
+    .btn-lb-soft,
+    .btn-lb-danger {
+      width: auto;
+      justify-content: center;
+    }
+    .pos-order-action {
+      min-height: 78px;
+      padding: .8rem .7rem;
+      text-align: center;
+    }
+    .pos-order-action small {
+      font-size: .67rem;
+      line-height: 1.18;
+    }
+    .menu-browser-header .form-control.lb-input {
+      width: 100% !important;
+    }
+    .pos-menu-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .75rem;
+    }
+    .pos-side-card .d-grid.gap-2 {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 575.98px) {
+    .restaurant-floating-menu-search .floating-search-hint {
+      font-size: .62rem;
+      padding-left: .55rem;
+    }
+    .restaurant-shell main { padding: .65rem !important; }
+    .restaurant-topbar {
+      padding: .85rem !important;
+    }
+    .lb-chip {
+      width: 100%;
+      justify-content: center;
+      font-size: .66rem;
+    }
+    .restaurant-topbar h1 {
+      font-size: 1.15rem;
+    }
+    .restaurant-topbar .small {
+      font-size: .74rem;
+    }
+    .restaurant-card,
+    .restaurant-glass,
+    .table-sector,
+    .compact-panel,
+    .menu-launcher,
+    .account-summary {
+      padding: .85rem;
+      border-radius: 16px;
+    }
+    .service-card,
+    .mesa-card,
+    .menu-card {
+      padding: .85rem;
+      border-radius: 16px;
+    }
+    .service-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .65rem;
+    }
+    .service-icon {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      font-size: 1.15rem;
+      margin-bottom: .6rem;
+    }
+    .mesa-status,
+    .lb-section-title {
+      font-size: .64rem;
+    }
+    .table-board,
+    .compact-floor-shell,
+    .compact-floor-stage,
+    .compact-floor-sidebar,
+    .compact-floor-canvas {
+      border-radius: 16px;
+    }
+    .compact-table-node {
+      width: 54px;
+      height: 54px;
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .55rem !important;
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav .nav-link {
+      min-height: 76px;
+      padding: .68rem .45rem !important;
+      border-radius: 14px !important;
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav .nav-link i {
+      font-size: 1rem !important;
+    }
+    .restaurant-shell #mobileSidebar .offcanvas-body nav.nav .nav-link .nav-text {
+      font-size: .64rem;
+      line-height: 1.12;
+    }
+    .restaurant-product-media {
+      height: 104px;
+      border-radius: 14px;
+    }
+    .pos-order-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .55rem;
+    }
+    .pos-order-action {
+      min-height: 72px;
+      padding: .7rem .55rem;
+      border-radius: 14px;
+      font-size: .8rem;
+    }
+    .pos-order-action small {
+      font-size: .62rem;
+    }
+    .pos-menu-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .65rem;
+    }
+    .menu-modal .modal-header,
+    .menu-modal .modal-body,
+    .menu-modal .modal-footer {
+      padding-left: .8rem !important;
+      padding-right: .8rem !important;
     }
   }
 </style>
@@ -1717,7 +2278,7 @@
       </div>
       {% elif draft_mode and not ns.selected_order %}
       <div class="row g-4 align-items-start" id="restaurant-active-order-shell">
-        <div class="col-12 col-lg-5 col-xxl-4">
+        <div class="col-12 col-lg-5 col-xxl-4 restaurant-order-column">
           <div class="pos-order-sheet p-3 p-lg-4">
             <div class="pos-order-sheet-inner">
               <div class="pos-order-header d-flex flex-wrap justify-content-between align-items-start gap-3">
@@ -1800,7 +2361,7 @@
             </div>
           </div>
         </div>
-        <div class="col-12 col-lg-7 col-xxl-8" id="restaurant-inline-menu">
+        <div class="col-12 col-lg-7 col-xxl-8 restaurant-menu-column" id="restaurant-inline-menu">
           <div class="pos-menu-browser p-3 p-lg-4">
             <div class="pos-menu-browser-inner">
               <div class="menu-browser-header d-flex flex-wrap justify-content-between align-items-end gap-3">
@@ -1859,7 +2420,7 @@
                       <input type="hidden" name="mesa_nombre" value="{{ draft_mesa_nombre }}">
                       <input type="hidden" name="observacion" value="{{ draft_observacion }}">
                       <input type="hidden" name="producto_id" value="{{ producto.id }}">
-                      <input class="form-control form-control-sm lb-input no-spinner restaurant-qty-input" name="cantidad" type="text" value="1" inputmode="decimal" autocomplete="off" style="max-width:78px;">
+                      <input class="form-control form-control-sm lb-input no-spinner restaurant-qty-input" name="cantidad" type="text" value="1" inputmode="decimal" autocomplete="off">
                       <button class="btn btn-sm btn-lb-primary flex-grow-1" type="submit">Agregar</button>
                     </form>
                   </div>
@@ -1872,7 +2433,7 @@
       </div>
       {% else %}
       <div class="row g-4 align-items-start" id="restaurant-active-order-shell">
-        <div class="col-12 col-lg-5 col-xxl-4">
+        <div class="col-12 col-lg-5 col-xxl-4 restaurant-order-column">
           <div class="pos-order-sheet p-3 p-lg-4">
             <div class="pos-order-sheet-inner">
               <div class="pos-order-header d-flex flex-wrap justify-content-between align-items-start gap-3">
@@ -1939,6 +2500,19 @@
                     Agregar productos
                     <small>Seguir cargando esta cuenta</small>
                   </button>
+                  <form
+                    method="post"
+                    action="/sales/restaurante/orders/{{ ns.selected_order.id }}/cancel"
+                    class="restaurant-cancel-order-form h-100"
+                    data-confirm-title="Limpiar completamente la orden"
+                    data-confirm-text="Se borraran todos los items cargados y la cuenta abierta se cerrara sin facturarse."
+                    data-confirm-button="Si, limpiar"
+                  >
+                    <button class="pos-order-action w-100 h-100" type="submit">
+                      Limpiar orden
+                      <small>Borrar todos los items cargados</small>
+                    </button>
+                  </form>
                 </div>
               </div>
               <div class="pos-order-footer mt-3">
@@ -1957,7 +2531,7 @@
             </div>
           </div>
         </div>
-        <div class="col-12 col-lg-7 col-xxl-8" id="restaurant-inline-menu">
+        <div class="col-12 col-lg-7 col-xxl-8 restaurant-menu-column" id="restaurant-inline-menu">
           <div class="pos-menu-browser p-3 p-lg-4">
             <div class="pos-menu-browser-inner">
               <div class="menu-browser-header d-flex flex-wrap justify-content-between align-items-end gap-3">
@@ -2010,7 +2584,7 @@
                     </div>
                     <form method="post" action="/sales/restaurante/orders/{{ ns.selected_order.id }}/items" class="d-flex align-items-center gap-2 restaurant-add-item-form">
                       <input type="hidden" name="producto_id" value="{{ producto.id }}">
-                      <input class="form-control form-control-sm lb-input no-spinner restaurant-qty-input" name="cantidad" type="text" value="1" inputmode="decimal" autocomplete="off" style="max-width:78px;">
+                      <input class="form-control form-control-sm lb-input no-spinner restaurant-qty-input" name="cantidad" type="text" value="1" inputmode="decimal" autocomplete="off">
                       <button class="btn btn-sm btn-lb-primary flex-grow-1" type="submit">Agregar</button>
                     </form>
                   </div>
@@ -2020,7 +2594,7 @@
             </div>
           </div>
         </div>
-        <div class="col-12">
+        <div class="col-12 restaurant-summary-column">
           <div class="d-grid gap-4 position-sticky" style="top: 1rem;">
             <div class="row g-4">
             <div class="col-lg-4">
@@ -2043,8 +2617,15 @@
             >
               Cobrar y facturar
             </button>
-            <form method="post" action="/sales/restaurante/orders/{{ ns.selected_order.id }}/cancel" class="mt-2 restaurant-cancel-order-form">
-              <button class="btn btn-lb-danger w-100" type="submit">Anular cuenta</button>
+            <form
+              method="post"
+              action="/sales/restaurante/orders/{{ ns.selected_order.id }}/cancel"
+              class="mt-2 restaurant-cancel-order-form"
+              data-confirm-title="Limpiar completamente la orden"
+              data-confirm-text="Se borraran todos los items cargados y la cuenta abierta se cerrara sin facturarse."
+              data-confirm-button="Si, limpiar"
+            >
+              <button class="btn btn-lb-danger w-100" type="submit">Limpiar completamente la orden</button>
             </form>
             </div>
             </div>
@@ -2163,6 +2744,18 @@
       </div>
     </div>
   </main>
+</div>
+<div id="restaurant-floating-menu-search" class="restaurant-floating-menu-search" aria-hidden="true">
+  <div class="floating-search-shell">
+    <div class="floating-search-hint">Filtro rapido del menu</div>
+    <input
+      id="restaurant-floating-menu-search-input"
+      type="text"
+      class="form-control lb-input"
+      placeholder="Buscar producto desde cualquier punto..."
+      autocomplete="off"
+    >
+  </div>
 </div>
 <div class="modal fade menu-modal" id="restaurantTableModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
@@ -2667,19 +3260,74 @@
   }
 
   const menuSearch = document.getElementById('menu-search');
+  const floatingMenuSearchShell = document.getElementById('restaurant-floating-menu-search');
+  const floatingMenuSearchInput = document.getElementById('restaurant-floating-menu-search-input');
   let activeMenuCategory = '';
-  function filterRestaurantMenu() {
-    const term = (menuSearch?.value || '').trim().toLowerCase();
+  let restaurantMenuSearchTerm = (menuSearch?.value || '').trim();
+  let syncingRestaurantSearchInputs = false;
+  function setRestaurantMenuSearchTerm(value, { source } = {}) {
+    restaurantMenuSearchTerm = String(value || '');
+    syncingRestaurantSearchInputs = true;
+    if (menuSearch && source !== menuSearch) {
+      menuSearch.value = restaurantMenuSearchTerm;
+    }
+    if (floatingMenuSearchInput && source !== floatingMenuSearchInput) {
+      floatingMenuSearchInput.value = restaurantMenuSearchTerm;
+    }
+    syncingRestaurantSearchInputs = false;
+    filterRestaurantMenu({ revealFirstMatch: source === floatingMenuSearchInput || source === menuSearch });
+  }
+  function filterRestaurantMenu({ revealFirstMatch = false } = {}) {
+    const term = restaurantMenuSearchTerm.trim().toLowerCase();
+    let firstMatchCard = null;
     document.querySelectorAll('.menu-product').forEach((card) => {
       const matchesSearch = !term || (card.dataset.search || '').includes(term);
       const matchesCategory = !activeMenuCategory || (card.dataset.category || '') === activeMenuCategory;
       card.style.display = matchesSearch && matchesCategory ? '' : 'none';
+      card.classList.toggle('search-hit', Boolean(term) && matchesSearch && matchesCategory);
+      card.classList.remove('search-target');
+      if (!firstMatchCard && matchesSearch && matchesCategory) {
+        firstMatchCard = card;
+      }
     });
+    if (revealFirstMatch && term && firstMatchCard) {
+      firstMatchCard.classList.add('search-target');
+      firstMatchCard.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      window.setTimeout(() => firstMatchCard?.classList.remove('search-target'), 1400);
+    }
   }
   if (menuSearch) {
     menuSearch.addEventListener('input', () => {
-      filterRestaurantMenu();
+      if (syncingRestaurantSearchInputs) return;
+      setRestaurantMenuSearchTerm(menuSearch.value, { source: menuSearch });
     });
+  }
+  if (floatingMenuSearchInput) {
+    floatingMenuSearchInput.addEventListener('input', () => {
+      if (syncingRestaurantSearchInputs) return;
+      setRestaurantMenuSearchTerm(floatingMenuSearchInput.value, { source: floatingMenuSearchInput });
+    });
+    floatingMenuSearchInput.addEventListener('focus', () => floatingMenuSearchInput.select());
+  }
+  function syncFloatingMenuSearchVisibility() {
+    if (!menuSearch || !floatingMenuSearchShell) return;
+    const rect = menuSearch.getBoundingClientRect();
+    const isPrimaryVisible = rect.bottom > 12 && rect.top < window.innerHeight - 24;
+    const shouldShow = !isPrimaryVisible && window.scrollY > 180;
+    floatingMenuSearchShell.classList.toggle('is-visible', shouldShow);
+    floatingMenuSearchShell.setAttribute('aria-hidden', shouldShow ? 'false' : 'true');
+  }
+  if (menuSearch && floatingMenuSearchShell) {
+    setRestaurantMenuSearchTerm(menuSearch.value, { source: menuSearch });
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver(() => {
+        syncFloatingMenuSearchVisibility();
+      }, { threshold: [0, 0.35, 0.8] });
+      observer.observe(menuSearch);
+    }
+    window.addEventListener('scroll', syncFloatingMenuSearchVisibility, { passive: true });
+    window.addEventListener('resize', syncFloatingMenuSearchVisibility);
+    window.setTimeout(syncFloatingMenuSearchVisibility, 220);
   }
   document.querySelectorAll('[data-menu-category]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -3734,6 +4382,9 @@
       form.dataset.bound = '1';
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
+        const productTitle = form.closest('.menu-card')?.querySelector('.restaurant-product-title')?.textContent?.trim() || 'Producto';
+        const qtyInput = form.querySelector('input[name="cantidad"]');
+        const qtyLabel = (qtyInput?.value || '1').trim() || '1';
         try {
           const resp = await fetch(form.action, {
             method: 'POST',
@@ -3743,8 +4394,13 @@
           const data = await resp.json();
           if (!resp.ok || !data.ok) throw new Error(data.message || 'No se pudo agregar');
           renderRestaurantOrder(data.order);
-          const qtyInput = form.querySelector('input[name="cantidad"]');
           if (qtyInput) qtyInput.value = '1';
+          await restaurantShowUiNotice({
+            icon: 'success',
+            title: 'Item agregado',
+            text: `${productTitle} x ${qtyLabel} se cargo a la orden.`,
+            timer: 500,
+          });
         } catch (error) {
           if (typeof Swal !== 'undefined') {
             Swal.fire({ icon: 'error', title: 'Error', text: error.message || 'No se pudo agregar el producto' });
@@ -3781,6 +4437,9 @@
     form.addEventListener('submit', async (event) => {
       if (!form.classList.contains('restaurant-draft-add-item-form')) return;
       event.preventDefault();
+      const productTitle = form.closest('.menu-card')?.querySelector('.restaurant-product-title')?.textContent?.trim() || 'Producto';
+      const qtyInput = form.querySelector('input[name="cantidad"]');
+      const qtyLabel = (qtyInput?.value || '1').trim() || '1';
       try {
         const resp = await fetch(form.action, {
           method: 'POST',
@@ -3790,8 +4449,13 @@
         const data = await resp.json();
         if (!resp.ok || !data.ok) throw new Error(data.message || 'No se pudo agregar');
         activateDraftOrder(data.order);
-        const qtyInput = form.querySelector('input[name="cantidad"]');
         if (qtyInput) qtyInput.value = '1';
+        await restaurantShowUiNotice({
+          icon: 'success',
+          title: 'Item agregado',
+          text: `${productTitle} x ${qtyLabel} se cargo a la orden.`,
+          timer: 500,
+        });
       } catch (error) {
         if (typeof Swal !== 'undefined') {
           Swal.fire({ icon: 'error', title: 'Error', text: error.message || 'No se pudo agregar el producto' });
@@ -3869,12 +4533,15 @@
     form.addEventListener('submit', async (event) => {
       if (typeof Swal === 'undefined') return;
       event.preventDefault();
+      const confirmTitle = form.dataset.confirmTitle || 'Anular cuenta abierta';
+      const confirmText = form.dataset.confirmText || 'La cuenta se cerrara sin facturarse. Puedes retomar otra orden luego.';
+      const confirmButton = form.dataset.confirmButton || 'Si, anular';
       const result = await Swal.fire({
         icon: 'warning',
-        title: 'Anular cuenta abierta',
-        text: 'La cuenta se cerrara sin facturarse. Puedes retomar otra orden luego.',
+        title: confirmTitle,
+        text: confirmText,
         showCancelButton: true,
-        confirmButtonText: 'Si, anular',
+        confirmButtonText: confirmButton,
         cancelButtonText: 'Cancelar',
         confirmButtonColor: '#7ea7d8',
         cancelButtonColor: '#c4d4e8',

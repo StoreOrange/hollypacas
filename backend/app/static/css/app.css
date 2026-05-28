@@ -59,6 +59,10 @@ body {
   gap: 0.5rem;
 }
 
+.odoo-toolbar > * {
+  min-width: 0;
+}
+
 .odoo-breadcrumb {
   font-size: 0.72rem;
   letter-spacing: 0.18em;
@@ -136,6 +140,10 @@ body {
   min-width: 0;
 }
 
+.odoo-page > * {
+  min-width: 0;
+}
+
 .odoo-header {
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -190,6 +198,26 @@ body {
   border-radius: 12px;
   padding: 1.25rem;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.odoo-card,
+.odoo-header,
+.sales-panel,
+.pay-modal .modal-content,
+.modal-content {
+  min-width: 0;
+}
+
+.odoo-table-wrap,
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.odoo-table-wrap > table,
+.table-responsive > table {
+  min-width: 100%;
 }
 
 .odoo-elevated {
@@ -864,6 +892,19 @@ body {
   .odoo-kpis {
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
+  .odoo-header {
+    padding: 1rem 1.1rem;
+  }
+  .odoo-toolbar {
+    width: 100%;
+  }
+  .odoo-toolbar .input-group,
+  .odoo-toolbar .form-select,
+  .odoo-toolbar .form-control,
+  .odoo-toolbar .btn,
+  .odoo-toolbar form {
+    max-width: 100%;
+  }
   .sales-hero {
     flex-direction: column;
     align-items: flex-start;
@@ -881,6 +922,10 @@ body {
   #layout {
     display: block;
   }
+  main {
+    width: 100%;
+    min-width: 0;
+  }
   .sidebar {
     position: relative;
     height: auto;
@@ -894,17 +939,73 @@ body {
   .odoo-header {
     padding: 0.9rem 1.1rem;
   }
+  .odoo-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .odoo-toolbar > *,
+  .odoo-toolbar form,
+  .odoo-toolbar .input-group {
+    width: 100%;
+  }
+  .odoo-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  .nav-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    padding-bottom: 0.35rem;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav-tabs .nav-item {
+    flex: 0 0 auto;
+  }
+  .nav-tabs .nav-link {
+    white-space: nowrap;
+  }
+  .odoo-action-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+  .odoo-action-bar .btn,
+  .odoo-action-bar .input-group,
+  .odoo-action-bar .form-select,
+  .odoo-action-bar .form-control {
+    width: 100%;
+  }
+  .modal-dialog.modal-xl,
+  .modal-dialog.modal-lg {
+    max-width: 96vw;
+  }
 }
 
 @media (max-width: 767px) {
+  body {
+    font-size: 15px;
+  }
   .odoo-title {
     font-size: 1.25rem;
   }
   .odoo-subtitle {
     font-size: 0.85rem;
   }
+  .odoo-header,
+  .odoo-card,
+  .sales-panel {
+    padding: 0.95rem;
+    border-radius: 18px;
+  }
   .odoo-kpi strong {
     font-size: 1rem;
+  }
+  .odoo-kpis {
+    grid-template-columns: 1fr;
+  }
+  .odoo-kpi {
+    padding: 0.8rem 0.85rem;
   }
   .sales-hero-title {
     font-size: 1.15rem;
@@ -923,6 +1024,18 @@ body {
   .pay-modal .modal-body {
     max-height: calc(100vh - 160px);
   }
+  .modal-content {
+    border-radius: 20px;
+  }
+  .modal-header,
+  .modal-footer {
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
+  }
+  .modal-body {
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
+  }
   .dataTables_wrapper .dataTables_filter,
   .dataTables_wrapper .dataTables_length {
     float: none;
@@ -935,6 +1048,78 @@ body {
   .odoo-table th,
   .odoo-table td {
     white-space: nowrap;
+  }
+  .mobile-global-nav {
+    grid-template-columns: auto 1fr auto;
+    gap: 0.45rem;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .mobile-global-nav__home,
+  .mobile-global-nav__menu {
+    min-height: 40px;
+    padding: 0 0.72rem;
+  }
+  .mobile-global-nav__brand .trade {
+    font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 575px) {
+  body.mobile-with-global-nav {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 64px);
+  }
+  main,
+  #layout main,
+  .container-fluid {
+    min-width: 0;
+  }
+  .odoo-header,
+  .odoo-card,
+  .sales-panel {
+    padding: 0.85rem;
+    border-radius: 16px;
+  }
+  .odoo-title {
+    font-size: 1.08rem;
+  }
+  .odoo-subtitle {
+    font-size: 0.8rem;
+  }
+  .btn,
+  .form-control,
+  .form-select {
+    min-height: 44px;
+  }
+  .btn-sm {
+    min-height: 40px;
+  }
+  .breadcrumb {
+    font-size: 0.72rem;
+  }
+  .odoo-table-wrap {
+    margin-left: -0.15rem;
+    margin-right: -0.15rem;
+  }
+  .modal-dialog,
+  .pay-modal .modal-dialog {
+    max-width: 100vw;
+    margin: 0;
+    min-height: 100vh;
+  }
+  .modal-content {
+    min-height: 100vh;
+    border-radius: 0;
+  }
+  .mobile-global-nav__home span,
+  .mobile-global-nav__menu span {
+    display: none;
+  }
+  .mobile-global-nav__home,
+  .mobile-global-nav__menu {
+    width: 42px;
+    min-width: 42px;
+    padding: 0;
   }
 }
 
