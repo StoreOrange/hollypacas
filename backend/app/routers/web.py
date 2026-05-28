@@ -1452,6 +1452,37 @@ def _prefactura_validation_url(request: Request, preventa: Preventa) -> str:
     return f"{base_url}/m/pre-factura/validar/{int(preventa.id)}?code={code}"
 
 
+def _prefactura_share_signature(target: str) -> str:
+    return hmac.new(
+        SECRET_KEY.encode("utf-8"),
+        str(target or "").encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()[:18]
+
+
+def _prefactura_share_validation_url(
+    request: Request,
+    *,
+    numero: str,
+    fecha: str,
+    total_cs: Decimal,
+    vendedor: str,
+) -> str:
+    base_url = str(request.base_url).rstrip("/")
+    params = {
+        "numero": numero,
+        "fecha": fecha,
+        "total_cs": _format_money(total_cs),
+        "vendedor": vendedor,
+    }
+    target = f"{base_url}/m/pre-factura/validar?{urlencode(params)}"
+    return f"{target}&code={_prefactura_share_signature(target)}"
+
+
+def _prefactura_share_qr_url(validation_url: str) -> str:
+    return f"/m/pre-factura/qr.svg?{urlencode({'target': validation_url, 'code': _prefactura_share_signature(validation_url)})}"
+
+
 def _next_restaurant_order_number(db: Session, branch: Branch) -> str:
     last = (
         db.query(RestaurantOrder)
@@ -11228,7 +11259,6 @@ async def mobile_prefactura_create(
     if not parsed_items:
         return JSONResponse({"ok": False, "message": "No hay items validos"}, status_code=400)
 
-    cliente_id = None
     cliente_nombre = str(payload.get("cliente_nombre") or "").strip()
     cliente_telefono = str(payload.get("cliente_telefono") or "").strip()
     cliente_direccion = str(payload.get("cliente_direccion") or "").strip()
@@ -11236,75 +11266,35 @@ async def mobile_prefactura_create(
     if cliente_id_raw.isdigit():
         cliente = db.query(Cliente).filter(Cliente.id == int(cliente_id_raw)).first()
         if cliente:
-            cliente_id = cliente.id
             cliente_nombre = cliente.nombre
             cliente_telefono = cliente.telefono or cliente_telefono
             cliente_direccion = cliente.direccion or cliente_direccion
-    elif cliente_nombre:
-        cliente = db.query(Cliente).filter(func.lower(Cliente.nombre) == cliente_nombre.lower()).first()
-        if not cliente:
-            cliente = Cliente(
-                nombre=cliente_nombre[:160],
-                telefono=cliente_telefono[:40] or None,
-                direccion=cliente_direccion[:200] or None,
-                activo=True,
-            )
-            db.add(cliente)
-            db.flush()
-        cliente_id = cliente.id
-    if not cliente_id:
-        consumidor = _get_or_create_consumidor_final(db)
-        cliente_id = consumidor.id
-        cliente_nombre = consumidor.nombre
+    if not cliente_nombre:
+        cliente_nombre = "Consumidor final"
 
     total_usd = sum((item["subtotal_usd"] for item in parsed_items), Decimal("0"))
     total_cs = sum((item["subtotal_cs"] for item in parsed_items), Decimal("0"))
     total_items = sum((item["cantidad"] for item in parsed_items), Decimal("0"))
     observacion_raw = str(payload.get("observacion") or "").strip()
-    observacion = f"PRE FACTURA MOVIL. {observacion_raw}"[:400]
-    seq, numero = _next_prefactura_number(db, branch)
     now_local = local_now()
-    preventa = Preventa(
-        secuencia=seq,
+    prefix = _branch_sales_series_letter(branch.code)
+    numero = f"PF{prefix}-{now_local.strftime('%y%m%d%H%M%S')}"
+    validation_url = _prefactura_share_validation_url(
+        request,
         numero=numero,
-        branch_id=branch.id,
-        bodega_id=bodega.id,
-        cliente_id=int(cliente_id),
-        vendedor_id=vendedor.id,
-        fecha=now_local.replace(tzinfo=None),
-        estado="PENDIENTE",
-        observacion=observacion,
-        total_usd=total_usd,
+        fecha=now_local.strftime("%d/%m/%Y %H:%M"),
         total_cs=total_cs,
-        total_items=total_items,
-        usuario_registro=user.full_name,
-        created_at=local_now_naive(),
+        vendedor=vendedor.nombre,
     )
-    db.add(preventa)
-    db.flush()
-    for item in parsed_items:
-        producto = item["producto"]
-        db.add(
-            PreventaItem(
-                preventa_id=preventa.id,
-                producto_id=int(producto.id),
-                cantidad=item["cantidad"],
-                precio_unitario_usd=item["precio_usd"],
-                precio_unitario_cs=item["precio_cs"],
-                subtotal_usd=item["subtotal_usd"],
-                subtotal_cs=item["subtotal_cs"],
-            )
-        )
-    db.commit()
 
     branding = request.state.branding if getattr(request, "state", None) and getattr(request.state, "branding", None) else _company_profile_payload(db)
     return JSONResponse(
         {
             "ok": True,
-            "message": f"Pre Factura {preventa.numero} registrada",
+            "message": f"Pre Factura {numero} generada",
             "prefactura": {
-                "id": int(preventa.id),
-                "numero": preventa.numero,
+                "id": None,
+                "numero": numero,
                 "fecha": now_local.strftime("%d/%m/%Y"),
                 "hora": now_local.strftime("%H:%M"),
                 "cliente": cliente_nombre or "Consumidor final",
@@ -11318,8 +11308,8 @@ async def mobile_prefactura_create(
                 "total_cs": float(total_cs),
                 "total_items": float(total_items),
                 "observacion": observacion_raw,
-                "validation_url": _prefactura_validation_url(request, preventa),
-                "qr_url": f"/m/pre-factura/qr/{int(preventa.id)}.svg?code={_prefactura_validation_code(int(preventa.id), preventa.numero)}",
+                "validation_url": validation_url,
+                "qr_url": _prefactura_share_qr_url(validation_url),
                 "items": [
                     {
                         "codigo": item["producto"].cod_producto,
@@ -11343,6 +11333,92 @@ async def mobile_prefactura_create(
             },
         }
     )
+
+
+@router.get("/m/pre-factura/validar")
+def mobile_prefactura_validate_share(
+    request: Request,
+    numero: str = "",
+    fecha: str = "",
+    total_cs: str = "",
+    vendedor: str = "",
+    code: str = "",
+    db: Session = Depends(get_db),
+):
+    params = {
+        "numero": numero,
+        "fecha": fecha,
+        "total_cs": total_cs,
+        "vendedor": vendedor,
+    }
+    base_url = str(request.base_url).rstrip("/")
+    target = f"{base_url}/m/pre-factura/validar?{urlencode(params)}"
+    valid = hmac.compare_digest((code or "").strip(), _prefactura_share_signature(target))
+    branding = request.state.branding if getattr(request, "state", None) and getattr(request.state, "branding", None) else _company_profile_payload(db)
+    status_label = "VALIDA" if valid else "NO VALIDA"
+    status_color = "#1d4ed8" if valid else "#991b1b"
+    company_name = html_lib.escape(branding.get("trade_name") or branding.get("legal_name") or "Hollywood Pacas")
+    numero_html = html_lib.escape(numero or "-")
+    fecha_html = html_lib.escape(fecha or "-")
+    vendedor_html = html_lib.escape(vendedor or "-")
+    total_html = html_lib.escape(total_cs or "0.00")
+    html = f"""
+    <!doctype html>
+    <html lang="es">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Validar Pre Factura {numero_html}</title>
+      <style>
+        body {{ margin:0; font-family: Arial, sans-serif; background:#eff6ff; color:#0f172a; }}
+        .wrap {{ max-width: 460px; margin: 0 auto; padding: 18px; }}
+        .card {{ background:#fff; border:1px solid #bfdbfe; border-radius:20px; padding:18px; box-shadow:0 18px 40px rgba(37,99,235,.12); }}
+        .badge {{ display:inline-block; border-radius:999px; padding:7px 12px; background:{status_color}; color:#fff; font-weight:900; }}
+        h1 {{ margin:14px 0 6px; font-size:26px; }}
+        .muted {{ color:#64748b; font-size:14px; line-height:1.4; }}
+        .row {{ border-top:1px solid #dbeafe; padding:11px 0; display:flex; justify-content:space-between; gap:12px; }}
+        .label {{ color:#64748b; font-weight:800; }}
+        .value {{ font-weight:900; text-align:right; }}
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <div class="card">
+          <span class="badge">{status_label}</span>
+          <h1>{company_name}</h1>
+          <p class="muted">Validacion oficial de autenticidad para Pre Factura movil. Este documento es solo para compartir con el cliente; no registra preventa.</p>
+          <div class="row"><span class="label">Numero</span><span class="value">{numero_html}</span></div>
+          <div class="row"><span class="label">Vendedor</span><span class="value">{vendedor_html}</span></div>
+          <div class="row"><span class="label">Fecha</span><span class="value">{fecha_html}</span></div>
+          <div class="row"><span class="label">Total C$</span><span class="value">C$ {total_html}</span></div>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(html)
+
+
+@router.get("/m/pre-factura/qr.svg")
+def mobile_prefactura_share_qr_svg(
+    target: str = "",
+    code: str = "",
+):
+    if not target or not hmac.compare_digest((code or "").strip(), _prefactura_share_signature(target)):
+        raise HTTPException(status_code=403, detail="Codigo invalido")
+    from reportlab.graphics.barcode.qr import QrCodeWidget
+    from reportlab.graphics import renderSVG
+    from reportlab.graphics.shapes import Drawing
+
+    qr = QrCodeWidget(target)
+    bounds = qr.getBounds()
+    width = bounds[2] - bounds[0]
+    height = bounds[3] - bounds[1]
+    size = 180
+    drawing = Drawing(size, size, transform=[size / width, 0, 0, size / height, 0, 0])
+    drawing.add(qr)
+    svg = renderSVG.drawToString(drawing)
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 @router.get("/m/pre-factura/validar/{preventa_id}")
