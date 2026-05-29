@@ -2290,7 +2290,7 @@
                     <span class="small text-muted" id="restaurant-order-number-note">Aun no guardada</span>
                   </div>
                   <div class="small text-muted" id="restaurant-order-client-name">Consumidor final</div>
-                  <div class="small text-muted" id="restaurant-order-helper-note">Agrega el primer producto para crear la orden real.</div>
+                  <div class="small text-muted" id="restaurant-order-helper-note">Registra la orden para abrir la cuenta y luego agrega productos.</div>
                 </div>
                 <div class="text-lg-end">
                   <div class="small text-muted">Items</div>
@@ -2298,13 +2298,13 @@
                 </div>
               </div>
               <div class="pos-order-lines d-grid gap-3" id="restaurant-order-lines">
-                <div class="text-center text-muted small py-5">La orden se registrara al agregar el primer producto.</div>
+                <div class="text-center text-muted small py-5">La cuenta esta lista para registrarse.</div>
               </div>
               <div class="d-grid gap-2 pt-3">
-                <button class="btn btn-lb-primary restaurant-register-order-btn" type="button" onclick="document.getElementById('restaurant-inline-menu')?.scrollIntoView({behavior:'smooth', block:'start'});">
+                <button class="btn btn-lb-primary restaurant-register-order-btn" type="button" onclick="document.getElementById('restaurant-order-form')?.requestSubmit();">
                   Registrar orden
                 </button>
-                <div class="small text-muted text-center" id="restaurant-register-order-help">Para registrar la orden, agrega el primer producto del pedido.</div>
+                <div class="small text-muted text-center" id="restaurant-register-order-help">Abre la cuenta y despues carga los productos del pedido.</div>
               </div>
               <div class="pt-3">
                 <div class="pos-order-actions">
@@ -3381,7 +3381,7 @@
     if (restaurantRegisterOrderHelp) {
       restaurantRegisterOrderHelp.textContent = direct
         ? 'Facturacion directa: agrega productos y pasa al cobro final.'
-        : 'Para registrar la orden, agrega el primer producto del pedido.';
+        : 'Abre la cuenta y despues carga los productos del pedido.';
       restaurantRegisterOrderHelp.classList.toggle('d-none', direct);
     }
   }
@@ -3702,13 +3702,31 @@
         return;
       }
       if (!hasSelectedOrderPage) {
-        await restaurantShowUiNotice({
-          icon: 'info',
-          title: 'Continua con la orden',
-          text: 'Ahora agrega el primer producto para abrir formalmente la cuenta del pedido.',
-          timer: 2200,
-        });
-        window.location.href = buildRestaurantDraftUrl(serviceTypeSelect?.value || 'MESA');
+        if (orderStartButton) orderStartButton.disabled = true;
+        try {
+          const resp = await fetch(restaurantOrderForm.action, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+            body: new FormData(restaurantOrderForm),
+          });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) throw new Error(data.message || 'No se pudo registrar la orden');
+          activateDraftOrder(data.order);
+          await restaurantShowUiNotice({
+            icon: 'success',
+            title: 'Orden registrada',
+            text: data.message || 'La cuenta quedo abierta correctamente.',
+            timer: 1500,
+          });
+        } catch (error) {
+          if (typeof Swal !== 'undefined') {
+            Swal.fire({ icon: 'error', title: 'Error', text: error.message || 'No se pudo registrar la orden' });
+          } else {
+            window.alert(error.message || 'No se pudo registrar la orden');
+          }
+        } finally {
+          if (orderStartButton) orderStartButton.disabled = false;
+        }
         return;
       }
     });

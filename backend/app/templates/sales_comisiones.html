@@ -666,6 +666,7 @@
                   data-cantidad="{{ "%.0f"|format(row.cantidad or 0) }}"
                   data-precio-usd-unit="{{ "%.4f"|format(row.precio_usd_unit or 0) }}"
                   data-comision-unit="{{ "%.2f"|format(row.comision_unit_usd or 0) }}"
+                  data-commission-basis-unit="{{ "%.4f"|format(row.commission_basis_unit or 1) }}"
                 >
                   <td class="fw-semibold">{{ row.factura_numero }}</td>
                   <td><div class="cell-clip" title="{{ row.cliente }}">{{ row.cliente }}</div></td>
@@ -1244,10 +1245,12 @@
         row.setAttribute("data-cantidad", `${rowQtyCurrent}`);
         const comisionUnitAttr = row.getAttribute("data-comision-unit");
         const precioUsdUnitAttr = row.getAttribute("data-precio-usd-unit");
+        const commissionBasisUnitAttr = row.getAttribute("data-commission-basis-unit");
         const comisionUnitCell = row.querySelector(".assignment-commission-unit");
         const comisionUnit = parseMoney(comisionUnitAttr || comisionUnitCell?.textContent || "0");
         const precioUsdUnit = parseMoney(precioUsdUnitAttr || "0");
-        const rowComisionTotal = rowQtyCurrent * comisionUnit;
+        const commissionBasisUnit = parseMoney(commissionBasisUnitAttr || "1") || 1;
+        const rowComisionTotal = rowQtyCurrent * commissionBasisUnit * comisionUnit;
         const rowVentaUsd = rowQtyCurrent * precioUsdUnit;
         const rowComisionCell = row.querySelector(".assignment-commission-total");
         if (rowComisionCell) rowComisionCell.textContent = formatCurrency(rowComisionTotal, "$");

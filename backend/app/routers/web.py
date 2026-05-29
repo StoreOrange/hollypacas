@@ -979,6 +979,7 @@ def _build_mobile_vendor_sales_data(
         qty = Decimal(str(venta_item.cantidad or 0))
         subtotal_usd = Decimal(str(venta_item.subtotal_usd or 0))
         commission_unit = commission_map.get(int(venta_item.producto_id), Decimal("0"))
+        commission_basis_qty = _commission_billable_qty_for_item(producto, venta_item)
         sold_at = factura.fecha if factura and factura.fecha else None
         source_rows.append(
             {
@@ -987,7 +988,7 @@ def _build_mobile_vendor_sales_data(
                 "descripcion": (producto.descripcion if producto else "") or "Producto",
                 "cantidad": qty,
                 "subtotal_usd": subtotal_usd,
-                "comision_total_usd": commission_unit * qty,
+                "comision_total_usd": commission_unit * commission_basis_qty,
                 "factura_numero": (factura.numero if factura else "") or "-",
                 "cliente": (cliente.nombre if cliente else "") or "Consumidor final",
                 "sold_at": sold_at,
@@ -1271,6 +1272,10 @@ def _build_mobile_assigned_commission_data(
         fuentes.add(source_label)
 
     for final_row, factura, producto, cliente, origen, asignado in final_rows:
+        final_commission_unit = Decimal(str(final_row.comision_unit_usd or 0))
+        final_commission_total = (
+            final_commission_unit * _commission_row_billable_qty(final_row, producto, final_row.venta_item)
+        )
         add_commission_row(
             final_row,
             factura,
@@ -1278,14 +1283,14 @@ def _build_mobile_assigned_commission_data(
             cliente,
             origen,
             asignado,
-            Decimal(str(final_row.comision_unit_usd or 0)),
-            Decimal(str(final_row.comision_total_usd or 0)),
+            final_commission_unit,
+            final_commission_total,
             "Final",
         )
 
     for temp_row, factura, producto, cliente, origen, asignado, producto_comision in temp_rows:
         commission_unit = Decimal(str(producto_comision.comision_usd or 0)) if producto_comision else Decimal("0")
-        qty = Decimal(str(temp_row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        commission_basis_qty = _commission_row_billable_qty(temp_row, producto, temp_row.venta_item)
         add_commission_row(
             temp_row,
             factura,
@@ -1294,7 +1299,7 @@ def _build_mobile_assigned_commission_data(
             origen,
             asignado,
             commission_unit,
-            commission_unit * qty,
+            commission_unit * commission_basis_qty,
             "Asignacion automatica",
         )
 
@@ -12929,6 +12934,59 @@ def _commission_branch_scope(branch_id: str | None) -> Optional[int]:
         return None
 
 
+def _commission_stock_qty(value: object) -> Decimal:
+    return Decimal(str(value or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
+def _commission_uses_weight_basis(producto: Optional[Producto], item: Optional[VentaItem]) -> bool:
+    if not producto or not item:
+        return False
+    peso_lbs = Decimal(str(getattr(item, "peso_lbs", None) or 0))
+    if peso_lbs <= 0:
+        return False
+    return bool(getattr(producto, "es_libreado", False) or getattr(producto, "es_por_peso", False))
+
+
+def _commission_billable_qty_for_item(producto: Optional[Producto], item: Optional[VentaItem]) -> Decimal:
+    if not item:
+        return Decimal("0")
+    if _commission_uses_weight_basis(producto, item):
+        return Decimal(str(item.peso_lbs or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return _commission_stock_qty(item.cantidad)
+
+
+def _commission_row_billable_qty(
+    row: VentaComisionAsignacion | VentaComisionFinal,
+    producto: Optional[Producto],
+    item: Optional[VentaItem],
+) -> Decimal:
+    row_qty = _commission_stock_qty(getattr(row, "cantidad", 0))
+    if row_qty <= 0:
+        return Decimal("0")
+    item_qty = _commission_stock_qty(getattr(item, "cantidad", 0) if item else row_qty)
+    billable_qty = _commission_billable_qty_for_item(producto, item)
+    if item_qty <= 0 or billable_qty <= 0 or not _commission_uses_weight_basis(producto, item):
+        return row_qty
+    return (billable_qty * row_qty / item_qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _commission_effective_unit_prices(
+    item: Optional[VentaItem],
+    producto: Optional[Producto],
+) -> tuple[Decimal, Decimal]:
+    if not item:
+        return Decimal("0"), Decimal("0")
+    stock_qty = _commission_stock_qty(item.cantidad)
+    if stock_qty <= 0:
+        stock_qty = Decimal("1")
+    if _commission_uses_weight_basis(producto, item):
+        return (
+            (Decimal(str(item.subtotal_usd or 0)) / stock_qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            (Decimal(str(item.subtotal_cs or 0)) / stock_qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        )
+    return Decimal(str(item.precio_unitario_usd or 0)), Decimal(str(item.precio_unitario_cs or 0))
+
+
 def _normalize_commission_temp_rows(
     db: Session,
     *,
@@ -13047,15 +13105,12 @@ def _ensure_commission_temp_snapshot(
         assigned_vendor_id = (vendedor.id if vendedor else None) or fallback_vendor_id
         if not assigned_vendor_id:
             continue
-        sold_qty = int(
-            Decimal(str(item.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-        )
+        sold_qty = int(_commission_stock_qty(item.cantidad))
         if sold_qty <= 0:
             continue
+        price_usd, price_cs = _commission_effective_unit_prices(item, producto)
         existing_rows = temp_by_item.get(item_id, [])
         if existing_rows:
-            price_usd = Decimal(str(item.precio_unitario_usd or 0))
-            price_cs = Decimal(str(item.precio_unitario_cs or 0))
             for row in existing_rows:
                 row.factura_id = factura.id
                 row.branch_id = branch.id if branch else None
@@ -13074,7 +13129,7 @@ def _ensure_commission_temp_snapshot(
             secondary_rows = [r for r in rows_sorted if r.id != primary.id]
             sum_secondary = 0
             for row in secondary_rows:
-                q = int(Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+                q = int(_commission_stock_qty(row.cantidad))
                 if q < 0:
                     q = 0
                 row.cantidad = q
@@ -13086,7 +13141,7 @@ def _ensure_commission_temp_snapshot(
             primary.cantidad = primary_qty
 
             for row in existing_rows:
-                q = Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                q = _commission_stock_qty(row.cantidad)
                 row.subtotal_usd = price_usd * q
                 row.subtotal_cs = price_cs * q
                 row.precio_unitario_usd = price_usd
@@ -13106,10 +13161,10 @@ def _ensure_commission_temp_snapshot(
                 vendedor_origen_id=vendedor.id if vendedor else None,
                 vendedor_asignado_id=assigned_vendor_id,
                 cantidad=sold_qty,
-                precio_unitario_usd=Decimal(str(item.precio_unitario_usd or 0)),
-                precio_unitario_cs=Decimal(str(item.precio_unitario_cs or 0)),
-                subtotal_usd=Decimal(str(item.precio_unitario_usd or 0)) * sold_qty,
-                subtotal_cs=Decimal(str(item.precio_unitario_cs or 0)) * sold_qty,
+                precio_unitario_usd=price_usd,
+                precio_unitario_cs=price_cs,
+                subtotal_usd=price_usd * sold_qty,
+                subtotal_cs=price_cs * sold_qty,
                 usuario_registro="snapshot",
             )
         )
@@ -13166,9 +13221,7 @@ def _build_commission_assignment_rows(
     source_qty_map: dict[int, int] = {}
     source_meta_map: dict[int, tuple] = {}
     for factura, item, producto, cliente, vendedor, branch, bodega in source_rows:
-        qty = int(
-            Decimal(str(item.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-        )
+        qty = int(_commission_stock_qty(item.cantidad))
         source_qty_map[item.id] = qty
         source_meta_map[item.id] = (factura, item, producto, cliente, vendedor, branch, bodega)
 
@@ -13192,16 +13245,13 @@ def _build_commission_assignment_rows(
             if not source:
                 continue
             factura, item, producto, cliente, vendedor, branch, bodega = source
-            qty = int(
-                Decimal(str(item.cantidad or 0)).quantize(
-                    Decimal("1"), rounding=ROUND_HALF_UP
-                )
-            )
+            qty = int(_commission_stock_qty(item.cantidad))
             if qty <= 0:
                 continue
             assigned_vendor_id = (vendedor.id if vendedor else None) or fallback_vendor_id
             if not assigned_vendor_id:
                 continue
+            price_usd, price_cs = _commission_effective_unit_prices(item, producto)
             db.add(
                 VentaComisionAsignacion(
                     venta_item_id=item.id,
@@ -13214,10 +13264,10 @@ def _build_commission_assignment_rows(
                     vendedor_origen_id=vendedor.id if vendedor else None,
                     vendedor_asignado_id=assigned_vendor_id,
                     cantidad=qty,
-                    precio_unitario_usd=Decimal(str(item.precio_unitario_usd or 0)),
-                    precio_unitario_cs=Decimal(str(item.precio_unitario_cs or 0)),
-                    subtotal_usd=Decimal(str(item.precio_unitario_usd or 0)) * qty,
-                    subtotal_cs=Decimal(str(item.precio_unitario_cs or 0)) * qty,
+                    precio_unitario_usd=price_usd,
+                    precio_unitario_cs=price_cs,
+                    subtotal_usd=price_usd * qty,
+                    subtotal_cs=price_cs * qty,
                     usuario_registro="autobackfill",
                 )
             )
@@ -13340,7 +13390,15 @@ def _build_commission_assignment_rows(
         )
         comision_unit = commission_map.get(producto.id, Decimal("0"))
         precio_label = "$" if (factura.moneda or "CS") == "USD" else "C$"
-        qty_int = int(Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        source_meta = source_meta_map.get(row.venta_item_id)
+        source_item = source_meta[1] if source_meta else getattr(row, "venta_item", None)
+        qty_int = int(_commission_stock_qty(row.cantidad))
+        commission_basis_qty = _commission_row_billable_qty(row, producto, source_item)
+        commission_basis_unit = (
+            commission_basis_qty / Decimal(str(qty_int))
+            if qty_int > 0
+            else Decimal("1")
+        )
         total_qty_int = source_qty_map.get(row.venta_item_id, qty_int)
         vendedor_origen_nombre = vendor_map.get(row.vendedor_origen_id, "-")
         vendedor_asignado_nombre = vendor_map.get(
@@ -13362,8 +13420,10 @@ def _build_commission_assignment_rows(
                 "precio_usd_unit": float(row.precio_unitario_usd or 0),
                 "precio_label": precio_label,
                 "comision_unit_usd": float(comision_unit),
-                "comision_total_usd": float(comision_unit * Decimal(str(qty_int))),
+                "comision_total_usd": float(comision_unit * commission_basis_qty),
                 "subtotal_usd": float(row.subtotal_usd or 0),
+                "commission_basis_qty": float(commission_basis_qty),
+                "commission_basis_unit": float(commission_basis_unit),
                 "vendedor_origen_id": row.vendedor_origen_id,
                 "vendedor_origen": vendedor_origen_nombre,
                 "vendedor_id": row.vendedor_asignado_id,
@@ -13548,9 +13608,10 @@ def _build_commission_reports_data(
     total_ventas_usd = Decimal("0")
 
     for temp_row, factura, producto, cliente, vendedor, branch, producto_comision in rows:
-        qty = Decimal(str(temp_row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        qty = _commission_stock_qty(temp_row.cantidad)
+        commission_basis_qty = _commission_row_billable_qty(temp_row, producto, temp_row.venta_item)
         comision_unit = Decimal(str(producto_comision.comision_usd or 0)) if producto_comision else Decimal("0")
-        comision_total = comision_unit * qty
+        comision_total = comision_unit * commission_basis_qty
         subtotal_usd = Decimal(str(temp_row.subtotal_usd or 0))
         vendor_name = vendedor.nombre if vendedor else "Sin asignar"
         fecha_value = temp_row.fecha
@@ -14188,9 +14249,7 @@ async def sales_comisiones_save_assignments(
         for factura, item, producto, cliente, vendedor, branch, bodega in source_rows
     }
     source_qty_map = {
-        item.id: int(
-            Decimal(str(item.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-        )
+        item.id: int(_commission_stock_qty(item.cantidad))
         for _, item, *_ in source_rows
     }
 
@@ -14334,9 +14393,8 @@ async def sales_comisiones_save_assignments(
         source = source_map.get(venta_item_id)
         if not source:
             continue
-        _, item, _, _, _, _, _ = source
-        precio_usd = Decimal(str(item.precio_unitario_usd or 0))
-        precio_cs = Decimal(str(item.precio_unitario_cs or 0))
+        _, item, producto, _, _, _, _ = source
+        precio_usd, precio_cs = _commission_effective_unit_prices(item, producto)
 
         existing_rows = current_by_item.get(venta_item_id, [])
         incoming_by_temp = {
@@ -14641,6 +14699,10 @@ async def sales_comisiones_finalize_day(
         .filter(ProductoComision.producto_id.in_(product_ids))
         .all()
     } if product_ids else {}
+    products_map = {
+        p.id: p
+        for p in db.query(Producto).filter(Producto.id.in_(product_ids)).all()
+    } if product_ids else {}
 
     final_query = db.query(VentaComisionFinal).filter(VentaComisionFinal.fecha == fecha_value)
     if scope_branch_id:
@@ -14649,9 +14711,10 @@ async def sales_comisiones_finalize_day(
 
     inserted = 0
     for row in temp_rows:
-        qty = Decimal(str(row.cantidad or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        qty = _commission_stock_qty(row.cantidad)
         comision_unit = commission_map.get(row.producto_id, Decimal("0"))
-        comision_total = comision_unit * qty
+        producto = products_map.get(row.producto_id)
+        comision_total = comision_unit * _commission_row_billable_qty(row, producto, row.venta_item)
         db.add(
             VentaComisionFinal(
                 fecha=row.fecha,
@@ -27659,10 +27722,105 @@ async def restaurant_order_create(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.registrar")
-    return RedirectResponse(
-        "/sales?error=La+orden+no+puede+abrirse+vacia.+Agrega+el+primer+producto+para+registrarla",
-        status_code=303,
+    accept_header = request.headers.get("accept", "")
+    is_fetch = (
+        request.headers.get("x-requested-with") == "fetch"
+        or "application/json" in accept_header
+        or request.headers.get("hx-request") == "true"
     )
+    form = await request.form()
+    service_type = str(form.get("service_type") or "MESA").strip().upper()
+    if service_type not in {"MESA", "BARRA", "LLEVAR", "DELIVERY"}:
+        service_type = "MESA"
+    table_id_raw = str(form.get("table_id") or "").strip()
+    mesa_nombre = str(form.get("mesa_nombre") or "").strip()
+    cliente_id = str(form.get("cliente_id") or "").strip()
+    vendedor_id = str(form.get("vendedor_id") or "").strip()
+    observacion = str(form.get("observacion") or "").strip() or None
+    moneda = str(form.get("moneda") or "CS").strip().upper()
+    if moneda not in {"CS", "USD"}:
+        moneda = "CS"
+
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        msg = "Usuario sin sucursal bodega"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": msg}, status_code=400)
+        return RedirectResponse(f"/sales?error={quote_plus(msg)}", status_code=303)
+
+    table = None
+    if service_type == "MESA" and table_id_raw.isdigit():
+        table = (
+            db.query(RestaurantTable)
+            .filter(RestaurantTable.id == int(table_id_raw), RestaurantTable.active.is_(True))
+            .first()
+        )
+    if service_type == "MESA" and not table:
+        msg = "Debes seleccionar una mesa para abrir la orden"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": msg}, status_code=400)
+        return RedirectResponse(f"/sales?error={quote_plus(msg)}", status_code=303)
+    if table and (int(table.branch_id) != int(branch.id) or int(table.bodega_id) != int(bodega.id)):
+        msg = "Mesa fuera de tu sucursal"
+        if is_fetch:
+            return JSONResponse({"ok": False, "message": msg}, status_code=400)
+        return RedirectResponse(f"/sales?error={quote_plus(msg)}", status_code=303)
+
+    if table:
+        existing_open = (
+            db.query(RestaurantOrder)
+            .filter(RestaurantOrder.table_id == table.id, RestaurantOrder.estado == "ABIERTA")
+            .order_by(RestaurantOrder.id.desc())
+            .first()
+        )
+        if existing_open:
+            msg = "La mesa ya tenia una orden abierta"
+            if is_fetch:
+                return JSONResponse({"ok": True, "message": msg, "order": _restaurant_order_payload(existing_open)})
+            return RedirectResponse(
+                f"/sales?success={quote_plus(msg)}&restaurant_order_id={existing_open.id}",
+                status_code=303,
+            )
+
+    if service_type == "BARRA":
+        mesa_nombre = mesa_nombre or "Barra"
+    elif service_type == "LLEVAR":
+        mesa_nombre = mesa_nombre or "Para llevar"
+    elif service_type == "DELIVERY":
+        mesa_nombre = mesa_nombre or "Delivery"
+    elif table:
+        mesa_nombre = _restaurant_table_location_name(table)
+
+    if not vendedor_id:
+        default_vendedor_id = _default_vendedor_id(db, bodega)
+        vendedor_id = str(default_vendedor_id or "")
+    consumidor_final_id = _get_or_create_consumidor_final(db).id
+    order = RestaurantOrder(
+        numero=_next_restaurant_order_number(db, branch),
+        branch_id=branch.id,
+        bodega_id=bodega.id,
+        table_id=table.id if table else None,
+        cliente_id=int(cliente_id) if cliente_id.isdigit() else consumidor_final_id,
+        vendedor_id=int(vendedor_id) if vendedor_id.isdigit() else None,
+        service_type=service_type,
+        mesa_nombre=mesa_nombre,
+        estado="ABIERTA",
+        moneda=moneda,
+        observacion=observacion,
+        total_usd=Decimal("0.00"),
+        total_cs=Decimal("0.00"),
+        total_items=Decimal("0.00"),
+        usuario_registro=user.full_name,
+        opened_at=local_now_naive(),
+        created_at=local_now_naive(),
+    )
+    db.add(order)
+    db.commit()
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order.id).first()
+    msg = "Orden registrada correctamente"
+    if is_fetch:
+        return JSONResponse({"ok": True, "message": msg, "order": _restaurant_order_payload(order)})
+    return RedirectResponse(f"/sales?success={quote_plus(msg)}&restaurant_order_id={order.id}", status_code=303)
 
 
 @router.post("/sales/restaurante/orders/{order_id}/items")
