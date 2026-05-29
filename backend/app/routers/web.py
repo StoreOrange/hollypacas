@@ -16571,42 +16571,36 @@ def _inventory_movement_totals_usd_cs(
     return total_usd.quantize(Decimal("0.01")), total_cs.quantize(Decimal("0.01"))
 
 
-def _production_result_sales_value_usd_cs(
-    db: Session,
-    ingreso: Optional[IngresoInventario],
-    items: list[IngresoItem],
-) -> tuple[Decimal, Decimal]:
-    if not ingreso:
-        return Decimal("0"), Decimal("0")
-    tasa = _movement_effective_rate(db, ingreso)
-    total_usd = Decimal("0")
-    total_cs = Decimal("0")
+def _abierta_items_cost_usd(items: list[IngresoItem] | list[EgresoItem]) -> Decimal:
+    total = Decimal("0")
     for item in items:
         qty = Decimal(str(item.cantidad or 0))
-        if qty <= 0:
+        unit_usd = Decimal(str(item.costo_unitario_usd or 0))
+        subtotal_usd = Decimal(str(item.subtotal_usd or 0))
+        if unit_usd > 0 and subtotal_usd > 0:
+            total += subtotal_usd
             continue
-        producto = item.producto
-        price_usd = Decimal(str(getattr(producto, "precio_venta1_usd", 0) or 0)) if producto else Decimal("0")
-        price_cs = Decimal(str(getattr(producto, "precio_venta1", 0) or 0)) if producto else Decimal("0")
-        product_rate = Decimal(str(getattr(producto, "tasa_cambio", 0) or 0)) if producto else Decimal("0")
-        conversion_rate = tasa if tasa > 0 else product_rate
-        if price_usd <= 0 and price_cs > 0 and conversion_rate > 0:
-            price_usd = (price_cs / conversion_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        if price_cs <= 0 and price_usd > 0 and conversion_rate > 0:
-            price_cs = (price_usd * conversion_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        if price_usd <= 0:
-            price_usd = Decimal(str(item.costo_unitario_usd or 0))
-        if price_cs <= 0:
-            price_cs = Decimal(str(item.costo_unitario_cs or 0))
-        total_usd += price_usd * qty
-        total_cs += price_cs * qty
-    if total_usd <= 0 or total_cs <= 0:
-        fallback_usd, fallback_cs = _inventory_movement_totals_usd_cs(db, ingreso, items)
-        if total_usd <= 0:
-            total_usd = fallback_usd
-        if total_cs <= 0:
-            total_cs = fallback_cs
-    return total_usd.quantize(Decimal("0.01")), total_cs.quantize(Decimal("0.01"))
+        # Mismo criterio del PDF de abierta: en este proceso el costo operativo
+        # capturado se interpreta en USD aunque la columna CS tenga valor.
+        unit_operativo_usd = Decimal(str(item.costo_unitario_cs or 0))
+        total += (unit_operativo_usd * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return total.quantize(Decimal("0.01"))
+
+
+def _abierta_result_rate(db: Session, egreso: EgresoInventario, ingreso: Optional[IngresoInventario]) -> Decimal:
+    ingreso_rate = Decimal(str(getattr(ingreso, "tasa_cambio", None) or 0)) if ingreso else Decimal("0")
+    egreso_rate = Decimal(str(getattr(egreso, "tasa_cambio", None) or 0))
+    if ingreso_rate > 0:
+        return ingreso_rate
+    if egreso_rate > 0:
+        return egreso_rate
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    return Decimal(str(rate_today.rate if rate_today else 0))
 
 
 def _build_production_opening_report_payload(
@@ -16683,14 +16677,13 @@ def _build_production_opening_report_payload(
         ingreso = _find_abierta_result_ingreso(db, egreso)
         egreso_items = list(egreso.items or [])
         ingreso_items = list(ingreso.items or []) if ingreso else []
-        egreso_usd, egreso_cs = _inventory_movement_totals_usd_cs(db, egreso, egreso_items)
-        ingreso_usd, ingreso_cs = (
-            _production_result_sales_value_usd_cs(db, ingreso, ingreso_items)
-            if ingreso
-            else (Decimal("0"), Decimal("0"))
-        )
+        result_rate = _abierta_result_rate(db, egreso, ingreso)
+        egreso_usd = _abierta_items_cost_usd(egreso_items)
+        ingreso_usd = _abierta_items_cost_usd(ingreso_items) if ingreso else Decimal("0")
         resultado_usd = (ingreso_usd - egreso_usd).quantize(Decimal("0.01"))
-        resultado_cs = (ingreso_cs - egreso_cs).quantize(Decimal("0.01"))
+        egreso_cs = (egreso_usd * result_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if result_rate > 0 else Decimal("0")
+        ingreso_cs = (ingreso_usd * result_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if result_rate > 0 else Decimal("0")
+        resultado_cs = (resultado_usd * result_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if result_rate > 0 else Decimal("0")
         bultos_egreso = sum((Decimal(str(item.cantidad or 0)) for item in egreso_items), Decimal("0"))
         bultos_ingreso = sum((Decimal(str(item.cantidad or 0)) for item in ingreso_items), Decimal("0"))
         total_egreso_usd += egreso_usd
@@ -17501,10 +17494,10 @@ def report_production_opening_xlsx(
         "Bultos egreso",
         "Bultos ingreso",
         "Costo egresado USD",
-        "Valor resultado USD",
+        "Costo ingresado USD",
         "Resultado USD",
         "Costo egresado C$",
-        "Valor resultado C$",
+        "Costo ingresado C$",
         "Resultado C$",
         "Estado",
         "Usuario",
@@ -17645,7 +17638,7 @@ def report_production_opening_pdf(
             y,
             f"Movimientos: {payload.get('total_movimientos', 0)} | "
             f"Egresado USD: $ {money(payload.get('total_egreso_usd'))} | "
-            f"Valor resultado USD: $ {money(payload.get('total_ingreso_usd'))} | "
+            f"Costo ingresado USD: $ {money(payload.get('total_ingreso_usd'))} | "
             f"Resultado USD: $ {money(payload.get('total_resultado_usd'))}",
         )
         y -= 16
@@ -17661,7 +17654,7 @@ def report_production_opening_pdf(
         pdf.drawString(margin + 165, y, "Origen")
         pdf.drawString(margin + 285, y, "Destino")
         pdf.drawRightString(margin + 465, y, "Egreso USD")
-        pdf.drawRightString(margin + 555, y, "Valor USD")
+        pdf.drawRightString(margin + 555, y, "Ingreso USD")
         pdf.drawRightString(margin + 645, y, "Resultado")
         pdf.drawString(margin + 665, y, "Estado")
         y -= 8
@@ -17717,7 +17710,7 @@ def report_production_opening_pdf(
     pdf.setFillColorRGB(0, 0, 0)
     y -= 16
     pdf.setFont("Helvetica", 8)
-    pdf.drawString(margin, y, "Formula: valor de venta del resultado USD - egreso aplicado USD. Ganancia positiva, perdida negativa.")
+    pdf.drawString(margin, y, "Formula: costo ingresado USD - costo egresado USD. Ganancia positiva, perdida negativa.")
 
     pdf.save()
     buffer.seek(0)
