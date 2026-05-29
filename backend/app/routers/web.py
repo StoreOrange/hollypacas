@@ -16535,7 +16535,22 @@ def _production_opening_report_filters(request: Request):
     return start_date, end_date, branch_id, bodega_id
 
 
+def _movement_effective_rate(db: Session, movement: IngresoInventario | EgresoInventario) -> Decimal:
+    tasa = Decimal(str(getattr(movement, "tasa_cambio", None) or 0))
+    if tasa > 0:
+        return tasa
+    movement_date = getattr(movement, "fecha", None) or local_today()
+    rate_row = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= movement_date)
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    return Decimal(str(rate_row.rate if rate_row else 0))
+
+
 def _inventory_movement_totals_usd_cs(
+    db: Session,
     movement: IngresoInventario | EgresoInventario,
     items: list[IngresoItem] | list[EgresoItem],
 ) -> tuple[Decimal, Decimal]:
@@ -16545,7 +16560,7 @@ def _inventory_movement_totals_usd_cs(
         total_usd = sum((Decimal(str(getattr(item, "subtotal_usd", 0) or 0)) for item in items), Decimal("0"))
     if total_cs <= 0:
         total_cs = sum((Decimal(str(getattr(item, "subtotal_cs", 0) or 0)) for item in items), Decimal("0"))
-    tasa = Decimal(str(getattr(movement, "tasa_cambio", None) or 0))
+    tasa = _movement_effective_rate(db, movement)
     moneda = (getattr(movement, "moneda", "") or "").upper()
     if total_usd <= 0 and total_cs > 0 and tasa > 0:
         total_usd = (total_cs / tasa).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -16553,6 +16568,44 @@ def _inventory_movement_totals_usd_cs(
         total_cs = (total_usd * tasa).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if moneda == "USD" and total_cs <= 0 and tasa > 0:
         total_cs = (total_usd * tasa).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return total_usd.quantize(Decimal("0.01")), total_cs.quantize(Decimal("0.01"))
+
+
+def _production_result_sales_value_usd_cs(
+    db: Session,
+    ingreso: Optional[IngresoInventario],
+    items: list[IngresoItem],
+) -> tuple[Decimal, Decimal]:
+    if not ingreso:
+        return Decimal("0"), Decimal("0")
+    tasa = _movement_effective_rate(db, ingreso)
+    total_usd = Decimal("0")
+    total_cs = Decimal("0")
+    for item in items:
+        qty = Decimal(str(item.cantidad or 0))
+        if qty <= 0:
+            continue
+        producto = item.producto
+        price_usd = Decimal(str(getattr(producto, "precio_venta1_usd", 0) or 0)) if producto else Decimal("0")
+        price_cs = Decimal(str(getattr(producto, "precio_venta1", 0) or 0)) if producto else Decimal("0")
+        product_rate = Decimal(str(getattr(producto, "tasa_cambio", 0) or 0)) if producto else Decimal("0")
+        conversion_rate = tasa if tasa > 0 else product_rate
+        if price_usd <= 0 and price_cs > 0 and conversion_rate > 0:
+            price_usd = (price_cs / conversion_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if price_cs <= 0 and price_usd > 0 and conversion_rate > 0:
+            price_cs = (price_usd * conversion_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if price_usd <= 0:
+            price_usd = Decimal(str(item.costo_unitario_usd or 0))
+        if price_cs <= 0:
+            price_cs = Decimal(str(item.costo_unitario_cs or 0))
+        total_usd += price_usd * qty
+        total_cs += price_cs * qty
+    if total_usd <= 0 or total_cs <= 0:
+        fallback_usd, fallback_cs = _inventory_movement_totals_usd_cs(db, ingreso, items)
+        if total_usd <= 0:
+            total_usd = fallback_usd
+        if total_cs <= 0:
+            total_cs = fallback_cs
     return total_usd.quantize(Decimal("0.01")), total_cs.quantize(Decimal("0.01"))
 
 
@@ -16630,9 +16683,9 @@ def _build_production_opening_report_payload(
         ingreso = _find_abierta_result_ingreso(db, egreso)
         egreso_items = list(egreso.items or [])
         ingreso_items = list(ingreso.items or []) if ingreso else []
-        egreso_usd, egreso_cs = _inventory_movement_totals_usd_cs(egreso, egreso_items)
+        egreso_usd, egreso_cs = _inventory_movement_totals_usd_cs(db, egreso, egreso_items)
         ingreso_usd, ingreso_cs = (
-            _inventory_movement_totals_usd_cs(ingreso, ingreso_items)
+            _production_result_sales_value_usd_cs(db, ingreso, ingreso_items)
             if ingreso
             else (Decimal("0"), Decimal("0"))
         )
@@ -17448,10 +17501,10 @@ def report_production_opening_xlsx(
         "Bultos egreso",
         "Bultos ingreso",
         "Costo egresado USD",
-        "Valor ingresado USD",
+        "Valor resultado USD",
         "Resultado USD",
         "Costo egresado C$",
-        "Valor ingresado C$",
+        "Valor resultado C$",
         "Resultado C$",
         "Estado",
         "Usuario",
@@ -17592,7 +17645,7 @@ def report_production_opening_pdf(
             y,
             f"Movimientos: {payload.get('total_movimientos', 0)} | "
             f"Egresado USD: $ {money(payload.get('total_egreso_usd'))} | "
-            f"Ingresado USD: $ {money(payload.get('total_ingreso_usd'))} | "
+            f"Valor resultado USD: $ {money(payload.get('total_ingreso_usd'))} | "
             f"Resultado USD: $ {money(payload.get('total_resultado_usd'))}",
         )
         y -= 16
@@ -17608,7 +17661,7 @@ def report_production_opening_pdf(
         pdf.drawString(margin + 165, y, "Origen")
         pdf.drawString(margin + 285, y, "Destino")
         pdf.drawRightString(margin + 465, y, "Egreso USD")
-        pdf.drawRightString(margin + 555, y, "Ingreso USD")
+        pdf.drawRightString(margin + 555, y, "Valor USD")
         pdf.drawRightString(margin + 645, y, "Resultado")
         pdf.drawString(margin + 665, y, "Estado")
         y -= 8
@@ -17664,7 +17717,7 @@ def report_production_opening_pdf(
     pdf.setFillColorRGB(0, 0, 0)
     y -= 16
     pdf.setFont("Helvetica", 8)
-    pdf.drawString(margin, y, "Formula: ingreso resultado USD - egreso aplicado USD. Ganancia positiva, perdida negativa.")
+    pdf.drawString(margin, y, "Formula: valor de venta del resultado USD - egreso aplicado USD. Ganancia positiva, perdida negativa.")
 
     pdf.save()
     buffer.seek(0)
