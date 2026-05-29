@@ -16677,9 +16677,8 @@ def _build_production_opening_report_payload(
         ingreso = _find_abierta_result_ingreso(db, egreso)
         if not ingreso:
             movimientos_sin_resultado += 1
-            continue
         egreso_items = list(egreso.items or [])
-        ingreso_items = list(ingreso.items or [])
+        ingreso_items = list(ingreso.items or []) if ingreso else []
         result_rate = _abierta_result_rate(db, egreso, ingreso)
         egreso_usd = _abierta_items_cost_usd(egreso_items)
         ingreso_usd = _abierta_items_cost_usd(ingreso_items)
@@ -16697,7 +16696,8 @@ def _build_production_opening_report_payload(
         total_resultado_cs += resultado_cs
         total_bultos_egreso += bultos_egreso
         total_bultos_ingreso += bultos_ingreso
-        movimientos_con_resultado += 1
+        if ingreso:
+            movimientos_con_resultado += 1
         estado = "Ganancia" if resultado_usd > 0 else "Perdida" if resultado_usd < 0 else "Neutro"
         rows.append(
             {
