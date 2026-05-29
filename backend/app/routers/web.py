@@ -16675,11 +16675,14 @@ def _build_production_opening_report_payload(
 
     for egreso in egresos:
         ingreso = _find_abierta_result_ingreso(db, egreso)
+        if not ingreso:
+            movimientos_sin_resultado += 1
+            continue
         egreso_items = list(egreso.items or [])
-        ingreso_items = list(ingreso.items or []) if ingreso else []
+        ingreso_items = list(ingreso.items or [])
         result_rate = _abierta_result_rate(db, egreso, ingreso)
         egreso_usd = _abierta_items_cost_usd(egreso_items)
-        ingreso_usd = _abierta_items_cost_usd(ingreso_items) if ingreso else Decimal("0")
+        ingreso_usd = _abierta_items_cost_usd(ingreso_items)
         resultado_usd = (ingreso_usd - egreso_usd).quantize(Decimal("0.01"))
         egreso_cs = (egreso_usd * result_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if result_rate > 0 else Decimal("0")
         ingreso_cs = (ingreso_usd * result_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if result_rate > 0 else Decimal("0")
@@ -16694,10 +16697,7 @@ def _build_production_opening_report_payload(
         total_resultado_cs += resultado_cs
         total_bultos_egreso += bultos_egreso
         total_bultos_ingreso += bultos_ingreso
-        if ingreso:
-            movimientos_con_resultado += 1
-        else:
-            movimientos_sin_resultado += 1
+        movimientos_con_resultado += 1
         estado = "Ganancia" if resultado_usd > 0 else "Perdida" if resultado_usd < 0 else "Neutro"
         rows.append(
             {
