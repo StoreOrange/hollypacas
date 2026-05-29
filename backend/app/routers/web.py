@@ -16512,6 +16512,195 @@ def _inventory_matrix_filters(request: Request):
     return start_date, end_date, branch_id, bodega_id, producto_q
 
 
+def _production_opening_report_filters(request: Request):
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    branch_id = (request.query_params.get("branch_id") or "all").strip()
+    bodega_id = (request.query_params.get("bodega_id") or "all").strip()
+    today = local_today()
+    start_date = today.replace(day=1)
+    end_date = today
+    if start_raw:
+        try:
+            start_date = date.fromisoformat(start_raw)
+        except ValueError:
+            pass
+    if end_raw:
+        try:
+            end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            pass
+    if end_date < start_date:
+        end_date = start_date
+    return start_date, end_date, branch_id, bodega_id
+
+
+def _inventory_movement_totals_usd_cs(
+    movement: IngresoInventario | EgresoInventario,
+    items: list[IngresoItem] | list[EgresoItem],
+) -> tuple[Decimal, Decimal]:
+    total_usd = Decimal(str(getattr(movement, "total_usd", 0) or 0))
+    total_cs = Decimal(str(getattr(movement, "total_cs", 0) or 0))
+    if total_usd <= 0:
+        total_usd = sum((Decimal(str(getattr(item, "subtotal_usd", 0) or 0)) for item in items), Decimal("0"))
+    if total_cs <= 0:
+        total_cs = sum((Decimal(str(getattr(item, "subtotal_cs", 0) or 0)) for item in items), Decimal("0"))
+    tasa = Decimal(str(getattr(movement, "tasa_cambio", None) or 0))
+    moneda = (getattr(movement, "moneda", "") or "").upper()
+    if total_usd <= 0 and total_cs > 0 and tasa > 0:
+        total_usd = (total_cs / tasa).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if total_cs <= 0 and total_usd > 0 and tasa > 0:
+        total_cs = (total_usd * tasa).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if moneda == "USD" and total_cs <= 0 and tasa > 0:
+        total_cs = (total_usd * tasa).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return total_usd.quantize(Decimal("0.01")), total_cs.quantize(Decimal("0.01"))
+
+
+def _build_production_opening_report_payload(
+    db: Session,
+    user: User,
+    start_date: date,
+    end_date: date,
+    branch_id: str,
+    bodega_id: str,
+) -> dict[str, object]:
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
+    selected_branch_id: Optional[int] = None
+    selected_branch = None
+    if branch_id != "all":
+        try:
+            selected_branch_id = int(branch_id)
+        except ValueError:
+            selected_branch_id = None
+    if selected_branch_id is not None:
+        selected_branch = next((b for b in branches if int(b.id) == selected_branch_id), None)
+        if selected_branch is None:
+            selected_branch_id = None
+            branch_id = "all"
+
+    bodegas_q = _scoped_bodegas_query(db)
+    if selected_branch_id is not None:
+        bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch_id)
+    bodegas = bodegas_q.order_by(Bodega.name.asc()).all()
+    allowed_bodega_ids = {int(b.id) for b in bodegas}
+    selected_bodega_id: Optional[int] = None
+    if bodega_id != "all":
+        try:
+            selected_bodega_id = int(bodega_id)
+        except ValueError:
+            selected_bodega_id = None
+    if selected_bodega_id is not None and selected_bodega_id not in allowed_bodega_ids:
+        selected_bodega_id = None
+        bodega_id = "all"
+
+    egreso_query = (
+        db.query(EgresoInventario)
+        .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id)
+        .join(Bodega, Bodega.id == EgresoInventario.bodega_id)
+        .filter(func.lower(EgresoTipo.nombre).like("%produccion de abierta%"))
+        .filter(EgresoInventario.fecha >= start_date, EgresoInventario.fecha <= end_date)
+        .filter(Bodega.branch_id.in_(scoped_branch_ids))
+    )
+    if selected_branch_id is not None:
+        egreso_query = egreso_query.filter(Bodega.branch_id == selected_branch_id)
+    if selected_bodega_id is not None:
+        egreso_query = egreso_query.filter(EgresoInventario.bodega_id == selected_bodega_id)
+
+    egresos = egreso_query.order_by(EgresoInventario.fecha.desc(), EgresoInventario.id.desc()).all()
+
+    rows: list[dict[str, object]] = []
+    total_egreso_usd = Decimal("0")
+    total_ingreso_usd = Decimal("0")
+    total_resultado_usd = Decimal("0")
+    total_egreso_cs = Decimal("0")
+    total_ingreso_cs = Decimal("0")
+    total_resultado_cs = Decimal("0")
+    total_bultos_egreso = Decimal("0")
+    total_bultos_ingreso = Decimal("0")
+    movimientos_con_resultado = 0
+    movimientos_sin_resultado = 0
+
+    for egreso in egresos:
+        ingreso = _find_abierta_result_ingreso(db, egreso)
+        egreso_items = list(egreso.items or [])
+        ingreso_items = list(ingreso.items or []) if ingreso else []
+        egreso_usd, egreso_cs = _inventory_movement_totals_usd_cs(egreso, egreso_items)
+        ingreso_usd, ingreso_cs = (
+            _inventory_movement_totals_usd_cs(ingreso, ingreso_items)
+            if ingreso
+            else (Decimal("0"), Decimal("0"))
+        )
+        resultado_usd = (ingreso_usd - egreso_usd).quantize(Decimal("0.01"))
+        resultado_cs = (ingreso_cs - egreso_cs).quantize(Decimal("0.01"))
+        bultos_egreso = sum((Decimal(str(item.cantidad or 0)) for item in egreso_items), Decimal("0"))
+        bultos_ingreso = sum((Decimal(str(item.cantidad or 0)) for item in ingreso_items), Decimal("0"))
+        total_egreso_usd += egreso_usd
+        total_ingreso_usd += ingreso_usd
+        total_resultado_usd += resultado_usd
+        total_egreso_cs += egreso_cs
+        total_ingreso_cs += ingreso_cs
+        total_resultado_cs += resultado_cs
+        total_bultos_egreso += bultos_egreso
+        total_bultos_ingreso += bultos_ingreso
+        if ingreso:
+            movimientos_con_resultado += 1
+        else:
+            movimientos_sin_resultado += 1
+        estado = "Ganancia" if resultado_usd > 0 else "Perdida" if resultado_usd < 0 else "Neutro"
+        rows.append(
+            {
+                "fecha": egreso.fecha,
+                "fecha_label": egreso.fecha.strftime("%d/%m/%Y") if egreso.fecha else "-",
+                "egreso_id": int(egreso.id),
+                "ingreso_id": int(ingreso.id) if ingreso else None,
+                "origen": egreso.bodega.name if egreso.bodega else "-",
+                "destino": ingreso.bodega.name if ingreso and ingreso.bodega else (egreso.bodega_destino.name if egreso.bodega_destino else "-"),
+                "usuario": egreso.usuario_registro or "-",
+                "egreso_usd": float(egreso_usd),
+                "ingreso_usd": float(ingreso_usd),
+                "resultado_usd": float(resultado_usd),
+                "egreso_cs": float(egreso_cs),
+                "ingreso_cs": float(ingreso_cs),
+                "resultado_cs": float(resultado_cs),
+                "bultos_egreso": float(bultos_egreso),
+                "bultos_ingreso": float(bultos_ingreso),
+                "items_egreso": len(egreso_items),
+                "items_ingreso": len(ingreso_items),
+                "estado": estado,
+                "observacion": egreso.observacion or "",
+            }
+        )
+
+    return {
+        "branches": branches,
+        "bodegas": bodegas,
+        "selected_branch": branch_id,
+        "selected_branch_name": selected_branch.name if selected_branch else "Todas",
+        "selected_bodega": bodega_id,
+        "selected_bodega_name": next((b.name for b in bodegas if str(b.id) == str(bodega_id)), "Todas"),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "rows": rows,
+        "total_egreso_usd": float(total_egreso_usd),
+        "total_ingreso_usd": float(total_ingreso_usd),
+        "total_resultado_usd": float(total_resultado_usd),
+        "total_egreso_cs": float(total_egreso_cs),
+        "total_ingreso_cs": float(total_ingreso_cs),
+        "total_resultado_cs": float(total_resultado_cs),
+        "total_bultos_egreso": float(total_bultos_egreso),
+        "total_bultos_ingreso": float(total_bultos_ingreso),
+        "total_movimientos": len(rows),
+        "movimientos_con_resultado": movimientos_con_resultado,
+        "movimientos_sin_resultado": movimientos_sin_resultado,
+    }
+
+
 def _build_inventory_matrix_payload(
     db: Session,
     user: User,
@@ -17196,6 +17385,294 @@ def report_inventory_matrix(
             **payload,
             "version": settings.UI_VERSION,
         },
+    )
+
+
+@router.get("/reports/produccion-abierta")
+def report_production_opening(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, bodega_id = _production_opening_report_filters(request)
+    payload = _build_production_opening_report_payload(
+        db=db,
+        user=user,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+        bodega_id=bodega_id,
+    )
+    return request.app.state.templates.TemplateResponse(
+        "report_production_opening.html",
+        {
+            "request": request,
+            "user": user,
+            **payload,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/reports/produccion-abierta.xlsx")
+def report_production_opening_xlsx(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, bodega_id = _production_opening_report_filters(request)
+    payload = _build_production_opening_report_payload(
+        db=db,
+        user=user,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+        bodega_id=bodega_id,
+    )
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Apertura Pacas"
+    ws.append(["Reporte de perdida y ganancia por apertura de pacas"])
+    ws.append(["Rango", f"{start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}"])
+    ws.append(["Sucursal", payload.get("selected_branch_name", "Todas")])
+    ws.append(["Bodega origen", payload.get("selected_bodega_name", "Todas")])
+    ws.append([])
+    ws.append([
+        "Fecha",
+        "Egreso",
+        "Ingreso resultado",
+        "Origen",
+        "Destino",
+        "Bultos egreso",
+        "Bultos ingreso",
+        "Costo egresado USD",
+        "Valor ingresado USD",
+        "Resultado USD",
+        "Costo egresado C$",
+        "Valor ingresado C$",
+        "Resultado C$",
+        "Estado",
+        "Usuario",
+        "Observacion",
+    ])
+    header_row = ws.max_row
+    for cell in ws[header_row]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    for row in payload.get("rows", []):
+        ws.append(
+            [
+                row.get("fecha_label", "-"),
+                f"EGR-{row.get('egreso_id')}",
+                f"ING-{row.get('ingreso_id')}" if row.get("ingreso_id") else "-",
+                row.get("origen", "-"),
+                row.get("destino", "-"),
+                float(row.get("bultos_egreso", 0) or 0),
+                float(row.get("bultos_ingreso", 0) or 0),
+                float(row.get("egreso_usd", 0) or 0),
+                float(row.get("ingreso_usd", 0) or 0),
+                float(row.get("resultado_usd", 0) or 0),
+                float(row.get("egreso_cs", 0) or 0),
+                float(row.get("ingreso_cs", 0) or 0),
+                float(row.get("resultado_cs", 0) or 0),
+                row.get("estado", "-"),
+                row.get("usuario", "-"),
+                row.get("observacion", ""),
+            ]
+        )
+    ws.append([])
+    ws.append([
+        "TOTALES",
+        "",
+        "",
+        "",
+        "",
+        float(payload.get("total_bultos_egreso", 0) or 0),
+        float(payload.get("total_bultos_ingreso", 0) or 0),
+        float(payload.get("total_egreso_usd", 0) or 0),
+        float(payload.get("total_ingreso_usd", 0) or 0),
+        float(payload.get("total_resultado_usd", 0) or 0),
+        float(payload.get("total_egreso_cs", 0) or 0),
+        float(payload.get("total_ingreso_cs", 0) or 0),
+        float(payload.get("total_resultado_cs", 0) or 0),
+        "",
+        "",
+        "",
+    ])
+    total_row = ws.max_row
+    for cell in ws[total_row]:
+        cell.font = Font(bold=True)
+    ws.freeze_panes = "A7"
+    widths = {
+        "A": 13,
+        "B": 12,
+        "C": 16,
+        "D": 22,
+        "E": 22,
+        "F": 14,
+        "G": 14,
+        "H": 18,
+        "I": 18,
+        "J": 16,
+        "K": 18,
+        "L": 18,
+        "M": 16,
+        "N": 12,
+        "O": 22,
+        "P": 42,
+    }
+    for col, width in widths.items():
+        ws.column_dimensions[col].width = width
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"produccion_abierta_{start_date.isoformat()}_{end_date.isoformat()}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reports/produccion-abierta/pdf")
+def report_production_opening_pdf(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    start_date, end_date, branch_id, bodega_id = _production_opening_report_filters(request)
+    payload = _build_production_opening_report_payload(
+        db=db,
+        user=user,
+        start_date=start_date,
+        end_date=end_date,
+        branch_id=branch_id,
+        bodega_id=bodega_id,
+    )
+
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    page_size = landscape(A4)
+    pdf = canvas.Canvas(buffer, pagesize=page_size)
+    width, height = page_size
+    margin = 28
+    y = height - margin
+
+    def money(value: object) -> str:
+        return f"{float(value or 0):,.2f}"
+
+    def new_page() -> None:
+        nonlocal y
+        pdf.showPage()
+        y = height - margin
+        draw_header()
+        draw_table_header()
+
+    def draw_header() -> None:
+        nonlocal y
+        pdf.setFont("Helvetica-Bold", 14)
+        pdf.drawString(margin, y, "Perdida y ganancia por apertura de pacas")
+        pdf.setFont("Helvetica", 9)
+        y -= 15
+        pdf.drawString(
+            margin,
+            y,
+            f"Rango: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')} | "
+            f"Sucursal: {payload.get('selected_branch_name', 'Todas')} | "
+            f"Bodega origen: {payload.get('selected_bodega_name', 'Todas')}",
+        )
+        y -= 14
+        pdf.drawString(
+            margin,
+            y,
+            f"Movimientos: {payload.get('total_movimientos', 0)} | "
+            f"Egresado USD: $ {money(payload.get('total_egreso_usd'))} | "
+            f"Ingresado USD: $ {money(payload.get('total_ingreso_usd'))} | "
+            f"Resultado USD: $ {money(payload.get('total_resultado_usd'))}",
+        )
+        y -= 16
+        pdf.line(margin, y, width - margin, y)
+        y -= 16
+
+    def draw_table_header() -> None:
+        nonlocal y
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawString(margin, y, "Fecha")
+        pdf.drawString(margin + 58, y, "Egreso")
+        pdf.drawString(margin + 108, y, "Ingreso")
+        pdf.drawString(margin + 165, y, "Origen")
+        pdf.drawString(margin + 285, y, "Destino")
+        pdf.drawRightString(margin + 465, y, "Egreso USD")
+        pdf.drawRightString(margin + 555, y, "Ingreso USD")
+        pdf.drawRightString(margin + 645, y, "Resultado")
+        pdf.drawString(margin + 665, y, "Estado")
+        y -= 8
+        pdf.line(margin, y, width - margin, y)
+        y -= 12
+
+    draw_header()
+    draw_table_header()
+    pdf.setFont("Helvetica", 8)
+    rows = payload.get("rows", [])
+    if not rows:
+        pdf.drawString(margin, y, "Sin movimientos de produccion de abierta para los filtros seleccionados.")
+        y -= 14
+    for row in rows:
+        if y < margin + 42:
+            new_page()
+            pdf.setFont("Helvetica", 8)
+        resultado = float(row.get("resultado_usd", 0) or 0)
+        estado = row.get("estado", "-")
+        origen = str(row.get("origen", "-"))[:22]
+        destino = str(row.get("destino", "-"))[:22]
+        pdf.drawString(margin, y, str(row.get("fecha_label", "-")))
+        pdf.drawString(margin + 58, y, f"EGR-{row.get('egreso_id')}")
+        pdf.drawString(margin + 108, y, f"ING-{row.get('ingreso_id')}" if row.get("ingreso_id") else "-")
+        pdf.drawString(margin + 165, y, origen)
+        pdf.drawString(margin + 285, y, destino)
+        pdf.drawRightString(margin + 465, y, money(row.get("egreso_usd")))
+        pdf.drawRightString(margin + 555, y, money(row.get("ingreso_usd")))
+        if resultado < 0:
+            pdf.setFillColorRGB(0.75, 0.12, 0.12)
+        else:
+            pdf.setFillColorRGB(0.05, 0.45, 0.22)
+        pdf.drawRightString(margin + 645, y, money(resultado))
+        pdf.setFillColorRGB(0, 0, 0)
+        pdf.drawString(margin + 665, y, str(estado))
+        y -= 13
+
+    y -= 8
+    if y < margin + 54:
+        pdf.showPage()
+        y = height - margin
+    pdf.line(margin, y, width - margin, y)
+    y -= 16
+    pdf.setFont("Helvetica-Bold", 9)
+    pdf.drawRightString(margin + 465, y, f"$ {money(payload.get('total_egreso_usd'))}")
+    pdf.drawRightString(margin + 555, y, f"$ {money(payload.get('total_ingreso_usd'))}")
+    total_result = float(payload.get("total_resultado_usd", 0) or 0)
+    if total_result < 0:
+        pdf.setFillColorRGB(0.75, 0.12, 0.12)
+    else:
+        pdf.setFillColorRGB(0.05, 0.45, 0.22)
+    pdf.drawRightString(margin + 645, y, f"$ {money(total_result)}")
+    pdf.setFillColorRGB(0, 0, 0)
+    y -= 16
+    pdf.setFont("Helvetica", 8)
+    pdf.drawString(margin, y, "Formula: ingreso resultado USD - egreso aplicado USD. Ganancia positiva, perdida negativa.")
+
+    pdf.save()
+    buffer.seek(0)
+    filename = f"produccion_abierta_{start_date.isoformat()}_{end_date.isoformat()}.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
 
 

@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Informes</li>
+                <li class="breadcrumb-item active" aria-current="page">Produccion abierta</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Perdida y ganancia por apertura de pacas</div>
+            <div class="odoo-subtitle mt-1 text-sm">Comparativo general por movimiento: resultado ingresado menos egreso aplicado.</div>
+            <div class="text-sm text-slate mt-1">
+              Sucursal: <strong class="text-ink">{{ selected_branch_name }}</strong> ·
+              Bodega origen: <strong class="text-ink">{{ selected_bodega_name }}</strong>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="odoo-pill primary">
+              <i class="bi bi-arrow-repeat"></i>
+              Movimientos: {{ total_movimientos or 0 }}
+            </div>
+            <div class="odoo-pill">
+              <i class="bi bi-box-arrow-in-down"></i>
+              Con resultado: {{ movimientos_con_resultado or 0 }}
+            </div>
+            <div class="odoo-pill {% if (total_resultado_usd or 0) >= 0 %}primary{% endif %}">
+              <i class="bi bi-currency-dollar"></i>
+              Neto USD: $ {{ "{:,.2f}".format(total_resultado_usd or 0) }}
+            </div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item"><a class="nav-link" href="/reports">Informes</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/ganancias">Ganancias</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/matriz-inventario">Matriz de inventario</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/inventario-rotacion">Inventario y rotacion</a></li>
+          <li class="nav-item"><a class="nav-link active" href="/reports/produccion-abierta">Produccion abierta</a></li>
+        </ul>
+      </div>
+
+      <div class="odoo-card mb-3">
+        <form class="row g-2 align-items-end" method="get" action="/reports/produccion-abierta">
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+            <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+            <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Bodega origen</label>
+            <select name="bodega_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_bodega in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for bodega in bodegas %}
+              <option value="{{ bodega.id }}" {% if selected_bodega == bodega.id|string %}selected{% endif %}>{{ bodega.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-auto">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">
+              <i class="bi bi-search"></i>
+              Filtrar
+            </button>
+            <a class="btn btn-outline-secondary btn-sm" href="/reports/produccion-abierta">
+              <i class="bi bi-eraser"></i>
+              Mes actual
+            </a>
+            <a class="btn btn-outline-success btn-sm" href="/reports/produccion-abierta.xlsx?start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&bodega_id={{ selected_bodega }}">
+              <i class="bi bi-file-earmark-excel"></i>
+              Excel
+            </a>
+            <a class="btn btn-outline-danger btn-sm" href="/reports/produccion-abierta/pdf?start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&bodega_id={{ selected_bodega }}" target="_blank" rel="noopener">
+              <i class="bi bi-file-earmark-pdf"></i>
+              PDF
+            </a>
+          </div>
+        </form>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Costo egresado</div>
+            <div class="mt-2 text-lg fw-semibold text-ink">$ {{ "{:,.2f}".format(total_egreso_usd or 0) }}</div>
+            <div class="text-sm text-slate">C$ {{ "{:,.2f}".format(total_egreso_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Valor ingresado</div>
+            <div class="mt-2 text-lg fw-semibold text-ink">$ {{ "{:,.2f}".format(total_ingreso_usd or 0) }}</div>
+            <div class="text-sm text-slate">C$ {{ "{:,.2f}".format(total_ingreso_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100 {% if (total_resultado_usd or 0) >= 0 %}border border-emerald-200{% else %}border border-danger-subtle{% endif %}">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Resultado neto</div>
+            <div class="mt-2 text-lg fw-semibold {% if (total_resultado_usd or 0) >= 0 %}text-emerald-700{% else %}text-danger{% endif %}">
+              $ {{ "{:,.2f}".format(total_resultado_usd or 0) }}
+            </div>
+            <div class="text-sm text-slate">C$ {{ "{:,.2f}".format(total_resultado_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Bultos</div>
+            <div class="mt-2 text-lg fw-semibold text-ink">Salida {{ "{:,.2f}".format(total_bultos_egreso or 0) }}</div>
+            <div class="text-sm text-slate">Entrada {{ "{:,.2f}".format(total_bultos_ingreso or 0) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <div>
+            <div class="odoo-section-title text-base">Movimientos de apertura</div>
+            <div class="text-slate">Formula por fila: ingreso resultado USD - egreso aplicado USD.</div>
+          </div>
+          {% if movimientos_sin_resultado %}
+          <span class="badge text-bg-warning">{{ movimientos_sin_resultado }} sin ingreso resultado vinculado</span>
+          {% endif %}
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Fecha</th>
+                <th>Movimiento</th>
+                <th>Origen</th>
+                <th>Destino</th>
+                <th class="text-end">Bultos salida</th>
+                <th class="text-end">Bultos entrada</th>
+                <th class="text-end">Egreso USD</th>
+                <th class="text-end">Ingreso USD</th>
+                <th class="text-end">Resultado USD</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr>
+                <td>{{ row.fecha_label }}</td>
+                <td>
+                  <div class="fw-semibold">
+                    <a href="/inventory/egresos/{{ row.egreso_id }}/pdf" target="_blank" rel="noopener">EGR-{{ row.egreso_id }}</a>
+                    {% if row.ingreso_id %}
+                    <span class="text-slate">/</span>
+                    <a href="/inventory/ingresos/{{ row.ingreso_id }}/pdf" target="_blank" rel="noopener">ING-{{ row.ingreso_id }}</a>
+                    {% endif %}
+                  </div>
+                  <div class="text-xs text-slate">{{ row.usuario }}</div>
+                </td>
+                <td>{{ row.origen }}</td>
+                <td>{{ row.destino }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.bultos_egreso or 0) }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.bultos_ingreso or 0) }}</td>
+                <td class="text-end">$ {{ "{:,.2f}".format(row.egreso_usd or 0) }}</td>
+                <td class="text-end">$ {{ "{:,.2f}".format(row.ingreso_usd or 0) }}</td>
+                <td class="text-end fw-semibold {% if (row.resultado_usd or 0) >= 0 %}text-emerald-700{% else %}text-danger{% endif %}">
+                  $ {{ "{:,.2f}".format(row.resultado_usd or 0) }}
+                </td>
+                <td>
+                  <span class="badge {% if row.estado == 'Ganancia' %}text-bg-success{% elif row.estado == 'Perdida' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">
+                    {{ row.estado }}
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+              {% if rows|length == 0 %}
+              <tr>
+                <td colspan="10" class="text-center text-slate py-3">Sin movimientos de produccion de abierta para los filtros seleccionados.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+            <tfoot>
+              <tr class="table-light">
+                <th colspan="4" class="text-end">Totales</th>
+                <th class="text-end">{{ "{:,.2f}".format(total_bultos_egreso or 0) }}</th>
+                <th class="text-end">{{ "{:,.2f}".format(total_bultos_ingreso or 0) }}</th>
+                <th class="text-end">$ {{ "{:,.2f}".format(total_egreso_usd or 0) }}</th>
+                <th class="text-end">$ {{ "{:,.2f}".format(total_ingreso_usd or 0) }}</th>
+                <th class="text-end {% if (total_resultado_usd or 0) >= 0 %}text-emerald-700{% else %}text-danger{% endif %}">$ {{ "{:,.2f}".format(total_resultado_usd or 0) }}</th>
+                <th></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
