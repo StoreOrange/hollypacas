@@ -16571,20 +16571,45 @@ def _inventory_movement_totals_usd_cs(
     return total_usd.quantize(Decimal("0.01")), total_cs.quantize(Decimal("0.01"))
 
 
+def _abierta_item_cost_usd(item: IngresoItem | EgresoItem) -> tuple[Decimal, Decimal]:
+    qty = Decimal(str(item.cantidad or 0))
+    unit_usd = Decimal(str(item.costo_unitario_usd or 0))
+    subtotal_usd = Decimal(str(item.subtotal_usd or 0))
+    if unit_usd > 0 and subtotal_usd > 0:
+        return unit_usd, subtotal_usd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    # Mismo criterio del PDF de abierta: en este proceso el costo operativo
+    # capturado se interpreta en USD aunque la columna CS tenga valor.
+    unit_operativo_usd = Decimal(str(item.costo_unitario_cs or 0))
+    subtotal_operativo_usd = (unit_operativo_usd * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return unit_operativo_usd, subtotal_operativo_usd
+
+
 def _abierta_items_cost_usd(items: list[IngresoItem] | list[EgresoItem]) -> Decimal:
-    total = Decimal("0")
-    for item in items:
-        qty = Decimal(str(item.cantidad or 0))
-        unit_usd = Decimal(str(item.costo_unitario_usd or 0))
-        subtotal_usd = Decimal(str(item.subtotal_usd or 0))
-        if unit_usd > 0 and subtotal_usd > 0:
-            total += subtotal_usd
-            continue
-        # Mismo criterio del PDF de abierta: en este proceso el costo operativo
-        # capturado se interpreta en USD aunque la columna CS tenga valor.
-        unit_operativo_usd = Decimal(str(item.costo_unitario_cs or 0))
-        total += (unit_operativo_usd * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return total.quantize(Decimal("0.01"))
+    return sum((_abierta_item_cost_usd(item)[1] for item in items), Decimal("0")).quantize(Decimal("0.01"))
+
+
+def _abierta_detail_item_payload(
+    item: IngresoItem | EgresoItem,
+    *,
+    movimiento: str,
+    fecha_label: str,
+    egreso_id: int,
+    ingreso_id: Optional[int],
+) -> dict[str, object]:
+    unit_usd, subtotal_usd = _abierta_item_cost_usd(item)
+    producto = item.producto
+    return {
+        "fecha_label": fecha_label,
+        "movimiento": movimiento,
+        "egreso_id": egreso_id,
+        "ingreso_id": ingreso_id,
+        "tipo": "Egreso" if movimiento == "EGRESO" else "Ingreso resultado",
+        "codigo": (producto.cod_producto if producto else "") or "-",
+        "descripcion": (producto.descripcion if producto else "") or "Producto sin descripcion",
+        "cantidad": float(item.cantidad or 0),
+        "costo_unitario_usd": float(unit_usd),
+        "subtotal_usd": float(subtotal_usd),
+    }
 
 
 def _abierta_result_rate(db: Session, egreso: EgresoInventario, ingreso: Optional[IngresoInventario]) -> Decimal:
@@ -16668,10 +16693,13 @@ def _build_production_opening_report_payload(
     total_egreso_cs = Decimal("0")
     total_ingreso_cs = Decimal("0")
     total_resultado_cs = Decimal("0")
+    total_ganancias_usd = Decimal("0")
+    total_perdidas_usd = Decimal("0")
     total_bultos_egreso = Decimal("0")
     total_bultos_ingreso = Decimal("0")
     movimientos_con_resultado = 0
     movimientos_sin_resultado = 0
+    detail_rows: list[dict[str, object]] = []
 
     for egreso in egresos:
         ingreso = _find_abierta_result_ingreso(db, egreso)
@@ -16694,17 +16722,45 @@ def _build_production_opening_report_payload(
         total_egreso_cs += egreso_cs
         total_ingreso_cs += ingreso_cs
         total_resultado_cs += resultado_cs
+        if resultado_usd > 0:
+            total_ganancias_usd += resultado_usd
+        elif resultado_usd < 0:
+            total_perdidas_usd += abs(resultado_usd)
         total_bultos_egreso += bultos_egreso
         total_bultos_ingreso += bultos_ingreso
         if ingreso:
             movimientos_con_resultado += 1
         estado = "Ganancia" if resultado_usd > 0 else "Perdida" if resultado_usd < 0 else "Neutro"
+        fecha_label = egreso.fecha.strftime("%d/%m/%Y") if egreso.fecha else "-"
+        egreso_id = int(egreso.id)
+        ingreso_id = int(ingreso.id) if ingreso else None
+        movement_detail_rows = [
+            _abierta_detail_item_payload(
+                item,
+                movimiento="EGRESO",
+                fecha_label=fecha_label,
+                egreso_id=egreso_id,
+                ingreso_id=ingreso_id,
+            )
+            for item in egreso_items
+        ]
+        movement_detail_rows.extend(
+            _abierta_detail_item_payload(
+                item,
+                movimiento="INGRESO",
+                fecha_label=fecha_label,
+                egreso_id=egreso_id,
+                ingreso_id=ingreso_id,
+            )
+            for item in ingreso_items
+        )
+        detail_rows.extend(movement_detail_rows)
         rows.append(
             {
                 "fecha": egreso.fecha,
-                "fecha_label": egreso.fecha.strftime("%d/%m/%Y") if egreso.fecha else "-",
-                "egreso_id": int(egreso.id),
-                "ingreso_id": int(ingreso.id) if ingreso else None,
+                "fecha_label": fecha_label,
+                "egreso_id": egreso_id,
+                "ingreso_id": ingreso_id,
                 "origen": egreso.bodega.name if egreso.bodega else "-",
                 "destino": ingreso.bodega.name if ingreso and ingreso.bodega else (egreso.bodega_destino.name if egreso.bodega_destino else "-"),
                 "usuario": egreso.usuario_registro or "-",
@@ -16720,6 +16776,7 @@ def _build_production_opening_report_payload(
                 "items_ingreso": len(ingreso_items),
                 "estado": estado,
                 "observacion": egreso.observacion or "",
+                "detail_rows": movement_detail_rows,
             }
         )
 
@@ -16733,12 +16790,15 @@ def _build_production_opening_report_payload(
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "rows": rows,
+        "detail_rows": detail_rows,
         "total_egreso_usd": float(total_egreso_usd),
         "total_ingreso_usd": float(total_ingreso_usd),
         "total_resultado_usd": float(total_resultado_usd),
         "total_egreso_cs": float(total_egreso_cs),
         "total_ingreso_cs": float(total_ingreso_cs),
         "total_resultado_cs": float(total_resultado_cs),
+        "total_ganancias_usd": float(total_ganancias_usd),
+        "total_perdidas_usd": float(total_perdidas_usd),
         "total_bultos_egreso": float(total_bultos_egreso),
         "total_bultos_ingreso": float(total_bultos_ingreso),
         "total_movimientos": len(rows),
@@ -17571,6 +17631,116 @@ def report_production_opening_xlsx(
     }
     for col, width in widths.items():
         ws.column_dimensions[col].width = width
+
+    detail_ws = wb.create_sheet("Detalle Items")
+    detail_ws.append(["Detalle de egresos e ingresos resultantes por apertura de pacas"])
+    detail_ws.append(["Rango", f"{start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}"])
+    detail_ws.append(["Sucursal", payload.get("selected_branch_name", "Todas")])
+    detail_ws.append(["Bodega origen", payload.get("selected_bodega_name", "Todas")])
+    detail_ws.append([])
+    detail_ws.append([
+        "Fecha",
+        "Egreso",
+        "Ingreso resultado",
+        "Tipo movimiento",
+        "Codigo",
+        "Producto",
+        "Cantidad",
+        "Costo unitario USD",
+        "Subtotal USD",
+    ])
+    detail_header_row = detail_ws.max_row
+    for cell in detail_ws[detail_header_row]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    for row in payload.get("detail_rows", []):
+        detail_ws.append(
+            [
+                row.get("fecha_label", "-"),
+                f"EGR-{row.get('egreso_id')}",
+                f"ING-{row.get('ingreso_id')}" if row.get("ingreso_id") else "-",
+                row.get("tipo", "-"),
+                row.get("codigo", "-"),
+                row.get("descripcion", "-"),
+                float(row.get("cantidad", 0) or 0),
+                float(row.get("costo_unitario_usd", 0) or 0),
+                float(row.get("subtotal_usd", 0) or 0),
+            ]
+        )
+    detail_ws.append([])
+    detail_ws.append([
+        "TOTALES",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Egresado USD",
+        float(payload.get("total_egreso_usd", 0) or 0),
+    ])
+    detail_ws.append([
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Ingresado USD",
+        float(payload.get("total_ingreso_usd", 0) or 0),
+    ])
+    detail_ws.append([
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Ganancias USD",
+        float(payload.get("total_ganancias_usd", 0) or 0),
+    ])
+    detail_ws.append([
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Perdidas USD",
+        float(payload.get("total_perdidas_usd", 0) or 0),
+    ])
+    detail_ws.append([
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Resultado neto USD",
+        float(payload.get("total_resultado_usd", 0) or 0),
+    ])
+    for row_number in range(detail_ws.max_row - 4, detail_ws.max_row + 1):
+        for cell in detail_ws[row_number]:
+            cell.font = Font(bold=True)
+    detail_ws.freeze_panes = "A7"
+    detail_widths = {
+        "A": 13,
+        "B": 12,
+        "C": 16,
+        "D": 20,
+        "E": 16,
+        "F": 42,
+        "G": 14,
+        "H": 20,
+        "I": 16,
+    }
+    for col, width in detail_widths.items():
+        detail_ws.column_dimensions[col].width = width
+
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
@@ -17583,6 +17753,7 @@ def report_production_opening_xlsx(
 
 
 @router.get("/reports/produccion-abierta/pdf")
+@router.get("/reports/produccion-abierta/pdf-detalle")
 def report_production_opening_pdf(
     request: Request,
     db: Session = Depends(get_db),
@@ -17712,9 +17883,201 @@ def report_production_opening_pdf(
     pdf.setFont("Helvetica", 8)
     pdf.drawString(margin, y, "Formula: costo ingresado USD - costo egresado USD. Ganancia positiva, perdida negativa.")
 
+    if not request.url.path.endswith("/pdf-detalle"):
+        pdf.save()
+        buffer.seek(0)
+        filename = f"produccion_abierta_{start_date.isoformat()}_{end_date.isoformat()}.pdf"
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+
+    # El PDF detallado es un informe independiente: no anteponer las paginas
+    # del resumen general antes de los bloques agrupados por evento.
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=page_size)
+    detail_rows = payload.get("detail_rows", [])
+    y = height - margin
+
+    def draw_detail_header() -> None:
+        nonlocal y
+        pdf.setFont("Helvetica-Bold", 13)
+        pdf.drawString(margin, y, "Detalle de egresos e ingresos resultantes")
+        y -= 15
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(
+            margin,
+            y,
+            f"Rango: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')} | "
+            f"Items detallados: {len(detail_rows)} | Valores en USD",
+        )
+        y -= 15
+        pdf.line(margin, y, width - margin, y)
+        y -= 15
+
+    def new_detail_page() -> None:
+        nonlocal y
+        pdf.showPage()
+        y = height - margin
+        draw_detail_header()
+
+    def ensure_detail_space(needed: float) -> None:
+        if y < margin + needed:
+            new_detail_page()
+
+    def draw_detail_table_header() -> None:
+        nonlocal y
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawString(margin + 8, y, "Codigo")
+        pdf.drawString(margin + 108, y, "Producto")
+        pdf.drawRightString(margin + 585, y, "Cantidad")
+        pdf.drawRightString(margin + 690, y, "Costo unit. USD")
+        pdf.drawRightString(width - margin, y, "Subtotal")
+        y -= 8
+        pdf.line(margin, y, width - margin, y)
+        y -= 12
+
+    def draw_items_section(section_title: str, items: list[dict[str, object]]) -> None:
+        nonlocal y
+        ensure_detail_space(48)
+        pdf.setFillColorRGB(0.93, 0.95, 0.99)
+        pdf.roundRect(margin, y - 4, width - (margin * 2), 17, 5, fill=1, stroke=0)
+        pdf.setFillColorRGB(0.08, 0.18, 0.38)
+        pdf.setFont("Helvetica-Bold", 9)
+        pdf.drawString(margin + 8, y + 1, section_title)
+        pdf.setFillColorRGB(0, 0, 0)
+        y -= 22
+        draw_detail_table_header()
+        if not items:
+            pdf.setFont("Helvetica-Oblique", 8)
+            pdf.drawString(margin + 8, y, "Sin items vinculados en esta seccion.")
+            y -= 14
+            return
+        for item in items:
+            if y < margin + 24:
+                new_detail_page()
+                pdf.setFont("Helvetica-Bold", 9)
+                pdf.drawString(margin + 8, y, f"{section_title} (continuacion)")
+                y -= 17
+                draw_detail_table_header()
+            pdf.setFont("Helvetica", 8)
+            pdf.drawString(margin + 8, y, str(item.get("codigo", "-"))[:17])
+            pdf.drawString(margin + 108, y, str(item.get("descripcion", "-"))[:70])
+            pdf.drawRightString(margin + 585, y, money(item.get("cantidad")))
+            pdf.drawRightString(margin + 690, y, money(item.get("costo_unitario_usd")))
+            pdf.drawRightString(width - margin, y, money(item.get("subtotal_usd")))
+            y -= 13
+
+    draw_detail_header()
+    if not rows:
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(margin, y, "Sin items detallados para los filtros seleccionados.")
+        y -= 14
+    for row in rows:
+        ensure_detail_space(150)
+        resultado = float(row.get("resultado_usd", 0) or 0)
+        estado = str(row.get("estado", "-"))
+        ingreso_label = f"ING-{row.get('ingreso_id')}" if row.get("ingreso_id") else "Sin ingreso resultado"
+        pdf.setFillColorRGB(0.88, 0.92, 0.98)
+        pdf.roundRect(margin, y - 38, width - (margin * 2), 48, 7, fill=1, stroke=0)
+        pdf.setFillColorRGB(0.08, 0.18, 0.38)
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(
+            margin + 10,
+            y - 5,
+            f"Evento de abierta: EGR-{row.get('egreso_id')} / {ingreso_label}",
+        )
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(
+            margin + 10,
+            y - 20,
+            f"Fecha: {row.get('fecha_label', '-')} | Origen: {str(row.get('origen', '-'))[:34]} | "
+            f"Destino: {str(row.get('destino', '-'))[:34]}",
+        )
+        pdf.drawString(margin + 10, y - 33, f"Usuario: {str(row.get('usuario', '-'))[:45]}")
+        pdf.setFont("Helvetica-Bold", 9)
+        if resultado < 0:
+            pdf.setFillColorRGB(0.75, 0.12, 0.12)
+        else:
+            pdf.setFillColorRGB(0.05, 0.45, 0.22)
+        pdf.drawRightString(width - margin - 10, y - 20, f"{estado}: $ {money(resultado)}")
+        pdf.setFillColorRGB(0, 0, 0)
+        y -= 58
+
+        event_items = row.get("detail_rows", [])
+        egreso_items = [item for item in event_items if item.get("movimiento") == "EGRESO"]
+        ingreso_items = [item for item in event_items if item.get("movimiento") == "INGRESO"]
+        draw_items_section("Detalle del egreso", egreso_items)
+        draw_items_section("Detalle del ingreso resultante", ingreso_items)
+
+        ensure_detail_space(62)
+        pdf.setFillColorRGB(0.96, 0.97, 0.99)
+        pdf.roundRect(margin, y - 39, width - (margin * 2), 47, 6, fill=1, stroke=0)
+        pdf.setFillColorRGB(0, 0, 0)
+        pdf.setFont("Helvetica-Bold", 9)
+        pdf.drawString(margin + 10, y - 7, "Analisis del evento")
+        pdf.drawRightString(margin + 335, y - 7, f"Egresado USD: $ {money(row.get('egreso_usd'))}")
+        pdf.drawRightString(margin + 530, y - 7, f"Ingresado USD: $ {money(row.get('ingreso_usd'))}")
+        if resultado < 0:
+            pdf.setFillColorRGB(0.75, 0.12, 0.12)
+        else:
+            pdf.setFillColorRGB(0.05, 0.45, 0.22)
+        pdf.drawRightString(width - margin - 10, y - 7, f"{estado}: $ {money(resultado)}")
+        pdf.setFillColorRGB(0, 0, 0)
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(
+            margin + 10,
+            y - 23,
+            f"Bultos salida: {money(row.get('bultos_egreso'))} | Bultos entrada: {money(row.get('bultos_ingreso'))} | "
+            "Formula: costo ingresado USD - costo egresado USD",
+        )
+        y -= 55
+
+    if y < margin + 132:
+        new_detail_page()
+    y -= 6
+    summary_height = 112
+    pdf.setFillColorRGB(0.93, 0.95, 0.99)
+    pdf.roundRect(margin, y - summary_height, width - (margin * 2), summary_height, 8, fill=1, stroke=0)
+    pdf.setFillColorRGB(0.08, 0.18, 0.38)
+    pdf.setFont("Helvetica-Bold", 11)
+    pdf.drawString(margin + 12, y - 18, "Resultado final consolidado del rango")
+    pdf.setFillColorRGB(0, 0, 0)
+    pdf.setFont("Helvetica-Bold", 9)
+    pdf.drawString(margin + 12, y - 39, "Costo total de mercaderia egresada:")
+    pdf.drawRightString(margin + 360, y - 39, f"$ {money(payload.get('total_egreso_usd'))}")
+    pdf.drawString(margin + 12, y - 55, "Costo total de mercaderia resultante:")
+    pdf.drawRightString(margin + 360, y - 55, f"$ {money(payload.get('total_ingreso_usd'))}")
+    pdf.drawString(margin + 430, y - 39, "Total de ganancias:")
+    pdf.setFillColorRGB(0.05, 0.45, 0.22)
+    pdf.drawRightString(width - margin - 12, y - 39, f"$ {money(payload.get('total_ganancias_usd'))}")
+    pdf.setFillColorRGB(0, 0, 0)
+    pdf.drawString(margin + 430, y - 55, "Total de perdidas:")
+    pdf.setFillColorRGB(0.75, 0.12, 0.12)
+    pdf.drawRightString(width - margin - 12, y - 55, f"$ {money(payload.get('total_perdidas_usd'))}")
+    total_result = float(payload.get("total_resultado_usd", 0) or 0)
+    total_result_label = "Ganancia neta real" if total_result > 0 else "Perdida neta real" if total_result < 0 else "Resultado neutro"
+    pdf.setFillColorRGB(0, 0, 0)
+    pdf.line(margin + 12, y - 67, width - margin - 12, y - 67)
+    pdf.setFont("Helvetica-Bold", 11)
+    if total_result < 0:
+        pdf.setFillColorRGB(0.75, 0.12, 0.12)
+    else:
+        pdf.setFillColorRGB(0.05, 0.45, 0.22)
+    pdf.drawString(margin + 12, y - 88, f"{total_result_label}:")
+    pdf.drawRightString(width - margin - 12, y - 88, f"$ {money(total_result)}")
+    pdf.setFillColorRGB(0, 0, 0)
+    pdf.setFont("Helvetica", 8)
+    pdf.drawString(
+        margin + 12,
+        y - 103,
+        "Formula real: total de ganancias USD - total de perdidas USD. Los costos de mercaderia se muestran por separado.",
+    )
+
     pdf.save()
     buffer.seek(0)
-    filename = f"produccion_abierta_{start_date.isoformat()}_{end_date.isoformat()}.pdf"
+    filename = f"produccion_abierta_detalle_{start_date.isoformat()}_{end_date.isoformat()}.pdf"
     return StreamingResponse(
         buffer,
         media_type="application/pdf",

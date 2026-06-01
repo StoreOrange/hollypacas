@@ -88,7 +88,11 @@
             </a>
             <a class="btn btn-outline-danger btn-sm" href="/reports/produccion-abierta/pdf?start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&bodega_id={{ selected_bodega }}" target="_blank" rel="noopener">
               <i class="bi bi-file-earmark-pdf"></i>
-              PDF
+              PDF general
+            </a>
+            <a class="btn btn-outline-danger btn-sm" href="/reports/produccion-abierta/pdf-detalle?start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&bodega_id={{ selected_bodega }}" target="_blank" rel="noopener">
+              <i class="bi bi-file-earmark-pdf-fill"></i>
+              PDF detalle
             </a>
           </div>
         </form>
@@ -198,6 +202,85 @@
                 <th class="text-end">$ {{ "{:,.2f}".format(total_ingreso_usd or 0) }}</th>
                 <th class="text-end {% if (total_resultado_usd or 0) >= 0 %}text-emerald-700{% else %}text-danger{% endif %}">$ {{ "{:,.2f}".format(total_resultado_usd or 0) }}</th>
                 <th></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <div>
+            <div class="odoo-section-title text-base">Detalle de egresos e ingresos resultantes</div>
+            <div class="text-slate">Items especificos vinculados por cada apertura de pacas. Los totales consolidados se expresan en USD.</div>
+          </div>
+          <span class="badge text-bg-secondary">{{ detail_rows|length }} items detallados</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Fecha</th>
+                <th>Movimiento vinculado</th>
+                <th>Tipo</th>
+                <th>Codigo</th>
+                <th>Producto</th>
+                <th class="text-end">Cantidad</th>
+                <th class="text-end">Costo unitario USD</th>
+                <th class="text-end">Subtotal USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in detail_rows %}
+              <tr>
+                <td>{{ item.fecha_label }}</td>
+                <td>
+                  <a href="/inventory/egresos/{{ item.egreso_id }}/pdf" target="_blank" rel="noopener">EGR-{{ item.egreso_id }}</a>
+                  {% if item.ingreso_id %}
+                  <span class="text-slate">/</span>
+                  <a href="/inventory/ingresos/{{ item.ingreso_id }}/pdf" target="_blank" rel="noopener">ING-{{ item.ingreso_id }}</a>
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="badge {% if item.movimiento == 'EGRESO' %}text-bg-warning{% else %}text-bg-info{% endif %}">
+                    {{ item.tipo }}
+                  </span>
+                </td>
+                <td>{{ item.codigo }}</td>
+                <td>{{ item.descripcion }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(item.cantidad or 0) }}</td>
+                <td class="text-end">$ {{ "{:,.2f}".format(item.costo_unitario_usd or 0) }}</td>
+                <td class="text-end fw-semibold">$ {{ "{:,.2f}".format(item.subtotal_usd or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if detail_rows|length == 0 %}
+              <tr>
+                <td colspan="8" class="text-center text-slate py-3">Sin items detallados para los filtros seleccionados.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+            <tfoot>
+              <tr class="table-light">
+                <th colspan="7" class="text-end">Costo total mercaderia egresada USD</th>
+                <th class="text-end">$ {{ "{:,.2f}".format(total_egreso_usd or 0) }}</th>
+              </tr>
+              <tr class="table-light">
+                <th colspan="7" class="text-end">Costo total mercaderia resultante USD</th>
+                <th class="text-end">$ {{ "{:,.2f}".format(total_ingreso_usd or 0) }}</th>
+              </tr>
+              <tr class="table-light">
+                <th colspan="7" class="text-end">Total ganancias USD</th>
+                <th class="text-end text-emerald-700">$ {{ "{:,.2f}".format(total_ganancias_usd or 0) }}</th>
+              </tr>
+              <tr class="table-light">
+                <th colspan="7" class="text-end">Total perdidas USD</th>
+                <th class="text-end text-danger">$ {{ "{:,.2f}".format(total_perdidas_usd or 0) }}</th>
+              </tr>
+              <tr class="table-light">
+                <th colspan="7" class="text-end">Resultado real neto USD</th>
+                <th class="text-end {% if (total_resultado_usd or 0) >= 0 %}text-emerald-700{% else %}text-danger{% endif %}">
+                  $ {{ "{:,.2f}".format(total_resultado_usd or 0) }}
+                </th>
               </tr>
             </tfoot>
           </table>
