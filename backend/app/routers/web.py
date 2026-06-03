@@ -1739,6 +1739,35 @@ def _preventa_reserved_bulk_by_others(
     return dict(totals), dict(details)
 
 
+def _preventa_reserved_bulk_by_bodega(
+    db: Session,
+    *,
+    bodega_ids: list[int],
+    producto_ids: list[int],
+) -> dict[tuple[int, int], Decimal]:
+    if not bodega_ids or not producto_ids:
+        return {}
+    rows = (
+        db.query(
+            PreventaItem.producto_id.label("producto_id"),
+            Preventa.bodega_id.label("bodega_id"),
+            func.sum(PreventaItem.cantidad).label("qty"),
+        )
+        .join(Preventa, Preventa.id == PreventaItem.preventa_id)
+        .filter(
+            Preventa.bodega_id.in_(bodega_ids),
+            Preventa.estado.in_(["PENDIENTE", "REVISION"]),
+            PreventaItem.producto_id.in_(producto_ids),
+        )
+        .group_by(PreventaItem.producto_id, Preventa.bodega_id)
+        .all()
+    )
+    return {
+        (int(producto_id), int(bodega_id)): Decimal(str(qty or 0))
+        for producto_id, bodega_id, qty in rows
+    }
+
+
 def _preventa_required_qty_map(
     item_rows: list[tuple["PreventaItem", "Producto"]],
 ) -> dict[int, Decimal]:
@@ -9907,43 +9936,6 @@ def inventory_caliente(
     shoes_mode = _is_shoes_mode()
     branch, user_bodega = _resolve_branch_bodega(db, user)
 
-    def _balances_by_bodega(bodega_ids: list[int], product_ids: list[int]) -> dict[tuple[int, int], Decimal]:
-        if not bodega_ids or not product_ids:
-            return {}
-        ingreso_rows = (
-            db.query(IngresoItem.producto_id, IngresoInventario.bodega_id, func.sum(IngresoItem.cantidad))
-            .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
-            .filter(IngresoInventario.bodega_id.in_(bodega_ids))
-            .filter(IngresoItem.producto_id.in_(product_ids))
-            .group_by(IngresoItem.producto_id, IngresoInventario.bodega_id)
-            .all()
-        )
-        egreso_rows = (
-            db.query(EgresoItem.producto_id, EgresoInventario.bodega_id, func.sum(EgresoItem.cantidad))
-            .join(EgresoInventario, EgresoInventario.id == EgresoItem.egreso_id)
-            .filter(EgresoInventario.bodega_id.in_(bodega_ids))
-            .filter(EgresoItem.producto_id.in_(product_ids))
-            .group_by(EgresoItem.producto_id, EgresoInventario.bodega_id)
-            .all()
-        )
-        venta_rows = (
-            db.query(VentaItem.producto_id, VentaFactura.bodega_id, func.sum(VentaItem.cantidad))
-            .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
-            .filter(VentaFactura.bodega_id.in_(bodega_ids))
-            .filter(VentaItem.producto_id.in_(product_ids))
-            .filter(VentaFactura.estado != "ANULADA")
-            .group_by(VentaItem.producto_id, VentaFactura.bodega_id)
-            .all()
-        )
-        balances: dict[tuple[int, int], Decimal] = {}
-        for producto_id, bodega_id, qty in ingreso_rows:
-            balances[(producto_id, bodega_id)] = Decimal(str(qty or 0))
-        for producto_id, bodega_id, qty in egreso_rows:
-            balances[(producto_id, bodega_id)] = balances.get((producto_id, bodega_id), Decimal("0")) - Decimal(str(qty or 0))
-        for producto_id, bodega_id, qty in venta_rows:
-            balances[(producto_id, bodega_id)] = balances.get((producto_id, bodega_id), Decimal("0")) - Decimal(str(qty or 0))
-        return balances
-
     scope_options: list[dict[str, str]] = []
     selected_scope = scope_param
     current_scope_label = "Bodega"
@@ -9996,7 +9988,12 @@ def inventory_caliente(
                 current_scope_label = selected_bodega_obj.name or "Bodega"
 
     product_ids = [p.id for p in productos]
-    balances = _balances_by_bodega(bodega_ids, product_ids)
+    balances = _balances_by_bodega(db, bodega_ids, product_ids)
+    reserved_balances = _preventa_reserved_bulk_by_bodega(
+        db,
+        bodega_ids=bodega_ids,
+        producto_ids=product_ids,
+    )
 
     productos_view = []
     for producto in productos:
@@ -10017,13 +10014,31 @@ def inventory_caliente(
             rows = []
             for label, bodega_id in bodega_rows_for_all:
                 qty = balances.get((producto.id, bodega_id), Decimal("0"))
-                rows.append({"label": label, "existencia": float(qty or 0)})
+                reserved_qty = reserved_balances.get((producto.id, bodega_id), Decimal("0"))
+                free_qty = max(Decimal("0"), qty - reserved_qty)
+                rows.append(
+                    {
+                        "label": label,
+                        "existencia": float(free_qty or 0),
+                        "existencia_fisica": float(qty or 0),
+                        "reserved_qty": float(reserved_qty or 0),
+                    }
+                )
             total_qty = sum(Decimal(str(row["existencia"])) for row in rows)
+            total_reserved = sum(Decimal(str(row["reserved_qty"])) for row in rows)
+            total_physical = sum(Decimal(str(row["existencia_fisica"])) for row in rows)
             item["existencias"] = rows
             item["existencia_total"] = float(total_qty or 0)
+            item["existencia_fisica_total"] = float(total_physical or 0)
+            item["reserved_qty"] = float(total_reserved or 0)
         else:
             qty = balances.get((producto.id, selected_bodega_obj.id), Decimal("0")) if selected_bodega_obj else Decimal("0")
-            item["existencia"] = float(qty or 0)
+            bodega_id = int(selected_bodega_obj.id) if selected_bodega_obj else 0
+            reserved_qty = reserved_balances.get((producto.id, bodega_id), Decimal("0"))
+            free_qty = max(Decimal("0"), qty - reserved_qty)
+            item["existencia"] = float(free_qty or 0)
+            item["existencia_fisica"] = float(qty or 0)
+            item["reserved_qty"] = float(reserved_qty or 0)
             item["scope_label"] = current_scope_label
         productos_view.append(item)
 
@@ -10118,6 +10133,14 @@ def inventory_caliente_variants(
 
     items: list[dict[str, object]] = []
     total = Decimal("0")
+    reserved_total = sum(
+        _preventa_reserved_bulk_by_bodega(
+            db,
+            bodega_ids=selected_bodega_ids,
+            producto_ids=[int(producto.id)],
+        ).values(),
+        Decimal("0"),
+    )
     for variant, color in variants:
         per_bodega: list[dict[str, object]] = []
         qty = Decimal("0")
@@ -10140,6 +10163,7 @@ def inventory_caliente_variants(
             }
         )
 
+    free_total = max(Decimal("0"), total - reserved_total)
     return JSONResponse(
         {
             "ok": True,
@@ -10150,6 +10174,8 @@ def inventory_caliente_variants(
             },
             "items": items,
             "total": float(total),
+            "reserved_qty": float(reserved_total),
+            "free_total": float(free_total),
         }
     )
 

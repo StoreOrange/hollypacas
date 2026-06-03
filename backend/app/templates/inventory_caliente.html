@@ -189,7 +189,12 @@
           });
         }
         if (modalMeta) {
-          modalMeta.textContent = `${name} | Total en variantes: ${Number(data.total || 0).toFixed(2)}`;
+          const total = Number(data.total || 0).toFixed(2);
+          const reserved = Number(data.reserved_qty || 0).toFixed(2);
+          const free = Number(data.free_total ?? data.total ?? 0).toFixed(2);
+          modalMeta.textContent = Number(data.reserved_qty || 0) > 0
+            ? `${name} | Libre: ${free} | Reservado: ${reserved} | Fisico: ${total}`
+            : `${name} | Total en variantes: ${total}`;
         }
       } catch (err) {
         const msg = err && err.message ? err.message : "sin detalle";
