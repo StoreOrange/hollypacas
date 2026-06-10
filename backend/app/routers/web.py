@@ -39,7 +39,7 @@ from ..config import (
     settings,
     upsert_company_profile,
 )
-from ..core.init_db import init_db
+from ..core.init_db import init_db, _seed_racingmoto_workshop_services
 from ..core.deps import get_db, require_admin
 from ..core.security import (
     ALGORITHM,
@@ -97,6 +97,7 @@ from ..models.sales import (
     CuentaBancaria,
     CuentaContable,
     DepositoCliente,
+    DiscountAuthorizationToken,
     EmailConfig,
     MenuLayoutSetting,
     MobilePushSubscription,
@@ -137,6 +138,7 @@ SALES_INTERFACE_OPTIONS = [
     {"code": "ferreteria", "label": "Interfaz Ferreteria"},
     {"code": "farmacia", "label": "Interfaz Farmacia"},
     {"code": "comestibles", "label": "Interfaz Tienda de Comestibles"},
+    {"code": "repuestos", "label": "Interfaz Venta de Repuestos"},
     {"code": "zapatos", "label": "Interfaz Tienda de Zapatos"},
     {"code": "restaurante", "label": "Interfaz Restaurante / Bar"},
 ]
@@ -1879,7 +1881,8 @@ def _default_company_profile_payload() -> dict[str, str]:
     db_name = _current_db_name().strip().lower()
     shoes_mode = _is_shoes_mode()
     restaurant_mode = active_company_key == "barrera" or "barrera" in db_name
-    multi_branch_enabled = active_company_key not in {"comestibles", "barrera", "bdtrend"}
+    racing_mode = active_company_key == "racingmoto" or db_name == "racing"
+    multi_branch_enabled = active_company_key not in {"comestibles", "barrera", "bdtrend", "racingmoto"}
     if shoes_mode:
         return {
             "legal_name": "Miss Zapatos",
@@ -1913,6 +1916,29 @@ def _default_company_profile_payload() -> dict[str, str]:
             "ruc": "",
             "phone": "",
             "address": "Sucursal principal",
+            "email": "",
+            "logo_url": "/static/logo_hollywood.png",
+            "pos_logo_url": "/static/logo_hollywood.png",
+            "favicon_url": "/static/favicon.ico",
+            "inventory_cs_only": False,
+            "recipe_explosion_on_ingreso": False,
+            "weighted_inventory_enabled": False,
+            "weighted_sales_enabled": False,
+            "multi_branch_enabled": multi_branch_enabled,
+            "price_auto_from_cost_enabled": False,
+            "price_margin_percent": 0,
+            "theme_code": "default",
+        }
+    if racing_mode:
+        return {
+            "legal_name": "Racing Motos",
+            "trade_name": "Racing Motos",
+            "app_title": "ERP Racing Motos",
+            "sidebar_subtitle": "Venta de Repuestos",
+            "website": "",
+            "ruc": "",
+            "phone": "",
+            "address": "De la Gasolinera 2 de agosto 1 c 1/2 al norte.",
             "email": "",
             "logo_url": "/static/logo_hollywood.png",
             "pos_logo_url": "/static/logo_hollywood.png",
@@ -2497,7 +2523,10 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     total_amount_usd = float(factura.total_usd or 0)
     if total_amount_usd <= 0 and float(factura.tasa_cambio or 0) > 0:
         total_amount_usd = total_amount / float(factura.tasa_cambio or 0)
-    subtotal_amount = total_amount
+    subtotal_amount = float(getattr(factura, "subtotal_bruto_cs", None) or 0)
+    if subtotal_amount <= 0:
+        subtotal_amount = total_amount
+    discount_amount = float(getattr(factura, "descuento_total_cs", None) or 0)
 
     pagos = factura.pagos or []
     total_paid = sum(
@@ -2546,18 +2575,22 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
         codigo = item.producto.cod_producto if item.producto else "-"
         descripcion = item.producto.descripcion if item.producto else "-"
         is_libreado_item = bool(getattr(item.producto, "es_libreado", False)) and _is_pacasholl_company()
+        is_service_item = bool(getattr(item.producto, "servicio_producto", False))
         if item.variante:
             color_name = item.variante.color.nombre if item.variante.color else "-"
             talla_name = item.variante.talla or "-"
             descripcion = f"{descripcion} [{color_name} / Talla {talla_name}]"
         combo_label = ""
-        if item.combo_role == "gift":
+        if is_service_item:
+            combo_label = " [SERVICIO TALLER]"
+        elif item.combo_role == "gift":
             combo_label = " [REGALO]"
         elif item.combo_role == "parent":
             combo_label = " [OFERTA]"
         qty = float(item.cantidad or 0)
         price = float(item.precio_unitario_cs or 0)
         subtotal = float(item.subtotal_cs or 0)
+        line_discount = float(getattr(item, "descuento_cs", None) or 0)
         total_unidades += qty
         if show_item_code:
             add_line(f"Codigo: {codigo}{combo_label}", "left", True, normal_size)
@@ -2567,8 +2600,11 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
             add_line(part, "left", False, normal_size)
         if is_libreado_item and float(item.peso_lbs or 0) > 0:
             add_line(f"Peso: {format_qty(float(item.peso_lbs or 0))} Lbs", "left", False, normal_size)
+        qty_label = f"{format_qty(qty)} serv" if is_service_item else format_qty(qty)
+        if line_discount > 0:
+            add_line(f"Desc item: {currency_label} {format_amount(line_discount)}", "left", False, normal_size)
         add_line(
-            f"Cant: {format_qty(qty)}  Precio: {currency_label} {format_amount(price)}  Subtotal: {currency_label} {format_amount(subtotal)}",
+            f"Cant: {qty_label}  Precio: {currency_label} {format_amount(price)}  Subtotal: {currency_label} {format_amount(subtotal)}",
             "left",
             False,
             normal_size,
@@ -2577,7 +2613,7 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
 
     add_line(f"Total unds: {format_qty(total_unidades)}", "left", True, normal_size)
     add_line(f"Subtotal: {currency_label} {format_amount(subtotal_amount)}", "right", True, normal_size)
-    add_line(f"Descuentos: {currency_label} 0.00", "right", False, normal_size)
+    add_line(f"Descuentos: {currency_label} {format_amount(discount_amount)}", "right", False, normal_size)
     add_line(f"Total: {currency_label} {format_amount(total_amount)}", "right", True, title_size)
     add_line(f"Equivalente USD: $ {format_amount(total_amount_usd)}", "right", False, normal_size)
 
@@ -3119,6 +3155,66 @@ def _generate_token(length: int = 6) -> str:
     return "".join(random.choice(string.digits) for _ in range(length))
 
 
+def _discount_percent_value(value: object) -> Decimal:
+    try:
+        raw = Decimal(str(value or "0").replace(",", "."))
+    except Exception:
+        raw = Decimal("0")
+    if raw < 0:
+        return Decimal("0")
+    if raw > 100:
+        return Decimal("100")
+    return raw.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _discount_authorization_payload_from_form(form) -> dict[str, object]:
+    item_ids = form.getlist("item_producto_id")
+    item_variant_ids = form.getlist("item_variante_id")
+    item_qtys = form.getlist("item_cantidad")
+    item_prices = form.getlist("item_precio")
+    item_discounts = form.getlist("item_descuento_pct")
+    items: list[dict[str, object]] = []
+    def _dec(value: object) -> Decimal:
+        try:
+            return Decimal(str(value or "0").replace(",", "."))
+        except Exception:
+            return Decimal("0")
+    for index, product_id in enumerate(item_ids):
+        if not str(product_id or "").isdigit():
+            continue
+        variant_raw = item_variant_ids[index] if index < len(item_variant_ids) else ""
+        qty = _dec(item_qtys[index] if index < len(item_qtys) else "0")
+        price = _dec(item_prices[index] if index < len(item_prices) else "0")
+        discount_pct = _discount_percent_value(item_discounts[index] if index < len(item_discounts) else "0")
+        items.append(
+            {
+                "producto_id": int(product_id),
+                "variante_id": int(variant_raw) if str(variant_raw or "").isdigit() else None,
+                "cantidad": f"{qty.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):.2f}",
+                "precio": f"{price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):.2f}",
+                "descuento_pct": f"{discount_pct:.2f}",
+            }
+        )
+    return {
+        "global_pct": f"{_discount_percent_value(form.get('descuento_global_pct')):.2f}",
+        "items": items,
+    }
+
+
+def _discount_payload_hash(payload: dict[str, object]) -> str:
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _discount_payload_has_discount(payload: dict[str, object]) -> bool:
+    if _discount_percent_value(payload.get("global_pct")) > 0:
+        return True
+    for item in payload.get("items", []):
+        if isinstance(item, dict) and _discount_percent_value(item.get("descuento_pct")) > 0:
+            return True
+    return False
+
+
 def _normalize_company_key(value: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", (value or "").strip().lower()).strip("_")
 
@@ -3194,8 +3290,35 @@ def _default_product_unit(db: Session) -> Optional[UnidadMedida]:
     return _default_unit_by_code(db, "UNIDAD")
 
 
+def _optional_form_int(value: object) -> Optional[int]:
+    raw = str(value or "").strip()
+    return int(raw) if raw.isdigit() else None
+
+
 def _default_weight_unit(db: Session) -> Optional[UnidadMedida]:
     return _default_unit_by_code(db, "LIBRAS")
+
+
+def _default_service_unit(db: Session) -> Optional[UnidadMedida]:
+    return _default_unit_by_code(db, "SERVICIO")
+
+
+def _racingmoto_service_line_segment(db: Session) -> tuple[Optional[Linea], Optional[Segmento]]:
+    service_line = db.query(Linea).filter(func.lower(Linea.linea) == "servicios de taller").first()
+    service_segment = db.query(Segmento).filter(func.lower(Segmento.segmento) == "mano de obra").first()
+    if not service_line:
+        service_line = db.query(Linea).filter(func.lower(Linea.linea) == "servicios").first()
+    if not service_segment:
+        service_segment = db.query(Segmento).filter(func.lower(Segmento.segmento) == "mantenimiento").first()
+    return service_line, service_segment
+
+
+def _workshop_services_query(db: Session):
+    service_line, _ = _racingmoto_service_line_segment(db)
+    query = db.query(Producto).filter(Producto.servicio_producto.is_(True))
+    if service_line and (get_active_company_key() or "").strip().lower() != "racingmoto":
+        query = query.filter(Producto.linea_id == service_line.id)
+    return query
 
 
 def _resolve_weight_unit(
@@ -10747,6 +10870,8 @@ def sales_page(
         interface_code = "restaurante"
     if interface_code == "comestibles":
         template_name = "sales_comestibles.html"
+    elif interface_code == "repuestos":
+        template_name = "sales_repuestos.html"
     elif interface_code == "zapatos":
         template_name = "sales_zapatos.html"
     elif interface_code == "restaurante":
@@ -10756,6 +10881,23 @@ def sales_page(
 
     restaurant_orders = []
     restaurant_tables = []
+    workshop_services = []
+    if interface_code == "repuestos":
+        service_rows = _workshop_services_query(db).filter(Producto.activo.is_(True)).order_by(Producto.descripcion.asc()).all()
+        if not service_rows and (get_active_company_key() or "").strip().lower() == "racingmoto":
+            _seed_racingmoto_workshop_services(db)
+            service_rows = _workshop_services_query(db).filter(Producto.activo.is_(True)).order_by(Producto.descripcion.asc()).all()
+        workshop_services = [
+            {
+                "id": int(producto.id),
+                "cod_producto": producto.cod_producto,
+                "descripcion": producto.descripcion,
+                "precio_cs": float(producto.precio_venta1 or 0),
+                "precio_usd": float(producto.precio_venta1_usd or 0),
+                "unidad": producto.unidad_medida.abreviatura if getattr(producto, "unidad_medida", None) else "serv",
+            }
+            for producto in service_rows
+        ]
     if interface_code == "restaurante" and branch and bodega:
         open_orders = (
             db.query(RestaurantOrder)
@@ -10805,6 +10947,7 @@ def sales_page(
             "initial_preventa": initial_preventa,
             "restaurant_orders": restaurant_orders,
             "restaurant_tables": restaurant_tables,
+            "workshop_services": workshop_services,
             "sales_interface_code": interface_code,
             "sale_datetime_override_enabled": _is_global_company(),
             "pacasholl_libreado_enabled": _is_pacasholl_company(),
@@ -23210,6 +23353,7 @@ def data_notificaciones_add_recipient(
     email: str = Form(...),
     name: Optional[str] = Form(None),
     sales_close_active: Optional[str] = Form(None),
+    discount_active: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -23226,6 +23370,7 @@ def data_notificaciones_add_recipient(
             name=name,
             active=True,
             sales_close_active=sales_close_active == "on",
+            discount_active=discount_active == "on",
         )
     )
     db.commit()
@@ -23240,6 +23385,7 @@ def data_notificaciones_update_recipient(
     name: Optional[str] = Form(None),
     active: Optional[str] = Form(None),
     sales_close_active: Optional[str] = Form(None),
+    discount_active: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -23251,6 +23397,7 @@ def data_notificaciones_update_recipient(
     recipient.name = name
     recipient.active = active == "on"
     recipient.sales_close_active = sales_close_active == "on"
+    recipient.discount_active = discount_active == "on"
     db.commit()
     return RedirectResponse("/data/notificaciones?success=Destinatario+actualizado", status_code=303)
 
@@ -23497,6 +23644,129 @@ def data_toggle_vendedor(
     return RedirectResponse("/data/vendedores?success=Vendedor+desactivado", status_code=303)
 
 
+@router.get("/data/servicios-taller")
+def data_servicios_taller(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    edit_id = request.query_params.get("edit_id")
+    error = request.query_params.get("error")
+    success = request.query_params.get("success")
+    edit_item = None
+    if (get_active_company_key() or "").strip().lower() == "racingmoto":
+        _seed_racingmoto_workshop_services(db)
+    if edit_id and str(edit_id).isdigit():
+        edit_item = db.query(Producto).filter(
+            Producto.id == int(edit_id),
+            Producto.servicio_producto.is_(True),
+        ).first()
+    items = _workshop_services_query(db).order_by(Producto.descripcion.asc()).all()
+    return request.app.state.templates.TemplateResponse(
+        "data_servicios_taller.html",
+        {
+            "request": request,
+            "user": user,
+            "items": items,
+            "edit_item": edit_item,
+            "error": error,
+            "success": success,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/data/servicios-taller")
+def data_servicios_taller_create(
+    request: Request,
+    cod_producto: str = Form(...),
+    descripcion: str = Form(...),
+    precio_venta1: str = Form("0"),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    code = (cod_producto or "").strip().upper()
+    name = (descripcion or "").strip()
+    if not code or not name:
+        return RedirectResponse("/data/servicios-taller?error=Codigo+y+nombre+requeridos", status_code=303)
+    exists = db.query(Producto).filter(func.lower(Producto.cod_producto) == code.lower()).first()
+    if exists:
+        return RedirectResponse("/data/servicios-taller?error=Codigo+ya+existe", status_code=303)
+    try:
+        price_cs = Decimal(str(precio_venta1 or "0").replace(",", "")).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        return RedirectResponse("/data/servicios-taller?error=Precio+invalido", status_code=303)
+    service_line, service_segment = _racingmoto_service_line_segment(db)
+    service_unit = _default_service_unit(db)
+    producto = Producto(
+        cod_producto=code,
+        descripcion=name,
+        linea_id=service_line.id if service_line else None,
+        segmento_id=service_segment.id if service_segment else None,
+        unidad_medida_id=service_unit.id if service_unit else None,
+        precio_venta1=max(price_cs, Decimal("0")),
+        costo_producto=Decimal("0"),
+        servicio_producto=True,
+        activo=True,
+        usuario_registro=user.full_name,
+    )
+    db.add(producto)
+    db.flush()
+    db.add(SaldoProducto(producto_id=producto.id, existencia=Decimal("0")))
+    db.commit()
+    return RedirectResponse("/data/servicios-taller?success=Servicio+creado", status_code=303)
+
+
+@router.post("/data/servicios-taller/{item_id}/update")
+def data_servicios_taller_update(
+    request: Request,
+    item_id: int,
+    cod_producto: str = Form(...),
+    descripcion: str = Form(...),
+    precio_venta1: str = Form("0"),
+    activo: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    producto = db.query(Producto).filter(
+        Producto.id == item_id,
+        Producto.servicio_producto.is_(True),
+    ).first()
+    if not producto:
+        return RedirectResponse("/data/servicios-taller?error=Servicio+no+existe", status_code=303)
+    code = (cod_producto or "").strip().upper()
+    name = (descripcion or "").strip()
+    if not code or not name:
+        return RedirectResponse("/data/servicios-taller?error=Codigo+y+nombre+requeridos", status_code=303)
+    duplicate = (
+        db.query(Producto)
+        .filter(func.lower(Producto.cod_producto) == code.lower(), Producto.id != item_id)
+        .first()
+    )
+    if duplicate:
+        return RedirectResponse("/data/servicios-taller?error=Codigo+ya+existe", status_code=303)
+    try:
+        price_cs = Decimal(str(precio_venta1 or "0").replace(",", "")).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        return RedirectResponse("/data/servicios-taller?error=Precio+invalido", status_code=303)
+    service_line, service_segment = _racingmoto_service_line_segment(db)
+    service_unit = _default_service_unit(db)
+    producto.cod_producto = code
+    producto.descripcion = name
+    producto.precio_venta1 = max(price_cs, Decimal("0"))
+    producto.costo_producto = Decimal("0")
+    producto.servicio_producto = True
+    producto.linea_id = service_line.id if service_line else producto.linea_id
+    producto.segmento_id = service_segment.id if service_segment else producto.segmento_id
+    producto.unidad_medida_id = service_unit.id if service_unit else producto.unidad_medida_id
+    producto.activo = activo == "on"
+    db.commit()
+    return RedirectResponse("/data/servicios-taller?success=Servicio+actualizado", status_code=303)
+
+
 @router.get("/data/bancos")
 def data_bancos(
     request: Request,
@@ -23686,14 +23956,21 @@ def data_bodegas(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.data.catalogs")
+    active_company = (get_active_company_key() or "").strip().lower()
+    racing_mode = active_company == "racingmoto"
     edit_id = request.query_params.get("edit_id")
     error = request.query_params.get("error")
     success = request.query_params.get("success")
     edit_item = None
     if edit_id:
         edit_item = db.query(Bodega).filter(Bodega.id == int(edit_id)).first()
-    items = db.query(Bodega).order_by(Bodega.name).all()
-    branches = db.query(Branch).order_by(Branch.name).all()
+    items_query = db.query(Bodega)
+    branches_query = db.query(Branch)
+    if racing_mode:
+        items_query = items_query.filter(func.lower(Bodega.code) == "central")
+        branches_query = branches_query.filter(func.lower(Branch.code) == "central")
+    items = items_query.order_by(Bodega.name).all()
+    branches = branches_query.order_by(Branch.name).all()
     return request.app.state.templates.TemplateResponse(
         "data_bodegas.html",
         {
@@ -23704,6 +23981,7 @@ def data_bodegas(
             "edit_item": edit_item,
             "error": error,
             "success": success,
+            "active_company": active_company,
             "version": settings.UI_VERSION,
         },
     )
@@ -23721,8 +23999,11 @@ def data_create_bodega(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.data.catalogs")
+    active_company = (get_active_company_key() or "").strip().lower()
     code = code.strip().lower()
     name = name.strip()
+    if active_company == "racingmoto" and code != "central":
+        return RedirectResponse("/data/bodegas?error=En+Racing+Motos+solo+se+permite+la+bodega+central", status_code=303)
     if not code or not name:
         return RedirectResponse("/data/bodegas?error=Datos+incompletos", status_code=303)
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
@@ -23763,11 +24044,14 @@ def data_update_bodega(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.data.catalogs")
+    active_company = (get_active_company_key() or "").strip().lower()
     bodega = db.query(Bodega).filter(Bodega.id == item_id).first()
     if not bodega:
         return RedirectResponse("/data/bodegas?error=Bodega+no+existe", status_code=303)
     code = code.strip().lower()
     name = name.strip()
+    if active_company == "racingmoto" and code != "central" and activo == "on":
+        return RedirectResponse("/data/bodegas?error=En+Racing+Motos+solo+Central+puede+estar+activa", status_code=303)
     if not code or not name:
         return RedirectResponse("/data/bodegas?error=Datos+incompletos", status_code=303)
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
@@ -24313,7 +24597,7 @@ def data_create_usuario(
     role_ids: Optional[list[int]] = Form(None),
     branch_id: Optional[int] = Form(None),
     bodega_id: Optional[int] = Form(None),
-    vendedor_id: Optional[int] = Form(None),
+    vendedor_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -24341,8 +24625,9 @@ def data_create_usuario(
     if not bool(bodega.activo):
         return RedirectResponse("/data/usuarios?error=Bodega+inactiva", status_code=303)
     vendedor = None
-    if vendedor_id:
-        vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first()
+    vendedor_id_int = _optional_form_int(vendedor_id)
+    if vendedor_id_int:
+        vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id_int, Vendedor.activo.is_(True)).first()
         if not vendedor:
             return RedirectResponse("/data/usuarios?error=Vendedor+no+valido", status_code=303)
         assignment_exists = (
@@ -24380,7 +24665,7 @@ def data_update_usuario(
     is_active: Optional[str] = Form(None),
     branch_id: Optional[int] = Form(None),
     bodega_id: Optional[int] = Form(None),
-    vendedor_id: Optional[int] = Form(None),
+    vendedor_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -24424,8 +24709,9 @@ def data_update_usuario(
     if not bool(bodega.activo):
         return RedirectResponse("/data/usuarios?error=Bodega+inactiva", status_code=303)
     vendedor = None
-    if vendedor_id:
-        vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first()
+    vendedor_id_int = _optional_form_int(vendedor_id)
+    if vendedor_id_int:
+        vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id_int, Vendedor.activo.is_(True)).first()
         if not vendedor:
             return RedirectResponse("/data/usuarios?error=Vendedor+no+valido", status_code=303)
         assignment_exists = (
@@ -26000,8 +26286,20 @@ def sales_invoice_pdf(
     pdf.drawRightString(x_price, y, "Total unds:")
     pdf.drawRightString(x_subtotal, y, _fmt_num(total_unidades))
     y -= 12
-    pdf.drawRightString(x_price, y, f"Total {currency_suffix}:")
+    subtotal_factura = float(getattr(factura, "subtotal_bruto_cs", None) or 0)
     total_factura = float(factura.total_cs or 0)
+    if subtotal_factura <= 0:
+        subtotal_factura = total_factura
+    descuento_factura = float(getattr(factura, "descuento_total_cs", None) or 0)
+    pdf.drawRightString(x_price, y, f"Subtotal {currency_suffix}:")
+    pdf.drawRightString(x_subtotal, y, _fmt_num(subtotal_factura))
+    y -= 12
+    pdf.setFont("Helvetica", 10)
+    pdf.drawRightString(x_price, y, f"Descuento {currency_suffix}:")
+    pdf.drawRightString(x_subtotal, y, _fmt_num(descuento_factura))
+    y -= 12
+    pdf.setFont("Helvetica-Bold", 10)
+    pdf.drawRightString(x_price, y, f"Total {currency_suffix}:")
     pdf.drawRightString(x_subtotal, y, _fmt_num(total_factura))
     total_factura_usd = float(factura.total_usd or 0)
     if total_factura_usd <= 0 and float(factura.tasa_cambio or 0) > 0:
@@ -26133,7 +26431,10 @@ def sales_ticket_print(
     moneda = "CS"
     currency_label = "C$"
     total_amount = float(factura.total_cs or 0)
-    subtotal_amount = total_amount
+    subtotal_amount = float(getattr(factura, "subtotal_bruto_cs", None) or 0)
+    if subtotal_amount <= 0:
+        subtotal_amount = total_amount
+    discount_amount = float(getattr(factura, "descuento_total_cs", None) or 0)
     usd_equivalent_amount = float(factura.total_usd or 0)
     if usd_equivalent_amount <= 0 and float(factura.tasa_cambio or 0) > 0:
         usd_equivalent_amount = total_amount / float(factura.tasa_cambio or 0)
@@ -26190,10 +26491,13 @@ def sales_ticket_print(
         line_count += len(desc_lines)
         if is_libreado_item and peso_lbs > 0:
             line_count += 1  # peso
+        if float(getattr(item, "descuento_cs", None) or 0) > 0:
+            line_count += 1  # descuento de linea
         line_count += 1  # qty/price/subtotal
         line_count += 1  # divider
         price = float(item.precio_unitario_cs or 0)
         subtotal = float(item.subtotal_cs or 0)
+        discount = float(getattr(item, "descuento_cs", None) or 0)
         items.append(
             {
                 "codigo": item.producto.cod_producto if item.producto else "-",
@@ -26203,6 +26507,7 @@ def sales_ticket_print(
                 "es_libreado": is_libreado_item,
                 "precio": price,
                 "subtotal": subtotal,
+                "descuento": discount,
             }
         )
 
@@ -26247,6 +26552,7 @@ def sales_ticket_print(
             "currency_label": currency_label,
             "total_amount": total_amount,
             "subtotal_amount": subtotal_amount,
+            "discount_amount": discount_amount,
             "show_usd_equivalent": usd_equivalent_amount > 0,
             "usd_equivalent_amount": usd_equivalent_amount,
             "saldo": saldo,
@@ -29557,9 +29863,13 @@ async def sales_create_invoice(
     item_qtys = form.getlist("item_cantidad")
     item_peso_lbs = form.getlist("item_peso_lbs")
     item_prices = form.getlist("item_precio")
+    item_discount_pcts = form.getlist("item_descuento_pct")
     item_roles = form.getlist("item_role")
     item_combo_groups = form.getlist("item_combo_group")
+    descuento_global_pct = _discount_percent_value(form.get("descuento_global_pct"))
+    descuento_token = (form.get("descuento_token") or "").strip()
     preventa_id_raw = str(form.get("preventa_id") or "").strip()
+    quick_print = str(form.get("quick_print") or "").strip() == "1"
     condicion_venta = (form.get("condicion_venta") or "CONTADO").strip().upper()
     if condicion_venta not in {"CONTADO", "CREDITO"}:
         condicion_venta = "CONTADO"
@@ -29713,6 +30023,7 @@ async def sales_create_invoice(
                     "price_usd": None,
                     "price_cs": None,
                     "price_input": to_float(item_prices[index] if index < len(item_prices) else 0),
+                    "discount_pct": _discount_percent_value(item_discount_pcts[index] if index < len(item_discount_pcts) else "0"),
                     "role": item_roles[index] if index < len(item_roles) else None,
                     "combo_group": item_combo_groups[index] if index < len(item_combo_groups) else None,
                 }
@@ -29721,8 +30032,35 @@ async def sales_create_invoice(
         db.rollback()
         return RedirectResponse("/sales?error=No+hay+items+validos", status_code=303)
 
+    discount_payload = _discount_authorization_payload_from_form(form)
+    discount_token_row = None
+    if _discount_payload_has_discount(discount_payload):
+        if not descuento_token:
+            db.rollback()
+            return RedirectResponse("/sales?error=Codigo+de+descuento+requerido", status_code=303)
+        discount_token_row = (
+            db.query(DiscountAuthorizationToken)
+            .filter(
+                DiscountAuthorizationToken.token == descuento_token,
+                DiscountAuthorizationToken.payload_hash == _discount_payload_hash(discount_payload),
+                DiscountAuthorizationToken.used_at.is_(None),
+            )
+            .order_by(DiscountAuthorizationToken.created_at.desc())
+            .first()
+        )
+        if not discount_token_row:
+            db.rollback()
+            return RedirectResponse("/sales?error=Codigo+de+descuento+invalido+o+la+factura+cambio", status_code=303)
+        if discount_token_row.expires_at < datetime.utcnow():
+            db.rollback()
+            return RedirectResponse("/sales?error=Codigo+de+descuento+expirado", status_code=303)
+
     total_usd = 0.0
     total_cs = 0.0
+    subtotal_bruto_usd_total = Decimal("0")
+    subtotal_bruto_cs_total = Decimal("0")
+    discount_items_usd_total = Decimal("0")
+    discount_items_cs_total = Decimal("0")
     total_items = 0.0
     total_cost_cs = Decimal("0")
     weighted_sales_enabled = _weighted_sales_enabled_mode(db)
@@ -29762,12 +30100,14 @@ async def sales_create_invoice(
             db.rollback()
             return RedirectResponse("/sales?error=Debes+definir+el+peso+a+facturar", status_code=303)
 
+        is_service_product = bool(getattr(producto, "servicio_producto", False))
         existencia = float(balances.get((producto.id, bodega.id), Decimal("0")) or 0)
-        if existencia < stock_qty:
+        if (not is_service_product) and existencia < stock_qty:
             db.rollback()
             mensaje = f"Stock+insuficiente+para+{producto.cod_producto}"
             return RedirectResponse(f"/sales?error={mensaje}", status_code=303)
-        balances[(producto.id, bodega.id)] = Decimal(str(existencia)) - to_decimal(stock_qty)
+        if not is_service_product:
+            balances[(producto.id, bodega.id)] = Decimal(str(existencia)) - to_decimal(stock_qty)
         if variant_id:
             variant = (
                 db.query(ShoeProductVariant)
@@ -29808,12 +30148,19 @@ async def sales_create_invoice(
                 precio_cs = price
                 precio_usd = price / tasa if tasa else 0
 
-        subtotal_usd = float(
-            Decimal(str(precio_usd * billable_qty)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        )
-        subtotal_cs = float(
-            Decimal(str(precio_cs * billable_qty)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        )
+        line_discount_pct = _discount_percent_value(src.get("discount_pct") or "0")
+        subtotal_bruto_usd = Decimal(str(precio_usd * billable_qty)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        subtotal_bruto_cs = Decimal(str(precio_cs * billable_qty)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        descuento_usd = (subtotal_bruto_usd * line_discount_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        descuento_cs = (subtotal_bruto_cs * line_discount_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        subtotal_usd_dec = max(Decimal("0"), subtotal_bruto_usd - descuento_usd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        subtotal_cs_dec = max(Decimal("0"), subtotal_bruto_cs - descuento_cs).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        subtotal_usd = float(subtotal_usd_dec)
+        subtotal_cs = float(subtotal_cs_dec)
+        subtotal_bruto_usd_total += subtotal_bruto_usd
+        subtotal_bruto_cs_total += subtotal_bruto_cs
+        discount_items_usd_total += descuento_usd
+        discount_items_cs_total += descuento_cs
         total_usd += subtotal_usd
         total_cs += subtotal_cs
         total_items += stock_qty
@@ -29832,6 +30179,11 @@ async def sales_create_invoice(
             peso_lbs=peso_lbs if peso_lbs > 0 else None,
             precio_unitario_usd=precio_usd,
             precio_unitario_cs=precio_cs,
+            descuento_porcentaje=line_discount_pct,
+            descuento_usd=descuento_usd,
+            descuento_cs=descuento_cs,
+            subtotal_bruto_usd=subtotal_bruto_usd,
+            subtotal_bruto_cs=subtotal_bruto_cs,
             subtotal_usd=subtotal_usd,
             subtotal_cs=subtotal_cs,
             combo_role=combo_role,
@@ -29841,8 +30193,21 @@ async def sales_create_invoice(
 
         # No usar saldo global; el stock se calcula por movimientos/bodega.
 
-    total_usd = float(Decimal(str(total_usd)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-    total_cs = float(Decimal(str(total_cs)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    net_after_item_discount_usd = Decimal(str(total_usd)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    net_after_item_discount_cs = Decimal(str(total_cs)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    descuento_global_usd = (net_after_item_discount_usd * descuento_global_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    descuento_global_cs = (net_after_item_discount_cs * descuento_global_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    total_discount_usd = (discount_items_usd_total + descuento_global_usd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    total_discount_cs = (discount_items_cs_total + descuento_global_cs).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    total_usd = float(max(Decimal("0"), net_after_item_discount_usd - descuento_global_usd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    total_cs = float(max(Decimal("0"), net_after_item_discount_cs - descuento_global_cs).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    factura.subtotal_bruto_usd = subtotal_bruto_usd_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    factura.subtotal_bruto_cs = subtotal_bruto_cs_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    factura.descuento_global_porcentaje = descuento_global_pct
+    factura.descuento_total_usd = total_discount_usd
+    factura.descuento_total_cs = total_discount_cs
+    if discount_token_row:
+        factura.descuento_autorizado_por = discount_token_row.solicitado_por
     factura.total_usd = total_usd
     factura.total_cs = total_cs
     factura.total_items = total_items
@@ -29890,7 +30255,8 @@ async def sales_create_invoice(
     if condicion_venta == "CREDITO":
         factura.estado_cobranza = "PENDIENTE"
     else:
-        if not pagos:
+        due_total = Decimal(str(total_usd if moneda == "USD" else total_cs)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if not pagos and due_total > 0:
             db.rollback()
             return RedirectResponse("/sales?error=Agrega+pagos+para+registrar", status_code=303)
         total_paid = sum(
@@ -29899,7 +30265,6 @@ async def sales_create_invoice(
             Decimal(str(pago.monto_cs or 0)) for pago in pagos
         )
         total_paid = total_paid.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        due_total = Decimal(str(total_usd if moneda == "USD" else total_cs)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if total_paid < due_total:
             db.rollback()
             return RedirectResponse("/sales?error=Pago+incompleto", status_code=303)
@@ -29908,6 +30273,9 @@ async def sales_create_invoice(
         preventa.estado = "FACTURADA"
         preventa.facturada_at = local_now_naive()
         preventa.venta_factura_id = factura.id
+    if discount_token_row:
+        discount_token_row.used_at = local_now_naive()
+        discount_token_row.factura_id = factura.id
     for pago in pagos:
         db.add(pago)
 
@@ -29940,7 +30308,7 @@ async def sales_create_invoice(
         .filter(PosPrintSetting.branch_id == branch.id)
         .first()
     )
-    if pos_print and pos_print.auto_print:
+    if pos_print and (pos_print.auto_print or quick_print):
         try:
             company_profile = _company_profile_payload(db)
             copies_to_print = max(int(pos_print.copies or 0), 2)
@@ -29957,6 +30325,164 @@ async def sales_create_invoice(
         f"/sales?success=Venta+registrada&print_id={factura.id}",
         status_code=303,
     )
+
+
+@router.post("/sales/discount/request")
+async def sales_discount_request(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    form = await request.form()
+    motivo = (form.get("motivo") or "").strip()
+    if not motivo:
+        return JSONResponse({"ok": False, "message": "Motivo requerido"}, status_code=400)
+
+    payload = _discount_authorization_payload_from_form(form)
+    if not _discount_payload_has_discount(payload):
+        return JSONResponse({"ok": False, "message": "No hay descuentos para autorizar"}, status_code=400)
+    if not payload.get("items"):
+        return JSONResponse({"ok": False, "message": "Agrega items a la factura"}, status_code=400)
+
+    config = db.query(EmailConfig).first()
+    if not config or not config.active:
+        return JSONResponse({"ok": False, "message": "Configura el correo emisor"}, status_code=400)
+    recipients = (
+        db.query(NotificationRecipient)
+        .filter(NotificationRecipient.active.is_(True), NotificationRecipient.discount_active.is_(True))
+        .all()
+    )
+    recipient_emails = [r.email for r in recipients]
+    if not recipient_emails:
+        return JSONResponse({"ok": False, "message": "No hay destinatarios activos para descuentos"}, status_code=400)
+
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        return JSONResponse({"ok": False, "message": "Usuario sin sucursal/bodega asignada"}, status_code=400)
+
+    product_ids = [
+        int(item["producto_id"])
+        for item in payload.get("items", [])
+        if isinstance(item, dict) and str(item.get("producto_id") or "").isdigit()
+    ]
+    productos = {
+        int(p.id): p
+        for p in db.query(Producto).filter(Producto.id.in_(set(product_ids))).all()
+    } if product_ids else {}
+    global_pct = _discount_percent_value(payload.get("global_pct"))
+    subtotal_bruto = Decimal("0")
+    descuento_items = Decimal("0")
+    rows_html = []
+    for item in payload.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        producto = productos.get(int(item.get("producto_id") or 0))
+        qty = Decimal(str(item.get("cantidad") or "0"))
+        price = Decimal(str(item.get("precio") or "0"))
+        line_pct = _discount_percent_value(item.get("descuento_pct"))
+        gross = (qty * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        line_discount = (gross * line_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        subtotal_bruto += gross
+        descuento_items += line_discount
+        codigo = html_lib.escape(producto.cod_producto if producto else str(item.get("producto_id") or ""))
+        descripcion = html_lib.escape(producto.descripcion if producto else "Producto")
+        rows_html.append(
+            f"""
+            <tr>
+              <td style="padding:7px 8px;border-bottom:1px solid #fee2e2;">{codigo}</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #fee2e2;">{descripcion}</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #fee2e2;text-align:right;">{qty:,.2f}</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #fee2e2;text-align:right;">C$ {price:,.2f}</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #fee2e2;text-align:right;">{line_pct:,.2f}%</td>
+              <td style="padding:7px 8px;border-bottom:1px solid #fee2e2;text-align:right;">C$ {line_discount:,.2f}</td>
+            </tr>
+            """
+        )
+    subtotal_neto_items = max(Decimal("0"), subtotal_bruto - descuento_items)
+    descuento_global = (subtotal_neto_items * global_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    descuento_total = (descuento_items + descuento_global).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    total_final = max(Decimal("0"), subtotal_bruto - descuento_total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    payload_hash = _discount_payload_hash(payload)
+    token = _generate_token()
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    db.add(
+        DiscountAuthorizationToken(
+            token=token,
+            payload_hash=payload_hash,
+            payload_json=json.dumps(payload, ensure_ascii=False, sort_keys=True),
+            motivo=motivo,
+            solicitado_por=user.full_name,
+            expires_at=expires_at,
+        )
+    )
+    db.commit()
+
+    last_factura = (
+        db.query(VentaFactura)
+        .filter(VentaFactura.bodega_id == bodega.id)
+        .order_by(VentaFactura.secuencia.desc())
+        .first()
+    )
+    next_seq = (last_factura.secuencia if last_factura else 0) + 1
+    numero_estimado = f"{_branch_sales_series_letter(branch.code)}-{next_seq:06d}"
+    cliente_label = (form.get("cliente_label") or "Consumidor final").strip()
+    vendedor_label = (form.get("vendedor_label") or user.full_name or "-").strip()
+
+    html_body = f"""
+    <div style="font-family:Arial,sans-serif;background:#fff7f7;padding:24px;">
+      <div style="max-width:840px;margin:0 auto;background:#ffffff;border-radius:18px;padding:28px;border:1px solid #fecaca;">
+        <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#991b1b;">Solicitud de aplicacion de descuento</div>
+        <h2 style="margin:6px 0 4px;color:#7f1d1d;">Factura estimada {numero_estimado}</h2>
+        <div style="color:#6b7280;font-size:14px;">Sucursal: <strong>{html_lib.escape(branch.name)}</strong> | Bodega: <strong>{html_lib.escape(bodega.name)}</strong></div>
+
+        <div style="background:#fee2e2;border:1px solid #fecaca;border-radius:14px;padding:14px;text-align:center;margin:18px 0;">
+          <div style="font-size:12px;text-transform:uppercase;color:#991b1b;">Codigo de autorizacion</div>
+          <div style="font-size:28px;font-weight:800;color:#7f1d1d;letter-spacing:4px;margin-top:6px;">{token}</div>
+          <div style="font-size:12px;color:#7f1d1d;margin-top:6px;">Valido por 10 minutos y solo para esta combinacion de productos, precios y descuentos.</div>
+        </div>
+
+        <table style="width:100%;font-size:14px;color:#333;margin-bottom:16px;">
+          <tr><td>Cliente:</td><td><strong>{html_lib.escape(cliente_label)}</strong></td></tr>
+          <tr><td>Vendedor:</td><td>{html_lib.escape(vendedor_label)}</td></tr>
+          <tr><td>Usuario solicitante:</td><td>{html_lib.escape(user.full_name or user.email or '-')}</td></tr>
+          <tr><td>Motivo:</td><td><strong>{html_lib.escape(motivo)}</strong></td></tr>
+        </table>
+
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#7f1d1d;color:#fff;text-align:left;">
+              <th style="padding:7px 8px;">Codigo</th>
+              <th style="padding:7px 8px;">Producto</th>
+              <th style="padding:7px 8px;text-align:right;">Cant.</th>
+              <th style="padding:7px 8px;text-align:right;">Precio</th>
+              <th style="padding:7px 8px;text-align:right;">Desc.</th>
+              <th style="padding:7px 8px;text-align:right;">Monto desc.</th>
+            </tr>
+          </thead>
+          <tbody>{''.join(rows_html)}</tbody>
+        </table>
+
+        <div style="margin-top:18px;background:#fff7f7;border:1px solid #fecaca;border-radius:14px;padding:14px;">
+          <div style="display:flex;justify-content:space-between;"><span>Subtotal bruto</span><strong>C$ {subtotal_bruto:,.2f}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Descuento por items</span><strong>C$ {descuento_items:,.2f}</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Descuento global ({global_pct:,.2f}%)</span><strong>C$ {descuento_global:,.2f}</strong></div>
+          <div style="display:flex;justify-content:space-between;font-size:18px;color:#7f1d1d;margin-top:8px;"><span>Total final</span><strong>C$ {total_final:,.2f}</strong></div>
+        </div>
+      </div>
+    </div>
+    """
+    send_error = _send_reversion_email(
+        subject=f"Autorizacion descuento {numero_estimado}",
+        html_body=html_body,
+        recipients=recipient_emails,
+        sender_email=config.sender_email,
+        sender_name=config.sender_name,
+    )
+    if send_error:
+        return JSONResponse({"ok": False, "message": send_error}, status_code=500)
+    return JSONResponse({"ok": True, "message": "Codigo enviado", "expires_minutes": 10})
 
 
 @router.get("/sales/cobranza")
@@ -31316,6 +31842,8 @@ def inventory_import_products(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.inventory.productos")
+    active_company = (get_active_company_key() or "").strip().lower()
+    racing_mode = active_company == "racingmoto"
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         target = redirect_to or "/inventory"
         return RedirectResponse(f"{target}?error=Archivo+Excel+(.xlsx)+requerido", status_code=303)
@@ -31368,8 +31896,8 @@ def inventory_import_products(
     idx_costo_usd = col_idx("costo_usd", "costo_producto_usd", "costo")
     idx_precio_usd = col_idx("precio_usd", "precio_venta1_usd")
     idx_precio_cs = col_idx("precio_cs", "precio_cordobas", "precio_venta1")
-    idx_saldo_central = col_idx("saldo_central", "existencia_central")
-    idx_saldo_esteli = col_idx("saldo_esteli", "existencia_esteli")
+    idx_saldo_central = col_idx("saldo_central", "existencia_central", "saldo", "existencia") if racing_mode else col_idx("saldo_central", "existencia_central")
+    idx_saldo_esteli = None if racing_mode else col_idx("saldo_esteli", "existencia_esteli")
 
     if idx_codigo is None or idx_desc is None:
         target = redirect_to or "/inventory"
@@ -31382,12 +31910,14 @@ def inventory_import_products(
     )
     if not bodega_central:
         bodega_central = next((b for b in bodegas if "central" in (b.name or "").lower()), None)
-    bodega_esteli = next(
-        (b for b in bodegas if (b.code or "").lower() == "esteli"),
-        None,
-    )
-    if not bodega_esteli:
-        bodega_esteli = next((b for b in bodegas if "esteli" in (b.name or "").lower()), None)
+    bodega_esteli = None
+    if not racing_mode:
+        bodega_esteli = next(
+            (b for b in bodegas if (b.code or "").lower() == "esteli"),
+            None,
+        )
+        if not bodega_esteli:
+            bodega_esteli = next((b for b in bodegas if "esteli" in (b.name or "").lower()), None)
 
     ingreso_tipo = (
         db.query(IngresoTipo)
@@ -31560,6 +32090,7 @@ def inventory_import_template(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.inventory.productos")
+    active_company = (get_active_company_key() or "").strip().lower()
     headers = [
         "codigo",
         "descripcion",
@@ -31569,8 +32100,9 @@ def inventory_import_template(
         "precio_usd",
         "precio_cs",
         "saldo_central",
-        "saldo_esteli",
     ]
+    if active_company != "racingmoto":
+        headers.append("saldo_esteli")
     wb = Workbook()
     ws = wb.active
     ws.title = "Inventario"

@@ -1,0 +1,1448 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .rm-shell {
+    --rm-accent: #0f766e;
+    --rm-accent-soft: #ccfbf1;
+    --rm-line: #d6dee4;
+    --rm-ink: #17202a;
+    --rm-muted: #64748b;
+  }
+  .rm-toolbar {
+    background: #ffffff;
+    border-bottom: 1px solid var(--rm-line);
+  }
+  .rm-kpi {
+    border: 1px solid var(--rm-line);
+    background: #f8fafc;
+    border-radius: 8px;
+    min-height: 52px;
+  }
+  .rm-grid-wrap {
+    border: 1px solid var(--rm-line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .rm-grid {
+    table-layout: fixed;
+    margin: 0;
+  }
+  .rm-grid th {
+    background: #eef5f4;
+    color: #334155;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  .rm-grid td,
+  .rm-grid th {
+    padding: 0.48rem 0.55rem;
+    vertical-align: middle;
+    border-color: #e5e9ed;
+  }
+  .rm-search-row td {
+    background: #ffffff;
+    border-bottom: 2px solid var(--rm-accent);
+  }
+  .rm-search-input {
+    width: 100%;
+    border: 0;
+    outline: none;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--rm-ink);
+    background: transparent;
+  }
+  .rm-search-input::placeholder {
+    color: #94a3b8;
+    font-weight: 600;
+  }
+  .rm-result-row {
+    cursor: pointer;
+  }
+  .rm-result-row.active,
+  .rm-result-row:hover {
+    background: #ecfeff;
+  }
+  .rm-invoice-row {
+    background: #fbfdfd;
+  }
+  .rm-invoice-row input {
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    padding: 0.2rem 0.3rem;
+  }
+  .rm-invoice-row input:focus {
+    border-color: var(--rm-accent);
+    background: #fff;
+    outline: none;
+  }
+  .rm-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: var(--rm-accent-soft);
+    color: #115e59;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.18rem 0.5rem;
+  }
+  .rm-code {
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .rm-muted {
+    color: var(--rm-muted);
+  }
+  .rm-total {
+    color: var(--rm-accent);
+    font-weight: 800;
+  }
+  .rm-icon-btn {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+  }
+  .rm-pay-methods {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.55rem;
+  }
+  .rm-pay-method {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--rm-line);
+    background: #fff;
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
+    text-align: left;
+    font-weight: 700;
+    color: #334155;
+  }
+  .rm-pay-method::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 4px;
+    background: transparent;
+  }
+  .rm-pay-method::after {
+    content: "";
+    position: absolute;
+    top: 8px;
+    right: 9px;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+  }
+  .rm-pay-method.active {
+    border-color: #0f766e;
+    background: linear-gradient(180deg, #ccfbf1 0%, #f0fdfa 100%);
+    color: #115e59;
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.18);
+    padding-right: 2.2rem;
+  }
+  .rm-pay-method.active::before {
+    background: #0f766e;
+  }
+  .rm-pay-method.active::after {
+    content: "\2713";
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-color: #0f766e;
+    background: #0f766e;
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 900;
+  }
+  .rm-pay-method.active .rm-pay-selected-text {
+    display: block;
+  }
+  .rm-pay-selected-text {
+    display: none;
+    margin-top: 0.15rem;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    color: #0f766e;
+    letter-spacing: 0;
+  }
+  .rm-service-row {
+    border: 1px solid var(--rm-line);
+    border-radius: 8px;
+    padding: 0.65rem;
+    background: #fff;
+  }
+  .rm-service-order-row {
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    border-radius: 8px;
+    padding: 0.55rem 0.65rem;
+  }
+  .rm-service-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 0.12rem 0.45rem;
+  }
+  .rm-discount-row {
+    border: 1px solid #fecaca;
+    background: #fff7f7;
+    border-radius: 8px;
+    padding: 0.65rem;
+  }
+  .rm-discount-row input {
+    max-width: 92px;
+  }
+  .rm-discount-summary {
+    border: 1px solid #fecaca;
+    background: #fff1f2;
+    border-radius: 8px;
+  }
+</style>
+
+<div id="layout" class="rm-shell min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 p-lg-5">
+    <form id="repuestos-sales-form" method="post" action="/sales">
+      <input type="hidden" name="cliente_id" id="cliente-id-hidden" value="" />
+      <input type="hidden" name="fecha" id="venta-fecha" />
+      <input type="hidden" name="moneda" id="venta-moneda" value="CS" />
+      <input type="hidden" name="condicion_venta" value="CONTADO" />
+      <input type="hidden" name="quick_print" id="quick-print" value="0" />
+      <input type="hidden" name="descuento_global_pct" id="discount-global-hidden" value="0" />
+      <input type="hidden" name="descuento_token" id="discount-token-hidden" value="" />
+      <input type="hidden" id="payment-forma-id" value="" />
+      <div id="items-hidden"></div>
+      <div id="payment-hidden"></div>
+
+      <div class="rm-toolbar sticky top-0 z-30 mb-3 px-3 py-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div class="d-flex align-items-center gap-2">
+            <button class="toggle-sidebar btn btn-outline-secondary rm-icon-btn" type="button" aria-label="Ocultar menu">
+              <i class="bi bi-list"></i>
+            </button>
+            <div>
+              <div class="h5 mb-0">Racing Motos</div>
+              <div class="small rm-muted">Venta de repuestos</div>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <a class="btn btn-outline-secondary btn-sm" href="/sales/cobranza">Cobranza</a>
+            <a class="btn btn-outline-secondary btn-sm" href="/sales/cierre">Cierre</a>
+            <button id="open-service-modal" class="btn btn-warning btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#service-modal">
+              <i class="bi bi-tools"></i>
+              Servicios de Taller
+            </button>
+            <button id="open-discount-modal" class="btn btn-outline-danger btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#discount-modal">
+              <i class="bi bi-percent"></i>
+              Descuentos
+            </button>
+            <button id="quick-pay-print" class="btn btn-primary btn-sm" type="button" data-open-payment="1" data-quick-print="1" title="Cobra, registra e imprime ticket POS">
+              <i class="bi bi-printer-fill"></i>
+              Pago rapido e imprimir
+            </button>
+            <button id="register-sale" class="btn btn-outline-primary btn-sm" type="button" data-open-payment="1" data-quick-print="0">
+              <i class="bi bi-receipt-cutoff"></i>
+              Cobrar sin imprimir
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger py-2">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success py-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <span>{{ success }}</span>
+        {% if print_id %}
+        <a id="sales-print-ticket" class="btn btn-sm btn-success" href="/sales/{{ print_id }}/ticket/print?copies=2&return_to=/sales" target="_blank" rel="noopener">
+          Ticket POS
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-3">
+          <div class="rm-kpi px-3 py-2">
+            <div class="small text-uppercase rm-muted">Factura</div>
+            <div class="fw-bold">{{ next_invoice or "Auto" }}</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="rm-kpi px-3 py-2">
+            <div class="small text-uppercase rm-muted">Bodega</div>
+            <div class="fw-bold">{{ user.default_bodega.name if user.default_bodega else "-" }}</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="rm-kpi px-3 py-2">
+            <div class="small text-uppercase rm-muted">Items</div>
+            <div id="items-count" class="fw-bold">0</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="rm-kpi px-3 py-2">
+            <div class="small text-uppercase rm-muted">Total</div>
+            <div id="grand-total" class="rm-total">C$ 0.00</div>
+            <div id="discount-total-label" class="small text-danger fw-semibold"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="odoo-field-label">Vendedor</label>
+          <select id="vendedor-select" name="vendedor_id" class="form-select odoo-input" required>
+            {% for vendedor in vendedores %}
+            <option value="{{ vendedor.id }}" {% if default_vendedor_id == vendedor.id %}selected{% endif %}>{{ vendedor.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="odoo-field-label">Cliente</label>
+          <select id="cliente-select" class="form-select odoo-input">
+            <option value="">Consumidor final</option>
+            {% for cliente in clientes_preview %}
+            <option value="{{ cliente.id }}">{{ cliente.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="odoo-field-label">Metodo de pago inicial</label>
+          <select id="forma-pago-select" class="form-select odoo-input" required>
+            {% for forma in formas_pago %}
+            <option value="{{ forma.id }}" {% if 'efectivo' in forma.nombre|lower %}selected{% endif %}>{{ forma.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="rm-grid-wrap">
+        <div class="table-responsive" style="max-height: calc(100vh - 300px);">
+          <table class="table table-sm rm-grid align-middle">
+            <colgroup>
+              <col style="width: 14%;">
+              <col style="width: 34%;">
+              <col style="width: 10%;">
+              <col style="width: 10%;">
+              <col style="width: 10%;">
+              <col style="width: 11%;">
+              <col style="width: 11%;">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Codigo</th>
+                <th>Articulo</th>
+                <th class="text-end">Exist.</th>
+                <th>Unidad</th>
+                <th class="text-end">Cant.</th>
+                <th class="text-end">Precio</th>
+                <th class="text-end">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody id="repuestos-grid-body">
+              <tr class="rm-search-row">
+                <td colspan="7">
+                  <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-search text-brand"></i>
+                    <input id="grid-search" class="rm-search-input" type="text" autocomplete="off" autofocus
+                      placeholder="Digite codigo o nombre del articulo y presione Enter" />
+                    <span id="search-status" class="small rm-muted text-nowrap">Listo</span>
+                  </div>
+                </td>
+              </tr>
+              <tr id="grid-empty-row">
+                <td colspan="7" class="text-center rm-muted py-4">La factura esta vacia. Busca un articulo para iniciar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </form>
+  </main>
+</div>
+
+<div class="modal fade" id="discount-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs text-uppercase rm-muted fw-bold">Autorizacion requerida</div>
+          <div class="h5 mb-0 d-flex align-items-center gap-2">
+            <i class="bi bi-percent text-danger"></i>
+            Descuentos de factura
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <div class="row g-4">
+          <div class="col-lg-7">
+            <div class="odoo-card">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                <div class="odoo-section-title mb-0">Descuento por item</div>
+                <span class="small rm-muted">Porcentaje autorizado por linea</span>
+              </div>
+              <div id="discount-items-list" class="d-grid gap-2">
+                <div class="text-center text-muted py-3">Agrega articulos para aplicar descuentos.</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3">Descuento global</div>
+              <label class="odoo-field-label">Porcentaje global sobre toda la factura</label>
+              <div class="input-group mb-3">
+                <input id="discount-global-pct" class="form-control odoo-input" type="number" min="0" max="100" step="1" value="0" />
+                <span class="input-group-text">%</span>
+              </div>
+              <div class="rm-discount-summary p-3 mb-3">
+                <div class="d-flex justify-content-between mb-1">
+                  <span>Subtotal bruto</span>
+                  <strong id="discount-subtotal-label">C$ 0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-1">
+                  <span>Descuento items</span>
+                  <strong id="discount-items-total-label">C$ 0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-1">
+                  <span>Descuento global</span>
+                  <strong id="discount-global-total-label">C$ 0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between mt-2 fs-5 text-danger">
+                  <span>Total final</span>
+                  <strong id="discount-final-total-label">C$ 0.00</strong>
+                </div>
+              </div>
+              <label class="odoo-field-label">Motivo para autorizar</label>
+              <textarea id="discount-reason" class="form-control odoo-input mb-3" rows="3" placeholder="Ej. Promocion autorizada, cliente frecuente, ajuste comercial"></textarea>
+              <div class="d-flex gap-2 mb-3">
+                <button id="request-discount-code" class="btn btn-outline-danger" type="button">
+                  <i class="bi bi-envelope-paper"></i>
+                  Solicitar codigo
+                </button>
+              </div>
+              <label class="odoo-field-label">Codigo recibido</label>
+              <input id="discount-token-input" class="form-control odoo-input" placeholder="Ingresa el codigo de correo" />
+              <div id="discount-status" class="small mt-2"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="apply-discount-config" type="button" class="btn btn-danger">
+          <i class="bi bi-check2-circle"></i>
+          Aplicar descuentos
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="service-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs text-uppercase rm-muted fw-bold">Orden de servicios</div>
+          <div class="h5 mb-0 d-flex align-items-center gap-2">
+            <i class="bi bi-tools text-warning"></i>
+            Servicios de mantenimiento y taller
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <div class="row g-4">
+          <div class="col-lg-7">
+            <div class="odoo-card">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                <div class="odoo-section-title mb-0">Catalogo de servicios</div>
+                <a class="btn btn-outline-secondary btn-sm" href="/data/servicios-taller" target="_blank" rel="noopener">
+                  <i class="bi bi-pencil-square"></i>
+                  Administrar
+                </a>
+              </div>
+              <input id="service-search" class="form-control odoo-input mb-3" placeholder="Buscar servicio de taller" autocomplete="off" />
+              <div id="service-list" class="d-grid gap-2">
+                {% for service in workshop_services %}
+                  <div class="rm-service-row" data-service-row="{{ service.id }}">
+                    <div class="d-flex flex-wrap align-items-start justify-content-between gap-2">
+                      <div>
+                        <div class="fw-bold">{{ service.cod_producto }}</div>
+                        <div>{{ service.descripcion }}</div>
+                        <div class="small text-muted">Precio base: C$ {{ "{:,.2f}".format(service.precio_cs or 0) }}</div>
+                      </div>
+                      <div class="d-flex align-items-center gap-2">
+                        <input class="form-control form-control-sm text-end" style="width:110px" type="number" min="0" step="0.01" value="{{ '%.2f'|format(service.precio_cs or 0) }}" data-service-price="{{ service.id }}" />
+                        <label class="form-check small mb-0">
+                          <input class="form-check-input" type="checkbox" data-service-free="{{ service.id }}" />
+                          Gratis
+                        </label>
+                        <button class="btn btn-sm btn-warning" type="button" data-add-service="{{ service.id }}">
+                          <i class="bi bi-plus-lg"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                {% else %}
+                  <div class="text-center text-muted py-3">Sin servicios disponibles.</div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3">Orden levantada</div>
+              <div id="service-order-list" class="d-grid gap-2">
+                <div class="text-center text-muted py-3">Sin servicios seleccionados.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="apply-service-order" type="button" class="btn btn-warning">
+          <i class="bi bi-plus-circle"></i>
+          Cargar servicios al grid
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="payment-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs text-uppercase rm-muted fw-bold">Procesar pago</div>
+          <div class="h5 mb-0 d-flex align-items-center gap-2">
+            <i class="bi bi-credit-card-2-front text-brand"></i>
+            Cobro y ticket POS
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <div class="row g-4">
+          <div class="col-lg-5">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3">Resumen</div>
+              <div class="d-flex justify-content-between mb-2">
+                <span class="rm-muted">Cliente</span>
+                <strong id="pay-client-label">Consumidor final</strong>
+              </div>
+              <div class="d-flex justify-content-between mb-2">
+                <span class="rm-muted">Vendedor</span>
+                <strong id="pay-vendor-label">-</strong>
+              </div>
+              <div class="d-flex justify-content-between mb-2">
+                <span class="rm-muted">Factura</span>
+                <strong>{{ next_invoice or "Auto" }}</strong>
+              </div>
+              <div class="rounded-3 border border-slate-200 p-3 mt-3">
+                <div class="d-flex justify-content-between mb-2">
+                  <span class="fw-semibold rm-muted">Subtotal bruto</span>
+                  <strong id="pay-subtotal-label">C$ 0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                  <span class="fw-semibold rm-muted">Descuentos</span>
+                  <strong id="pay-discount-label" class="text-danger">C$ 0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <span class="fw-semibold rm-muted">Total venta</span>
+                  <strong id="pay-total-label" class="rm-total">C$ 0.00</strong>
+                </div>
+                <div class="d-flex justify-content-between mt-2">
+                  <span class="fw-semibold rm-muted">Monto aplicado</span>
+                  <strong id="pay-applied-label">C$ 0.00</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-7">
+            <div class="odoo-card">
+              <div class="odoo-section-title mb-3">Forma de pago</div>
+              <div class="d-flex align-items-center justify-content-between gap-2 rounded-3 border border-slate-200 bg-slate-50 px-3 py-2 mb-3">
+                <span class="small rm-muted fw-semibold">Seleccionado</span>
+                <strong id="selected-payment-label">Sin seleccionar</strong>
+              </div>
+              <div class="rm-pay-methods mb-3">
+                {% for forma in formas_pago %}
+                <button type="button" class="rm-pay-method" data-forma-id="{{ forma.id }}" data-forma-label="{{ forma.nombre }}" aria-pressed="false">
+                  {% if "efectivo" in forma.nombre|lower %}
+                  <i class="bi bi-cash-coin me-1"></i>
+                  {% elif "tarjeta" in forma.nombre|lower %}
+                  <i class="bi bi-credit-card me-1"></i>
+                  {% elif "banco" in forma.nombre|lower or "transferencia" in forma.nombre|lower or "deposito" in forma.nombre|lower %}
+                  <i class="bi bi-bank me-1"></i>
+                  {% else %}
+                  <i class="bi bi-wallet2 me-1"></i>
+                  {% endif %}
+                  {{ forma.nombre }}
+                  <span class="rm-pay-selected-text">Metodo seleccionado</span>
+                </button>
+                {% endfor %}
+              </div>
+              <div class="row g-3">
+                <div class="col-md-3">
+                  <label class="odoo-field-label">Moneda</label>
+                  <select id="pago-moneda" class="form-select odoo-input">
+                    <option value="CS">C$</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="odoo-field-label">Monto</label>
+                  <input id="pago-monto" class="form-control odoo-input" type="text" inputmode="decimal" placeholder="C$ 0.00" />
+                </div>
+                <div class="col-md-3">
+                  <label class="odoo-field-label">Banco</label>
+                  <select id="banco-select" class="form-select odoo-input">
+                    <option value="">Selecciona</option>
+                    {% for banco in bancos %}
+                    <option value="{{ banco.id }}">{{ banco.nombre }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="odoo-field-label">Cuenta</label>
+                  <select id="cuenta-select" class="form-select odoo-input">
+                    <option value="">Selecciona</option>
+                    {% for cuenta in cuentas %}
+                    <option value="{{ cuenta.id }}" data-banco="{{ cuenta.banco_id }}" data-moneda="{{ cuenta.moneda }}">{{ cuenta.banco.nombre }} - {{ cuenta.moneda }} {{ cuenta.cuenta or 'Pendiente' }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="confirm-payment" type="button" class="btn btn-primary">
+          <i class="bi bi-check2-circle"></i>
+          Confirmar pago
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const layout = document.getElementById("layout");
+  document.querySelectorAll(".toggle-sidebar").forEach((button) => {
+    button.addEventListener("click", () => layout?.classList.toggle("sidebar-collapsed"));
+  });
+
+  const activeBodegaId = Number({{ user.default_bodega.id if user.default_bodega else 0 }}) || 0;
+  const rateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
+  const gridBody = document.getElementById("repuestos-grid-body");
+  const searchInput = document.getElementById("grid-search");
+  const statusLabel = document.getElementById("search-status");
+  const emptyRow = document.getElementById("grid-empty-row");
+  const itemsHidden = document.getElementById("items-hidden");
+  const paymentHidden = document.getElementById("payment-hidden");
+  const totalLabel = document.getElementById("grand-total");
+  const discountTotalLabel = document.getElementById("discount-total-label");
+  const itemsCount = document.getElementById("items-count");
+  const form = document.getElementById("repuestos-sales-form");
+  const clienteSelect = document.getElementById("cliente-select");
+  const clienteHidden = document.getElementById("cliente-id-hidden");
+  const vendedorSelect = document.getElementById("vendedor-select");
+  const formaPagoSelect = document.getElementById("forma-pago-select");
+  const paymentFormaId = document.getElementById("payment-forma-id");
+  const selectedPaymentLabel = document.getElementById("selected-payment-label");
+  const fechaInput = document.getElementById("venta-fecha");
+  const quickPrintInput = document.getElementById("quick-print");
+  const discountGlobalHidden = document.getElementById("discount-global-hidden");
+  const discountTokenHidden = document.getElementById("discount-token-hidden");
+  const discountModalEl = document.getElementById("discount-modal");
+  const discountItemsList = document.getElementById("discount-items-list");
+  const discountGlobalPctInput = document.getElementById("discount-global-pct");
+  const discountReasonInput = document.getElementById("discount-reason");
+  const discountTokenInput = document.getElementById("discount-token-input");
+  const requestDiscountCode = document.getElementById("request-discount-code");
+  const applyDiscountConfig = document.getElementById("apply-discount-config");
+  const discountStatus = document.getElementById("discount-status");
+  const discountSubtotalLabel = document.getElementById("discount-subtotal-label");
+  const discountItemsTotalLabel = document.getElementById("discount-items-total-label");
+  const discountGlobalTotalLabel = document.getElementById("discount-global-total-label");
+  const discountFinalTotalLabel = document.getElementById("discount-final-total-label");
+  const serviceSearch = document.getElementById("service-search");
+  const serviceList = document.getElementById("service-list");
+  const serviceOrderList = document.getElementById("service-order-list");
+  const applyServiceOrder = document.getElementById("apply-service-order");
+  const serviceModalEl = document.getElementById("service-modal");
+  const paymentModalEl = document.getElementById("payment-modal");
+  const confirmPayment = document.getElementById("confirm-payment");
+  const pagoMoneda = document.getElementById("pago-moneda");
+  const pagoMonto = document.getElementById("pago-monto");
+  const bancoSelect = document.getElementById("banco-select");
+  const cuentaSelect = document.getElementById("cuenta-select");
+  const payTotalLabel = document.getElementById("pay-total-label");
+  const paySubtotalLabel = document.getElementById("pay-subtotal-label");
+  const payDiscountLabel = document.getElementById("pay-discount-label");
+  const payAppliedLabel = document.getElementById("pay-applied-label");
+  const payClientLabel = document.getElementById("pay-client-label");
+  const payVendorLabel = document.getElementById("pay-vendor-label");
+
+  let searchTimer = null;
+  let results = [];
+  let selectedResultIndex = -1;
+  const invoiceItems = new Map();
+  const workshopServices = {{ (workshop_services or []) | tojson }};
+  let serviceOrderItems = [];
+  let globalDiscountPct = 0;
+  let discountToken = "";
+
+  const money = (value) => {
+    const number = Number(value || 0);
+    return `C$ ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(number)}`;
+  };
+
+  const clampPercent = (value) => Math.min(100, Math.max(0, numeric(value)));
+
+  const discountBreakdown = () => {
+    const items = Array.from(invoiceItems.values());
+    const gross = items.reduce((acc, item) => acc + item.qty * item.price, 0);
+    const itemDiscount = items.reduce((acc, item) => {
+      const pct = clampPercent(item.discountPct || 0);
+      return acc + (item.qty * item.price * pct / 100);
+    }, 0);
+    const afterItems = Math.max(0, gross - itemDiscount);
+    const globalDiscount = afterItems * clampPercent(globalDiscountPct || 0) / 100;
+    const totalDiscount = itemDiscount + globalDiscount;
+    const net = Math.max(0, gross - totalDiscount);
+    return { gross, itemDiscount, globalDiscount, totalDiscount, net };
+  };
+
+  const totalCsValue = () => discountBreakdown().net;
+
+  const clearDiscountAuthorization = () => {
+    discountToken = "";
+    if (discountTokenHidden) discountTokenHidden.value = "";
+    if (discountTokenInput) discountTokenInput.value = "";
+    if (discountStatus) {
+      discountStatus.textContent = "Descuento pendiente de autorizacion.";
+      discountStatus.className = "small mt-2 text-danger";
+    }
+  };
+
+  const amountForCurrency = (currency) => {
+    const totalCs = totalCsValue();
+    if (currency === "USD") {
+      return rateToday ? totalCs / rateToday : 0;
+    }
+    return totalCs;
+  };
+
+  const moneyByCurrency = (value, currency) => {
+    const number = Number(value || 0);
+    const formatted = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(number);
+    return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
+  };
+
+  const todayIso = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  };
+
+  const numeric = (value) => {
+    const parsed = Number(String(value || "").replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const setStatus = (text) => {
+    if (statusLabel) statusLabel.textContent = text;
+  };
+
+  const getSearchUrl = (term) => {
+    const params = new URLSearchParams({ q: term || "" });
+    if (activeBodegaId > 0) params.set("bodega_id", String(activeBodegaId));
+    if (vendedorSelect?.value) params.set("vendedor_id", vendedorSelect.value);
+    return `/sales/products/search?${params.toString()}`;
+  };
+
+  const removeResultRows = () => {
+    gridBody.querySelectorAll("[data-result-row]").forEach((row) => row.remove());
+  };
+
+  const resultUnit = (item) => item.unidad_medida_abreviatura || item.unidad_medida_nombre || "und";
+
+  const renderResults = () => {
+    removeResultRows();
+    if (!results.length) {
+      selectedResultIndex = -1;
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    results.forEach((item, index) => {
+      const row = document.createElement("tr");
+      row.dataset.resultRow = "1";
+      row.dataset.resultIndex = String(index);
+      row.className = `rm-result-row ${index === selectedResultIndex ? "active" : ""}`;
+      row.innerHTML = `
+        <td><span class="rm-code">${item.cod_producto || ""}</span></td>
+        <td>
+          <div class="fw-semibold">${item.descripcion || ""}</div>
+          <div class="small rm-muted">Resultado de busqueda</div>
+        </td>
+        <td class="text-end fw-semibold">${Number(item.free_qty ?? item.existencia ?? 0).toFixed(2)}</td>
+        <td><span class="rm-badge">${resultUnit(item)}</span></td>
+        <td class="text-end rm-muted">1</td>
+        <td class="text-end">${money(item.selected_price_cs || 0)}</td>
+        <td class="text-end">
+          <button class="btn btn-sm btn-outline-primary" type="button" data-pick-result="${index}">
+            <i class="bi bi-plus-lg"></i>
+          </button>
+        </td>
+      `;
+      fragment.appendChild(row);
+    });
+    const anchor = gridBody.querySelector(".rm-search-row");
+    gridBody.insertBefore(fragment, anchor.nextSibling);
+  };
+
+  const searchProducts = async (term) => {
+    const value = (term || "").trim();
+    if (value.length < 2) {
+      results = [];
+      renderResults();
+      setStatus("Digite al menos 2 caracteres");
+      return;
+    }
+    setStatus("Buscando...");
+    try {
+      const response = await fetch(getSearchUrl(value), { headers: { "X-Requested-With": "fetch" } });
+      const payload = await response.json().catch(() => null);
+      results = Array.isArray(payload?.items) ? payload.items : [];
+      selectedResultIndex = results.length ? 0 : -1;
+      renderResults();
+      setStatus(results.length ? `${results.length} resultado(s)` : "Sin resultados");
+    } catch (_) {
+      results = [];
+      renderResults();
+      setStatus("Error de busqueda");
+    }
+  };
+
+  const clearSearch = () => {
+    if (searchInput) searchInput.value = "";
+    results = [];
+    selectedResultIndex = -1;
+    renderResults();
+    setStatus("Listo");
+  };
+
+  const renderInvoiceRows = () => {
+    gridBody.querySelectorAll("[data-invoice-row]").forEach((row) => row.remove());
+    const items = Array.from(invoiceItems.values());
+    if (emptyRow) emptyRow.style.display = items.length ? "none" : "";
+    const fragment = document.createDocumentFragment();
+    items.forEach((item) => {
+      const lineGross = item.qty * item.price;
+      const lineDiscount = lineGross * clampPercent(item.discountPct || 0) / 100;
+      const subtotal = Math.max(0, lineGross - lineDiscount);
+      const stockLabel = item.isService ? "-" : Number(item.available || 0).toFixed(2);
+      const unitLabel = item.isService ? "serv" : item.unit;
+      const serviceBadge = item.isService ? `<span class="rm-service-chip ms-2">Servicio</span>` : "";
+      const discountNote = clampPercent(item.discountPct || 0) > 0 ? `<div class="small text-danger">Desc. ${clampPercent(item.discountPct).toFixed(0)}%: -${money(lineDiscount)}</div>` : "";
+      const row = document.createElement("tr");
+      row.dataset.invoiceRow = "1";
+      row.dataset.productId = String(item.id);
+      row.className = "rm-invoice-row";
+      row.innerHTML = `
+        <td><span class="rm-code">${item.code}</span></td>
+        <td>
+          <div class="fw-semibold">${item.name}${serviceBadge}</div>
+          <div class="small rm-muted">${item.isService ? "Mano de obra / taller" : "Linea de factura"}</div>
+          ${discountNote}
+        </td>
+        <td class="text-end">${stockLabel}</td>
+        <td><span class="rm-badge">${unitLabel}</span></td>
+        <td><input class="text-end" data-qty-for="${item.id}" type="number" min="1" step="1" value="${item.qty}" ${item.isService ? "readonly" : ""}></td>
+        <td><input class="text-end" data-price-for="${item.id}" type="number" min="0" step="0.01" value="${item.price.toFixed(2)}"></td>
+        <td class="text-end">
+          <div class="d-flex align-items-center justify-content-end gap-2">
+            <span class="rm-total">${money(subtotal)}</span>
+            <button class="btn btn-outline-danger btn-sm rm-icon-btn" type="button" data-remove-item="${item.id}" title="Quitar">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </div>
+        </td>
+      `;
+      fragment.appendChild(row);
+    });
+    gridBody.appendChild(fragment);
+    updateTotals();
+  };
+
+  const updateTotals = () => {
+    const items = Array.from(invoiceItems.values());
+    const breakdown = discountBreakdown();
+    const total = breakdown.net;
+    if (totalLabel) totalLabel.textContent = money(total);
+    if (discountTotalLabel) {
+      discountTotalLabel.textContent = breakdown.totalDiscount > 0 ? `Descuento: ${money(breakdown.totalDiscount)}` : "";
+    }
+    if (itemsCount) itemsCount.textContent = String(items.length);
+    syncHiddenInputs(total);
+  };
+
+  const syncHiddenInputs = (total) => {
+    const payCurrency = pagoMoneda?.value || "CS";
+    const payAmount = numeric(pagoMonto?.value || amountForCurrency(payCurrency));
+    const formaId = paymentFormaId?.value || formaPagoSelect?.value || "";
+    itemsHidden.innerHTML = Array.from(invoiceItems.values()).map((item) => `
+      <input type="hidden" name="item_producto_id" value="${item.id}">
+      <input type="hidden" name="item_cantidad" value="${Number(item.qty).toFixed(2)}">
+      <input type="hidden" name="item_precio" value="${Number(item.price).toFixed(2)}">
+      <input type="hidden" name="item_descuento_pct" value="${clampPercent(item.discountPct || 0).toFixed(2)}">
+      <input type="hidden" name="item_peso_lbs" value="">
+      <input type="hidden" name="item_role" value="">
+      <input type="hidden" name="item_combo_group" value="">
+    `).join("");
+    paymentHidden.innerHTML = `
+      <input type="hidden" name="pago_forma_id" value="${formaId}">
+      <input type="hidden" name="pago_moneda" value="${payCurrency}">
+      <input type="hidden" name="pago_monto" value="${Number(payAmount || 0).toFixed(2)}">
+      <input type="hidden" name="pago_banco_id" value="${bancoSelect?.value || ""}">
+      <input type="hidden" name="pago_cuenta_id" value="${cuentaSelect?.value || ""}">
+    `;
+    if (discountGlobalHidden) discountGlobalHidden.value = clampPercent(globalDiscountPct || 0).toFixed(2);
+    if (discountTokenHidden) discountTokenHidden.value = discountToken || "";
+  };
+
+  const setActivePaymentButton = () => {
+    const selectedId = paymentFormaId?.value || formaPagoSelect?.value || "";
+    document.querySelectorAll(".rm-pay-method").forEach((button) => {
+      const active = button.dataset.formaId === selectedId;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      if (active && selectedPaymentLabel) {
+        selectedPaymentLabel.textContent = button.dataset.formaLabel || button.textContent.trim();
+      }
+    });
+    if (!selectedId && selectedPaymentLabel) selectedPaymentLabel.textContent = "Sin seleccionar";
+  };
+
+  const refreshPaymentModal = () => {
+    const breakdown = discountBreakdown();
+    const total = breakdown.net;
+    const payCurrency = pagoMoneda?.value || "CS";
+    const amount = amountForCurrency(payCurrency);
+    if (pagoMonto) pagoMonto.value = amount.toFixed(2);
+    if (paySubtotalLabel) paySubtotalLabel.textContent = money(breakdown.gross);
+    if (payDiscountLabel) payDiscountLabel.textContent = money(breakdown.totalDiscount);
+    if (payTotalLabel) payTotalLabel.textContent = money(total);
+    if (payAppliedLabel) payAppliedLabel.textContent = moneyByCurrency(amount, payCurrency);
+    if (payClientLabel) {
+      payClientLabel.textContent = clienteSelect?.selectedOptions?.[0]?.textContent || "Consumidor final";
+    }
+    if (payVendorLabel) {
+      payVendorLabel.textContent = vendedorSelect?.selectedOptions?.[0]?.textContent || "-";
+    }
+    setActivePaymentButton();
+    syncHiddenInputs(total);
+  };
+
+  const openPaymentModal = (quickPrintValue) => {
+    if (!invoiceItems.size) {
+      setStatus("Agrega al menos un articulo");
+      searchInput?.focus();
+      return;
+    }
+    if (quickPrintInput) quickPrintInput.value = quickPrintValue || "0";
+    refreshPaymentModal();
+    if (window.bootstrap && paymentModalEl) {
+      window.bootstrap.Modal.getOrCreateInstance(paymentModalEl).show();
+    }
+  };
+
+  const addResultToInvoice = (item) => {
+    if (!item) return;
+    const available = Number(item.free_qty ?? item.existencia ?? 0);
+    if (available <= 0) {
+      setStatus("Sin existencia disponible");
+      return;
+    }
+    const id = Number(item.id);
+    const current = invoiceItems.get(id);
+    if (current) {
+      if (current.qty + 1 > available) {
+        setStatus(`Saldo insuficiente: ${available.toFixed(2)}`);
+        return;
+      }
+      current.qty += 1;
+      invoiceItems.set(id, current);
+    } else {
+      invoiceItems.set(id, {
+        id,
+        code: item.cod_producto || "",
+        name: item.descripcion || "",
+        available,
+        unit: resultUnit(item),
+        qty: 1,
+        price: Number(item.selected_price_cs || 0),
+        discountPct: 0,
+      });
+    }
+    clearSearch();
+    clearDiscountAuthorization();
+    renderInvoiceRows();
+    searchInput?.focus();
+  };
+
+  const renderServiceCatalog = () => {
+    if (!serviceList) return;
+    const query = (serviceSearch?.value || "").trim().toLowerCase();
+    const rows = workshopServices.filter((item) => {
+      if (!query) return true;
+      return String(item.cod_producto || "").toLowerCase().includes(query)
+        || String(item.descripcion || "").toLowerCase().includes(query);
+    });
+    if (!rows.length) {
+      serviceList.innerHTML = `<div class="text-center text-muted py-3">Sin servicios disponibles.</div>`;
+      return;
+    }
+    serviceList.innerHTML = rows.map((item) => `
+      <div class="rm-service-row" data-service-row="${item.id}">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-2">
+          <div>
+            <div class="fw-bold">${item.cod_producto}</div>
+            <div>${item.descripcion}</div>
+            <div class="small text-muted">Precio base: ${money(item.precio_cs || 0)}</div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <input class="form-control form-control-sm text-end" style="width:110px" type="number" min="0" step="0.01" value="${Number(item.precio_cs || 0).toFixed(2)}" data-service-price="${item.id}" />
+            <label class="form-check small mb-0">
+              <input class="form-check-input" type="checkbox" data-service-free="${item.id}" />
+              Gratis
+            </label>
+            <button class="btn btn-sm btn-warning" type="button" data-add-service="${item.id}">
+              <i class="bi bi-plus-lg"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    `).join("");
+  };
+
+  const renderServiceOrder = () => {
+    if (!serviceOrderList) return;
+    if (!serviceOrderItems.length) {
+      serviceOrderList.innerHTML = `<div class="text-center text-muted py-3">Sin servicios seleccionados.</div>`;
+      return;
+    }
+    serviceOrderList.innerHTML = serviceOrderItems.map((item, index) => `
+      <div class="rm-service-order-row">
+        <div class="d-flex align-items-start justify-content-between gap-2">
+          <div>
+            <div class="fw-bold">${item.code}</div>
+            <div>${item.name}</div>
+            <div class="small ${item.price <= 0 ? "text-success" : "text-muted"}">${item.price <= 0 ? "Gratis" : money(item.price)}</div>
+          </div>
+          <button class="btn btn-sm btn-outline-danger" type="button" data-remove-service-order="${index}">
+            <i class="bi bi-trash3"></i>
+          </button>
+        </div>
+      </div>
+    `).join("");
+  };
+
+  const addServiceToOrder = (serviceId) => {
+    const service = workshopServices.find((item) => Number(item.id) === Number(serviceId));
+    if (!service) return;
+    const priceInput = document.querySelector(`[data-service-price="${serviceId}"]`);
+    const freeInput = document.querySelector(`[data-service-free="${serviceId}"]`);
+    const price = freeInput?.checked ? 0 : Math.max(0, numeric(priceInput?.value || service.precio_cs || 0));
+    serviceOrderItems.push({
+      id: Number(service.id),
+      code: service.cod_producto || "",
+      name: service.descripcion || "",
+      unit: service.unidad || "serv",
+      price,
+    });
+    renderServiceOrder();
+  };
+
+  const applyServicesToInvoice = () => {
+    if (!serviceOrderItems.length) {
+      if (serviceSearch) serviceSearch.focus();
+      return;
+    }
+    serviceOrderItems.forEach((service) => {
+      const invoiceKey = Number(service.id);
+      invoiceItems.set(invoiceKey, {
+        id: invoiceKey,
+        code: service.code,
+        name: service.name,
+        available: 0,
+        unit: service.unit || "serv",
+        qty: 1,
+        price: Number(service.price || 0),
+        isService: true,
+        discountPct: 0,
+      });
+    });
+    serviceOrderItems = [];
+    clearDiscountAuthorization();
+    renderServiceOrder();
+    renderInvoiceRows();
+    if (window.bootstrap && serviceModalEl) {
+      window.bootstrap.Modal.getOrCreateInstance(serviceModalEl).hide();
+    }
+    searchInput?.focus();
+  };
+
+  const renderDiscountModal = () => {
+    if (discountGlobalPctInput) discountGlobalPctInput.value = String(Math.round(clampPercent(globalDiscountPct || 0)));
+    if (!discountItemsList) return;
+    const items = Array.from(invoiceItems.values());
+    if (!items.length) {
+      discountItemsList.innerHTML = `<div class="text-center text-muted py-3">Agrega articulos para aplicar descuentos.</div>`;
+      refreshDiscountSummary();
+      return;
+    }
+    discountItemsList.innerHTML = items.map((item) => {
+      const lineGross = item.qty * item.price;
+      const pct = clampPercent(item.discountPct || 0);
+      const lineDiscount = lineGross * pct / 100;
+      return `
+        <div class="rm-discount-row" data-discount-row="${item.id}">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div>
+              <div class="fw-bold">${item.code}</div>
+              <div>${item.name}</div>
+              <div class="small rm-muted">${item.qty} x ${money(item.price)} = ${money(lineGross)}</div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <input class="form-control form-control-sm text-end" type="number" min="0" max="100" step="1" value="${Math.round(pct)}" data-discount-item="${item.id}" />
+              <span class="fw-bold">%</span>
+              <span class="text-danger fw-bold" style="min-width:110px;text-align:right;">-${money(lineDiscount)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+    refreshDiscountSummary();
+  };
+
+  const refreshDiscountSummary = () => {
+    const breakdown = discountBreakdown();
+    if (discountSubtotalLabel) discountSubtotalLabel.textContent = money(breakdown.gross);
+    if (discountItemsTotalLabel) discountItemsTotalLabel.textContent = money(breakdown.itemDiscount);
+    if (discountGlobalTotalLabel) discountGlobalTotalLabel.textContent = money(breakdown.globalDiscount);
+    if (discountFinalTotalLabel) discountFinalTotalLabel.textContent = money(breakdown.net);
+  };
+
+  const discountNeedsAuthorization = () => discountBreakdown().totalDiscount > 0.004;
+
+  const setDiscountStatus = (message, isError = false) => {
+    if (!discountStatus) return;
+    discountStatus.textContent = message || "";
+    discountStatus.className = `small mt-2 ${isError ? "text-danger" : "text-success"}`;
+  };
+
+  const buildDiscountRequestForm = () => {
+    syncHiddenInputs(totalCsValue());
+    const payload = new FormData(form);
+    payload.set("motivo", discountReasonInput?.value?.trim() || "");
+    payload.set("descuento_global_pct", clampPercent(globalDiscountPct || 0).toFixed(2));
+    payload.set("cliente_label", clienteSelect?.selectedOptions?.[0]?.textContent || "Consumidor final");
+    payload.set("vendedor_label", vendedorSelect?.selectedOptions?.[0]?.textContent || "-");
+    return payload;
+  };
+
+  const requestDiscountAuthorizationCode = async () => {
+    if (!invoiceItems.size) {
+      setDiscountStatus("Agrega articulos antes de solicitar codigo.", true);
+      return;
+    }
+    if (!discountNeedsAuthorization()) {
+      setDiscountStatus("No hay descuentos para autorizar.", true);
+      return;
+    }
+    if (!discountReasonInput?.value?.trim()) {
+      setDiscountStatus("Indica el motivo del descuento.", true);
+      discountReasonInput?.focus();
+      return;
+    }
+    setDiscountStatus("Enviando solicitud...");
+    try {
+      const response = await fetch("/sales/discount/request", {
+        method: "POST",
+        body: buildDiscountRequestForm(),
+        headers: { "X-Requested-With": "fetch" },
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) {
+        setDiscountStatus(data?.message || "No se pudo enviar el codigo.", true);
+        return;
+      }
+      setDiscountStatus("Codigo enviado. Ingresa el codigo recibido para facturar.", false);
+      discountTokenInput?.focus();
+    } catch (_) {
+      setDiscountStatus("Error enviando solicitud de descuento.", true);
+    }
+  };
+
+  const applyDiscountConfiguration = () => {
+    globalDiscountPct = clampPercent(discountGlobalPctInput?.value || 0);
+    const tokenValue = (discountTokenInput?.value || "").trim();
+    if (discountNeedsAuthorization() && !tokenValue) {
+      setDiscountStatus("Ingresa el codigo autorizado antes de aplicar.", true);
+      discountTokenInput?.focus();
+      return;
+    }
+    discountToken = tokenValue;
+    syncHiddenInputs(totalCsValue());
+    updateTotals();
+    refreshPaymentModal();
+    setDiscountStatus(discountNeedsAuthorization() ? "Descuentos aplicados con codigo pendiente de validacion final." : "Sin descuentos activos.", false);
+    if (window.bootstrap && discountModalEl) {
+      window.bootstrap.Modal.getOrCreateInstance(discountModalEl).hide();
+    }
+  };
+
+  searchInput?.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => searchProducts(searchInput.value), 180);
+  });
+
+  searchInput?.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" && results.length) {
+      event.preventDefault();
+      selectedResultIndex = Math.min(results.length - 1, selectedResultIndex + 1);
+      renderResults();
+      return;
+    }
+    if (event.key === "ArrowUp" && results.length) {
+      event.preventDefault();
+      selectedResultIndex = Math.max(0, selectedResultIndex - 1);
+      renderResults();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (results.length && selectedResultIndex >= 0) {
+        addResultToInvoice(results[selectedResultIndex]);
+      } else {
+        searchProducts(searchInput.value);
+      }
+    }
+  });
+
+  gridBody?.addEventListener("click", (event) => {
+    const pick = event.target.closest("[data-pick-result]");
+    if (pick) {
+      addResultToInvoice(results[Number(pick.dataset.pickResult || 0)]);
+      return;
+    }
+    const resultRow = event.target.closest("[data-result-row]");
+    if (resultRow) {
+      addResultToInvoice(results[Number(resultRow.dataset.resultIndex || 0)]);
+      return;
+    }
+    const remove = event.target.closest("[data-remove-item]");
+    if (remove) {
+      invoiceItems.delete(Number(remove.dataset.removeItem));
+      clearDiscountAuthorization();
+      renderInvoiceRows();
+      searchInput?.focus();
+    }
+  });
+
+  gridBody?.addEventListener("input", (event) => {
+    const qtyInput = event.target.closest("[data-qty-for]");
+    if (qtyInput) {
+      const id = Number(qtyInput.dataset.qtyFor);
+      const item = invoiceItems.get(id);
+      if (!item) return;
+      if (item.isService) {
+        qtyInput.value = "1";
+        return;
+      }
+      const nextQty = Math.max(1, Math.round(numeric(qtyInput.value) || 1));
+      item.qty = Math.min(nextQty, Math.max(1, Math.floor(Number(item.available || nextQty))));
+      invoiceItems.set(id, item);
+      qtyInput.value = String(item.qty);
+      clearDiscountAuthorization();
+      renderInvoiceRows();
+      updateTotals();
+      return;
+    }
+    const priceInput = event.target.closest("[data-price-for]");
+    if (priceInput) {
+      const id = Number(priceInput.dataset.priceFor);
+      const item = invoiceItems.get(id);
+      if (!item) return;
+      item.price = Math.max(0, numeric(priceInput.value));
+      invoiceItems.set(id, item);
+      clearDiscountAuthorization();
+      renderInvoiceRows();
+    }
+  });
+
+  serviceSearch?.addEventListener("input", renderServiceCatalog);
+  serviceList?.addEventListener("click", (event) => {
+    const addButton = event.target.closest("[data-add-service]");
+    if (addButton) {
+      addServiceToOrder(addButton.dataset.addService);
+    }
+  });
+  serviceList?.addEventListener("change", (event) => {
+    const freeInput = event.target.closest("[data-service-free]");
+    if (!freeInput) return;
+    const priceInput = document.querySelector(`[data-service-price="${freeInput.dataset.serviceFree}"]`);
+    if (priceInput) {
+      priceInput.disabled = freeInput.checked;
+      if (freeInput.checked) priceInput.value = "0.00";
+    }
+  });
+  serviceOrderList?.addEventListener("click", (event) => {
+    const removeButton = event.target.closest("[data-remove-service-order]");
+    if (!removeButton) return;
+    serviceOrderItems.splice(Number(removeButton.dataset.removeServiceOrder || 0), 1);
+    renderServiceOrder();
+  });
+  applyServiceOrder?.addEventListener("click", applyServicesToInvoice);
+
+  discountModalEl?.addEventListener("show.bs.modal", renderDiscountModal);
+  discountGlobalPctInput?.addEventListener("input", () => {
+    globalDiscountPct = clampPercent(discountGlobalPctInput.value || 0);
+    clearDiscountAuthorization();
+    refreshDiscountSummary();
+    updateTotals();
+  });
+  discountItemsList?.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-discount-item]");
+    if (!input) return;
+    const item = invoiceItems.get(Number(input.dataset.discountItem));
+    if (!item) return;
+    item.discountPct = clampPercent(input.value || 0);
+    invoiceItems.set(Number(input.dataset.discountItem), item);
+    clearDiscountAuthorization();
+    renderDiscountModal();
+    renderInvoiceRows();
+  });
+  requestDiscountCode?.addEventListener("click", requestDiscountAuthorizationCode);
+  applyDiscountConfig?.addEventListener("click", applyDiscountConfiguration);
+  discountTokenInput?.addEventListener("input", () => {
+    discountToken = (discountTokenInput.value || "").trim();
+    if (discountTokenHidden) discountTokenHidden.value = discountToken;
+  });
+
+  clienteSelect?.addEventListener("change", () => {
+    clienteHidden.value = clienteSelect.value || "";
+  });
+  formaPagoSelect?.addEventListener("change", () => {
+    if (paymentFormaId) paymentFormaId.value = formaPagoSelect.value || "";
+    setActivePaymentButton();
+    updateTotals();
+  });
+  pagoMoneda?.addEventListener("change", refreshPaymentModal);
+  pagoMonto?.addEventListener("input", () => {
+    if (payAppliedLabel) payAppliedLabel.textContent = moneyByCurrency(numeric(pagoMonto.value), pagoMoneda?.value || "CS");
+    updateTotals();
+  });
+  bancoSelect?.addEventListener("change", updateTotals);
+  cuentaSelect?.addEventListener("change", updateTotals);
+
+  document.querySelectorAll(".rm-pay-method").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextId = button.dataset.formaId || "";
+      if (paymentFormaId) paymentFormaId.value = nextId;
+      if (formaPagoSelect) formaPagoSelect.value = nextId;
+      if (selectedPaymentLabel) selectedPaymentLabel.textContent = button.dataset.formaLabel || button.textContent.trim();
+      setActivePaymentButton();
+      updateTotals();
+    });
+  });
+
+  form?.querySelectorAll("[data-quick-print]").forEach((button) => {
+    button.addEventListener("click", () => {
+      openPaymentModal(button.dataset.quickPrint || "0");
+    });
+  });
+
+  confirmPayment?.addEventListener("click", () => {
+    refreshPaymentModal();
+    form?.requestSubmit();
+  });
+
+  form?.addEventListener("submit", (event) => {
+    const total = Array.from(invoiceItems.values()).reduce((acc, item) => acc + item.qty * item.price, 0);
+    if (!invoiceItems.size) {
+      event.preventDefault();
+      setStatus("Agrega al menos un articulo");
+      searchInput?.focus();
+      return;
+    }
+    if (!(paymentFormaId?.value || formaPagoSelect?.value)) {
+      event.preventDefault();
+      setStatus("Selecciona forma de pago");
+      return;
+    }
+    if (discountNeedsAuthorization() && !(discountToken || discountTokenHidden?.value)) {
+      event.preventDefault();
+      setStatus("Autoriza el descuento con codigo de correo");
+      if (window.bootstrap && discountModalEl) {
+        renderDiscountModal();
+        window.bootstrap.Modal.getOrCreateInstance(discountModalEl).show();
+      }
+      return;
+    }
+    if (fechaInput) fechaInput.value = todayIso();
+    syncHiddenInputs(total);
+  });
+
+  window.addEventListener("load", () => {
+    if (fechaInput) fechaInput.value = todayIso();
+    clienteHidden.value = clienteSelect?.value || "";
+    if (paymentFormaId && formaPagoSelect?.value) paymentFormaId.value = formaPagoSelect.value;
+    updateTotals();
+    setActivePaymentButton();
+    renderServiceCatalog();
+    renderServiceOrder();
+    searchInput?.focus();
+    const printId = "{{ print_id or '' }}";
+    const printLink = document.getElementById("sales-print-ticket");
+    if (printId && printLink) {
+      const printUrl = printLink.getAttribute("href");
+      setTimeout(() => {
+        if (window.erpOpenPrintable) {
+          window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
+        } else {
+          window.open(printUrl, "erp_print_window", "width=520,height=780,resizable=yes,scrollbars=yes");
+        }
+      }, 450);
+    }
+  });
+</script>
+{% endblock %}

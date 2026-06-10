@@ -28,8 +28,10 @@
           Controla inventario, ventas y finanzas con una plataforma segura y elegante.
         </p>
 
-        <div class="rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/10 mx-auto max-w-[640px] hidden md:block">
-          <video src="/static/main_video.mp4" autoplay loop muted playsinline class="w-full h-[clamp(220px,24vh,320px)] object-cover"></video>
+        <div class="rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/10 mx-auto max-w-[640px] bg-[#071a3a]">
+          <video id="login-main-video" autoplay loop muted playsinline preload="auto" class="w-full h-[clamp(180px,24vh,320px)] object-cover">
+            <source src="/static/main_video.mp4?v={{ version }}" type="video/mp4" />
+          </video>
         </div>
         <div class="text-white/70 text-sm mt-4">
           Copyright 2025 - {{ branding.get("legal_name", branding.get("trade_name", "Empresa")) }}
@@ -136,6 +138,18 @@
       phraseIndex = (phraseIndex + 1) % phrases.length;
       rotator.textContent = phrases[phraseIndex];
     }, 5000);
+  }
+  const loginVideo = document.getElementById("login-main-video");
+  if (loginVideo) {
+    loginVideo.muted = true;
+    loginVideo.playsInline = true;
+    const playVideo = () => loginVideo.play().catch(() => {});
+    if (loginVideo.readyState >= 2) {
+      playVideo();
+    } else {
+      loginVideo.addEventListener("loadeddata", playVideo, { once: true });
+      loginVideo.load();
+    }
   }
 </script>
 {% endblock %}

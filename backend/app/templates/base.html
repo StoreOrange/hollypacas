@@ -3,6 +3,7 @@
   <head>
     {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
     {% set theme_code = (branding.get("theme_code", "default") or "default")|lower %}
+    {% set company_key = (branding.get("company_key", "default") or "default")|lower %}
     {% set bootswatch_codes = ['cerulean','cosmo','flatly','journal','litera','lumen','lux','materia','minty','morph','pulse','quartz','sandstone','simplex','sketchy','solar','spacelab','superhero','united','vapor','yeti','zephyr'] %}
     {% set theme_bootswatch_url = '/static/vendor/bootswatch/' ~ theme_code ~ '.min.css' if theme_code in bootswatch_codes else '' %}
     {% set theme_primary = "#0b3b6f" %}
@@ -67,6 +68,13 @@
       {% set ui_btn_radius = "6px" %}
       {% set ui_tab_radius = "6px" %}
       {% set ui_card_shadow = "0 6px 14px rgba(60, 50, 38, 0.10)" %}
+    {% elif theme_code == "sketchy" %}
+      {% set theme_primary = "#7f1d1d" %}
+      {% set theme_primary_600 = "#641616" %}
+      {% set theme_primary_100 = "#f8e8e8" %}
+      {% set ui_body_bg = "#fbf7f6" %}
+      {% set ui_card_shadow = "0 8px 18px rgba(65, 20, 20, 0.10)" %}
+      {% set ui_header_shadow = "0 7px 18px rgba(65, 20, 20, 0.10)" %}
     {% elif theme_code == "solar" %}
       {% set theme_primary = "#b58900" %}
       {% set theme_primary_600 = "#9d7600" %}
@@ -152,6 +160,9 @@
         --hp-primary: {{ theme_primary }};
         --hp-primary-600: {{ theme_primary_600 }};
         --hp-primary-100: {{ theme_primary_100 }};
+        --bs-primary: {{ theme_primary }};
+        --bs-link-color: {{ theme_primary }};
+        --bs-link-hover-color: {{ theme_primary_600 }};
         --ui-body-bg: {{ ui_body_bg }};
         --ui-card-radius: {{ ui_card_radius }};
         --ui-header-radius: {{ ui_header_radius }};
@@ -190,6 +201,44 @@
         background: color-mix(in srgb, var(--hp-primary) 12%, white) !important;
         color: var(--hp-primary) !important;
       }
+
+      {% if theme_code == "sketchy" %}
+      :root {
+        --bs-primary-rgb: 127, 29, 29;
+      }
+
+      .btn-primary,
+      .btn-outline-primary:hover,
+      .btn-outline-primary:focus,
+      .badge.text-bg-primary,
+      .bg-primary {
+        background-color: var(--hp-primary) !important;
+        border-color: var(--hp-primary) !important;
+      }
+
+      .btn-primary:hover,
+      .btn-primary:focus {
+        background-color: var(--hp-primary-600) !important;
+        border-color: var(--hp-primary-600) !important;
+      }
+
+      .btn-outline-primary,
+      .text-primary,
+      a {
+        color: var(--hp-primary) !important;
+      }
+
+      .btn-outline-primary {
+        border-color: var(--hp-primary) !important;
+      }
+
+      .bg-primary-subtle,
+      .alert-primary {
+        background-color: var(--hp-primary-100) !important;
+        border-color: color-mix(in srgb, var(--hp-primary) 24%, white) !important;
+        color: var(--hp-primary) !important;
+      }
+      {% endif %}
 
       {% if theme_code == "rose_elegant" %}
       :root {
@@ -302,6 +351,260 @@
           color-mix(in srgb, var(--hp-primary) 8%, #ffffff)
         ) !important;
         border-color: color-mix(in srgb, var(--hp-primary) 26%, #d2ccd2) !important;
+      }
+      {% endif %}
+
+      {% if company_key == "racingmoto" %}
+      :root {
+        --hp-primary: #8f2e32;
+        --hp-primary-600: #6f1f24;
+        --hp-primary-100: #f6dede;
+        --bs-primary: #8f2e32;
+        --bs-primary-rgb: 143, 46, 50;
+        --bs-link-color: #7f2328;
+        --bs-link-hover-color: #111827;
+        --racing-red: #8f2e32;
+        --racing-red-deep: #6f1f24;
+        --racing-red-soft: #f6dede;
+        --racing-blue: #111827;
+        --racing-blue-2: #1f2937;
+        --racing-ink: #17202a;
+        --racing-muted: #64748b;
+        --racing-surface: #fbf7f7;
+      }
+
+      body.company-racingmoto {
+        background:
+          linear-gradient(180deg, #fbf7f7 0%, #f6eeee 48%, #f8fafc 100%) !important;
+        color: var(--racing-ink);
+      }
+
+      body.company-racingmoto .odoo-sidebar,
+      body.company-racingmoto .sidebar {
+        background:
+          linear-gradient(180deg, var(--racing-blue) 0%, #172033 58%, #251b25 100%) !important;
+        border-right: 0 !important;
+        box-shadow: 12px 0 34px rgba(17, 24, 39, 0.18);
+      }
+
+      body.company-racingmoto .sidebar > .border-bottom,
+      body.company-racingmoto .sidebar .border-top {
+        border-color: rgba(246, 222, 222, 0.14) !important;
+      }
+
+      body.company-racingmoto .sidebar img,
+      body.company-racingmoto .offcanvas img {
+        background: #ffffff;
+        border-color: rgba(246, 222, 222, 0.52) !important;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.20);
+      }
+
+      body.company-racingmoto .sidebar .sidebar-brand .fw-semibold,
+      body.company-racingmoto .sidebar .sidebar-user .fw-semibold {
+        color: #fff7f7 !important;
+      }
+
+      body.company-racingmoto .sidebar .sidebar-brand .text-muted,
+      body.company-racingmoto .sidebar .sidebar-user .text-muted,
+      body.company-racingmoto .sidebar .text-muted {
+        color: rgba(255, 247, 247, 0.68) !important;
+      }
+
+      body.company-racingmoto .sidebar .nav-link {
+        background: transparent !important;
+        color: rgba(255, 247, 247, 0.86) !important;
+        border: 1px solid transparent;
+        box-shadow: none;
+      }
+
+      body.company-racingmoto .sidebar .nav-link .nav-text {
+        color: inherit !important;
+      }
+
+      body.company-racingmoto .sidebar .nav-link i {
+        color: #f3b6b7 !important;
+      }
+
+      body.company-racingmoto .sidebar .nav-link:hover,
+      body.company-racingmoto .sidebar .nav-link:focus,
+      body.company-racingmoto .sidebar .nav-link.active,
+      body.company-racingmoto .sidebar .nav-link[aria-current="page"] {
+        background:
+          linear-gradient(135deg, rgba(143, 46, 50, 0.92), rgba(111, 31, 36, 0.82)) !important;
+        color: #ffffff !important;
+        border-color: rgba(246, 222, 222, 0.24) !important;
+        box-shadow: 0 12px 22px rgba(111, 31, 36, 0.24);
+      }
+
+      body.company-racingmoto .sidebar .nav-link:hover i,
+      body.company-racingmoto .sidebar .nav-link:focus i,
+      body.company-racingmoto .sidebar .nav-link.active i,
+      body.company-racingmoto .sidebar .nav-link[aria-current="page"] i {
+        color: #ffffff !important;
+      }
+
+      body.company-racingmoto .sidebar .nav-link::after {
+        background: rgba(246, 222, 222, 0.10);
+      }
+
+      body.company-racingmoto .sidebar .badge {
+        background: rgba(246, 222, 222, 0.12) !important;
+        color: #f6dede !important;
+        border: 1px solid rgba(246, 222, 222, 0.18);
+      }
+
+      body.company-racingmoto .sidebar .btn-outline-secondary {
+        color: #f6dede !important;
+        border-color: rgba(246, 222, 222, 0.28) !important;
+        background: rgba(255, 255, 255, 0.04) !important;
+      }
+
+      body.company-racingmoto .sidebar .btn-outline-secondary:hover,
+      body.company-racingmoto .sidebar .btn-outline-secondary:focus {
+        color: #ffffff !important;
+        border-color: rgba(246, 222, 222, 0.44) !important;
+        background: rgba(143, 46, 50, 0.35) !important;
+      }
+
+      body.company-racingmoto .mobile-global-nav,
+      body.company-racingmoto .offcanvas {
+        background: #111827 !important;
+        color: #fff7f7;
+        border-color: rgba(246, 222, 222, 0.16) !important;
+      }
+
+      body.company-racingmoto .mobile-global-nav__brand .trade,
+      body.company-racingmoto .offcanvas .fw-semibold,
+      body.company-racingmoto .offcanvas .nav-text {
+        color: #fff7f7 !important;
+      }
+
+      body.company-racingmoto .mobile-global-nav__home,
+      body.company-racingmoto .mobile-global-nav__menu,
+      body.company-racingmoto .offcanvas .nav-link {
+        background: rgba(255, 255, 255, 0.06) !important;
+        border-color: rgba(246, 222, 222, 0.18) !important;
+        color: #fff7f7 !important;
+      }
+
+      body.company-racingmoto .mobile-global-nav__home i,
+      body.company-racingmoto .mobile-global-nav__menu i,
+      body.company-racingmoto .offcanvas .nav-link i {
+        color: #f3b6b7 !important;
+      }
+
+      body.company-racingmoto .offcanvas .text-muted {
+        color: rgba(255, 247, 247, 0.66) !important;
+      }
+
+      body.company-racingmoto .btn-primary,
+      body.company-racingmoto .badge.text-bg-primary,
+      body.company-racingmoto .bg-primary {
+        background-color: var(--racing-red) !important;
+        border-color: var(--racing-red) !important;
+        color: #ffffff !important;
+      }
+
+      body.company-racingmoto .btn-primary:hover,
+      body.company-racingmoto .btn-primary:focus {
+        background-color: var(--racing-red-deep) !important;
+        border-color: var(--racing-red-deep) !important;
+      }
+
+      body.company-racingmoto .btn-outline-primary {
+        color: var(--racing-red-deep) !important;
+        border-color: var(--racing-red) !important;
+      }
+
+      body.company-racingmoto .btn-outline-primary:hover,
+      body.company-racingmoto .btn-outline-primary:focus {
+        background: var(--racing-red) !important;
+        border-color: var(--racing-red) !important;
+        color: #ffffff !important;
+      }
+
+      body.company-racingmoto .text-primary,
+      body.company-racingmoto .text-brand,
+      body.company-racingmoto a {
+        color: var(--racing-red-deep) !important;
+      }
+
+      body.company-racingmoto .odoo-card,
+      body.company-racingmoto .odoo-header,
+      body.company-racingmoto .rm-kpi,
+      body.company-racingmoto .rm-grid-wrap {
+        border-color: rgba(143, 46, 50, 0.14) !important;
+        background: rgba(255, 255, 255, 0.96) !important;
+        box-shadow: 0 12px 28px rgba(17, 24, 39, 0.08) !important;
+      }
+
+      body.company-racingmoto .odoo-title,
+      body.company-racingmoto .odoo-section-title,
+      body.company-racingmoto h1,
+      body.company-racingmoto h2,
+      body.company-racingmoto h3,
+      body.company-racingmoto h4,
+      body.company-racingmoto .h5,
+      body.company-racingmoto .fw-bold,
+      body.company-racingmoto .fw-semibold {
+        color: var(--racing-blue) !important;
+      }
+
+      body.company-racingmoto .rm-total,
+      body.company-racingmoto .rm-code {
+        color: var(--racing-red-deep) !important;
+      }
+
+      body.company-racingmoto .rm-grid th,
+      body.company-racingmoto .odoo-table thead th {
+        background: #1f2937 !important;
+        color: #fff7f7 !important;
+        border-color: rgba(246, 222, 222, 0.12) !important;
+      }
+
+      body.company-racingmoto .rm-search-row td {
+        border-bottom-color: var(--racing-red) !important;
+      }
+
+      body.company-racingmoto .rm-badge,
+      body.company-racingmoto .bg-primary-subtle {
+        background: var(--racing-red-soft) !important;
+        color: var(--racing-red-deep) !important;
+      }
+
+      body.company-racingmoto .form-control,
+      body.company-racingmoto .form-select,
+      body.company-racingmoto .odoo-input {
+        border-color: rgba(143, 46, 50, 0.22) !important;
+        background-color: #fffafa !important;
+        color: var(--racing-blue) !important;
+      }
+
+      body.company-racingmoto .form-control:focus,
+      body.company-racingmoto .form-select:focus,
+      body.company-racingmoto .odoo-input:focus {
+        border-color: var(--racing-red) !important;
+        box-shadow: 0 0 0 .2rem rgba(143, 46, 50, 0.18) !important;
+      }
+
+      body.company-racingmoto .alert-success {
+        background: #edf7f1 !important;
+        border-color: #badbcc !important;
+        color: #0f5132 !important;
+      }
+
+      body.company-racingmoto .alert-danger {
+        background: #fff1f2 !important;
+        border-color: #fecaca !important;
+        color: #7f1d1d !important;
+      }
+
+      body.company-racingmoto .rm-shell {
+        --rm-accent: var(--racing-red);
+        --rm-accent-soft: var(--racing-red-soft);
+        --rm-line: rgba(143, 46, 50, 0.18);
+        --rm-ink: var(--racing-blue);
+        --rm-muted: #6b7280;
       }
       {% endif %}
 
@@ -508,7 +811,7 @@
     </style>
     {% block extra_head %}{% endblock %}
   </head>
-  <body class="{% if request and request.url and request.url.path != '/login' %}mobile-with-global-nav{% endif %}">
+  <body class="{% if request and request.url and request.url.path != '/login' %}mobile-with-global-nav{% endif %} company-{{ company_key }}">
     {% block content %}{% endblock %}
     {% if request and request.url and request.url.path != '/login' %}
     <div class="mobile-global-nav d-lg-none" aria-label="Navegacion movil">

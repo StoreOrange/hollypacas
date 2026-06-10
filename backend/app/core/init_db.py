@@ -147,7 +147,7 @@ def _seed_permissions(db: Session) -> None:
 
 def _seed_branches(db: Session) -> None:
     active_company = (get_active_company_key() or "").strip().lower()
-    multi_branch_enabled = active_company not in {"comestibles", "barrera", "bdtrend"}
+    multi_branch_enabled = active_company not in {"comestibles", "barrera", "bdtrend", "racingmoto"}
     if active_company == "bdzapatos":
         branches = [
             (
@@ -184,6 +184,17 @@ def _seed_branches(db: Session) -> None:
                 "",
                 "",
                 "Sucursal principal",
+            ),
+        ]
+    elif active_company == "racingmoto":
+        branches = [
+            (
+                "central",
+                "Racing Motos",
+                "Racing Motos",
+                "",
+                "",
+                "De la Gasolinera 2 de agosto 1 c 1/2 al norte.",
             ),
         ]
     else:
@@ -235,6 +246,8 @@ def _seed_branches(db: Session) -> None:
     if active_company == "bdzapatos":
         db.query(Branch).filter(Branch.code == "esteli").update({"activo": False})
     if active_company == "barrera":
+        db.query(Branch).filter(Branch.code == "esteli").update({"activo": False})
+    if active_company == "racingmoto":
         db.query(Branch).filter(Branch.code == "esteli").update({"activo": False})
     if not multi_branch_enabled:
         db.query(Branch).filter(Branch.code == "esteli").update({"activo": False})
@@ -365,6 +378,16 @@ def _seed_lineas(db: Session) -> None:
         lineas = ["Consumibles"]
     elif active_company == "barrera":
         lineas = ["Cocina", "Barra", "Bebidas", "Postres", "Extras"]
+    elif active_company == "racingmoto":
+        lineas = [
+            "REPUESTOS",
+            "SERVICIOS DE TALLER",
+            "LUBRICANTES",
+            "ACCESORIOS",
+            "HERRAMIENTAS",
+            "LLANTAS",
+            "BATERIAS",
+        ]
     else:
         lineas = [
             "BLUSA",
@@ -428,6 +451,20 @@ def _seed_segmentos(db: Session) -> None:
             "Delivery",
             "Para llevar",
         ]
+    elif active_company == "racingmoto":
+        segmentos = [
+            "Motor",
+            "Frenos",
+            "Suspension",
+            "Transmision",
+            "Sistema electrico",
+            "Aceites y lubricantes",
+            "Llantas",
+            "Accesorios",
+            "Mano de obra",
+            "Mantenimiento",
+            "Diagnostico",
+        ]
     else:
         segmentos = [
             "BOLSAS 25 LBS",
@@ -453,7 +490,7 @@ def _seed_marcas(db: Session) -> None:
 
 def _seed_bodegas(db: Session) -> None:
     active_company = (get_active_company_key() or "").strip().lower()
-    multi_branch_enabled = active_company not in {"comestibles", "barrera", "bdtrend"}
+    multi_branch_enabled = active_company not in {"comestibles", "barrera", "bdtrend", "racingmoto"}
     branches = {branch.code: branch for branch in db.query(Branch).all()}
     if active_company == "bdzapatos":
         bodegas = [
@@ -464,6 +501,10 @@ def _seed_bodegas(db: Session) -> None:
     elif active_company == "barrera":
         bodegas = [
             ("central", "La Barrera", "central"),
+        ]
+    elif active_company == "racingmoto":
+        bodegas = [
+            ("central", "Racing Motos", "central"),
         ]
     else:
         bodegas = [
@@ -496,6 +537,9 @@ def _seed_bodegas(db: Session) -> None:
         db.query(Bodega).filter(Bodega.code == "esteli").update({"activo": False})
         db.commit()
     if active_company == "barrera":
+        db.query(Bodega).filter(Bodega.code == "esteli").update({"activo": False})
+        db.commit()
+    if active_company == "racingmoto":
         db.query(Bodega).filter(Bodega.code == "esteli").update({"activo": False})
         db.commit()
     if not multi_branch_enabled:
@@ -1105,6 +1149,8 @@ def _seed_sales_interface_settings(db: Session) -> None:
         interface_default = "zapatos"
     elif active_company == "barrera":
         interface_default = "restaurante"
+    elif active_company == "racingmoto":
+        interface_default = "repuestos"
     else:
         interface_default = "ropa"
     existing = db.query(SalesInterfaceSetting).first()
@@ -1116,6 +1162,7 @@ def _seed_sales_interface_settings(db: Session) -> None:
 def _seed_unidades_medida(db: Session) -> None:
     defaults = [
         ("UNIDAD", "Unidad", "und"),
+        ("SERVICIO", "Unidad de servicio", "serv"),
         ("LIBRAS", "Libras", "lb"),
         ("KILOGRAMOS", "Kilogramos", "kg"),
         ("ONZAS", "Onzas", "oz"),
@@ -1152,13 +1199,79 @@ def _seed_unidades_medida(db: Session) -> None:
         db.commit()
 
 
+def _seed_racingmoto_workshop_services(db: Session) -> None:
+    active_company = (get_active_company_key() or "").strip().lower()
+    if active_company != "racingmoto":
+        return
+    linea = db.query(Linea).filter(func.lower(Linea.linea) == "servicios de taller").first()
+    segmento = db.query(Segmento).filter(func.lower(Segmento.segmento) == "mano de obra").first()
+    unit = db.query(UnidadMedida).filter(func.upper(UnidadMedida.codigo) == "SERVICIO").first()
+    defaults = [
+        ("SERV-TALLER-001", "Cambio de aceite", Decimal("250.00")),
+        ("SERV-TALLER-002", "Revision general de moto", Decimal("350.00")),
+        ("SERV-TALLER-003", "Ajuste de frenos", Decimal("180.00")),
+        ("SERV-TALLER-004", "Limpieza y ajuste de carburador", Decimal("300.00")),
+        ("SERV-TALLER-005", "Cambio de bujia", Decimal("120.00")),
+        ("SERV-TALLER-006", "Tension y lubricacion de cadena", Decimal("150.00")),
+        ("SERV-TALLER-007", "Instalacion de repuesto", Decimal("200.00")),
+        ("SERV-TALLER-008", "Diagnostico electrico", Decimal("300.00")),
+        ("SERV-TALLER-009", "Revision gratis", Decimal("0.00")),
+    ]
+    changed = False
+    for code, description, price_cs in defaults:
+        product = db.query(Producto).filter(func.lower(Producto.cod_producto) == code.lower()).first()
+        if not product:
+            product = Producto(
+                cod_producto=code,
+                descripcion=description,
+                linea_id=linea.id if linea else None,
+                segmento_id=segmento.id if segmento else None,
+                precio_venta1=price_cs,
+                costo_producto=Decimal("0"),
+                servicio_producto=True,
+                activo=True,
+                unidad_medida_id=unit.id if unit else None,
+                usuario_registro="system-racingmoto-services",
+            )
+            db.add(product)
+            db.flush()
+            db.add(SaldoProducto(producto_id=product.id, existencia=Decimal("0")))
+            changed = True
+            continue
+        if (product.descripcion or "") != description:
+            product.descripcion = description
+            changed = True
+        if int(product.linea_id or 0) != int(linea.id if linea else 0):
+            product.linea_id = linea.id if linea else None
+            changed = True
+        if int(product.segmento_id or 0) != int(segmento.id if segmento else 0):
+            product.segmento_id = segmento.id if segmento else None
+            changed = True
+        if int(product.unidad_medida_id or 0) != int(unit.id if unit else 0):
+            product.unidad_medida_id = unit.id if unit else None
+            changed = True
+        if not bool(product.servicio_producto):
+            product.servicio_producto = True
+            changed = True
+        if str(product.precio_venta1 or 0) != str(price_cs):
+            product.precio_venta1 = price_cs
+            changed = True
+        saldo = db.query(SaldoProducto).filter(SaldoProducto.producto_id == product.id).first()
+        if not saldo:
+            db.add(SaldoProducto(producto_id=product.id, existencia=Decimal("0")))
+            changed = True
+    if changed:
+        db.commit()
+
+
 def _seed_company_profile_settings(db: Session) -> None:
     active_company = (get_active_company_key() or "").strip().lower()
     is_shoes = active_company in {"bdzapatos", "zapatos", "miss_zapatos"}
     is_restaurant = active_company == "barrera"
     is_comestibles = active_company == "comestibles"
+    is_racingmoto = active_company == "racingmoto"
     is_global = active_company == "bdtrend"
-    multi_branch_enabled = active_company not in {"comestibles", "barrera", "bdtrend"}
+    multi_branch_enabled = active_company not in {"comestibles", "barrera", "bdtrend", "racingmoto"}
     existing = db.query(CompanyProfileSetting).first()
     if existing:
         changed = False
@@ -1220,7 +1333,29 @@ def _seed_company_profile_settings(db: Session) -> None:
             if not (existing.sidebar_subtitle or "").strip() or existing.sidebar_subtitle in {"ERP Central", "ERP Pacas Global"}:
                 existing.sidebar_subtitle = "Tienda de Conveniencia"
                 changed = True
-        if (not is_shoes) and (not is_restaurant) and (not is_comestibles) and (not is_global):
+        if (not is_shoes) and (not is_restaurant) and (not is_comestibles) and is_racingmoto:
+            if not (existing.legal_name or "").strip() or existing.legal_name in {"Hollywood Pacas", "Pacas Global"}:
+                existing.legal_name = "Racing Motos"
+                changed = True
+            if not (existing.trade_name or "").strip() or existing.trade_name in {"Hollywood Pacas", "Pacas Global"}:
+                existing.trade_name = "Racing Motos"
+                changed = True
+            if not (existing.app_title or "").strip() or existing.app_title in {"ERP Hollywood Pacas", "ERP Pacas Global"}:
+                existing.app_title = "ERP Racing Motos"
+                changed = True
+            if not (existing.sidebar_subtitle or "").strip() or existing.sidebar_subtitle in {"ERP Central", "ERP Pacas Global"}:
+                existing.sidebar_subtitle = "Venta de Repuestos"
+                changed = True
+            if not (existing.address or "").strip():
+                existing.address = "De la Gasolinera 2 de agosto 1 c 1/2 al norte."
+                changed = True
+            if (existing.email or "").strip() in {"admin@hollywoodpacas.com", "admin@pacasglobal.com"}:
+                existing.email = ""
+                changed = True
+            if (existing.website or "").strip() == "http://hollywoodpacas.com.ni":
+                existing.website = ""
+                changed = True
+        if (not is_shoes) and (not is_restaurant) and (not is_comestibles) and (not is_racingmoto) and (not is_global):
             if not (existing.legal_name or "").strip() or existing.legal_name == "Pacas Global":
                 existing.legal_name = "Hollywood Pacas"
                 changed = True
@@ -1328,6 +1463,33 @@ def _seed_company_profile_settings(db: Session) -> None:
                 ruc="",
                 phone="8900-0300",
                 address="Sucursal principal",
+                email="",
+                logo_url="/static/logo_hollywood.png",
+                pos_logo_url="/static/logo_hollywood.png",
+                login_logo_url="/static/logo_hollywood.png",
+                favicon_url="/static/favicon.ico",
+                inventory_cs_only=False,
+                weighted_inventory_enabled=False,
+                weighted_sales_enabled=False,
+                recipe_explosion_on_ingreso=False,
+                multi_branch_enabled=multi_branch_enabled,
+                price_auto_from_cost_enabled=False,
+                price_margin_percent=0,
+                theme_code="default",
+                updated_by="system-bootstrap",
+            )
+        )
+    elif is_racingmoto:
+        db.add(
+            CompanyProfileSetting(
+                legal_name="Racing Motos",
+                trade_name="Racing Motos",
+                app_title="ERP Racing Motos",
+                sidebar_subtitle="Venta de Repuestos",
+                website="",
+                ruc="",
+                phone="",
+                address="De la Gasolinera 2 de agosto 1 c 1/2 al norte.",
                 email="",
                 logo_url="/static/logo_hollywood.png",
                 pos_logo_url="/static/logo_hollywood.png",
@@ -1460,6 +1622,26 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN condicion_venta VARCHAR(20) DEFAULT 'CONTADO'"))
                 conn.execute(text("UPDATE ventas_facturas SET condicion_venta = 'CONTADO' WHERE condicion_venta IS NULL"))
+        if "subtotal_bruto_usd" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN subtotal_bruto_usd NUMERIC(14, 2) DEFAULT 0"))
+                conn.execute(text("UPDATE ventas_facturas SET subtotal_bruto_usd = COALESCE(total_usd, 0) WHERE subtotal_bruto_usd IS NULL OR subtotal_bruto_usd = 0"))
+        if "subtotal_bruto_cs" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN subtotal_bruto_cs NUMERIC(14, 2) DEFAULT 0"))
+                conn.execute(text("UPDATE ventas_facturas SET subtotal_bruto_cs = COALESCE(total_cs, 0) WHERE subtotal_bruto_cs IS NULL OR subtotal_bruto_cs = 0"))
+        if "descuento_global_porcentaje" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN descuento_global_porcentaje NUMERIC(7, 2) DEFAULT 0"))
+        if "descuento_total_usd" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN descuento_total_usd NUMERIC(14, 2) DEFAULT 0"))
+        if "descuento_total_cs" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN descuento_total_cs NUMERIC(14, 2) DEFAULT 0"))
+        if "descuento_autorizado_por" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN descuento_autorizado_por VARCHAR(160)"))
     if "ventas_reversion_tokens" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("ventas_reversion_tokens")}
         if "action_type" not in columns:
@@ -1498,6 +1680,28 @@ def init_db() -> None:
         if "peso_lbs" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_items ADD COLUMN peso_lbs NUMERIC(14, 2)"))
+        if "descuento_porcentaje" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_items ADD COLUMN descuento_porcentaje NUMERIC(7, 2) DEFAULT 0"))
+        if "descuento_usd" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_items ADD COLUMN descuento_usd NUMERIC(14, 2) DEFAULT 0"))
+        if "descuento_cs" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_items ADD COLUMN descuento_cs NUMERIC(14, 2) DEFAULT 0"))
+        if "subtotal_bruto_usd" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_items ADD COLUMN subtotal_bruto_usd NUMERIC(14, 2) DEFAULT 0"))
+                conn.execute(text("UPDATE ventas_items SET subtotal_bruto_usd = COALESCE(subtotal_usd, 0) WHERE subtotal_bruto_usd IS NULL OR subtotal_bruto_usd = 0"))
+        if "subtotal_bruto_cs" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_items ADD COLUMN subtotal_bruto_cs NUMERIC(14, 2) DEFAULT 0"))
+                conn.execute(text("UPDATE ventas_items SET subtotal_bruto_cs = COALESCE(subtotal_cs, 0) WHERE subtotal_bruto_cs IS NULL OR subtotal_bruto_cs = 0"))
+    if "email_recipients" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("email_recipients")}
+        if "discount_active" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE email_recipients ADD COLUMN discount_active BOOLEAN DEFAULT FALSE"))
     if "productos" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("productos")}
         if "es_libreado" not in columns:
@@ -1720,7 +1924,7 @@ def init_db() -> None:
         if "multi_branch_enabled" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE company_profile_settings ADD COLUMN multi_branch_enabled BOOLEAN DEFAULT TRUE"))
-                default_multi = "FALSE" if get_active_company_key() in {"comestibles", "barrera", "bdtrend"} else "TRUE"
+                default_multi = "FALSE" if get_active_company_key() in {"comestibles", "barrera", "bdtrend", "racingmoto"} else "TRUE"
                 conn.execute(text(f"UPDATE company_profile_settings SET multi_branch_enabled = {default_multi} WHERE multi_branch_enabled IS NULL"))
         if "price_auto_from_cost_enabled" not in columns:
             with engine.begin() as conn:
@@ -1849,5 +2053,6 @@ def init_db() -> None:
         _seed_company_profile_settings(db)
         _seed_restaurant_tables(db)
         _seed_restaurant_demo_products(db)
+        _seed_racingmoto_workshop_services(db)
     finally:
         db.close()

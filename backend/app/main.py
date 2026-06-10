@@ -48,6 +48,7 @@ def _default_branding() -> dict[str, str]:
         db_name = ""
     shoes_mode = db_name == "bdzapatos" or "zapato" in db_name
     restaurant_mode = active_company == "barrera" or "barrera" in db_name
+    racing_mode = active_company == "racingmoto" or db_name == "racing"
     if shoes_mode:
         return {
             "legal_name": "Miss Zapatos",
@@ -73,6 +74,22 @@ def _default_branding() -> dict[str, str]:
             "website": "",
             "phone": "",
             "address": "Sucursal principal",
+            "email": "",
+            "logo_url": "/static/logo_hollywood.png",
+            "pos_logo_url": "/static/logo_hollywood.png",
+            "favicon_url": "/static/favicon.ico",
+            "inventory_cs_only": False,
+            "theme_code": "default",
+        }
+    if racing_mode:
+        return {
+            "legal_name": "Racing Motos",
+            "trade_name": "Racing Motos",
+            "app_title": "ERP Racing Motos",
+            "sidebar_subtitle": "Venta de Repuestos",
+            "website": "",
+            "phone": "",
+            "address": "De la Gasolinera 2 de agosto 1 c 1/2 al norte.",
             "email": "",
             "logo_url": "/static/logo_hollywood.png",
             "pos_logo_url": "/static/logo_hollywood.png",
@@ -134,6 +151,7 @@ def _apply_company_logo_fallback(branding: dict[str, str]) -> dict[str, str]:
 @app.middleware("http")
 async def attach_branding(request, call_next):
     branding = _default_branding()
+    branding["company_key"] = (get_active_company_key() or "default").strip().lower() or "default"
     menu_links = web.SIDEBAR_MENU_ITEMS
     db = None
     try:

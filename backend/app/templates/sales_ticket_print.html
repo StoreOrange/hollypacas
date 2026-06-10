@@ -135,6 +135,9 @@
           {% if item.es_libreado and item.peso_lbs > 0 %}
           <div class="small">Peso: {{ "%.2f"|format(item.peso_lbs) }} Lbs</div>
           {% endif %}
+          {% if item.descuento and item.descuento > 0 %}
+          <div class="small">Desc item: {{ currency_label }} {{ format_amount(item.descuento) }}</div>
+          {% endif %}
           <div class="row small">
             <span>Cant: {{ "%.2f"|format(item.cantidad) }}</span>
             {% if show_item_subtotal or item.es_libreado or (show_item_subtotal_if_multi_qty and item.cantidad >= 2) %}
@@ -150,7 +153,7 @@
 
       <div class="row bold"><span>Total unds</span><span>{{ "%.2f"|format(total_unidades) }}</span></div>
       <div class="row bold"><span>Subtotal</span><span>{{ currency_label }} {{ format_amount(subtotal_amount) }}</span></div>
-      <div class="row"><span>Descuentos</span><span>{{ currency_label }} 0.00</span></div>
+      <div class="row"><span>Descuentos</span><span>{{ currency_label }} {{ format_amount(discount_amount or 0) }}</span></div>
       <div class="row bold"><span>Total</span><span>{{ currency_label }} {{ format_amount(total_amount) }}</span></div>
       {% if show_usd_equivalent %}
       <div class="row bold"><span>Equivalente en USD</span><span>$ {{ format_amount(usd_equivalent_amount) }}</span></div>

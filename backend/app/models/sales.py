@@ -185,6 +185,7 @@ class NotificationRecipient(Base):
     name = Column(String(160), nullable=True)
     active = Column(Boolean, default=True)
     sales_close_active = Column(Boolean, default=False)
+    discount_active = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -206,6 +207,23 @@ class ReversionToken(Base):
     vendedor_nuevo = relationship("Vendedor")
 
 
+class DiscountAuthorizationToken(Base):
+    __tablename__ = "ventas_discount_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(20), nullable=False)
+    payload_hash = Column(String(96), nullable=False, index=True)
+    payload_json = Column(Text, nullable=True)
+    motivo = Column(String(300), nullable=False)
+    solicitado_por = Column(String(160), nullable=True)
+    factura_id = Column(Integer, ForeignKey("ventas_facturas.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+
+    factura = relationship("VentaFactura")
+
+
 class VentaFactura(Base):
     __tablename__ = "ventas_facturas"
 
@@ -221,6 +239,12 @@ class VentaFactura(Base):
     tasa_cambio = Column(Numeric(12, 4), nullable=True)
     total_usd = Column(Numeric(14, 2), default=0)
     total_cs = Column(Numeric(14, 2), default=0)
+    subtotal_bruto_usd = Column(Numeric(14, 2), default=0)
+    subtotal_bruto_cs = Column(Numeric(14, 2), default=0)
+    descuento_global_porcentaje = Column(Numeric(7, 2), default=0)
+    descuento_total_usd = Column(Numeric(14, 2), default=0)
+    descuento_total_cs = Column(Numeric(14, 2), default=0)
+    descuento_autorizado_por = Column(String(160), nullable=True)
     total_items = Column(Numeric(14, 2), default=0)
     usuario_registro = Column(String(120), nullable=True)
     estado = Column(String(20), nullable=False, default="ACTIVA")
@@ -249,6 +273,11 @@ class VentaItem(Base):
     peso_lbs = Column(Numeric(14, 2), nullable=True)
     precio_unitario_usd = Column(Numeric(14, 2), default=0)
     precio_unitario_cs = Column(Numeric(14, 2), default=0)
+    descuento_porcentaje = Column(Numeric(7, 2), default=0)
+    descuento_usd = Column(Numeric(14, 2), default=0)
+    descuento_cs = Column(Numeric(14, 2), default=0)
+    subtotal_bruto_usd = Column(Numeric(14, 2), default=0)
+    subtotal_bruto_cs = Column(Numeric(14, 2), default=0)
     subtotal_usd = Column(Numeric(14, 2), default=0)
     subtotal_cs = Column(Numeric(14, 2), default=0)
     combo_role = Column(String(20), nullable=True)

@@ -251,7 +251,7 @@
         </button>
       </form>
       <div class="text-xs text-slate mt-2">
-        Columnas: codigo, descripcion, linea, segmento, costo_usd, precio_usd, precio_cs, saldo_central, saldo_esteli.
+        Columnas: codigo, descripcion, linea, segmento, costo_usd, precio_usd, precio_cs, saldo_central{% if active_company != 'racingmoto' %}, saldo_esteli{% endif %}.
       </div>
     </div>
 
@@ -868,7 +868,7 @@
         <div class="odoo-modal-section odoo-compact-card">
           <div class="odoo-modal-title mb-3">Importar productos</div>
           <p class="text-xs text-slate">
-            Excel con columnas: codigo, descripcion, linea, segmento, costo_usd, precio_usd, precio_cs, saldo_central, saldo_esteli.
+            Excel con columnas: codigo, descripcion, linea, segmento, costo_usd, precio_usd, precio_cs, saldo_central{% if active_company != 'racingmoto' %}, saldo_esteli{% endif %}.
           </p>
           <a class="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-sky-800" href="/inventory/import/template">
             <i class="bi bi-download"></i>

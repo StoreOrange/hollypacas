@@ -202,6 +202,17 @@
                     </div>
                   </a>
                 </div>
+                <div class="col-md-6 col-xl-4" data-catalog-item>
+                  <a class="text-decoration-none" href="/data/servicios-taller">
+                    <div class="border rounded-3 p-3 h-100">
+                      <div class="d-flex align-items-center justify-content-between">
+                        <div class="fw-semibold">Servicios de taller</div>
+                        <span class="badge text-bg-warning"><i class="bi bi-tools"></i> Taller</span>
+                      </div>
+                      <p class="text-muted mt-2 mb-0">Mano de obra y servicios que no descuentan inventario.</p>
+                    </div>
+                  </a>
+                </div>
                 {% if active_company == 'barrera' %}
                 <div class="col-md-6 col-xl-4" data-catalog-item>
                   <a class="text-decoration-none" href="/data/mesas">
@@ -328,7 +339,9 @@
                         Descargar plantilla
                       </a>
                     </div>
-                    <p class="text-muted mb-3">Sube columnas: codigo, descripcion, linea, segmento, costo_usd, precio_usd, precio_cs, saldo_central, saldo_esteli.</p>
+                    <p class="text-muted mb-3">
+                      Sube columnas: codigo, descripcion, linea, segmento, costo_usd, precio_usd, precio_cs, saldo_central{% if active_company != 'racingmoto' %}, saldo_esteli{% endif %}.
+                    </p>
                     <form id="import-form" class="d-flex flex-wrap align-items-center gap-3" method="post" action="/inventory/import" enctype="multipart/form-data">
                       <input id="import-file" name="file" type="file" accept=".xlsx" class="form-control form-control-sm" required />
                       <button class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2" type="button"
