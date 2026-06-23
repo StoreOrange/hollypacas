@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <div>
+          <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+              <li class="breadcrumb-item"><a href="/data">Datos</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Setato</li>
+            </ol>
+          </nav>
+          <h1 class="h5 mb-1">Setato</h1>
+          <p class="text-muted mb-0">Control Dir/ReDir de facturas para informes, ventas en caliente y cierre de caja.</p>
+        </div>
+        <a class="btn btn-outline-secondary btn-sm" href="/data">
+          <i class="bi bi-arrow-left"></i>
+          Datos
+        </a>
+      </div>
+
+      {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="alert alert-success">{{ success }}</div>
+      {% endif %}
+
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+          <form class="row g-2 align-items-end" method="get" action="/data/setato">
+            <div class="col-12 col-md-3">
+              <label class="form-label mb-1 fw-semibold">Desde</label>
+              <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label mb-1 fw-semibold">Hasta</label>
+              <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+            </div>
+            <div class="col-12 col-md-auto">
+              <button class="btn btn-primary btn-sm" type="submit">
+                <i class="bi bi-search"></i>
+                Filtrar
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Sucursal</th>
+                  <th>Factura</th>
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th class="text-end">Monto</th>
+                  <th>Vendedor</th>
+                  <th class="text-center">Estado</th>
+                  <th class="text-end">Gestion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for factura in facturas %}
+                {% set branch = factura.bodega.branch if factura.bodega and factura.bodega.branch else none %}
+                {% set monto = factura.total_usd if factura.moneda == 'USD' else factura.total_cs %}
+                <tr class="setato-row {% if factura.setato_excluida %}table-warning{% endif %}" data-id="{{ factura.id }}" role="button" title="Doble clic para ver detalle">
+                  <td>{{ branch.name if branch else '-' }}</td>
+                  <td class="fw-semibold">{{ factura.numero }}</td>
+                  <td>{{ factura.fecha.strftime("%d/%m/%Y %H:%M") if factura.fecha else '-' }}</td>
+                  <td>{{ factura.cliente.nombre if factura.cliente else 'Consumidor final' }}</td>
+                  <td class="text-end">{{ '$' if factura.moneda == 'USD' else 'C$' }} {{ "{:,.2f}".format(monto or 0) }}</td>
+                  <td>{{ factura.vendedor.nombre if factura.vendedor else '-' }}</td>
+                  <td class="text-center">
+                    {% if factura.estado == 'ANULADA' %}
+                      <span class="badge bg-danger">Anulada</span>
+                    {% elif factura.setato_excluida %}
+                      <span class="badge bg-warning text-dark">Dir</span>
+                    {% else %}
+                      <span class="badge bg-success">Normal</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-end">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Gestion Setato">
+                      <form method="post" action="/data/setato/{{ factura.id }}/dir" class="d-inline">
+                        <button class="btn btn-outline-warning" type="submit" {% if factura.estado == 'ANULADA' or factura.setato_excluida %}disabled{% endif %}>Dir</button>
+                      </form>
+                      <form method="post" action="/data/setato/{{ factura.id }}/redir" class="d-inline">
+                        <button class="btn btn-outline-success" type="submit" {% if factura.estado == 'ANULADA' or not factura.setato_excluida %}disabled{% endif %}>ReDir</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% if facturas|length == 0 %}
+                <tr>
+                  <td colspan="8" class="text-center text-muted py-3">Sin facturas en el rango seleccionado.</td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal fade" id="setatoDetailModal" tabindex="-1" aria-labelledby="setatoDetailTitle" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title h6 mb-0" id="setatoDetailTitle">Factura</h2>
+          <div class="small text-muted" id="setatoDetailMeta"></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2 mb-3 small">
+          <div class="col-md-3"><span class="text-muted">Cliente:</span> <strong id="detailCliente">-</strong></div>
+          <div class="col-md-3"><span class="text-muted">Vendedor:</span> <strong id="detailVendedor">-</strong></div>
+          <div class="col-md-3"><span class="text-muted">Sucursal:</span> <strong id="detailSucursal">-</strong></div>
+          <div class="col-md-3"><span class="text-muted">Total:</span> <strong id="detailTotal">-</strong></div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Codigo</th>
+                <th>Producto</th>
+                <th class="text-end">Cantidad</th>
+                <th class="text-end">Precio</th>
+                <th class="text-end">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody id="detailItems">
+              <tr><td colspan="5" class="text-center text-muted py-3">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const formatMoney = (value, currency) => {
+    const amount = Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return currency === "USD" ? `$ ${amount}` : `C$ ${amount}`;
+  };
+
+  const modalEl = document.getElementById("setatoDetailModal");
+  const detailModal = modalEl ? new bootstrap.Modal(modalEl) : null;
+  const titleEl = document.getElementById("setatoDetailTitle");
+  const metaEl = document.getElementById("setatoDetailMeta");
+  const clienteEl = document.getElementById("detailCliente");
+  const vendedorEl = document.getElementById("detailVendedor");
+  const sucursalEl = document.getElementById("detailSucursal");
+  const totalEl = document.getElementById("detailTotal");
+  const itemsEl = document.getElementById("detailItems");
+
+  document.querySelectorAll(".setato-row").forEach((row) => {
+    row.addEventListener("dblclick", async () => {
+      const id = row.dataset.id;
+      if (!id || !detailModal) return;
+      titleEl.textContent = "Factura";
+      metaEl.textContent = "";
+      itemsEl.innerHTML = "<tr><td colspan='5' class='text-center text-muted py-3'>Cargando...</td></tr>";
+      detailModal.show();
+      try {
+        const response = await fetch(`/sales/${id}/detail`);
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.message || "No se pudo cargar el detalle");
+        const factura = payload.factura || {};
+        const currency = factura.moneda || "CS";
+        titleEl.textContent = factura.numero || "Factura";
+        metaEl.textContent = `${factura.fecha || ""} ${factura.hora || ""}`.trim();
+        clienteEl.textContent = factura.cliente || "-";
+        vendedorEl.textContent = factura.vendedor || "-";
+        sucursalEl.textContent = factura.sucursal || "-";
+        totalEl.textContent = formatMoney(currency === "USD" ? factura.total_usd : factura.total_cs, currency);
+        itemsEl.innerHTML = (factura.items || []).map((item) => {
+          const price = currency === "USD" ? item.precio_usd : item.precio_cs;
+          const subtotal = currency === "USD" ? item.subtotal_usd : item.subtotal_cs;
+          return `
+            <tr>
+              <td>${item.codigo || ""}</td>
+              <td>${item.descripcion || ""}</td>
+              <td class="text-end">${Number(item.cantidad || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td class="text-end">${formatMoney(price, currency)}</td>
+              <td class="text-end">${formatMoney(subtotal, currency)}</td>
+            </tr>`;
+        }).join("") || "<tr><td colspan='5' class='text-center text-muted py-3'>Sin detalle.</td></tr>";
+      } catch (error) {
+        itemsEl.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-3">${error.message || "Error"}</td></tr>`;
+      }
+    });
+  });
+</script>
+{% endblock %}

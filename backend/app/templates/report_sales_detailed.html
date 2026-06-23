@@ -166,7 +166,7 @@
             </thead>
             <tbody>
               {% for row in rows %}
-              <tr class="{% if row.anulada %}text-danger{% endif %}">
+              <tr class="{% if row.anulada %}text-danger{% elif row.setato_excluida %}table-warning{% endif %}">
                 <td>{{ row.fecha }}</td>
                 <td class="fw-semibold">{{ row.factura }}</td>
                 <td class="col-cliente">{{ row.cliente }}</td>
@@ -187,6 +187,8 @@
                 <td class="text-center">
                   {% if row.anulada %}
                     <span class="badge bg-danger">Anulada</span>
+                  {% elif row.setato_excluida %}
+                    <span class="badge bg-warning text-dark">Setato Dir</span>
                   {% else %}
                     <span class="badge bg-success">Activa</span>
                   {% endif %}
@@ -195,7 +197,7 @@
               {% endfor %}
               {% if rows|length == 0 %}
               <tr>
-                <td colspan="11" class="text-center text-slate py-3">Sin resultados.</td>
+                <td colspan="12" class="text-center text-slate py-3">Sin resultados.</td>
               </tr>
               {% endif %}
             </tbody>
@@ -247,7 +249,7 @@
                 <tfoot>
                   <tr class="table-light">
                     <th class="text-end">Total USD</th>
-                    <th class="text-end">$ {{ "{:,.2f}".format(total_usd or 0) }}</th>
+                    <th class="text-end">$ {{ "{:,.2f}".format(vendor_summary|sum(attribute='total_usd')) }}</th>
                   </tr>
                 </tfoot>
               </table>

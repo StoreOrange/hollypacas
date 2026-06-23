@@ -2165,6 +2165,10 @@ def _is_hollpacas_mode() -> bool:
     )
 
 
+def _setato_reportable_filter():
+    return or_(VentaFactura.setato_excluida.is_(False), VentaFactura.setato_excluida.is_(None))
+
+
 def _ensure_shoe_size_formats_seed(db: Session) -> None:
     required = {
         "18-1": [
@@ -15428,6 +15432,7 @@ def sales_cierre(
     if bodega:
         ventas_query = ventas_query.filter(VentaFactura.bodega_id == bodega.id)
     ventas_query = ventas_query.filter(VentaFactura.estado != "ANULADA")
+    ventas_query = ventas_query.filter(_setato_reportable_filter())
     ventas = ventas_query.all()
     total_ventas_usd = sum(
         to_usd(f.moneda or "CS", f.total_cs or 0, f.total_usd or 0) for f in ventas
@@ -15471,6 +15476,7 @@ def sales_cierre(
     creditos_query = db.query(VentaFactura).filter(
         func.date(VentaFactura.fecha) == fecha_value,
         VentaFactura.estado != "ANULADA",
+        _setato_reportable_filter(),
         VentaFactura.estado_cobranza == "PENDIENTE",
     )
     if bodega:
@@ -15596,6 +15602,7 @@ async def sales_cierre_create(
 
     ventas_query = db.query(VentaFactura).filter(func.date(VentaFactura.fecha) == fecha_value)
     ventas_query = ventas_query.filter(VentaFactura.estado != "ANULADA")
+    ventas_query = ventas_query.filter(_setato_reportable_filter())
     if bodega:
         ventas_query = ventas_query.filter(VentaFactura.bodega_id == bodega.id)
     ventas = ventas_query.all()
@@ -15643,6 +15650,7 @@ async def sales_cierre_create(
     creditos_query = db.query(VentaFactura).filter(
         func.date(VentaFactura.fecha) == fecha_value,
         VentaFactura.estado != "ANULADA",
+        _setato_reportable_filter(),
         VentaFactura.estado_cobranza == "PENDIENTE",
     )
     if bodega:
@@ -16209,6 +16217,7 @@ def sales_ventas_caliente(
         .join(Bodega, VentaFactura.bodega_id == Bodega.id)
         .join(Branch, Bodega.branch_id == Branch.id)
         .filter(VentaFactura.estado != "ANULADA")
+        .filter(_setato_reportable_filter())
     )
 
     def total_branch(branch: Optional[Branch]) -> Decimal:
@@ -20059,13 +20068,15 @@ def _build_sales_report_rows(
         total_factura_usd = total_factura if moneda == "USD" else (total_factura / tasa if tasa else Decimal("0"))
         total_factura_cs = total_factura if moneda == "CS" else (total_factura * tasa if tasa else Decimal("0"))
         is_anulada = factura.estado == "ANULADA"
+        is_setato_excluida = bool(factura.setato_excluida)
         if not is_anulada:
-            total_usd += subtotal_usd
-            total_cs += subtotal_cs
             facturas_set.add(factura.id)
             total_items += Decimal(str(item.cantidad or 0))
-            vendedor_name = vendedor.nombre if vendedor else "Sin asignar"
-            vendedor_totals[vendedor_name] = vendedor_totals.get(vendedor_name, Decimal("0")) + subtotal_usd
+            if not is_setato_excluida:
+                total_usd += subtotal_usd
+                total_cs += subtotal_cs
+                vendedor_name = vendedor.nombre if vendedor else "Sin asignar"
+                vendedor_totals[vendedor_name] = vendedor_totals.get(vendedor_name, Decimal("0")) + subtotal_usd
         report_rows.append(
             {
                 "fecha": factura.fecha.strftime("%d/%m/%Y") if factura.fecha else "",
@@ -20084,6 +20095,7 @@ def _build_sales_report_rows(
                 "total_factura_usd": float(total_factura_usd),
                 "total_factura_cs": float(total_factura_cs),
                 "anulada": is_anulada,
+                "setato_excluida": is_setato_excluida,
                 "factura_id": factura.id,
             }
         )
@@ -21312,6 +21324,7 @@ def report_sales_export(
             VentaFactura.fecha >= start_dt,
             VentaFactura.fecha < end_dt,
             VentaFactura.estado != 'ANULADA',
+            _setato_reportable_filter(),
         )
         if bodega_ids is not None:
             ventas_query = ventas_query.filter(VentaFactura.bodega_id.in_(bodega_ids))
@@ -21359,6 +21372,7 @@ def report_sales_export(
             VentaFactura.fecha >= start_dt,
             VentaFactura.fecha < end_dt,
             VentaFactura.estado != 'ANULADA',
+            _setato_reportable_filter(),
             VentaFactura.estado_cobranza == 'PENDIENTE',
         )
         if bodega_ids is not None:
@@ -21395,6 +21409,7 @@ def report_sales_export(
             VentaFactura.fecha >= start_dt,
             VentaFactura.fecha < end_dt,
             VentaFactura.estado != "ANULADA",
+            _setato_reportable_filter(),
             VentaFactura.estado_cobranza == "PENDIENTE",
         )
         if bodega_ids is not None:
@@ -21708,7 +21723,7 @@ def report_sales_export(
         cell.alignment = Alignment(horizontal="center")
 
     for row in report_rows:
-        estado = "ANULADA" if row["anulada"] else "ACTIVA"
+        estado = "ANULADA" if row["anulada"] else ("SETATO DIR" if row.get("setato_excluida") else "ACTIVA")
         ws.append(
             [
                 row["fecha"],
@@ -22182,7 +22197,12 @@ def sales_detail(
     db: Session = Depends(get_db),
     user: User = Depends(_require_user_web),
 ):
-    if not (_has_permission(user, "access.sales.cobranza") or _has_permission(user, "access.sales")):
+    can_view_from_data_setato = _is_hollpacas_mode() and _has_permission(user, "access.data")
+    if not (
+        _has_permission(user, "access.sales.cobranza")
+        or _has_permission(user, "access.sales")
+        or can_view_from_data_setato
+    ):
         _enforce_permission(request, user, "access.sales.cobranza")
     factura = (
         db.query(VentaFactura)
@@ -22191,6 +22211,8 @@ def sales_detail(
     )
     if not factura:
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
+    if can_view_from_data_setato and factura.bodega and factura.bodega.branch_id not in _user_scoped_branch_ids(db, user):
+        return JSONResponse({"ok": False, "message": "Factura fuera de tu alcance"}, status_code=403)
 
     items = []
     for item in factura.items:
@@ -22706,6 +22728,95 @@ def data_home(
             "version": settings.UI_VERSION,
         },
     )
+
+
+@router.get("/data/setato")
+def data_setato(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/data", status_code=303)
+
+    today = local_today()
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    try:
+        start_date = date.fromisoformat(start_raw) if start_raw else today
+    except ValueError:
+        start_date = today
+    try:
+        end_date = date.fromisoformat(end_raw) if end_raw else today
+    except ValueError:
+        end_date = today
+    if end_date < start_date:
+        start_date, end_date = end_date, start_date
+
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+
+    facturas = (
+        db.query(VentaFactura)
+        .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+        .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+        .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+        .filter(or_(Branch.id.in_(scoped_branch_ids), Branch.id.is_(None)))
+        .order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc())
+        .all()
+    )
+    return request.app.state.templates.TemplateResponse(
+        "data_setato.html",
+        {
+            "request": request,
+            "user": user,
+            "facturas": facturas,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "success": request.query_params.get("success") or "",
+            "error": request.query_params.get("error") or "",
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/data/setato/{venta_id}/{action}")
+def data_setato_update(
+    request: Request,
+    venta_id: int,
+    action: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/data", status_code=303)
+    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
+    if not factura:
+        return RedirectResponse("/data/setato?error=Factura+no+encontrada", status_code=303)
+    if factura.bodega and factura.bodega.branch_id not in _user_scoped_branch_ids(db, user):
+        return RedirectResponse("/data/setato?error=Factura+fuera+de+tu+alcance", status_code=303)
+    if factura.estado == "ANULADA":
+        return RedirectResponse("/data/setato?error=Factura+anulada+no+se+puede+gestionar", status_code=303)
+
+    normalized = (action or "").strip().lower()
+    if normalized == "dir":
+        factura.setato_excluida = True
+        msg = "Factura+marcada+Dir"
+    elif normalized in {"redir", "nodir"}:
+        factura.setato_excluida = False
+        msg = "Factura+restaurada+ReDir"
+    else:
+        return RedirectResponse("/data/setato?error=Accion+invalida", status_code=303)
+
+    factura.setato_actualizado_por = (user.full_name or user.email or "").strip()[:160] or None
+    factura.setato_actualizado_at = local_now_naive()
+    db.commit()
+    referer = request.headers.get("referer") or "/data/setato"
+    sep = "&" if "?" in referer else "?"
+    return RedirectResponse(f"{referer}{sep}success={msg}", status_code=303)
 
 
 @router.get("/data/mesas")

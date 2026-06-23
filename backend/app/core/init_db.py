@@ -1642,6 +1642,16 @@ def init_db() -> None:
         if "descuento_autorizado_por" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN descuento_autorizado_por VARCHAR(160)"))
+        if "setato_excluida" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN setato_excluida BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("UPDATE ventas_facturas SET setato_excluida = FALSE WHERE setato_excluida IS NULL"))
+        if "setato_actualizado_por" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN setato_actualizado_por VARCHAR(160)"))
+        if "setato_actualizado_at" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN setato_actualizado_at TIMESTAMP"))
     if "ventas_reversion_tokens" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("ventas_reversion_tokens")}
         if "action_type" not in columns:
