@@ -11610,23 +11610,25 @@ def mobile_preproduction_image(
     order = db.query(PreProductionOrder).filter(PreProductionOrder.id == order_id).first()
     if not order:
         return JSONResponse({"ok": False, "message": "Orden no encontrada"}, status_code=404)
-    width, height = 480, 1900
+    width, height = 480, 2600
     image = Image.new("RGB", (width, height), "#f8fafc")
     draw = ImageDraw.Draw(image)
     try:
-        font_title = ImageFont.truetype("arial.ttf", 58)
-        font_h = ImageFont.truetype("arial.ttf", 40)
-        font = ImageFont.truetype("arial.ttf", 35)
-        font_small = ImageFont.truetype("arial.ttf", 38)
-        font_meta = ImageFont.truetype("arial.ttf", 33)
+        font_title = ImageFont.truetype("arial.ttf", 96)
+        font_h = ImageFont.truetype("arial.ttf", 70)
+        font = ImageFont.truetype("arial.ttf", 62)
+        font_small = ImageFont.truetype("arial.ttf", 68)
+        font_meta = ImageFont.truetype("arial.ttf", 58)
     except Exception:
         font_title = font_h = font = font_small = font_meta = ImageFont.load_default()
-    draw.rounded_rectangle((16, 18, width - 16, 230), radius=24, fill="#1e3a8a")
-    draw.text((30, 34), "Orden de", font=font, fill="#dbeafe")
-    draw.text((30, 75), "Pre-prod.", font=font_title, fill="white")
-    draw.text((30, 143), _preproduction_fit_text(draw, order.numero, font, width - 60), font=font, fill="#dbeafe")
-    draw.text((30, 183), order.fecha.strftime("%d/%m/%Y") if order.fecha else "", font=font, fill="#dbeafe")
-    y = 268
+    draw.rounded_rectangle((14, 16, width - 14, 330), radius=24, fill="#1e3a8a")
+    draw.text((24, 34), "Orden", font=font, fill="#dbeafe")
+    draw.text((24, 96), "PRE", font=font_title, fill="white")
+    draw.text((24, 190), "PROD.", font=font_title, fill="white")
+    draw.text((24, 288), order.fecha.strftime("%d/%m/%Y") if order.fecha else "", font=font, fill="#dbeafe")
+    y = 370
+    draw.text((22, y), _preproduction_fit_text(draw, order.numero, font_h, width - 44), font=font_h, fill="#0f172a")
+    y += 90
     for label, value in [
         ("Tarea", _preproduction_task_label(order.task_type)),
         ("Encargado", order.encargado.full_name if order.encargado else "-"),
@@ -11634,50 +11636,50 @@ def mobile_preproduction_image(
         ("Baja usada", f"{float(order.total_input_lbs or 0):,.2f} lbs"),
         ("Resultado", f"{float(order.total_output_qty or 0):,.2f} und | {float(order.total_output_lbs or 0):,.2f} lbs"),
     ]:
-        draw.text((22, y), f"{label}:", font=font_h, fill="#0f172a")
-        y += 44
-        draw.text((34, y), _preproduction_fit_text(draw, str(value), font, width - 68), font=font, fill="#334155")
-        y += 58
-    y += 12
+        draw.text((18, y), f"{label}:", font=font_h, fill="#0f172a")
+        y += 76
+        draw.text((26, y), _preproduction_fit_text(draw, str(value), font, width - 52), font=font, fill="#334155")
+        y += 84
+    y += 18
     draw.line((18, y, width - 18, y), fill="#bfdbfe", width=3)
-    y += 22
+    y += 28
     draw.text((22, y), "BAJAS ABIERTAS", font=font_h, fill="#1e3a8a")
-    y += 58
+    y += 86
     input_groups = _preproduction_group_lines_for_image(order.inputs)
     output_groups = _preproduction_group_lines_for_image(order.outputs)
-    for item in input_groups[:4]:
+    for item in input_groups[:3]:
         title = f"{item['codigo']} {item['descripcion']}"
         qty = f"Cant: {_preproduction_decimal_text(item['cantidad'])}"
         total = f"Lbs: {_preproduction_decimal_text(item['total_lbs'])}"
         prom = f"Prom: {_preproduction_decimal_text(item['peso_prom_lbs'])}"
-        draw.text((28, y), _preproduction_fit_text(draw, title, font_small, width - 56), font=font_small, fill="#0f172a")
-        y += 46
-        draw.text((38, y), qty, font=font_meta, fill="#b91c1c")
-        y += 38
-        draw.text((38, y), f"{prom} | {total}", font=font_meta, fill="#334155")
-        y += 56
-    if len(input_groups) > 4:
-        draw.text((28, y), f"+ {len(input_groups) - 4} items mas", font=font_meta, fill="#64748b")
-        y += 48
-    y += 18
+        draw.text((24, y), _preproduction_fit_text(draw, title, font_small, width - 48), font=font_small, fill="#0f172a")
+        y += 74
+        draw.text((30, y), _preproduction_fit_text(draw, qty, font_meta, width - 60), font=font_meta, fill="#b91c1c")
+        y += 62
+        draw.text((30, y), _preproduction_fit_text(draw, total, font_meta, width - 60), font=font_meta, fill="#334155")
+        y += 78
+    if len(input_groups) > 3:
+        draw.text((24, y), f"+ {len(input_groups) - 3} items mas", font=font_meta, fill="#64748b")
+        y += 68
+    y += 28
     draw.line((18, y, width - 18, y), fill="#bbf7d0", width=3)
-    y += 22
+    y += 28
     draw.text((22, y), "RESULTADO", font=font_h, fill="#166534")
-    y += 58
-    for item in output_groups[:4]:
+    y += 86
+    for item in output_groups[:3]:
         title = f"{item['codigo']} {item['descripcion']}"
         qty = f"Cant: {_preproduction_decimal_text(item['cantidad'])}"
         total = f"Lbs: {_preproduction_decimal_text(item['total_lbs'])}"
         prom = f"Prom: {_preproduction_decimal_text(item['peso_prom_lbs'])}"
-        draw.text((28, y), _preproduction_fit_text(draw, title, font_small, width - 56), font=font_small, fill="#0f172a")
-        y += 46
-        draw.text((38, y), qty, font=font_meta, fill="#1e3a8a")
-        y += 38
-        draw.text((38, y), f"{prom} | {total}", font=font_meta, fill="#334155")
-        y += 56
-    if len(output_groups) > 4:
-        draw.text((28, y), f"+ {len(output_groups) - 4} items mas", font=font_meta, fill="#64748b")
-        y += 48
+        draw.text((24, y), _preproduction_fit_text(draw, title, font_small, width - 48), font=font_small, fill="#0f172a")
+        y += 74
+        draw.text((30, y), _preproduction_fit_text(draw, qty, font_meta, width - 60), font=font_meta, fill="#1e3a8a")
+        y += 62
+        draw.text((30, y), _preproduction_fit_text(draw, total, font_meta, width - 60), font=font_meta, fill="#334155")
+        y += 78
+    if len(output_groups) > 3:
+        draw.text((24, y), f"+ {len(output_groups) - 3} items mas", font=font_meta, fill="#64748b")
+        y += 68
     if order.observacion:
         y += 24
         draw.text((22, y), "Observacion", font=font_h, fill="#0f172a")
