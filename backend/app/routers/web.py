@@ -25,6 +25,7 @@ from dotenv import dotenv_values
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font
 from reportlab.lib import colors
+from PIL import Image, ImageDraw, ImageFont
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
@@ -104,6 +105,10 @@ from ..models.sales import (
     FormaPago,
     NotificationRecipient,
     PosPrintSetting,
+    PreProductionAudit,
+    PreProductionInput,
+    PreProductionOrder,
+    PreProductionOutput,
     ReciboCaja,
     ReciboMotivo,
     ReciboRubro,
@@ -390,6 +395,7 @@ SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "inventory_ingresos", "label": "Ingresos Inventario", "href": "/inventory/ingresos", "icon": "bi-box-arrow-in-down", "perm": "menu.inventory.ingresos", "alt_perm": None},
     {"id": "inventory_egresos", "label": "Egresos Inventario", "href": "/inventory/egresos", "icon": "bi-box-arrow-up", "perm": "menu.inventory.egresos", "alt_perm": None},
     {"id": "inventory_requisas", "label": "Gestion Bodega y Requisas", "href": "/inventory/gestion-bodega-requisas", "icon": "bi-clipboard2-data-fill", "perm": "menu.inventory.requisas", "alt_perm": None},
+    {"id": "inventory_preproduction_mobile", "label": "Pre-produccion Bodega", "href": "/m/bodega/preproduccion", "icon": "bi-clipboard2-pulse", "perm": "menu.inventory.preproduction.mobile", "alt_perm": "menu.inventory.requisas"},
     {"id": "inventory_traslados", "label": "Traslados Rapidos", "href": "/inventory/traslados-rapidos", "icon": "bi-arrow-left-right", "perm": "menu.inventory.egresos", "alt_perm": None},
     {"id": "finance", "label": "Finanzas", "href": "/finance", "icon": "bi-currency-dollar", "perm": "menu.finance", "alt_perm": None},
     {"id": "accounting", "label": "Contabilidad", "href": "/accounting", "icon": "bi-journal-check", "perm": "menu.accounting", "alt_perm": None},
@@ -925,6 +931,185 @@ def _enforce_mobile_vendor_commission_report_access(request: Request, user: User
     ):
         return
     _enforce_permission(request, user, "access.sales.mis_comisiones.mobile")
+
+
+PREPRODUCTION_TASK_TYPES = [
+    ("PACAS", "Abierta de Pacas"),
+    ("CREDENCIAL", "Abierta de Credencial"),
+    ("CLASIFICACIONES", "Clasificaciones Varias"),
+    ("EMBALAJE", "Embalaje"),
+]
+
+
+def _enforce_preproduction_mobile_access(request: Request, user: User) -> None:
+    if (
+        _has_permission(user, "access.inventory.preproduction.mobile")
+        or _has_permission(user, "access.inventory.requisas")
+        or _has_permission(user, "access.inventory")
+    ):
+        return
+    _enforce_permission(request, user, "access.inventory.preproduction.mobile")
+
+
+def _preproduction_task_label(code: Optional[str]) -> str:
+    labels = dict(PREPRODUCTION_TASK_TYPES)
+    return labels.get((code or "").strip().upper(), code or "-")
+
+
+def _preproduction_next_number(db: Session, value_date: date) -> str:
+    prefix = f"PP-{value_date.strftime('%Y%m%d')}-"
+    last = (
+        db.query(PreProductionOrder)
+        .filter(PreProductionOrder.numero.like(f"{prefix}%"))
+        .order_by(PreProductionOrder.numero.desc())
+        .first()
+    )
+    seq = 1
+    if last and last.numero:
+        try:
+            seq = int(last.numero.rsplit("-", 1)[-1]) + 1
+        except Exception:
+            seq = 1
+    return f"{prefix}{seq:04d}"
+
+
+def _preproduction_recalc(order: PreProductionOrder) -> None:
+    order.total_input_lbs = sum((Decimal(str(item.total_lbs or 0)) for item in order.inputs), Decimal("0"))
+    order.total_output_lbs = sum((Decimal(str(item.total_lbs or 0)) for item in order.outputs), Decimal("0"))
+    order.total_output_qty = sum((Decimal(str(item.cantidad or 0)) for item in order.outputs), Decimal("0"))
+
+
+def _preproduction_audit(db: Session, order: PreProductionOrder, user: User, action: str, detail: str = "") -> None:
+    db.add(
+        PreProductionAudit(
+            order_id=order.id,
+            action=action,
+            detail=detail[:2000] if detail else None,
+            usuario=(user.full_name or user.email or "").strip()[:160] or None,
+        )
+    )
+
+
+def _preproduction_decimal_text(value) -> str:
+    return f"{Decimal(str(value or 0)).quantize(Decimal('0.01')):,.2f}"
+
+
+def _preproduction_lines_snapshot(db: Session, lines) -> list[dict[str, object]]:
+    product_ids: set[int] = set()
+    raw_lines = list(lines or [])
+    for line in raw_lines:
+        product_id = getattr(line, "producto_id", None)
+        if product_id is None and isinstance(line, dict):
+            product_id = line.get("producto_id")
+        if product_id:
+            product_ids.add(int(product_id))
+    products = {
+        product.id: product
+        for product in db.query(Producto).filter(Producto.id.in_(product_ids)).all()
+    } if product_ids else {}
+    snapshot: list[dict[str, object]] = []
+    occurrences: dict[int, int] = {}
+    for line in raw_lines:
+        product_id = getattr(line, "producto_id", None)
+        if product_id is None and isinstance(line, dict):
+            product_id = line.get("producto_id")
+        product_id = int(product_id or 0)
+        occurrences[product_id] = occurrences.get(product_id, 0) + 1
+        product = products.get(product_id)
+        get_value = line.get if isinstance(line, dict) else lambda key, default=None: getattr(line, key, default)
+        snapshot.append(
+            {
+                "key": (product_id, occurrences[product_id]),
+                "producto_id": product_id,
+                "codigo": product.cod_producto if product else "",
+                "descripcion": product.descripcion if product else "",
+                "cantidad": Decimal(str(get_value("cantidad", 0) or 0)).quantize(Decimal("0.01")),
+                "peso_lbs": Decimal(str(get_value("peso_lbs", 0) or 0)).quantize(Decimal("0.01")),
+                "total_lbs": Decimal(str(get_value("total_lbs", 0) or 0)).quantize(Decimal("0.01")),
+                "nota": str(get_value("nota", "") or "").strip(),
+            }
+        )
+    return snapshot
+
+
+def _preproduction_line_text(line: dict[str, object]) -> str:
+    label = " ".join(part for part in [str(line.get("codigo") or "").strip(), str(line.get("descripcion") or "").strip()] if part)
+    if not label:
+        label = f"Producto #{line.get('producto_id')}"
+    note = f", nota: {line.get('nota')}" if line.get("nota") else ""
+    return (
+        f"{label}: cant {_preproduction_decimal_text(line.get('cantidad'))}, "
+        f"peso {_preproduction_decimal_text(line.get('peso_lbs'))} lbs, "
+        f"total {_preproduction_decimal_text(line.get('total_lbs'))} lbs{note}"
+    )
+
+
+def _preproduction_lines_registered_detail(title: str, lines: list[dict[str, object]]) -> str:
+    if not lines:
+        return f"{title}: sin items."
+    details = "; ".join(_preproduction_line_text(line) for line in lines)
+    return f"{title}: {details}"
+
+
+def _preproduction_lines_change_detail(title: str, before: list[dict[str, object]], after: list[dict[str, object]]) -> str:
+    before_map = {line["key"]: line for line in before}
+    after_map = {line["key"]: line for line in after}
+    added = [after_map[key] for key in after_map.keys() - before_map.keys()]
+    removed = [before_map[key] for key in before_map.keys() - after_map.keys()]
+    modified: list[str] = []
+    for key in before_map.keys() & after_map.keys():
+        old = before_map[key]
+        new = after_map[key]
+        changes = []
+        for field, label in [("cantidad", "cantidad"), ("peso_lbs", "peso"), ("total_lbs", "total"), ("nota", "nota")]:
+            if old.get(field) != new.get(field):
+                old_value = old.get(field)
+                new_value = new.get(field)
+                if field != "nota":
+                    old_value = _preproduction_decimal_text(old_value)
+                    new_value = _preproduction_decimal_text(new_value)
+                changes.append(f"{label} {old_value or '-'} -> {new_value or '-'}")
+        if changes:
+            label = " ".join(part for part in [str(new.get("codigo") or "").strip(), str(new.get("descripcion") or "").strip()] if part)
+            if not label:
+                label = f"Producto #{new.get('producto_id')}"
+            modified.append(f"{label}: {', '.join(changes)}")
+    sections = []
+    if added:
+        sections.append("Agrego: " + "; ".join(_preproduction_line_text(line) for line in added))
+    if removed:
+        sections.append("Borro: " + "; ".join(_preproduction_line_text(line) for line in removed))
+    if modified:
+        sections.append("Modifico: " + "; ".join(modified))
+    if not sections:
+        sections.append("Sin cambios detectados en items, cantidad o peso.")
+    return f"{title}. " + " | ".join(sections)
+
+
+def _preproduction_group_lines_for_image(lines) -> list[dict[str, object]]:
+    grouped: dict[tuple[int, str], dict[str, object]] = {}
+    for item in lines or []:
+        producto = item.producto
+        code = (producto.cod_producto if producto else "") or f"ID-{item.producto_id}"
+        key = (int(item.producto_id or 0), code)
+        if key not in grouped:
+            grouped[key] = {
+                "codigo": code,
+                "descripcion": (producto.descripcion if producto else "") or "",
+                "cantidad": Decimal("0"),
+                "total_lbs": Decimal("0"),
+            }
+        grouped[key]["cantidad"] = Decimal(str(grouped[key]["cantidad"])) + Decimal(str(item.cantidad or 0))
+        grouped[key]["total_lbs"] = Decimal(str(grouped[key]["total_lbs"])) + Decimal(str(item.total_lbs or 0))
+    rows = []
+    for row in grouped.values():
+        qty = Decimal(str(row["cantidad"] or 0))
+        total = Decimal(str(row["total_lbs"] or 0))
+        row["peso_prom_lbs"] = (total / qty).quantize(Decimal("0.01")) if qty else Decimal("0.00")
+        row["cantidad"] = qty.quantize(Decimal("0.01"))
+        row["total_lbs"] = total.quantize(Decimal("0.01"))
+        rows.append(row)
+    return sorted(rows, key=lambda row: (str(row["codigo"]), str(row["descripcion"])))
 
 
 def _build_mobile_vendor_sales_data(
@@ -8735,6 +8920,10 @@ def inventory_page(
         .first()
     )
     product_ids = [p.id for p in productos]
+    product_commissions = {
+        row.producto_id: float(row.comision_usd or 0)
+        for row in db.query(ProductoComision).filter(ProductoComision.producto_id.in_(product_ids)).all()
+    } if product_ids else {}
     bodega_ids = [b.id for b in bodegas]
     balances = _balances_by_bodega(db, bodega_ids, product_ids)
     selected_bodega_id: Optional[int] = None
@@ -8798,6 +8987,7 @@ def inventory_page(
             "request": request,
             "user": user,
             "productos": productos,
+            "product_commissions": product_commissions,
             "bodegas": bodegas,
             "current_bodega": current_bodega,
             "current_bodega_saldos": current_bodega_saldos,
@@ -11075,6 +11265,409 @@ def sales_preventas_notifications_poll(
             }
         )
     return {"ok": True, "items": items}
+
+
+@router.get("/m/bodega/preproduccion")
+@router.get("/inventory/preproduccion")
+def mobile_preproduction_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preproduction_mobile_access(request, user)
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/home", status_code=303)
+    active_orders = (
+        db.query(PreProductionOrder)
+        .filter(PreProductionOrder.estado == "EN_PROCESO")
+        .order_by(PreProductionOrder.created_at.desc(), PreProductionOrder.id.desc())
+        .limit(40)
+        .all()
+    )
+    recent_closed = (
+        db.query(PreProductionOrder)
+        .filter(PreProductionOrder.estado == "CERRADA")
+        .order_by(PreProductionOrder.cerrada_at.desc(), PreProductionOrder.id.desc())
+        .limit(20)
+        .all()
+    )
+    return request.app.state.templates.TemplateResponse(
+        "inventory_preproduction_mobile.html",
+        {
+            "request": request,
+            "user": user,
+            "task_types": PREPRODUCTION_TASK_TYPES,
+            "active_orders": active_orders,
+            "recent_closed": recent_closed,
+            "task_label": _preproduction_task_label,
+            "today": local_today().isoformat(),
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/m/bodega/preproduccion/products/search")
+def mobile_preproduction_products_search(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preproduction_mobile_access(request, user)
+    term = (q or "").strip().lower()
+    query = db.query(Producto).filter(Producto.activo.is_(True))
+    if term:
+        like = f"%{term}%"
+        query = query.filter(or_(func.lower(Producto.cod_producto).like(like), func.lower(Producto.descripcion).like(like)))
+    products = query.order_by(Producto.descripcion.asc()).limit(25).all()
+    return JSONResponse(
+        {
+            "ok": True,
+            "items": [
+                {"id": p.id, "codigo": p.cod_producto or "", "descripcion": p.descripcion or ""}
+                for p in products
+            ],
+        }
+    )
+
+
+def _preproduction_product_payload(item) -> dict[str, object]:
+    producto = item.producto
+    return {
+        "id": item.id,
+        "producto_id": item.producto_id,
+        "codigo": producto.cod_producto if producto else "",
+        "descripcion": producto.descripcion if producto else "",
+        "cantidad": float(item.cantidad or 0),
+        "peso_lbs": float(item.peso_lbs or 0),
+        "total_lbs": float(item.total_lbs or 0),
+        "nota": item.nota or "",
+    }
+
+
+def _preproduction_order_payload(order: PreProductionOrder) -> dict[str, object]:
+    return {
+        "id": order.id,
+        "numero": order.numero,
+        "fecha": order.fecha.isoformat() if order.fecha else "",
+        "task_type": order.task_type,
+        "task_label": _preproduction_task_label(order.task_type),
+        "estado": order.estado,
+        "encargado": order.encargado.full_name if order.encargado else "-",
+        "observacion": order.observacion or "",
+        "total_input_lbs": float(order.total_input_lbs or 0),
+        "total_output_lbs": float(order.total_output_lbs or 0),
+        "total_output_qty": float(order.total_output_qty or 0),
+        "inputs": [_preproduction_product_payload(item) for item in order.inputs],
+        "outputs": [_preproduction_product_payload(item) for item in order.outputs],
+        "audits": [
+            {
+                "action": audit.action,
+                "detail": audit.detail or "",
+                "usuario": audit.usuario or "",
+                "created_at": audit.created_at.strftime("%d/%m/%Y %H:%M") if audit.created_at else "",
+            }
+            for audit in sorted(order.audits, key=lambda row: row.id or 0, reverse=True)[:12]
+        ],
+    }
+
+
+@router.get("/m/bodega/preproduccion/{order_id}")
+def mobile_preproduction_detail(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preproduction_mobile_access(request, user)
+    order = db.query(PreProductionOrder).filter(PreProductionOrder.id == order_id).first()
+    if not order:
+        return JSONResponse({"ok": False, "message": "Orden no encontrada"}, status_code=404)
+    return JSONResponse({"ok": True, "order": _preproduction_order_payload(order)})
+
+
+def _parse_preproduction_lines(raw_lines, *, default_weight: Decimal) -> list[dict[str, object]]:
+    if not isinstance(raw_lines, list) or not raw_lines:
+        raise ValueError("Debes agregar al menos un item")
+    parsed = []
+    for raw in raw_lines:
+        product_id = int(raw.get("producto_id") or 0)
+        if product_id <= 0:
+            raise ValueError("Producto invalido")
+        qty = Decimal(str(raw.get("cantidad") or 1))
+        weight = Decimal(str(raw.get("peso_lbs") or default_weight))
+        if qty <= 0 or weight < 0:
+            raise ValueError("Cantidad o peso invalido")
+        parsed.append(
+            {
+                "producto_id": product_id,
+                "cantidad": qty.quantize(Decimal("0.01")),
+                "peso_lbs": weight.quantize(Decimal("0.01")),
+                "total_lbs": (qty * weight).quantize(Decimal("0.01")),
+                "nota": str(raw.get("nota") or "").strip()[:240] or None,
+            }
+        )
+    return parsed
+
+
+@router.post("/m/bodega/preproduccion")
+async def mobile_preproduction_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preproduction_mobile_access(request, user)
+    if not _is_hollpacas_mode():
+        return JSONResponse({"ok": False, "message": "Disponible solo para Holl/Pacas"}, status_code=403)
+    payload = await request.json()
+    try:
+        fecha = date.fromisoformat(str(payload.get("fecha") or local_today().isoformat()))
+    except ValueError:
+        fecha = local_today()
+    task_type = str(payload.get("task_type") or "").strip().upper()
+    allowed_types = {code for code, _ in PREPRODUCTION_TASK_TYPES}
+    if task_type not in allowed_types:
+        return JSONResponse({"ok": False, "message": "Tipo de tarea invalido"}, status_code=400)
+    try:
+        lines = _parse_preproduction_lines(payload.get("inputs"), default_weight=Decimal("100"))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+    branch, bodega = _resolve_branch_bodega(db, user)
+    order = PreProductionOrder(
+        numero=_preproduction_next_number(db, fecha),
+        fecha=fecha,
+        task_type=task_type,
+        estado="EN_PROCESO",
+        encargado_user_id=user.id,
+        branch_id=branch.id if branch else None,
+        bodega_id=bodega.id if bodega else None,
+        observacion=str(payload.get("observacion") or "").strip()[:500] or None,
+    )
+    db.add(order)
+    db.flush()
+    for line in lines:
+        order.inputs.append(PreProductionInput(**line))
+    _preproduction_recalc(order)
+    created_snapshot = _preproduction_lines_snapshot(db, lines)
+    _preproduction_audit(
+        db,
+        order,
+        user,
+        "CREADA",
+        _preproduction_lines_registered_detail("Orden creada desde modulo movil con bajas registradas", created_snapshot),
+    )
+    db.commit()
+    db.refresh(order)
+    return JSONResponse({"ok": True, "message": f"Orden {order.numero} creada", "order": _preproduction_order_payload(order)})
+
+
+@router.post("/m/bodega/preproduccion/{order_id}/inputs")
+async def mobile_preproduction_save_inputs(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preproduction_mobile_access(request, user)
+    order = db.query(PreProductionOrder).filter(PreProductionOrder.id == order_id).first()
+    if not order:
+        return JSONResponse({"ok": False, "message": "Orden no encontrada"}, status_code=404)
+    if order.estado != "EN_PROCESO":
+        return JSONResponse({"ok": False, "message": "La orden esta cerrada"}, status_code=400)
+    payload = await request.json()
+    try:
+        lines = _parse_preproduction_lines(payload.get("inputs"), default_weight=Decimal("100"))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+    before_snapshot = _preproduction_lines_snapshot(db, order.inputs)
+    after_snapshot = _preproduction_lines_snapshot(db, lines)
+    order.inputs = [PreProductionInput(**line) for line in lines]
+    _preproduction_recalc(order)
+    _preproduction_audit(
+        db,
+        order,
+        user,
+        "BAJA_GUARDADA",
+        _preproduction_lines_change_detail("Bajas por abierta guardadas", before_snapshot, after_snapshot),
+    )
+    db.commit()
+    db.refresh(order)
+    return JSONResponse({"ok": True, "message": "Bajas por abierta guardadas", "order": _preproduction_order_payload(order)})
+
+
+@router.post("/m/bodega/preproduccion/{order_id}/outputs")
+async def mobile_preproduction_save_outputs(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preproduction_mobile_access(request, user)
+    order = db.query(PreProductionOrder).filter(PreProductionOrder.id == order_id).first()
+    if not order:
+        return JSONResponse({"ok": False, "message": "Orden no encontrada"}, status_code=404)
+    if order.estado != "EN_PROCESO":
+        return JSONResponse({"ok": False, "message": "La orden esta cerrada"}, status_code=400)
+    payload = await request.json()
+    try:
+        lines = _parse_preproduction_lines(payload.get("outputs"), default_weight=Decimal("0"))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+    before_snapshot = _preproduction_lines_snapshot(db, order.outputs)
+    after_snapshot = _preproduction_lines_snapshot(db, lines)
+    order.outputs = [PreProductionOutput(**line) for line in lines]
+    _preproduction_recalc(order)
+    _preproduction_audit(
+        db,
+        order,
+        user,
+        "RESULTADO_GUARDADO",
+        _preproduction_lines_change_detail("Resultado producido guardado", before_snapshot, after_snapshot),
+    )
+    db.commit()
+    db.refresh(order)
+    return JSONResponse({"ok": True, "message": "Resultado guardado", "order": _preproduction_order_payload(order)})
+
+
+@router.post("/m/bodega/preproduccion/{order_id}/close")
+def mobile_preproduction_close(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preproduction_mobile_access(request, user)
+    order = db.query(PreProductionOrder).filter(PreProductionOrder.id == order_id).first()
+    if not order:
+        return JSONResponse({"ok": False, "message": "Orden no encontrada"}, status_code=404)
+    if order.estado == "CERRADA":
+        return JSONResponse({"ok": False, "message": "La orden ya esta cerrada"}, status_code=400)
+    if not order.outputs:
+        return JSONResponse({"ok": False, "message": "Debes registrar resultado antes de cerrar"}, status_code=400)
+    _preproduction_recalc(order)
+    order.estado = "CERRADA"
+    order.cerrada_por = (user.full_name or user.email or "").strip()[:160] or None
+    order.cerrada_at = local_now_naive()
+    _preproduction_audit(
+        db,
+        order,
+        user,
+        "CERRADA",
+        (
+            f"Orden cerrada con baja usada {_preproduction_decimal_text(order.total_input_lbs)} lbs, "
+            f"resultado {_preproduction_decimal_text(order.total_output_lbs)} lbs y "
+            f"{_preproduction_decimal_text(order.total_output_qty)} unidades/bultos."
+        ),
+    )
+    db.commit()
+    db.refresh(order)
+    return JSONResponse({"ok": True, "message": f"Orden {order.numero} cerrada", "order": _preproduction_order_payload(order), "image_url": f"/m/bodega/preproduccion/{order.id}/image.jpg"})
+
+
+@router.post("/m/bodega/preproduccion/{order_id}/reopen")
+async def mobile_preproduction_reopen(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preproduction_mobile_access(request, user)
+    order = db.query(PreProductionOrder).filter(PreProductionOrder.id == order_id).first()
+    if not order:
+        return JSONResponse({"ok": False, "message": "Orden no encontrada"}, status_code=404)
+    payload = await request.json()
+    motivo = str(payload.get("motivo") or "").strip()
+    if not motivo:
+        return JSONResponse({"ok": False, "message": "Motivo requerido para reabrir"}, status_code=400)
+    order.estado = "EN_PROCESO"
+    order.cerrada_por = None
+    order.cerrada_at = None
+    order.reopened_count = int(order.reopened_count or 0) + 1
+    _preproduction_audit(db, order, user, "REABIERTA", motivo[:2000])
+    db.commit()
+    db.refresh(order)
+    return JSONResponse({"ok": True, "message": "Orden reabierta", "order": _preproduction_order_payload(order)})
+
+
+@router.get("/m/bodega/preproduccion/{order_id}/image.jpg")
+def mobile_preproduction_image(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_preproduction_mobile_access(request, user)
+    order = db.query(PreProductionOrder).filter(PreProductionOrder.id == order_id).first()
+    if not order:
+        return JSONResponse({"ok": False, "message": "Orden no encontrada"}, status_code=404)
+    width, height = 1080, 1600
+    image = Image.new("RGB", (width, height), "#f8fafc")
+    draw = ImageDraw.Draw(image)
+    try:
+        font_title = ImageFont.truetype("arial.ttf", 54)
+        font_h = ImageFont.truetype("arial.ttf", 34)
+        font = ImageFont.truetype("arial.ttf", 28)
+        font_small = ImageFont.truetype("arial.ttf", 25)
+    except Exception:
+        font_title = font_h = font = font_small = ImageFont.load_default()
+    draw.rounded_rectangle((40, 35, width - 40, 200), radius=28, fill="#1e3a8a")
+    draw.text((70, 62), "Orden de Pre-produccion", font=font_title, fill="white")
+    draw.text((72, 135), f"{order.numero} | {order.fecha.strftime('%d/%m/%Y') if order.fecha else ''}", font=font, fill="#dbeafe")
+    y = 240
+    for label, value in [
+        ("Tarea", _preproduction_task_label(order.task_type)),
+        ("Encargado", order.encargado.full_name if order.encargado else "-"),
+        ("Estado", order.estado),
+        ("Baja usada", f"{float(order.total_input_lbs or 0):,.2f} lbs"),
+        ("Resultado", f"{float(order.total_output_qty or 0):,.2f} und | {float(order.total_output_lbs or 0):,.2f} lbs"),
+    ]:
+        draw.text((70, y), f"{label}:", font=font_h, fill="#0f172a")
+        draw.text((270, y), str(value), font=font_h, fill="#334155")
+        y += 54
+    y += 26
+    draw.text((70, y), "Bajas por abierta", font=font_h, fill="#1e3a8a")
+    y += 48
+    input_groups = _preproduction_group_lines_for_image(order.inputs)
+    output_groups = _preproduction_group_lines_for_image(order.outputs)
+    for item in input_groups[:11]:
+        txt = (
+            f"- {item['codigo']} {item['descripcion']} | "
+            f"Cant {_preproduction_decimal_text(item['cantidad'])} | "
+            f"Prom {_preproduction_decimal_text(item['peso_prom_lbs'])} lbs | "
+            f"Total {_preproduction_decimal_text(item['total_lbs'])} lbs"
+        )
+        draw.text((80, y), txt[:82], font=font_small, fill="#334155")
+        y += 38
+    if len(input_groups) > 11:
+        draw.text((80, y), f"+ {len(input_groups) - 11} items agrupados adicionales", font=font_small, fill="#64748b")
+        y += 38
+    y += 28
+    draw.text((70, y), "Resultado producido", font=font_h, fill="#166534")
+    y += 48
+    for item in output_groups[:12]:
+        txt = (
+            f"- {item['codigo']} {item['descripcion']} | "
+            f"Cant {_preproduction_decimal_text(item['cantidad'])} | "
+            f"Prom {_preproduction_decimal_text(item['peso_prom_lbs'])} lbs | "
+            f"Total {_preproduction_decimal_text(item['total_lbs'])} lbs"
+        )
+        draw.text((80, y), txt[:82], font=font_small, fill="#334155")
+        y += 38
+    if len(output_groups) > 12:
+        draw.text((80, y), f"+ {len(output_groups) - 12} items agrupados adicionales", font=font_small, fill="#64748b")
+        y += 38
+    if order.observacion:
+        y += 24
+        draw.text((70, y), "Observacion", font=font_h, fill="#0f172a")
+        draw.text((70, y + 38), order.observacion[:120], font=font_small, fill="#475569")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=92)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="image/jpeg",
+        headers={"Content-Disposition": f"inline; filename={order.numero}.jpg"},
+    )
 
 
 @router.get("/m/preventas")
@@ -27155,6 +27748,105 @@ def inventory_bulk_price_update(
             "filter_mode": mode,
         }
     )
+
+
+@router.post("/inventory/products/grid-bulk-update")
+async def inventory_grid_bulk_update(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.productos")
+    if not _is_hollpacas_mode():
+        return JSONResponse({"ok": False, "message": "Disponible solo para Holl/Pacas"}, status_code=403)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "message": "Datos invalidos"}, status_code=400)
+    rows = payload.get("rows") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return JSONResponse({"ok": False, "message": "No hay cambios para guardar"}, status_code=400)
+
+    rate_today = (
+        db.query(ExchangeRate)
+        .filter(ExchangeRate.effective_date <= local_today())
+        .order_by(ExchangeRate.effective_date.desc())
+        .first()
+    )
+    if not rate_today:
+        return JSONResponse({"ok": False, "message": "Tasa de cambio no configurada"}, status_code=400)
+    tasa = Decimal(str(rate_today.rate or 0))
+    if tasa <= 0:
+        return JSONResponse({"ok": False, "message": "La tasa de cambio actual es invalida"}, status_code=400)
+
+    def parse_money(value, field_label: str) -> Decimal:
+        text = str(value if value is not None else "").strip().replace(",", "")
+        if text == "":
+            raise ValueError(f"{field_label} es requerido")
+        try:
+            amount = Decimal(text)
+        except Exception:
+            raise ValueError(f"{field_label} debe ser numerico")
+        if amount < 0:
+            raise ValueError(f"{field_label} no puede ser negativo")
+        return amount.quantize(Decimal("0.01"))
+
+    updated = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            product_id = int(row.get("id") or 0)
+        except Exception:
+            continue
+        producto = db.query(Producto).filter(Producto.id == product_id).first()
+        if not producto:
+            continue
+        try:
+            costo_input = parse_money(row.get("costo"), "Costo")
+            precio_input = parse_money(row.get("precio"), "Precio de venta")
+            comision_input = parse_money(row.get("comision"), "Comision")
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "message": f"{producto.cod_producto}: {exc}"}, status_code=400)
+
+        costo_currency = str(row.get("costo_currency") or "USD").strip().upper()
+        precio_currency = str(row.get("precio_currency") or "USD").strip().upper()
+        comision_currency = str(row.get("comision_currency") or "USD").strip().upper()
+        if costo_currency != "USD":
+            return JSONResponse({"ok": False, "message": f"{producto.cod_producto}: el costo debe estar en USD"}, status_code=400)
+        if precio_currency != "USD":
+            return JSONResponse({"ok": False, "message": f"{producto.cod_producto}: el precio debe estar en USD"}, status_code=400)
+        if comision_currency != "USD":
+            return JSONResponse({"ok": False, "message": f"{producto.cod_producto}: la comision debe estar en USD"}, status_code=400)
+
+        costo_cs = (costo_input * tasa).quantize(Decimal("0.01"))
+        precio_usd = precio_input
+        precio_cs = (precio_input * tasa).quantize(Decimal("0.01"))
+
+        producto.costo_producto = costo_cs
+        producto.precio_venta1 = precio_cs
+        producto.precio_venta1_usd = precio_usd
+        producto.tasa_cambio = tasa
+
+        commission_row = db.query(ProductoComision).filter(ProductoComision.producto_id == producto.id).first()
+        if commission_row:
+            commission_row.comision_usd = comision_input
+            commission_row.usuario_registro = user.full_name or user.email
+        else:
+            db.add(
+                ProductoComision(
+                    producto_id=producto.id,
+                    comision_usd=comision_input,
+                    usuario_registro=user.full_name or user.email,
+                )
+            )
+        updated += 1
+
+    if updated <= 0:
+        return JSONResponse({"ok": False, "message": "No se encontro ningun producto valido"}, status_code=400)
+    db.commit()
+    return JSONResponse({"ok": True, "message": f"Se actualizaron {updated} productos", "updated_count": updated})
 
 
 @router.post("/inventory/shoes/prices/apply")

@@ -708,6 +708,80 @@ class BodegaRequisaDraft(Base):
     bodega = relationship("Bodega")
 
 
+class PreProductionOrder(Base):
+    __tablename__ = "preproduction_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    numero = Column(String(30), nullable=False, unique=True)
+    fecha = Column(Date, nullable=False)
+    task_type = Column(String(40), nullable=False)
+    estado = Column(String(20), nullable=False, default="EN_PROCESO")
+    encargado_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
+    observacion = Column(String(500), nullable=True)
+    total_input_lbs = Column(Numeric(14, 2), nullable=False, default=0)
+    total_output_lbs = Column(Numeric(14, 2), nullable=False, default=0)
+    total_output_qty = Column(Numeric(14, 2), nullable=False, default=0)
+    cerrada_por = Column(String(160), nullable=True)
+    cerrada_at = Column(DateTime, nullable=True)
+    reopened_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    encargado = relationship("User")
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+    inputs = relationship("PreProductionInput", back_populates="order", cascade="all, delete-orphan")
+    outputs = relationship("PreProductionOutput", back_populates="order", cascade="all, delete-orphan")
+    audits = relationship("PreProductionAudit", back_populates="order", cascade="all, delete-orphan")
+
+
+class PreProductionInput(Base):
+    __tablename__ = "preproduction_inputs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("preproduction_orders.id"), nullable=False)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    cantidad = Column(Numeric(14, 2), nullable=False, default=1)
+    peso_lbs = Column(Numeric(14, 2), nullable=False, default=100)
+    total_lbs = Column(Numeric(14, 2), nullable=False, default=100)
+    nota = Column(String(240), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    order = relationship("PreProductionOrder", back_populates="inputs")
+    producto = relationship("Producto")
+
+
+class PreProductionOutput(Base):
+    __tablename__ = "preproduction_outputs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("preproduction_orders.id"), nullable=False)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    cantidad = Column(Numeric(14, 2), nullable=False, default=1)
+    peso_lbs = Column(Numeric(14, 2), nullable=False, default=0)
+    total_lbs = Column(Numeric(14, 2), nullable=False, default=0)
+    nota = Column(String(240), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    order = relationship("PreProductionOrder", back_populates="outputs")
+    producto = relationship("Producto")
+
+
+class PreProductionAudit(Base):
+    __tablename__ = "preproduction_audits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("preproduction_orders.id"), nullable=False)
+    action = Column(String(40), nullable=False)
+    detail = Column(Text, nullable=True)
+    usuario = Column(String(160), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    order = relationship("PreProductionOrder", back_populates="audits")
+
+
 class CuentaContable(Base):
     __tablename__ = "cuentas_contables"
 

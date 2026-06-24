@@ -1,0 +1,488 @@
+{% extends "base.html" %}
+{% block content %}
+{% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
+<style>
+  body { background: #f6f8fb; }
+  .pp-mobile { padding: .75rem .75rem 5rem; max-width: 980px; margin: 0 auto; }
+  .pp-topbar { background: #0f172a; color: #fff; border-radius: 18px; padding: 1rem; }
+  .pp-topbar img { width: 34px; height: 34px; object-fit: contain; border-radius: 10px; background: #fff; }
+  .pp-card { border: 1px solid #dbe6f4; border-radius: 16px; background: #fff; box-shadow: 0 8px 24px rgba(15,23,42,.06); }
+  .pp-card-h { padding: .85rem 1rem; border-bottom: 1px solid #e2e8f0; font-weight: 800; color: #0f172a; }
+  .pp-card-b { padding: 1rem; }
+  .pp-mobile .form-control, .pp-mobile .form-select, .pp-mobile .btn { font-size: 16px; min-height: 44px; border-radius: 12px; }
+  .pp-results { max-height: 220px; overflow-y: auto; border: 1px solid #dbeafe; border-radius: 12px; background: #fff; }
+  .pp-results:empty { display: none; }
+  .pp-result { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid #eef2ff; background: #fff; padding: .65rem .75rem; }
+  .pp-result:last-child { border-bottom: 0; }
+  .pp-line { display: grid; grid-template-columns: 1fr auto; gap: .6rem; align-items: center; border: 1px solid #e2e8f0; border-radius: 12px; padding: .7rem; background: #f8fafc; }
+  .pp-line-title { font-weight: 800; color: #0f172a; font-size: .9rem; }
+  .pp-line-meta { color: #64748b; font-size: .78rem; }
+  .pp-line input { min-height: 38px !important; font-size: 15px !important; }
+  .pp-line[data-kind="inputs"] .pp-qty, .pp-line[data-kind="createInputs"] .pp-qty { color: #b91c1c; font-weight: 800; border-color: #fecaca; background: #fff5f5; }
+  .pp-line[data-kind="outputs"] .pp-qty { color: #1e3a8a; font-weight: 800; border-color: #bfdbfe; background: #eff6ff; }
+  .pp-section-panel { border-radius: 14px; padding: .85rem; border: 1px solid transparent; }
+  .pp-section-input { background: #eff6ff; border-color: #bfdbfe; }
+  .pp-section-output { background: #f0fdf4; border-color: #bbf7d0; }
+  .pp-section-title { display: flex; align-items: center; gap: .45rem; font-weight: 800; margin-bottom: .65rem; }
+  .pp-section-title i { font-size: 1.05rem; }
+  .pp-section-input .pp-section-title { color: #1d4ed8; }
+  .pp-section-output .pp-section-title { color: #15803d; }
+  .pp-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: .55rem; }
+  .pp-kpi { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: .65rem; }
+  .pp-kpi span { display: block; color: #64748b; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
+  .pp-kpi strong { color: #0f172a; font-size: 1rem; }
+  .pp-pulse { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 rgba(34,197,94,.55); animation: ppPulse 1.3s infinite; }
+  @keyframes ppPulse { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); } 70% { box-shadow: 0 0 0 10px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+  .pp-live-time { display: inline-flex; align-items: center; gap: .4rem; color: #166534; font-size: .78rem; font-weight: 800; }
+  .pp-order { border: 1px solid #dbeafe; border-radius: 14px; padding: .75rem; background: #fff; }
+  .pp-audit-row { border: 1px solid #e2e8f0; border-radius: 10px; padding: .55rem .65rem; background: #f8fafc; }
+  .pp-audit-action { font-weight: 800; color: #0f172a; font-size: .82rem; }
+  .pp-audit-meta { color: #64748b; font-size: .74rem; }
+  .pp-actions { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1030; background: rgba(255,255,255,.94); border-top: 1px solid #dbeafe; padding: .65rem .75rem max(.65rem, env(safe-area-inset-bottom)); backdrop-filter: blur(8px); }
+  @media (min-width: 992px) { .pp-mobile { padding-bottom: 2rem; } .pp-actions { position: static; border: 0; background: transparent; padding: 0; } }
+</style>
+
+<main class="pp-mobile">
+  <div class="pp-topbar mb-3">
+    <div class="d-flex align-items-center gap-2">
+      <img src="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="Logo">
+      <div>
+        <div class="fw-bold">Pre-produccion de bodega</div>
+        <div class="small opacity-75">Encargado: {{ user.full_name or user.email }}</div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="nav nav-pills gap-2 mb-3" id="pp-tabs">
+    <li class="nav-item"><button class="nav-link active" data-panel="create" type="button">Nueva orden</button></li>
+    <li class="nav-item"><button class="nav-link" data-panel="orders" type="button">Ordenes activas</button></li>
+  </ul>
+
+  <section data-pp-panel="create">
+    <div class="pp-card mb-3">
+      <div class="pp-card-h">Datos de la orden</div>
+      <div class="pp-card-b">
+        <div class="row g-2">
+          <div class="col-6">
+            <label class="form-label small fw-semibold">Fecha</label>
+            <input id="pp-fecha" class="form-control" type="date" value="{{ today }}">
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-semibold">Tarea</label>
+            <select id="pp-task-type" class="form-select">
+              {% for code, label in task_types %}
+              <option value="{{ code }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Observacion</label>
+            <input id="pp-observacion" class="form-control" placeholder="Nota opcional">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pp-card mb-3">
+      <div class="pp-card-h">Baja por abierta</div>
+      <div class="pp-card-b">
+        <input id="pp-input-search" class="form-control mb-2" placeholder="Buscar producto de baja">
+        <div id="pp-input-results" class="pp-results mb-2"></div>
+        <div id="pp-input-lines" class="d-grid gap-2"></div>
+        <div class="pp-summary mt-3">
+          <div class="pp-kpi"><span>Lineas</span><strong id="pp-input-count">0</strong></div>
+          <div class="pp-kpi"><span>Cantidad</span><strong id="pp-input-qty">0.00</strong></div>
+          <div class="pp-kpi"><span>Lbs baja</span><strong id="pp-input-lbs">0.00</strong></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section data-pp-panel="orders" class="d-none">
+    <div class="pp-card mb-3">
+      <div class="pp-card-h">En proceso</div>
+      <div class="pp-card-b d-grid gap-2">
+        {% for order in active_orders %}
+        <div class="pp-order">
+          <div class="d-flex align-items-center justify-content-between">
+            <strong>{{ order.numero }}</strong>
+            <span class="pp-live-time">
+              <span class="pp-pulse"></span>
+              <span data-live-duration="{{ order.created_at.isoformat() if order.created_at else '' }}">0m</span>
+            </span>
+          </div>
+          <div class="small text-muted">{{ task_label(order.task_type) }} | {{ order.fecha.strftime("%d/%m/%Y") }}</div>
+          <div class="small">Baja: {{ "{:,.2f}".format(order.total_input_lbs or 0) }} lbs | Resultado: {{ "{:,.2f}".format(order.total_output_lbs or 0) }} lbs</div>
+          <div class="mt-2">
+            <button class="btn btn-primary btn-sm w-100" type="button" data-load-order="{{ order.id }}">Editar bajas / registrar resultado</button>
+          </div>
+        </div>
+        {% endfor %}
+        {% if active_orders|length == 0 %}
+        <div class="text-center text-muted py-3">Sin ordenes activas.</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="pp-card">
+      <div class="pp-card-h">Cerradas recientes</div>
+      <div class="pp-card-b d-grid gap-2">
+        {% for order in recent_closed %}
+        <div class="pp-order">
+          <div class="d-flex align-items-center justify-content-between">
+            <strong>{{ order.numero }}</strong>
+            <span class="badge text-bg-secondary">Cerrada</span>
+          </div>
+          <div class="small text-muted">{{ task_label(order.task_type) }} | {{ order.fecha.strftime("%d/%m/%Y") }}</div>
+          <div class="mt-2">
+            <button class="btn btn-outline-secondary btn-sm w-100" type="button" data-load-order="{{ order.id }}">Ver detalle</button>
+          </div>
+        </div>
+        {% endfor %}
+        {% if recent_closed|length == 0 %}
+        <div class="text-center text-muted py-3">Sin cierres recientes.</div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <div id="pp-order-editor" class="pp-card mt-3 d-none">
+    <div class="pp-card-h d-flex align-items-center justify-content-between">
+      <span id="pp-editor-title">Orden</span>
+      <div class="d-flex align-items-center gap-2">
+        <span id="pp-editor-state" class="badge text-bg-success">En proceso</span>
+        <button id="pp-close-editor" class="btn btn-outline-secondary btn-sm" type="button">Ocultar</button>
+      </div>
+    </div>
+    <div class="pp-card-b">
+      <div class="pp-summary mb-3">
+        <div class="pp-kpi"><span>Baja lbs</span><strong id="pp-order-input-lbs">0.00</strong></div>
+        <div class="pp-kpi"><span>Result. lbs</span><strong id="pp-order-output-lbs">0.00</strong></div>
+        <div class="pp-kpi"><span>Bultos</span><strong id="pp-order-output-qty">0.00</strong></div>
+      </div>
+      <div class="pp-section-panel pp-section-input mb-3">
+        <div class="pp-section-title"><i class="bi bi-box-arrow-down"></i><span>Pacas abiertas usadas</span></div>
+        <input id="pp-edit-input-search" class="form-control mb-2" placeholder="Buscar y agregar paca abierta">
+        <div id="pp-edit-input-results" class="pp-results mb-2"></div>
+        <div id="pp-edit-input-lines" class="d-grid gap-2"></div>
+        <button id="pp-save-inputs" class="btn btn-outline-primary w-100 mt-3" type="button">Guardar bajas por abierta</button>
+      </div>
+
+      <div class="pp-section-panel pp-section-output">
+        <div class="pp-section-title"><i class="bi bi-box-arrow-up"></i><span>Resultado producido</span></div>
+        <input id="pp-output-search" class="form-control mb-2" placeholder="Buscar item resultante">
+        <div id="pp-output-results" class="pp-results mb-2"></div>
+        <div id="pp-output-lines" class="d-grid gap-2"></div>
+      </div>
+      <div class="d-grid gap-2 mt-3">
+        <button id="pp-save-output" class="btn btn-primary" type="button">Guardar avance</button>
+        <button id="pp-preclose" class="btn btn-outline-secondary" type="button">Ver pre-cierre</button>
+        <button id="pp-close-order" class="btn btn-success" type="button">Cerrar tarea</button>
+        <a id="pp-image-link" class="btn btn-outline-primary d-none" target="_blank" rel="noopener">Ver JPG</a>
+        <button id="pp-share-image" class="btn btn-outline-success d-none" type="button">Compartir JPG</button>
+        <button id="pp-reopen-order" class="btn btn-outline-warning d-none" type="button">Reabrir orden</button>
+      </div>
+      <div class="fw-bold mt-3 mb-2">Auditoria</div>
+      <div id="pp-audit" class="d-grid gap-2"></div>
+    </div>
+  </div>
+
+  <div class="pp-actions">
+    <button id="pp-create-order" class="btn btn-success w-100" type="button">Registrar orden de trabajo</button>
+  </div>
+</main>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const state = { createInputs: [], inputs: [], outputs: [], order: null };
+  const money = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const byId = (id) => document.getElementById(id);
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch]));
+  const durationText = (startValue) => {
+    if (!startValue) return "0m";
+    const start = new Date(startValue);
+    if (Number.isNaN(start.getTime())) return "0m";
+    const totalMinutes = Math.max(0, Math.floor((Date.now() - start.getTime()) / 60000));
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hours || days) parts.push(`${hours}h`);
+    parts.push(`${minutes}m`);
+    return parts.join(" ");
+  };
+  const refreshLiveDurations = () => {
+    document.querySelectorAll("[data-live-duration]").forEach((el) => {
+      el.textContent = durationText(el.dataset.liveDuration);
+    });
+  };
+  refreshLiveDurations();
+  setInterval(refreshLiveDurations, 60000);
+
+  const setPanel = (name) => {
+    document.querySelectorAll("[data-pp-panel]").forEach((panel) => panel.classList.toggle("d-none", panel.dataset.ppPanel !== name));
+    document.querySelectorAll("#pp-tabs .nav-link").forEach((tab) => tab.classList.toggle("active", tab.dataset.panel === name));
+    if (name === "create") byId("pp-order-editor").classList.add("d-none");
+  };
+  document.querySelectorAll("#pp-tabs .nav-link").forEach((tab) => tab.addEventListener("click", () => setPanel(tab.dataset.panel)));
+  byId("pp-close-editor").addEventListener("click", () => byId("pp-order-editor").classList.add("d-none"));
+
+  const searchProducts = async (term, target, onPick) => {
+    const box = byId(target);
+    if (!term.trim()) { box.innerHTML = ""; return; }
+    const res = await fetch(`/m/bodega/preproduccion/products/search?q=${encodeURIComponent(term)}`);
+    const payload = await res.json();
+    box.innerHTML = (payload.items || []).map((p) => `
+      <button class="pp-result" type="button" data-id="${Number(p.id || 0)}" data-code="${escapeHtml(p.codigo)}" data-desc="${escapeHtml(p.descripcion)}">
+        <strong>${escapeHtml(p.codigo)}</strong>
+        <div class="small text-muted">${escapeHtml(p.descripcion)}</div>
+      </button>
+    `).join("");
+    box.querySelectorAll(".pp-result").forEach((btn) => btn.addEventListener("click", () => {
+      onPick({ producto_id: Number(btn.dataset.id), codigo: btn.dataset.code, descripcion: btn.dataset.desc });
+      box.innerHTML = "";
+    }));
+  };
+
+  let inputTimer = null;
+  byId("pp-input-search").addEventListener("input", (event) => {
+    clearTimeout(inputTimer);
+    inputTimer = setTimeout(() => searchProducts(event.target.value, "pp-input-results", (item) => {
+      state.createInputs.push({ ...item, cantidad: 1, peso_lbs: 100, nota: "" });
+      renderLines("createInputs");
+      event.target.value = "";
+    }), 220);
+  });
+  let editInputTimer = null;
+  byId("pp-edit-input-search").addEventListener("input", (event) => {
+    clearTimeout(editInputTimer);
+    editInputTimer = setTimeout(() => searchProducts(event.target.value, "pp-edit-input-results", (item) => {
+      state.inputs.push({ ...item, cantidad: 1, peso_lbs: 100, nota: "" });
+      renderLines("inputs");
+      event.target.value = "";
+    }), 220);
+  });
+  let outputTimer = null;
+  byId("pp-output-search").addEventListener("input", (event) => {
+    clearTimeout(outputTimer);
+    outputTimer = setTimeout(() => searchProducts(event.target.value, "pp-output-results", (item) => {
+      state.outputs.push({ ...item, cantidad: 1, peso_lbs: 0, nota: "" });
+      renderLines("outputs");
+      event.target.value = "";
+    }), 220);
+  });
+
+  const renderLines = (kind) => {
+    const config = {
+      createInputs: { lines: state.createInputs, target: "pp-input-lines" },
+      inputs: { lines: state.inputs, target: "pp-edit-input-lines" },
+      outputs: { lines: state.outputs, target: "pp-output-lines" },
+    }[kind];
+    const lines = config.lines;
+    const target = byId(config.target);
+    target.innerHTML = lines.map((line, index) => `
+      <div class="pp-line" data-kind="${kind}" data-index="${index}">
+        <div>
+          <div class="pp-line-title">${escapeHtml(line.codigo)} - ${escapeHtml(line.descripcion)}</div>
+          <div class="row g-1 mt-2">
+            <div class="col-4"><input class="form-control pp-qty" type="number" step="0.01" min="0" value="${line.cantidad}"></div>
+            <div class="col-4"><input class="form-control pp-weight" type="number" step="0.01" min="0" value="${line.peso_lbs}"></div>
+            <div class="col-4"><input class="form-control pp-note" value="${escapeHtml(line.nota || "")}" placeholder="Nota"></div>
+          </div>
+          <div class="pp-line-meta mt-1">Total: <span class="pp-line-total">${money(Number(line.cantidad) * Number(line.peso_lbs))}</span> lbs</div>
+        </div>
+        <button class="btn btn-outline-danger btn-sm pp-remove" type="button"><i class="bi bi-trash"></i></button>
+      </div>
+    `).join("");
+    target.querySelectorAll(".pp-line").forEach((row) => {
+      const index = Number(row.dataset.index);
+      row.querySelector(".pp-qty").addEventListener("input", (e) => { lines[index].cantidad = Number(e.target.value || 0); renderTotals(); row.querySelector(".pp-line-total").textContent = money(lines[index].cantidad * lines[index].peso_lbs); });
+      row.querySelector(".pp-weight").addEventListener("input", (e) => { lines[index].peso_lbs = Number(e.target.value || 0); renderTotals(); row.querySelector(".pp-line-total").textContent = money(lines[index].cantidad * lines[index].peso_lbs); });
+      row.querySelector(".pp-note").addEventListener("input", (e) => { lines[index].nota = e.target.value || ""; });
+      row.querySelector(".pp-remove").addEventListener("click", () => { lines.splice(index, 1); renderLines(kind); });
+    });
+    renderTotals();
+  };
+
+  const renderTotals = () => {
+    const createQty = state.createInputs.reduce((s, x) => s + Number(x.cantidad || 0), 0);
+    const createLbs = state.createInputs.reduce((s, x) => s + Number(x.cantidad || 0) * Number(x.peso_lbs || 0), 0);
+    byId("pp-input-count").textContent = state.createInputs.length;
+    byId("pp-input-qty").textContent = money(createQty);
+    byId("pp-input-lbs").textContent = money(createLbs);
+    const inputLbs = state.inputs.reduce((s, x) => s + Number(x.cantidad || 0) * Number(x.peso_lbs || 0), 0);
+    byId("pp-order-input-lbs").textContent = money(inputLbs);
+    const outQty = state.outputs.reduce((s, x) => s + Number(x.cantidad || 0), 0);
+    const outLbs = state.outputs.reduce((s, x) => s + Number(x.cantidad || 0) * Number(x.peso_lbs || 0), 0);
+    byId("pp-order-output-qty").textContent = money(outQty);
+    byId("pp-order-output-lbs").textContent = money(outLbs);
+  };
+
+  const api = async (url, options = {}) => {
+    const res = await fetch(url, { headers: { "Content-Type": "application/json", "Accept": "application/json" }, ...options });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok || !payload?.ok) throw new Error(payload?.message || "Error");
+    return payload;
+  };
+
+  byId("pp-create-order").addEventListener("click", async () => {
+    try {
+      const payload = await api("/m/bodega/preproduccion", {
+        method: "POST",
+        body: JSON.stringify({
+          fecha: byId("pp-fecha").value,
+          task_type: byId("pp-task-type").value,
+          observacion: byId("pp-observacion").value,
+          inputs: state.createInputs,
+        }),
+      });
+      await Swal.fire({ icon: "success", title: "Orden creada", text: payload.message, timer: 1200, showConfirmButton: false });
+      state.createInputs = [];
+      renderLines("createInputs");
+      byId("pp-observacion").value = "";
+      window.location.href = "/m/bodega/preproduccion";
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "No se pudo registrar", text: error.message });
+    }
+  });
+
+  const loadOrder = async (id) => {
+    try {
+      const payload = await api(`/m/bodega/preproduccion/${id}`);
+      state.order = payload.order;
+      state.inputs = (payload.order.inputs || []).map((x) => ({ ...x, peso_lbs: x.peso_lbs || 100 }));
+      state.outputs = (payload.order.outputs || []).map((x) => ({ ...x, peso_lbs: x.peso_lbs || 0 }));
+      byId("pp-order-editor").classList.remove("d-none");
+      byId("pp-editor-title").textContent = `${payload.order.numero} - ${payload.order.task_label}`;
+      byId("pp-editor-state").textContent = payload.order.estado === "CERRADA" ? "Cerrada" : "En proceso";
+      byId("pp-editor-state").className = payload.order.estado === "CERRADA" ? "badge text-bg-secondary" : "badge text-bg-success";
+      byId("pp-image-link").href = `/m/bodega/preproduccion/${id}/image.jpg`;
+      byId("pp-image-link").classList.toggle("d-none", payload.order.estado !== "CERRADA");
+      byId("pp-share-image").classList.toggle("d-none", payload.order.estado !== "CERRADA");
+      byId("pp-reopen-order").classList.toggle("d-none", payload.order.estado !== "CERRADA");
+      byId("pp-close-order").disabled = payload.order.estado === "CERRADA";
+      byId("pp-save-output").disabled = payload.order.estado === "CERRADA";
+      byId("pp-save-inputs").disabled = payload.order.estado === "CERRADA";
+      byId("pp-edit-input-search").disabled = payload.order.estado === "CERRADA";
+      byId("pp-audit").innerHTML = (payload.order.audits || []).map((a, index) => `
+        <div class="pp-audit-row">
+          <div class="d-flex align-items-center justify-content-between gap-2">
+            <div>
+              <div class="pp-audit-action">${escapeHtml(a.action)}</div>
+              <div class="pp-audit-meta">${escapeHtml(a.created_at)} | ${escapeHtml(a.usuario || "-")}</div>
+            </div>
+            <button class="btn btn-outline-secondary btn-sm pp-audit-detail" type="button" data-audit-index="${index}">Detalle</button>
+          </div>
+        </div>
+      `).join("") || `<div class="text-muted small">Sin auditoria registrada.</div>`;
+      byId("pp-audit").querySelectorAll(".pp-audit-detail").forEach((btn) => btn.addEventListener("click", () => {
+        const audit = (state.order.audits || [])[Number(btn.dataset.auditIndex)];
+        if (!audit) return;
+        Swal.fire({
+          icon: "info",
+          title: escapeHtml(audit.action),
+          html: `
+            <div class="text-start">
+              <div><b>Fecha y hora:</b> ${escapeHtml(audit.created_at)}</div>
+              <div><b>Usuario:</b> ${escapeHtml(audit.usuario || "-")}</div>
+              <div><b>Accion:</b> ${escapeHtml(audit.action)}</div>
+              <hr>
+              <div>${escapeHtml(audit.detail || "Sin detalle.")}</div>
+            </div>
+          `,
+        });
+      }));
+      renderLines("inputs");
+      renderLines("outputs");
+      setPanel("orders");
+      byId("pp-order-editor").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "No se pudo cargar", text: error.message });
+    }
+  };
+  document.querySelectorAll("[data-load-order]").forEach((btn) => btn.addEventListener("click", () => loadOrder(btn.dataset.loadOrder)));
+
+  byId("pp-save-inputs").addEventListener("click", async () => {
+    if (!state.order) return;
+    try {
+      const payload = await api(`/m/bodega/preproduccion/${state.order.id}/inputs`, { method: "POST", body: JSON.stringify({ inputs: state.inputs }) });
+      state.order = payload.order;
+      Swal.fire({ icon: "success", title: "Bajas guardadas", timer: 1300, showConfirmButton: false });
+      await loadOrder(state.order.id);
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "No se pudo guardar la baja", text: error.message });
+    }
+  });
+
+  byId("pp-save-output").addEventListener("click", async () => {
+    if (!state.order) return;
+    try {
+      const payload = await api(`/m/bodega/preproduccion/${state.order.id}/outputs`, { method: "POST", body: JSON.stringify({ outputs: state.outputs }) });
+      state.order = payload.order;
+      Swal.fire({ icon: "success", title: "Avance guardado", timer: 1300, showConfirmButton: false });
+      await loadOrder(state.order.id);
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "No se pudo guardar", text: error.message });
+    }
+  });
+  byId("pp-preclose").addEventListener("click", () => {
+    if (!state.order) return;
+    Swal.fire({
+      icon: "info",
+      title: "Pre-cierre",
+      html: `Baja usada: <b>${byId("pp-order-input-lbs").textContent} lbs</b><br>Resultado: <b>${byId("pp-order-output-lbs").textContent} lbs</b><br>Bultos/Bolsas: <b>${byId("pp-order-output-qty").textContent}</b>`,
+    });
+  });
+  byId("pp-close-order").addEventListener("click", async () => {
+    if (!state.order) return;
+    try {
+      const confirm = await Swal.fire({ icon: "question", title: "Cerrar tarea", text: "La orden quedara finiquitada.", showCancelButton: true, confirmButtonText: "Cerrar" });
+      if (!confirm.isConfirmed) return;
+      const payload = await api(`/m/bodega/preproduccion/${state.order.id}/close`, { method: "POST", body: "{}" });
+      await Swal.fire({ icon: "success", title: "Orden cerrada", text: payload.message });
+      await loadOrder(payload.order.id);
+      byId("pp-image-link").href = payload.image_url;
+      byId("pp-share-image").classList.remove("d-none");
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "No se pudo cerrar", text: error.message });
+    }
+  });
+  byId("pp-share-image").addEventListener("click", async () => {
+    if (!state.order) return;
+    const imageUrl = `/m/bodega/preproduccion/${state.order.id}/image.jpg`;
+    try {
+      if (navigator.share) {
+        const absoluteUrl = new URL(imageUrl, window.location.origin).href;
+        try {
+          const response = await fetch(imageUrl);
+          const blob = await response.blob();
+          const file = new File([blob], `${state.order.numero}.jpg`, { type: "image/jpeg" });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ title: state.order.numero, text: "Orden de pre-produccion", files: [file] });
+            return;
+          }
+        } catch (_) {}
+        await navigator.share({ title: state.order.numero, text: "Orden de pre-produccion", url: absoluteUrl });
+        return;
+      }
+      window.open(imageUrl, "_blank", "noopener");
+    } catch (error) {
+      if (error?.name !== "AbortError") Swal.fire({ icon: "error", title: "No se pudo compartir", text: error.message || "Abra el JPG y comparta desde el navegador." });
+    }
+  });
+  byId("pp-reopen-order").addEventListener("click", async () => {
+    if (!state.order) return;
+    const result = await Swal.fire({ title: "Motivo de reapertura", input: "textarea", showCancelButton: true, confirmButtonText: "Reabrir" });
+    if (!result.isConfirmed) return;
+    try {
+      const payload = await api(`/m/bodega/preproduccion/${state.order.id}/reopen`, { method: "POST", body: JSON.stringify({ motivo: result.value || "" }) });
+      Swal.fire({ icon: "success", title: "Orden reabierta", timer: 1200, showConfirmButton: false });
+      await loadOrder(payload.order.id);
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "No se pudo reabrir", text: error.message });
+    }
+  });
+</script>
+{% endblock %}
