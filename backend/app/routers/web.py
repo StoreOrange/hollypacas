@@ -11636,24 +11636,24 @@ def mobile_preproduction_image(
     width, height = 540, 2200
     image = Image.new("RGB", (width, height), "#f8fafc")
     draw = ImageDraw.Draw(image)
-    font_title = _preproduction_font(74)
-    font_h = _preproduction_font(50)
-    font = _preproduction_font(46)
-    font_small = _preproduction_font(42)
-    font_meta = _preproduction_font(38)
-    font_label = _preproduction_font(28)
+    font_title = _preproduction_font(62)
+    font_h = _preproduction_font(42)
+    font = _preproduction_font(38)
+    font_small = _preproduction_font(36)
+    font_meta = _preproduction_font(32)
+    font_label = _preproduction_font(24)
 
     draw.rounded_rectangle((18, 18, width - 18, 360), radius=34, fill="#1e3a8a")
     y = 44
     y = _preproduction_draw_centered(draw, "PRE", y, font_title, "white", width) + 4
-    y = _preproduction_draw_centered(draw, "PRODUCCION", y, font_title, "white", width) + 18
-    y = _preproduction_draw_centered(draw, order.numero, y, font_h, "#dbeafe", width) + 14
-    y = _preproduction_draw_centered(draw, order.fecha.strftime("%d/%m/%Y") if order.fecha else "", y, font, "#dbeafe", width) + 30
+    y = _preproduction_draw_centered(draw, "PRODUCCION", y, font_title, "white", width) + 16
+    y = _preproduction_draw_centered(draw, order.numero, y, font_h, "#dbeafe", width) + 12
+    y = _preproduction_draw_centered(draw, order.fecha.strftime("%d/%m/%Y") if order.fecha else "", y, font, "#dbeafe", width) + 24
 
     y = 400
-    y = _preproduction_draw_centered(draw, _preproduction_task_label(order.task_type), y, font, "#0f172a", width) + 18
-    y = _preproduction_draw_centered(draw, order.encargado.full_name if order.encargado else "-", y, font_meta, "#475569", width) + 18
-    y = _preproduction_draw_centered(draw, order.estado, y, font_h, "#166534" if order.estado == "CERRADA" else "#1e3a8a", width) + 32
+    y = _preproduction_draw_centered(draw, _preproduction_task_label(order.task_type), y, font, "#0f172a", width) + 14
+    y = _preproduction_draw_centered(draw, order.encargado.full_name if order.encargado else "-", y, font_meta, "#475569", width) + 14
+    y = _preproduction_draw_centered(draw, order.estado, y, font_h, "#166534" if order.estado == "CERRADA" else "#1e3a8a", width) + 26
 
     draw.rounded_rectangle((26, y, width - 26, y + 210), radius=28, fill="#eff6ff", outline="#bfdbfe", width=3)
     y += 20
@@ -11670,25 +11670,25 @@ def mobile_preproduction_image(
 
     draw.line((26, y, width - 26, y), fill="#cbd5e1", width=4)
     y += 26
-    y = _preproduction_draw_centered(draw, "BAJAS", y, font_h, "#1e3a8a", width) + 24
+    y = _preproduction_draw_centered(draw, "BAJAS", y, font_h, "#1e3a8a", width) + 18
     input_groups = _preproduction_group_lines_for_image(order.inputs)
     output_groups = _preproduction_group_lines_for_image(order.outputs)
     for item in input_groups[:3]:
         title = f"{item['codigo']} {item['descripcion']}"
-        y = _preproduction_draw_centered(draw, title, y, font_small, "#0f172a", width) + 8
-        y = _preproduction_draw_centered(draw, f"CANT {_preproduction_decimal_text(item['cantidad'])}", y, font_meta, "#b91c1c", width) + 4
-        y = _preproduction_draw_centered(draw, f"LBS {_preproduction_decimal_text(item['total_lbs'])}", y, font_meta, "#334155", width) + 24
+        y = _preproduction_draw_centered(draw, title, y, font_small, "#0f172a", width) + 6
+        y = _preproduction_draw_centered(draw, f"CANT {_preproduction_decimal_text(item['cantidad'])}", y, font_meta, "#b91c1c", width) + 2
+        y = _preproduction_draw_centered(draw, f"LBS {_preproduction_decimal_text(item['total_lbs'])}", y, font_meta, "#334155", width) + 18
     if len(input_groups) > 3:
         y = _preproduction_draw_centered(draw, f"+ {len(input_groups) - 3} ITEMS MAS", y, font_meta, "#64748b", width) + 24
 
     draw.line((26, y, width - 26, y), fill="#cbd5e1", width=4)
     y += 26
-    y = _preproduction_draw_centered(draw, "PRODUCTO", y, font_h, "#166534", width) + 24
+    y = _preproduction_draw_centered(draw, "PRODUCTO", y, font_h, "#166534", width) + 18
     for item in output_groups[:3]:
         title = f"{item['codigo']} {item['descripcion']}"
-        y = _preproduction_draw_centered(draw, title, y, font_small, "#0f172a", width) + 8
-        y = _preproduction_draw_centered(draw, f"CANT {_preproduction_decimal_text(item['cantidad'])}", y, font_meta, "#1e3a8a", width) + 4
-        y = _preproduction_draw_centered(draw, f"LBS {_preproduction_decimal_text(item['total_lbs'])}", y, font_meta, "#334155", width) + 24
+        y = _preproduction_draw_centered(draw, title, y, font_small, "#0f172a", width) + 6
+        y = _preproduction_draw_centered(draw, f"CANT {_preproduction_decimal_text(item['cantidad'])}", y, font_meta, "#1e3a8a", width) + 2
+        y = _preproduction_draw_centered(draw, f"LBS {_preproduction_decimal_text(item['total_lbs'])}", y, font_meta, "#334155", width) + 18
     if len(output_groups) > 3:
         y = _preproduction_draw_centered(draw, f"+ {len(output_groups) - 3} ITEMS MAS", y, font_meta, "#64748b", width) + 24
     if order.observacion:
