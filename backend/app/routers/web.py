@@ -1112,6 +1112,16 @@ def _preproduction_group_lines_for_image(lines) -> list[dict[str, object]]:
     return sorted(rows, key=lambda row: (str(row["codigo"]), str(row["descripcion"])))
 
 
+def _preproduction_fit_text(draw: ImageDraw.ImageDraw, text: str, font, max_width: int) -> str:
+    clean = str(text or "")
+    if draw.textlength(clean, font=font) <= max_width:
+        return clean
+    ellipsis = "..."
+    while clean and draw.textlength(clean + ellipsis, font=font) > max_width:
+        clean = clean[:-1]
+    return clean + ellipsis if clean else ellipsis
+
+
 def _build_mobile_vendor_sales_data(
     db: Session,
     *,
@@ -11600,20 +11610,22 @@ def mobile_preproduction_image(
     order = db.query(PreProductionOrder).filter(PreProductionOrder.id == order_id).first()
     if not order:
         return JSONResponse({"ok": False, "message": "Orden no encontrada"}, status_code=404)
-    width, height = 1080, 1600
+    width, height = 1080, 1920
     image = Image.new("RGB", (width, height), "#f8fafc")
     draw = ImageDraw.Draw(image)
     try:
-        font_title = ImageFont.truetype("arial.ttf", 54)
-        font_h = ImageFont.truetype("arial.ttf", 34)
-        font = ImageFont.truetype("arial.ttf", 28)
-        font_small = ImageFont.truetype("arial.ttf", 25)
+        font_title = ImageFont.truetype("arial.ttf", 66)
+        font_h = ImageFont.truetype("arial.ttf", 42)
+        font = ImageFont.truetype("arial.ttf", 34)
+        font_small = ImageFont.truetype("arial.ttf", 34)
+        font_meta = ImageFont.truetype("arial.ttf", 30)
     except Exception:
-        font_title = font_h = font = font_small = ImageFont.load_default()
-    draw.rounded_rectangle((40, 35, width - 40, 200), radius=28, fill="#1e3a8a")
-    draw.text((70, 62), "Orden de Pre-produccion", font=font_title, fill="white")
-    draw.text((72, 135), f"{order.numero} | {order.fecha.strftime('%d/%m/%Y') if order.fecha else ''}", font=font, fill="#dbeafe")
-    y = 240
+        font_title = font_h = font = font_small = font_meta = ImageFont.load_default()
+    draw.rounded_rectangle((36, 35, width - 36, 230), radius=30, fill="#1e3a8a")
+    draw.text((66, 60), "Orden de", font=font, fill="#dbeafe")
+    draw.text((66, 98), "Pre-produccion", font=font_title, fill="white")
+    draw.text((68, 174), f"{order.numero} | {order.fecha.strftime('%d/%m/%Y') if order.fecha else ''}", font=font, fill="#dbeafe")
+    y = 270
     for label, value in [
         ("Tarea", _preproduction_task_label(order.task_type)),
         ("Encargado", order.encargado.full_name if order.encargado else "-"),
@@ -11622,44 +11634,48 @@ def mobile_preproduction_image(
         ("Resultado", f"{float(order.total_output_qty or 0):,.2f} und | {float(order.total_output_lbs or 0):,.2f} lbs"),
     ]:
         draw.text((70, y), f"{label}:", font=font_h, fill="#0f172a")
-        draw.text((270, y), str(value), font=font_h, fill="#334155")
-        y += 54
-    y += 26
+        draw.text((330, y), _preproduction_fit_text(draw, str(value), font_h, width - 390), font=font_h, fill="#334155")
+        y += 64
+    y += 30
     draw.text((70, y), "Bajas por abierta", font=font_h, fill="#1e3a8a")
-    y += 48
+    y += 58
     input_groups = _preproduction_group_lines_for_image(order.inputs)
     output_groups = _preproduction_group_lines_for_image(order.outputs)
-    for item in input_groups[:11]:
-        txt = (
-            f"- {item['codigo']} {item['descripcion']} | "
-            f"Cant {_preproduction_decimal_text(item['cantidad'])} | "
-            f"Prom {_preproduction_decimal_text(item['peso_prom_lbs'])} lbs | "
+    for item in input_groups[:7]:
+        title = f"{item['codigo']} {item['descripcion']}"
+        meta = (
+            f"Cant {_preproduction_decimal_text(item['cantidad'])}  |  "
+            f"Prom {_preproduction_decimal_text(item['peso_prom_lbs'])} lbs  |  "
             f"Total {_preproduction_decimal_text(item['total_lbs'])} lbs"
         )
-        draw.text((80, y), txt[:82], font=font_small, fill="#334155")
-        y += 38
-    if len(input_groups) > 11:
-        draw.text((80, y), f"+ {len(input_groups) - 11} items agrupados adicionales", font=font_small, fill="#64748b")
-        y += 38
+        draw.text((82, y), _preproduction_fit_text(draw, title, font_small, width - 150), font=font_small, fill="#0f172a")
+        y += 40
+        draw.text((98, y), _preproduction_fit_text(draw, meta, font_meta, width - 165), font=font_meta, fill="#334155")
+        y += 54
+    if len(input_groups) > 7:
+        draw.text((82, y), f"+ {len(input_groups) - 7} items agrupados adicionales", font=font_meta, fill="#64748b")
+        y += 46
     y += 28
     draw.text((70, y), "Resultado producido", font=font_h, fill="#166534")
-    y += 48
-    for item in output_groups[:12]:
-        txt = (
-            f"- {item['codigo']} {item['descripcion']} | "
-            f"Cant {_preproduction_decimal_text(item['cantidad'])} | "
-            f"Prom {_preproduction_decimal_text(item['peso_prom_lbs'])} lbs | "
+    y += 58
+    for item in output_groups[:8]:
+        title = f"{item['codigo']} {item['descripcion']}"
+        meta = (
+            f"Cant {_preproduction_decimal_text(item['cantidad'])}  |  "
+            f"Prom {_preproduction_decimal_text(item['peso_prom_lbs'])} lbs  |  "
             f"Total {_preproduction_decimal_text(item['total_lbs'])} lbs"
         )
-        draw.text((80, y), txt[:82], font=font_small, fill="#334155")
-        y += 38
-    if len(output_groups) > 12:
-        draw.text((80, y), f"+ {len(output_groups) - 12} items agrupados adicionales", font=font_small, fill="#64748b")
-        y += 38
+        draw.text((82, y), _preproduction_fit_text(draw, title, font_small, width - 150), font=font_small, fill="#0f172a")
+        y += 40
+        draw.text((98, y), _preproduction_fit_text(draw, meta, font_meta, width - 165), font=font_meta, fill="#334155")
+        y += 54
+    if len(output_groups) > 8:
+        draw.text((82, y), f"+ {len(output_groups) - 8} items agrupados adicionales", font=font_meta, fill="#64748b")
+        y += 46
     if order.observacion:
         y += 24
         draw.text((70, y), "Observacion", font=font_h, fill="#0f172a")
-        draw.text((70, y + 38), order.observacion[:120], font=font_small, fill="#475569")
+        draw.text((70, y + 50), _preproduction_fit_text(draw, order.observacion, font_small, width - 140), font=font_small, fill="#475569")
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=92)
     buffer.seek(0)
