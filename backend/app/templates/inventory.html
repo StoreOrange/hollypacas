@@ -1545,10 +1545,19 @@
       $(fieldSegmento).val(fieldSegmento.value || "").trigger("change");
     }
     if (fieldTipoProducto) fieldTipoProducto.value = payload?.tipo_producto || row?.dataset.tipoProducto || "DIRECTO";
-    fieldPrecio1.value = payload?.precio_venta1_usd ?? row?.dataset.precio1Usd ?? "";
-    fieldPrecio2.value = payload?.precio_venta2_usd ?? row?.dataset.precio2Usd ?? "";
-    fieldPrecio3.value = payload?.precio_venta3_usd ?? row?.dataset.precio3Usd ?? "";
-    fieldCosto.value = payload?.costo_usd ?? row?.dataset.costoUsd ?? "";
+    const formCurrencyMode = (fieldInventoryCurrencyMode?.value || "USD").toUpperCase();
+    fieldPrecio1.value = formCurrencyMode === "CS"
+      ? (payload?.precio_venta1 ?? row?.dataset.precio1Usd ?? "")
+      : (payload?.precio_venta1_usd ?? row?.dataset.precio1Usd ?? "");
+    fieldPrecio2.value = formCurrencyMode === "CS"
+      ? (payload?.precio_venta2 ?? row?.dataset.precio2Usd ?? "")
+      : (payload?.precio_venta2_usd ?? row?.dataset.precio2Usd ?? "");
+    fieldPrecio3.value = formCurrencyMode === "CS"
+      ? (payload?.precio_venta3 ?? row?.dataset.precio3Usd ?? "")
+      : (payload?.precio_venta3_usd ?? row?.dataset.precio3Usd ?? "");
+    fieldCosto.value = formCurrencyMode === "CS"
+      ? (payload?.costo_cs ?? row?.dataset.costoUsd ?? "")
+      : (payload?.costo_usd ?? row?.dataset.costoUsd ?? "");
     fieldPrecio1.dataset.autoManaged = "0";
     if (fieldImageFile) fieldImageFile.value = "";
     renderProductImagePreview(payload?.image_url || row?.dataset.imageUrl || "");
