@@ -19,8 +19,8 @@
           </div>
           <div class="d-flex align-items-center gap-2">
             <div class="btn-group btn-group-sm" role="group" aria-label="Moneda">
-              <button class="hot-currency-toggle btn btn-outline-secondary" data-currency="USD">USD</button>
-              <button class="hot-currency-toggle btn btn-outline-secondary" data-currency="CS">C$</button>
+              <button class="hot-currency-toggle btn btn-outline-secondary {% if default_currency == 'USD' %}active{% endif %}" data-currency="USD">USD</button>
+              <button class="hot-currency-toggle btn btn-outline-secondary {% if default_currency == 'CS' %}active{% endif %}" data-currency="CS">C$</button>
             </div>
             <a class="btn btn-outline-secondary btn-sm d-inline-flex d-lg-none" href="/home">
               <i class="bi bi-house-door"></i>
@@ -133,6 +133,7 @@
 
 <script>
   const tasaCambio = Number("{{ tasa or 0 }}");
+  const defaultCurrency = "{{ default_currency or 'USD' }}";
   const formatMoney = (value, currency) => {
     const amount = Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return currency === "USD" ? `$ ${amount}` : `C$ ${amount}`;
@@ -195,7 +196,7 @@
   };
 
   window.addEventListener("resize", renderChart);
-  applyCurrency("USD");
+  applyCurrency(defaultCurrency);
   renderChart();
 </script>
 {% endblock %}

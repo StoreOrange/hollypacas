@@ -114,6 +114,26 @@ class SalesInterfaceSetting(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class SalesDraft(Base):
+    __tablename__ = "sales_drafts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "branch_id", "bodega_id", "interface_code", name="uq_sales_draft_scope"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
+    interface_code = Column(String(40), nullable=False, default="repuestos")
+    payload_json = Column(Text, nullable=False, default="{}")
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User")
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+
+
 class MenuLayoutSetting(Base):
     __tablename__ = "menu_layout_settings"
 

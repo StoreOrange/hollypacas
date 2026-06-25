@@ -66,8 +66,31 @@
   .rm-result-row:hover {
     background: #ecfeff;
   }
+  .rm-result-row.active td {
+    background: #dbeafe !important;
+    border-top: 3px solid #2563eb !important;
+    border-bottom: 3px solid #2563eb !important;
+    box-shadow: inset 0 2px 0 rgba(37, 99, 235, .16), inset 0 -2px 0 rgba(37, 99, 235, .16);
+  }
+  .rm-result-row.active td:first-child {
+    border-left: 3px solid #2563eb !important;
+  }
+  .rm-result-row.active td:last-child {
+    border-right: 3px solid #2563eb !important;
+  }
   .rm-invoice-row {
-    background: #fbfdfd;
+    background: #fff7df;
+  }
+  .rm-invoice-row td {
+    background: #fff7df !important;
+    border-top: 2px solid #f3d99b;
+    border-bottom: 2px solid #f3d99b;
+  }
+  .rm-invoice-row td:first-child {
+    border-left: 2px solid #f3d99b;
+  }
+  .rm-invoice-row td:last-child {
+    border-right: 2px solid #f3d99b;
   }
   .rm-invoice-row input {
     width: 100%;
@@ -212,6 +235,43 @@
     background: #fff1f2;
     border-radius: 8px;
   }
+  .rm-preventa-sms {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 1080;
+    width: min(420px, calc(100vw - 28px));
+    border: 2px solid #16a34a;
+    background: #ecfdf5;
+    color: #14532d;
+    border-radius: 14px;
+    box-shadow: 0 18px 48px rgba(20, 83, 45, 0.28);
+    transform: translateY(130%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.22s ease, opacity 0.22s ease;
+  }
+  .rm-preventa-sms.show {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+    animation: rmPreventaShake 0.8s ease-in-out infinite alternate;
+  }
+  .rm-preventa-sms-title {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    font-weight: 900;
+    letter-spacing: 0;
+  }
+  .rm-preventa-sms-text {
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1.22;
+  }
+  @keyframes rmPreventaShake {
+    0% { box-shadow: 0 18px 48px rgba(20, 83, 45, 0.24), 0 0 0 0 rgba(22, 163, 74, 0.45); }
+    100% { box-shadow: 0 18px 48px rgba(20, 83, 45, 0.32), 0 0 0 9px rgba(22, 163, 74, 0); }
+  }
 </style>
 
 <div id="layout" class="rm-shell min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
@@ -224,6 +284,8 @@
       <input type="hidden" name="moneda" id="venta-moneda" value="CS" />
       <input type="hidden" name="condicion_venta" value="CONTADO" />
       <input type="hidden" name="quick_print" id="quick-print" value="0" />
+      <input type="hidden" name="preventa_id" id="preventa-id" value="" />
+      <input type="hidden" name="sales_draft_interface" value="repuestos" />
       <input type="hidden" name="descuento_global_pct" id="discount-global-hidden" value="0" />
       <input type="hidden" name="descuento_token" id="discount-token-hidden" value="" />
       <input type="hidden" id="payment-forma-id" value="" />
@@ -242,6 +304,10 @@
             </div>
           </div>
           <div class="d-flex flex-wrap align-items-center gap-2">
+            <a class="btn btn-outline-primary btn-sm" href="/sales/preventas">
+              <i class="bi bi-journal-richtext"></i>
+              Preventas
+            </a>
             <a class="btn btn-outline-secondary btn-sm" href="/sales/cobranza">Cobranza</a>
             <a class="btn btn-outline-secondary btn-sm" href="/sales/cierre">Cierre</a>
             <button id="open-service-modal" class="btn btn-warning btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#service-modal">
@@ -317,12 +383,18 @@
         </div>
         <div class="col-md-4">
           <label class="odoo-field-label">Cliente</label>
-          <select id="cliente-select" class="form-select odoo-input">
-            <option value="">Consumidor final</option>
-            {% for cliente in clientes_preview %}
-            <option value="{{ cliente.id }}">{{ cliente.nombre }}</option>
-            {% endfor %}
-          </select>
+          <div class="d-flex gap-2">
+            <select id="cliente-select" class="form-select odoo-input">
+              <option value="">Consumidor final</option>
+              {% for cliente in clientes_preview %}
+              <option value="{{ cliente.id }}">{{ cliente.nombre }}</option>
+              {% endfor %}
+            </select>
+            <button id="quick-client-open" type="button" class="btn btn-outline-primary text-nowrap">
+              <i class="bi bi-person-plus"></i>
+              Nuevo
+            </button>
+          </div>
         </div>
         <div class="col-md-4">
           <label class="odoo-field-label">Metodo de pago inicial</label>
@@ -377,6 +449,56 @@
       </div>
     </form>
   </main>
+</div>
+
+<div id="preventa-sms-alert" class="rm-preventa-sms p-3" role="alert" aria-live="assertive">
+  <div class="d-flex align-items-start justify-content-between gap-2">
+    <div>
+      <div class="rm-preventa-sms-title mb-1">
+        <i class="bi bi-chat-dots-fill"></i>
+        Nueva preventa recibida
+      </div>
+      <div id="preventa-sms-text" class="rm-preventa-sms-text">Hay una preventa pendiente para facturar.</div>
+    </div>
+    <button id="preventa-sms-close" type="button" class="btn-close" aria-label="Cerrar aviso"></button>
+  </div>
+  <div class="d-flex align-items-center justify-content-end gap-2 mt-3">
+    <button id="preventa-sms-later" type="button" class="btn btn-outline-success btn-sm">Recordar</button>
+    <a id="preventa-sms-open" class="btn btn-success btn-sm" href="/sales/preventas">
+      Ver preventas
+    </a>
+  </div>
+</div>
+
+<div class="modal fade" id="quick-client-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <div>
+          <div class="text-xs text-uppercase rm-muted fw-bold">Cliente rapido</div>
+          <div class="h5 mb-0 d-flex align-items-center gap-2">
+            <i class="bi bi-person-plus text-brand"></i>
+            Agregar cliente
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <label class="odoo-field-label">Nombre</label>
+        <input id="quick-client-name" class="form-control odoo-input mb-3" autocomplete="off" placeholder="Nombre del cliente" />
+        <label class="odoo-field-label">Cedula o RUC</label>
+        <input id="quick-client-doc" class="form-control odoo-input" autocomplete="off" placeholder="Cedula o RUC" />
+        <div id="quick-client-status" class="small mt-2"></div>
+      </div>
+      <div class="modal-footer border-0 d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button id="quick-client-save" type="button" class="btn btn-primary">
+          <i class="bi bi-check2-circle"></i>
+          Guardar cliente
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="modal fade" id="discount-modal" tabindex="-1" aria-hidden="true">
@@ -670,6 +792,13 @@
   const form = document.getElementById("repuestos-sales-form");
   const clienteSelect = document.getElementById("cliente-select");
   const clienteHidden = document.getElementById("cliente-id-hidden");
+  const preventaIdInput = document.getElementById("preventa-id");
+  const quickClientOpen = document.getElementById("quick-client-open");
+  const quickClientModalEl = document.getElementById("quick-client-modal");
+  const quickClientName = document.getElementById("quick-client-name");
+  const quickClientDoc = document.getElementById("quick-client-doc");
+  const quickClientSave = document.getElementById("quick-client-save");
+  const quickClientStatus = document.getElementById("quick-client-status");
   const vendedorSelect = document.getElementById("vendedor-select");
   const formaPagoSelect = document.getElementById("forma-pago-select");
   const paymentFormaId = document.getElementById("payment-forma-id");
@@ -707,15 +836,31 @@
   const payAppliedLabel = document.getElementById("pay-applied-label");
   const payClientLabel = document.getElementById("pay-client-label");
   const payVendorLabel = document.getElementById("pay-vendor-label");
+  const preventaSmsAlert = document.getElementById("preventa-sms-alert");
+  const preventaSmsText = document.getElementById("preventa-sms-text");
+  const preventaSmsOpen = document.getElementById("preventa-sms-open");
+  const preventaSmsClose = document.getElementById("preventa-sms-close");
+  const preventaSmsLater = document.getElementById("preventa-sms-later");
 
   let searchTimer = null;
   let results = [];
   let selectedResultIndex = -1;
   const invoiceItems = new Map();
   const workshopServices = {{ (workshop_services or []) | tojson }};
+  const initialPreventa = {{ (initial_preventa or None) | tojson }};
+  let preventaLastId = Number(initialPreventa?.id || 0) || 0;
+  let preventaLiveSource = null;
+  let preventaReconnectTimer = null;
+  let preventaPollTimer = null;
+  let preventaNagTimer = null;
+  let activePreventaNotice = null;
   let serviceOrderItems = [];
   let globalDiscountPct = 0;
   let discountToken = "";
+  const salesDraftInterface = "repuestos";
+  let salesDraftReady = false;
+  let salesDraftRestoring = false;
+  let salesDraftTimer = null;
 
   const money = (value) => {
     const number = Number(value || 0);
@@ -781,6 +926,116 @@
     if (statusLabel) statusLabel.textContent = text;
   };
 
+  const stopPreventaNag = () => {
+    if (preventaNagTimer) {
+      window.clearInterval(preventaNagTimer);
+      preventaNagTimer = null;
+    }
+  };
+
+  const preventaNoticeText = (payload) => {
+    const numero = payload?.numero || "Nueva preventa";
+    const vendedor = payload?.vendedor || "Vendedor";
+    const cliente = payload?.cliente || "Consumidor final";
+    const fecha = payload?.fecha || "";
+    return `${numero} - ${vendedor} - ${cliente}${fecha ? ` (${fecha})` : ""}`;
+  };
+
+  const firePreventaSmsPopup = (payload, repeated = false) => {
+    if (typeof Swal === "undefined" || !payload) return;
+    if (Swal.isVisible && Swal.isVisible()) return;
+    const text = preventaNoticeText(payload);
+    Swal.fire({
+      icon: "warning",
+      title: repeated ? "Preventa pendiente sin atender" : "Nueva preventa recibida",
+      text,
+      confirmButtonText: "Ver preventas",
+      showCancelButton: true,
+      cancelButtonText: "Despues",
+      showCloseButton: true,
+      allowOutsideClick: false,
+      allowEscapeKey: true,
+      timer: repeated ? 12000 : 16000,
+      timerProgressBar: true,
+    }).then((result) => {
+      if (result.isConfirmed) {
+        stopPreventaNag();
+        window.location.href = payload.url || "/sales/preventas";
+      }
+    });
+  };
+
+  const startPreventaNag = () => {
+    stopPreventaNag();
+    preventaNagTimer = window.setInterval(() => {
+      if (!activePreventaNotice) return;
+      firePreventaSmsPopup(activePreventaNotice, true);
+    }, 25000);
+  };
+
+  const showPreventaLiveNotice = (payload) => {
+    if (!payload || !payload.id) return;
+    activePreventaNotice = {
+      ...payload,
+      url: payload.url || "/sales/preventas",
+    };
+    const text = preventaNoticeText(activePreventaNotice);
+    if (preventaSmsText) preventaSmsText.textContent = text;
+    if (preventaSmsOpen) preventaSmsOpen.setAttribute("href", activePreventaNotice.url);
+    preventaSmsAlert?.classList.add("show");
+    setStatus("Nueva preventa pendiente para facturar");
+    firePreventaSmsPopup(activePreventaNotice, false);
+    startPreventaNag();
+  };
+
+  const startPreventaLiveStream = () => {
+    if (typeof EventSource === "undefined") return;
+    if (preventaLiveSource) {
+      preventaLiveSource.close();
+      preventaLiveSource = null;
+    }
+    const streamUrl = `/sales/preventas/notifications/stream?last_id=${encodeURIComponent(String(preventaLastId || 0))}`;
+    const source = new EventSource(streamUrl);
+    preventaLiveSource = source;
+    source.addEventListener("preventa", (event) => {
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data || "{}");
+      } catch (_) {
+        payload = null;
+      }
+      if (!payload || !payload.id) return;
+      preventaLastId = Math.max(preventaLastId, Number(payload.id) || 0);
+      showPreventaLiveNotice(payload);
+    });
+    source.onerror = () => {
+      if (preventaLiveSource) {
+        preventaLiveSource.close();
+        preventaLiveSource = null;
+      }
+      if (preventaReconnectTimer) window.clearTimeout(preventaReconnectTimer);
+      preventaReconnectTimer = window.setTimeout(startPreventaLiveStream, 5000);
+    };
+  };
+
+  const pollPreventaNotifications = async () => {
+    try {
+      const resp = await fetch(`/sales/preventas/notifications/poll?last_id=${encodeURIComponent(String(preventaLastId || 0))}`, {
+        headers: { "X-Requested-With": "fetch" },
+      });
+      if (!resp.ok) return;
+      const payload = await resp.json().catch(() => null);
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      items.forEach((item) => {
+        if (!item || !item.id) return;
+        preventaLastId = Math.max(preventaLastId, Number(item.id) || 0);
+        showPreventaLiveNotice(item);
+      });
+    } catch (_) {
+      // sin interrupcion visual si falla el polling
+    }
+  };
+
   const getSearchUrl = (term) => {
     const params = new URLSearchParams({ q: term || "" });
     if (activeBodegaId > 0) params.set("bodega_id", String(activeBodegaId));
@@ -794,6 +1049,32 @@
 
   const resultUnit = (item) => item.unidad_medida_abreviatura || item.unidad_medida_nombre || "und";
 
+  const scrollSelectedResultIntoView = () => {
+    const row = gridBody?.querySelector(`[data-result-row][data-result-index="${selectedResultIndex}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: "nearest" });
+  };
+
+  const selectResult = (nextIndex) => {
+    if (!results.length) {
+      selectedResultIndex = -1;
+      return;
+    }
+    if (nextIndex < 0) {
+      selectedResultIndex = results.length - 1;
+    } else if (nextIndex >= results.length) {
+      selectedResultIndex = 0;
+    } else {
+      selectedResultIndex = nextIndex;
+    }
+    gridBody.querySelectorAll("[data-result-row]").forEach((row) => {
+      const active = Number(row.dataset.resultIndex || -1) === selectedResultIndex;
+      row.classList.toggle("active", active);
+      row.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    scrollSelectedResultIntoView();
+  };
+
   const renderResults = () => {
     removeResultRows();
     if (!results.length) {
@@ -805,6 +1086,8 @@
       const row = document.createElement("tr");
       row.dataset.resultRow = "1";
       row.dataset.resultIndex = String(index);
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", index === selectedResultIndex ? "true" : "false");
       row.className = `rm-result-row ${index === selectedResultIndex ? "active" : ""}`;
       row.innerHTML = `
         <td><span class="rm-code">${item.cod_producto || ""}</span></td>
@@ -826,6 +1109,7 @@
     });
     const anchor = gridBody.querySelector(".rm-search-row");
     gridBody.insertBefore(fragment, anchor.nextSibling);
+    scrollSelectedResultIntoView();
   };
 
   const searchProducts = async (term) => {
@@ -936,6 +1220,130 @@
     `;
     if (discountGlobalHidden) discountGlobalHidden.value = clampPercent(globalDiscountPct || 0).toFixed(2);
     if (discountTokenHidden) discountTokenHidden.value = discountToken || "";
+    scheduleSalesDraftSave();
+  };
+
+  const salesDraftIsEmpty = () => !invoiceItems.size;
+
+  const buildSalesDraftPayload = () => ({
+    clienteId: clienteSelect?.value || "",
+    clienteLabel: clienteSelect?.selectedOptions?.[0]?.textContent || "",
+    vendedorId: vendedorSelect?.value || "",
+    formaPagoId: formaPagoSelect?.value || paymentFormaId?.value || "",
+    pagoMoneda: pagoMoneda?.value || "CS",
+    pagoMonto: pagoMonto?.value || "",
+    bancoId: bancoSelect?.value || "",
+    cuentaId: cuentaSelect?.value || "",
+    globalDiscountPct: clampPercent(globalDiscountPct || 0),
+    discountToken,
+    items: Array.from(invoiceItems.values()).map((item) => ({
+      id: Number(item.id || 0),
+      code: item.code || "",
+      name: item.name || "",
+      available: Number(item.available || 0),
+      unit: item.unit || "und",
+      qty: Number(item.qty || 0),
+      price: Number(item.price || 0),
+      discountPct: clampPercent(item.discountPct || 0),
+      isService: Boolean(item.isService),
+    })).filter((item) => item.id > 0 && item.qty > 0),
+  });
+
+  const applySalesDraftPayload = (payload) => {
+    if (!payload || typeof payload !== "object") return false;
+    salesDraftRestoring = true;
+    try {
+      if (clienteSelect) {
+        const clienteId = String(payload.clienteId || "");
+        if (clienteId && !Array.from(clienteSelect.options).some((option) => option.value === clienteId)) {
+          const option = document.createElement("option");
+          option.value = clienteId;
+          option.textContent = payload.clienteLabel || "Cliente";
+          clienteSelect.appendChild(option);
+        }
+        clienteSelect.value = clienteId;
+      }
+      if (clienteHidden) clienteHidden.value = clienteSelect?.value || "";
+      if (vendedorSelect && payload.vendedorId) vendedorSelect.value = String(payload.vendedorId);
+      if (formaPagoSelect && payload.formaPagoId) formaPagoSelect.value = String(payload.formaPagoId);
+      if (paymentFormaId) paymentFormaId.value = formaPagoSelect?.value || payload.formaPagoId || "";
+      if (pagoMoneda && payload.pagoMoneda) pagoMoneda.value = String(payload.pagoMoneda);
+      if (pagoMonto && payload.pagoMonto) pagoMonto.value = String(payload.pagoMonto);
+      if (bancoSelect && payload.bancoId) bancoSelect.value = String(payload.bancoId);
+      if (cuentaSelect && payload.cuentaId) cuentaSelect.value = String(payload.cuentaId);
+      globalDiscountPct = clampPercent(payload.globalDiscountPct || 0);
+      if (discountGlobalPctInput) discountGlobalPctInput.value = globalDiscountPct.toFixed(0);
+      discountToken = String(payload.discountToken || "");
+      if (discountTokenInput) discountTokenInput.value = discountToken;
+      if (discountTokenHidden) discountTokenHidden.value = discountToken;
+      invoiceItems.clear();
+      (Array.isArray(payload.items) ? payload.items : []).forEach((item) => {
+        const id = Number(item.id || 0);
+        const qty = Number(item.qty || 0);
+        if (!id || qty <= 0) return;
+        invoiceItems.set(id, {
+          id,
+          code: item.code || "",
+          name: item.name || "",
+          available: Number(item.available || qty),
+          unit: item.unit || "und",
+          qty,
+          price: Number(item.price || 0),
+          discountPct: clampPercent(item.discountPct || 0),
+          isService: Boolean(item.isService),
+        });
+      });
+      renderInvoiceRows();
+      setActivePaymentButton();
+      refreshPaymentModal();
+      if (invoiceItems.size) setStatus("Borrador de venta restaurado");
+      return invoiceItems.size > 0;
+    } finally {
+      salesDraftRestoring = false;
+    }
+  };
+
+  const saveSalesDraftNow = async () => {
+    if (!salesDraftReady || salesDraftRestoring) return;
+    try {
+      if (salesDraftIsEmpty()) {
+        await fetch(`/sales/draft?interface_code=${encodeURIComponent(salesDraftInterface)}`, {
+          method: "DELETE",
+          headers: { "X-Requested-With": "fetch" },
+        });
+        return;
+      }
+      await fetch("/sales/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" },
+        body: JSON.stringify({
+          interface_code: salesDraftInterface,
+          payload: buildSalesDraftPayload(),
+        }),
+      });
+    } catch (_) {
+      setStatus("No se pudo guardar el borrador temporal");
+    }
+  };
+
+  const scheduleSalesDraftSave = () => {
+    if (!salesDraftReady || salesDraftRestoring) return;
+    window.clearTimeout(salesDraftTimer);
+    salesDraftTimer = window.setTimeout(saveSalesDraftNow, 450);
+  };
+
+  const loadSalesDraft = async () => {
+    try {
+      const response = await fetch(`/sales/draft?interface_code=${encodeURIComponent(salesDraftInterface)}`, {
+        headers: { "X-Requested-With": "fetch" },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.ok && data.payload) {
+        applySalesDraftPayload(data.payload);
+      }
+    } catch (_) {
+      setStatus("No se pudo cargar el borrador temporal");
+    }
   };
 
   const setActivePaymentButton = () => {
@@ -949,6 +1357,132 @@
       }
     });
     if (!selectedId && selectedPaymentLabel) selectedPaymentLabel.textContent = "Sin seleccionar";
+  };
+
+  const setQuickClientStatus = (text, isError = false) => {
+    if (!quickClientStatus) return;
+    quickClientStatus.textContent = text || "";
+    quickClientStatus.className = `small mt-2 ${isError ? "text-danger" : "text-success"}`;
+  };
+
+  const openQuickClientModal = () => {
+    if (quickClientName) quickClientName.value = "";
+    if (quickClientDoc) quickClientDoc.value = "";
+    setQuickClientStatus("");
+    if (window.bootstrap && quickClientModalEl) {
+      window.bootstrap.Modal.getOrCreateInstance(quickClientModalEl).show();
+      setTimeout(() => quickClientName?.focus(), 200);
+      return;
+    }
+    quickClientName?.focus();
+  };
+
+  const selectCreatedClient = (cliente) => {
+    if (!clienteSelect || !cliente?.id) return;
+    const id = String(cliente.id);
+    let option = Array.from(clienteSelect.options).find((item) => item.value === id);
+    if (!option) {
+      option = document.createElement("option");
+      option.value = id;
+      clienteSelect.appendChild(option);
+    }
+    option.textContent = cliente.nombre || "Cliente";
+    clienteSelect.value = id;
+    if (clienteHidden) clienteHidden.value = id;
+    refreshPaymentModal();
+  };
+
+  const saveQuickClient = async () => {
+    const nombre = (quickClientName?.value || "").trim();
+    const identificacion = (quickClientDoc?.value || "").trim();
+    if (!nombre) {
+      setQuickClientStatus("Nombre requerido", true);
+      quickClientName?.focus();
+      return;
+    }
+    if (quickClientSave) quickClientSave.disabled = true;
+    setQuickClientStatus("Guardando...");
+    try {
+      const payload = new FormData();
+      payload.set("nombre", nombre);
+      payload.set("identificacion", identificacion);
+      const response = await fetch("/sales/cliente", {
+        method: "POST",
+        body: payload,
+        headers: { "Accept": "application/json", "X-Requested-With": "fetch" },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "No se pudo guardar el cliente");
+      }
+      selectCreatedClient(data);
+      setStatus(`Cliente seleccionado: ${data.nombre}`);
+      if (window.bootstrap && quickClientModalEl) {
+        window.bootstrap.Modal.getOrCreateInstance(quickClientModalEl).hide();
+      }
+      searchInput?.focus();
+    } catch (error) {
+      setQuickClientStatus(error.message || "No se pudo guardar el cliente", true);
+    } finally {
+      if (quickClientSave) quickClientSave.disabled = false;
+    }
+  };
+
+  const ensureClientOption = (clientId, clientName) => {
+    if (!clienteSelect) return;
+    const id = String(clientId || "");
+    if (!id) {
+      clienteSelect.value = "";
+      if (clienteHidden) clienteHidden.value = "";
+      return;
+    }
+    let option = Array.from(clienteSelect.options).find((item) => item.value === id);
+    if (!option) {
+      option = document.createElement("option");
+      option.value = id;
+      clienteSelect.appendChild(option);
+    }
+    option.textContent = clientName || "Cliente";
+    clienteSelect.value = id;
+    if (clienteHidden) clienteHidden.value = id;
+  };
+
+  const loadInitialPreventa = () => {
+    if (!initialPreventa || !Array.isArray(initialPreventa.items) || !initialPreventa.items.length) {
+      return false;
+    }
+    salesDraftRestoring = true;
+    try {
+      if (preventaIdInput) preventaIdInput.value = String(initialPreventa.id || "");
+      ensureClientOption(initialPreventa.cliente_id || "", initialPreventa.cliente_nombre || "Consumidor final");
+      if (vendedorSelect && initialPreventa.vendedor_id) {
+        vendedorSelect.value = String(initialPreventa.vendedor_id);
+      }
+      if (fechaInput && initialPreventa.fecha) {
+        fechaInput.value = String(initialPreventa.fecha).slice(0, 10);
+      }
+      invoiceItems.clear();
+      initialPreventa.items.forEach((it) => {
+        const id = Number(it.product_id || 0);
+        const qty = Math.max(1, Math.round(Number(it.cantidad || 1)));
+        if (!id || qty <= 0) return;
+        invoiceItems.set(id, {
+          id,
+          code: String(it.cod_producto || ""),
+          name: String(it.descripcion || ""),
+          available: Number(it.existencia || qty || 0),
+          unit: "und",
+          qty,
+          price: Number(it.precio_cs || 0),
+          discountPct: 0,
+        });
+      });
+      renderInvoiceRows();
+      setStatus(`Preventa ${initialPreventa.numero || ""} cargada para facturar`);
+      return invoiceItems.size > 0;
+    } finally {
+      salesDraftRestoring = false;
+    }
   };
 
   const refreshPaymentModal = () => {
@@ -1236,16 +1770,16 @@
   });
 
   searchInput?.addEventListener("keydown", (event) => {
-    if (event.key === "ArrowDown" && results.length) {
+    if ((event.key === "ArrowDown" || event.key === "Down") && results.length) {
       event.preventDefault();
-      selectedResultIndex = Math.min(results.length - 1, selectedResultIndex + 1);
-      renderResults();
+      event.stopPropagation();
+      selectResult(selectedResultIndex < 0 ? 0 : selectedResultIndex + 1);
       return;
     }
-    if (event.key === "ArrowUp" && results.length) {
+    if ((event.key === "ArrowUp" || event.key === "Up") && results.length) {
       event.preventDefault();
-      selectedResultIndex = Math.max(0, selectedResultIndex - 1);
-      renderResults();
+      event.stopPropagation();
+      selectResult(selectedResultIndex < 0 ? results.length - 1 : selectedResultIndex - 1);
       return;
     }
     if (event.key === "Enter") {
@@ -1257,6 +1791,14 @@
       }
     }
   });
+
+  searchInput?.addEventListener("keydown", (event) => {
+    if (!["ArrowDown", "ArrowUp", "Down", "Up"].includes(event.key) || !results.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const direction = event.key === "ArrowDown" || event.key === "Down" ? 1 : -1;
+    selectResult(selectedResultIndex < 0 ? (direction > 0 ? 0 : results.length - 1) : selectedResultIndex + direction);
+  }, { capture: true });
 
   gridBody?.addEventListener("click", (event) => {
     const pick = event.target.closest("[data-pick-result]");
@@ -1358,8 +1900,44 @@
     if (discountTokenHidden) discountTokenHidden.value = discountToken;
   });
 
+  quickClientOpen?.addEventListener("click", openQuickClientModal);
+  quickClientSave?.addEventListener("click", saveQuickClient);
+  quickClientName?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    quickClientDoc?.focus();
+  });
+  quickClientDoc?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    saveQuickClient();
+  });
+  quickClientModalEl?.addEventListener("shown.bs.modal", () => quickClientName?.focus());
+  preventaSmsClose?.addEventListener("click", () => {
+    preventaSmsAlert?.classList.remove("show");
+    activePreventaNotice = null;
+    stopPreventaNag();
+  });
+  preventaSmsLater?.addEventListener("click", () => {
+    preventaSmsAlert?.classList.remove("show");
+    if (activePreventaNotice) {
+      stopPreventaNag();
+      preventaNagTimer = window.setInterval(() => {
+        preventaSmsAlert?.classList.add("show");
+        firePreventaSmsPopup(activePreventaNotice, true);
+      }, 25000);
+    }
+  });
+  preventaSmsOpen?.addEventListener("click", () => {
+    stopPreventaNag();
+  });
+
   clienteSelect?.addEventListener("change", () => {
     clienteHidden.value = clienteSelect.value || "";
+    scheduleSalesDraftSave();
+  });
+  vendedorSelect?.addEventListener("change", () => {
+    scheduleSalesDraftSave();
   });
   formaPagoSelect?.addEventListener("change", () => {
     if (paymentFormaId) paymentFormaId.value = formaPagoSelect.value || "";
@@ -1397,6 +1975,7 @@
   });
 
   form?.addEventListener("submit", (event) => {
+    window.clearTimeout(salesDraftTimer);
     const total = Array.from(invoiceItems.values()).reduce((acc, item) => acc + item.qty * item.price, 0);
     if (!invoiceItems.size) {
       event.preventDefault();
@@ -1422,14 +2001,27 @@
     syncHiddenInputs(total);
   });
 
-  window.addEventListener("load", () => {
+  window.addEventListener("load", async () => {
     if (fechaInput) fechaInput.value = todayIso();
     clienteHidden.value = clienteSelect?.value || "";
     if (paymentFormaId && formaPagoSelect?.value) paymentFormaId.value = formaPagoSelect.value;
+    const loadedPreventa = loadInitialPreventa();
+    if (loadedPreventa) {
+      await fetch(`/sales/draft?interface_code=${encodeURIComponent(salesDraftInterface)}`, {
+        method: "DELETE",
+        headers: { "X-Requested-With": "fetch" },
+      }).catch(() => null);
+    } else {
+      await loadSalesDraft();
+    }
+    salesDraftReady = true;
     updateTotals();
     setActivePaymentButton();
     renderServiceCatalog();
     renderServiceOrder();
+    startPreventaLiveStream();
+    pollPreventaNotifications();
+    preventaPollTimer = window.setInterval(pollPreventaNotifications, 7000);
     searchInput?.focus();
     const printId = "{{ print_id or '' }}";
     const printLink = document.getElementById("sales-print-ticket");
@@ -1443,6 +2035,22 @@
         }
       }, 450);
     }
+  });
+
+  window.addEventListener("beforeunload", () => {
+    if (preventaLiveSource) {
+      preventaLiveSource.close();
+      preventaLiveSource = null;
+    }
+    if (preventaReconnectTimer) {
+      window.clearTimeout(preventaReconnectTimer);
+      preventaReconnectTimer = null;
+    }
+    if (preventaPollTimer) {
+      window.clearInterval(preventaPollTimer);
+      preventaPollTimer = null;
+    }
+    stopPreventaNag();
   });
 </script>
 {% endblock %}

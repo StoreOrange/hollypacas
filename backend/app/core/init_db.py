@@ -37,6 +37,7 @@ from ..models.sales import (
     PosPrintSetting,
     RestaurantTable,
     MobilePushSubscription,
+    SalesDraft,
     SalesInterfaceSetting,
     Vendedor,
 )

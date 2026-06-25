@@ -116,6 +116,7 @@ from ..models.sales import (
     RestaurantOrder,
     RestaurantOrderItem,
     RestaurantTable,
+    SalesDraft,
     SalesInterfaceSetting,
     ProductoComision,
     Preventa,
@@ -16921,6 +16922,7 @@ def sales_ventas_caliente(
         for d in days
     ]
     month_total = sum(Decimal(str(p["value"])) for p in chart_points)
+    default_currency = "CS" if (get_active_company_key() or "").strip().lower() == "racingmoto" else "USD"
 
     return request.app.state.templates.TemplateResponse(
         "sales_caliente.html",
@@ -16934,6 +16936,7 @@ def sales_ventas_caliente(
             "chart_points": chart_points,
             "month_label": first_day.strftime("%B %Y").capitalize(),
             "tasa": float(tasa_default) if tasa_default else 0,
+            "default_currency": default_currency,
             "today_label": today.strftime("%d/%m/%Y"),
             "version": settings.UI_VERSION,
         },
@@ -30724,6 +30727,7 @@ async def sales_create_invoice(
     item_discount_pcts = form.getlist("item_descuento_pct")
     item_roles = form.getlist("item_role")
     item_combo_groups = form.getlist("item_combo_group")
+    draft_interface_code = (form.get("sales_draft_interface") or "").strip()[:40]
     descuento_global_pct = _discount_percent_value(form.get("descuento_global_pct"))
     descuento_token = (form.get("descuento_token") or "").strip()
     preventa_id_raw = str(form.get("preventa_id") or "").strip()
@@ -31149,6 +31153,9 @@ async def sales_create_invoice(
     for auto_entry in auto_entries:
         db.add(auto_entry)
 
+    if draft_interface_code:
+        _sales_draft_query(db, user, draft_interface_code)[0].delete(synchronize_session=False)
+
     db.commit()
     if preventa:
         try:
@@ -31183,6 +31190,93 @@ async def sales_create_invoice(
         f"/sales?success=Venta+registrada&print_id={factura.id}",
         status_code=303,
     )
+
+
+def _sales_draft_scope(db: Session, user: User) -> tuple[Optional[Branch], Optional[Bodega]]:
+    return _resolve_branch_bodega(db, user)
+
+
+def _sales_draft_query(db: Session, user: User, interface_code: str):
+    branch, bodega = _sales_draft_scope(db, user)
+    query = db.query(SalesDraft).filter(
+        SalesDraft.user_id == user.id,
+        SalesDraft.interface_code == interface_code,
+    )
+    if branch:
+        query = query.filter(SalesDraft.branch_id == branch.id)
+    else:
+        query = query.filter(SalesDraft.branch_id.is_(None))
+    if bodega:
+        query = query.filter(SalesDraft.bodega_id == bodega.id)
+    else:
+        query = query.filter(SalesDraft.bodega_id.is_(None))
+    return query, branch, bodega
+
+
+@router.get("/sales/draft")
+def sales_get_draft(
+    request: Request,
+    interface_code: str = "repuestos",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales")
+    interface_code = (interface_code or "repuestos").strip()[:40]
+    draft = _sales_draft_query(db, user, interface_code)[0].first()
+    if not draft:
+        return JSONResponse({"ok": True, "payload": None})
+    try:
+        payload = json.loads(draft.payload_json or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    return JSONResponse({"ok": True, "payload": payload, "updated_at": draft.updated_at.isoformat() if draft.updated_at else None})
+
+
+@router.post("/sales/draft")
+async def sales_save_draft(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    body = await request.json()
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "message": "Borrador invalido"}, status_code=400)
+    interface_code = str(body.get("interface_code") or "repuestos").strip()[:40]
+    payload = body.get("payload") or {}
+    if not isinstance(payload, dict):
+        return JSONResponse({"ok": False, "message": "Datos de borrador invalidos"}, status_code=400)
+    payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if len(payload_json) > 200000:
+        return JSONResponse({"ok": False, "message": "Borrador demasiado grande"}, status_code=400)
+    query, branch, bodega = _sales_draft_query(db, user, interface_code)
+    draft = query.first()
+    if not draft:
+        draft = SalesDraft(
+            user_id=user.id,
+            branch_id=branch.id if branch else None,
+            bodega_id=bodega.id if bodega else None,
+            interface_code=interface_code,
+        )
+        db.add(draft)
+    draft.payload_json = payload_json
+    draft.updated_at = local_now_naive()
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.delete("/sales/draft")
+def sales_delete_draft(
+    request: Request,
+    interface_code: str = "repuestos",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    interface_code = (interface_code or "repuestos").strip()[:40]
+    _sales_draft_query(db, user, interface_code)[0].delete(synchronize_session=False)
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 @router.post("/sales/discount/request")
