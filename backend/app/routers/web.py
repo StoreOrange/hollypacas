@@ -2767,6 +2767,17 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     title_size = 10.5 if is_amajo_mode else 10
     normal_size = 9.5 if is_amajo_mode else 9
 
+    def ticket_line_subtotal(item: VentaItem, qty: float, price: float) -> float:
+        subtotal = float(item.subtotal_cs or 0)
+        gross_subtotal = float(getattr(item, "subtotal_bruto_cs", None) or 0)
+        if gross_subtotal > 0:
+            subtotal = gross_subtotal
+        if qty > 1 and price > 0 and subtotal <= price:
+            subtotal = price * qty
+        if subtotal <= 0 and price > 0:
+            subtotal = price * qty
+        return subtotal
+
     lines: list[tuple[str, str, bool, int]] = []
 
     def add_line(text: str, align: str = "left", bold: bool = False, size: int = 8):
@@ -2812,7 +2823,7 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
             combo_label = " [OFERTA]"
         qty = float(item.cantidad or 0)
         price = float(item.precio_unitario_cs or 0)
-        subtotal = float(item.subtotal_cs or 0)
+        subtotal = ticket_line_subtotal(item, qty, price)
         line_discount = float(getattr(item, "descuento_cs", None) or 0)
         total_unidades += qty
         if show_item_code:
@@ -27207,7 +27218,18 @@ def sales_ticket_print(
     )
     show_item_code = not is_amajo_mode
     show_item_subtotal = is_amajo_mode
-    show_item_subtotal_if_multi_qty = is_hollpacas_mode
+    show_item_subtotal_if_multi_qty = True
+
+    def ticket_line_subtotal(item: VentaItem, qty: float, price: float) -> float:
+        subtotal = float(item.subtotal_cs or 0)
+        gross_subtotal = float(getattr(item, "subtotal_bruto_cs", None) or 0)
+        if gross_subtotal > 0:
+            subtotal = gross_subtotal
+        if qty > 1 and price > 0 and subtotal <= price:
+            subtotal = price * qty
+        if subtotal <= 0 and price > 0:
+            subtotal = price * qty
+        return subtotal
 
     items = []
     total_unidades = 0.0
@@ -27242,7 +27264,7 @@ def sales_ticket_print(
         line_count += 1  # qty/price/subtotal
         line_count += 1  # divider
         price = float(item.precio_unitario_cs or 0)
-        subtotal = float(item.subtotal_cs or 0)
+        subtotal = ticket_line_subtotal(item, qty, price)
         discount = float(getattr(item, "descuento_cs", None) or 0)
         items.append(
             {
