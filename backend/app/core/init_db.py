@@ -35,6 +35,7 @@ from ..models.sales import (
     FormaPago,
     NotificationRecipient,
     PosPrintSetting,
+    ProductoEstancado,
     RestaurantTable,
     MobilePushSubscription,
     SalesDraft,

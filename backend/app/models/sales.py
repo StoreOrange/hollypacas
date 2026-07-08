@@ -325,6 +325,21 @@ class ProductoComision(Base):
     producto = relationship("Producto")
 
 
+class ProductoEstancado(Base):
+    __tablename__ = "productos_estancados"
+    __table_args__ = (UniqueConstraint("producto_id", name="uq_producto_estancado_producto"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    motivo = Column(String(240), nullable=True)
+    activo = Column(Boolean, default=True)
+    usuario_registro = Column(String(120), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    producto = relationship("Producto")
+
+
 class VentaComisionAsignacion(Base):
     __tablename__ = "ventas_comisiones_asignaciones"
 

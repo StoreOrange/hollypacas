@@ -1,4 +1,5 @@
 from collections import defaultdict
+from difflib import SequenceMatcher
 from typing import Optional
 import asyncio
 
@@ -118,6 +119,7 @@ from ..models.sales import (
     RestaurantTable,
     SalesDraft,
     SalesInterfaceSetting,
+    ProductoEstancado,
     ProductoComision,
     Preventa,
     PreventaItem,
@@ -453,6 +455,70 @@ def _ascii_lower(value: Optional[str]) -> str:
         .lower()
         .strip()
     )
+
+
+def _tokenize_search(value: Optional[str]) -> list[str]:
+    normalized = _ascii_lower(value)
+    return [token for token in re.split(r"[^a-z0-9]+", normalized) if token]
+
+
+def _smart_product_match(producto: Producto, query: str) -> dict[str, object]:
+    tokens = _tokenize_search(query)
+    code = _ascii_lower(producto.cod_producto)
+    description = _ascii_lower(producto.descripcion)
+    brand = _ascii_lower(getattr(producto, "marca", "") or "")
+    reference = _ascii_lower(getattr(producto, "referencia_producto", "") or "")
+    haystack = " ".join(part for part in [code, description, brand, reference] if part)
+    compact_query = "".join(tokens)
+    compact_haystack = re.sub(r"[^a-z0-9]+", "", haystack)
+
+    if not tokens:
+        return {"score": 0, "reason": "Reciente"}
+
+    score = 0
+    reasons: list[str] = []
+    if compact_query and compact_query == re.sub(r"[^a-z0-9]+", "", code):
+        score += 120
+        reasons.append("codigo exacto")
+    elif compact_query and compact_query in re.sub(r"[^a-z0-9]+", "", code):
+        score += 95
+        reasons.append("codigo similar")
+
+    for token in tokens:
+        if not token:
+            continue
+        if token == code or token == description:
+            score += 90
+            reasons.append("texto exacto")
+        elif token in code:
+            score += 70
+            reasons.append("codigo")
+        elif token in description:
+            score += 58
+            reasons.append("descripcion")
+        elif token in brand or token in reference:
+            score += 42
+            reasons.append("marca/ref.")
+        else:
+            best_word_ratio = max(
+                [SequenceMatcher(None, token, word).ratio() for word in haystack.split()] or [0]
+            )
+            if best_word_ratio >= 0.82:
+                score += int(best_word_ratio * 38)
+                reasons.append("parecido")
+
+    phrase_ratio = SequenceMatcher(None, _ascii_lower(query), haystack).ratio()
+    compact_ratio = SequenceMatcher(None, compact_query, compact_haystack).ratio() if compact_query else 0
+    score += int(max(phrase_ratio, compact_ratio) * 45)
+
+    all_tokens_present = all(token in haystack for token in tokens)
+    if all_tokens_present:
+        score += 35
+        reasons.append("todas las palabras")
+
+    score = min(score, 100)
+    reason = ", ".join(dict.fromkeys(reasons[:3])) or "parecido"
+    return {"score": score, "reason": reason}
 
 
 def _get_user_from_cookie(request: Request, db: Session) -> Optional[User]:
@@ -16961,12 +17027,14 @@ def reports_index(
 ):
     _enforce_permission(request, user, "access.reports")
     restaurant_reports_enabled = _is_restaurant_business_mode()
+    stagnant_inventory_enabled = _is_hollpacas_mode()
     return request.app.state.templates.TemplateResponse(
         "reports_index.html",
         {
             "request": request,
             "user": user,
             "restaurant_reports_enabled": restaurant_reports_enabled,
+            "stagnant_inventory_enabled": stagnant_inventory_enabled,
             "version": settings.UI_VERSION,
         },
     )
@@ -17265,6 +17333,16 @@ def _sales_products_report_filters(request: Request):
         branch_id = "all"
 
     return start_date, end_date, branch_id, vendedor_id, producto_id, producto_q
+
+
+def _stagnant_inventory_report_filters(request: Request):
+    start_date, end_date, branch_id, vendedor_id, _producto_id, producto_q = _sales_products_report_filters(request)
+    if end_date < start_date:
+        end_date = start_date
+    max_days = 45
+    if (end_date - start_date).days + 1 > max_days:
+        end_date = start_date + timedelta(days=max_days - 1)
+    return start_date, end_date, branch_id, vendedor_id, producto_q
 
 
 def _sales_special_report_filters(request: Request):
@@ -19516,6 +19594,177 @@ def _build_sales_products_report(
     )
 
 
+def _build_stagnant_inventory_report(
+    db: Session,
+    user: User,
+    start_date: date,
+    end_date: date,
+    branch_id: str | None,
+    vendedor_id: str | None,
+    producto_q: str,
+):
+    allowed_codes = _allowed_branch_codes(db)
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    days = [start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1)]
+    day_keys = [day.isoformat() for day in days]
+
+    catalog_query = (
+        db.query(ProductoEstancado, Producto)
+        .join(Producto, Producto.id == ProductoEstancado.producto_id)
+        .filter(ProductoEstancado.activo.is_(True))
+        .filter(Producto.activo.is_(True))
+    )
+    if producto_q:
+        like = f"%{producto_q.lower()}%"
+        catalog_query = catalog_query.filter(
+            or_(
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+            )
+        )
+    catalog_rows = catalog_query.order_by(Producto.descripcion.asc()).all()
+    product_ids = [int(producto.id) for _marked, producto in catalog_rows]
+
+    matrix_map: dict[int, dict[str, object]] = {}
+    for marked, producto in catalog_rows:
+        matrix_map[int(producto.id)] = {
+            "producto_id": int(producto.id),
+            "codigo": producto.cod_producto or "-",
+            "producto": producto.descripcion or "-",
+            "motivo": marked.motivo or "",
+            "cells": {key: 0.0 for key in day_keys},
+            "total_qty": 0.0,
+            "total_cs": 0.0,
+            "total_usd": 0.0,
+        }
+
+    details_by_cell: dict[str, list[dict[str, object]]] = defaultdict(list)
+    day_totals = {key: 0.0 for key in day_keys}
+    product_summary: dict[int, dict[str, object]] = {}
+    total_qty = Decimal("0")
+    total_cs = Decimal("0")
+    total_usd = Decimal("0")
+    factura_ids: set[int] = set()
+
+    if product_ids:
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+        sales_query = (
+            db.query(VentaFactura, VentaItem, Producto, Cliente, Vendedor, Branch)
+            .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+            .join(Producto, Producto.id == VentaItem.producto_id)
+            .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+            .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+            .join(Cliente, Cliente.id == VentaFactura.cliente_id, isouter=True)
+            .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
+            .filter(VentaItem.producto_id.in_(product_ids))
+            .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+            .filter(VentaFactura.estado != "ANULADA")
+            .filter(func.lower(Branch.code).in_(allowed_codes))
+            .filter(Branch.id.in_(scoped_branch_ids))
+        )
+        if branch_id and branch_id != "all":
+            try:
+                branch_id_int = int(branch_id)
+                if branch_id_int not in scoped_branch_ids:
+                    sales_query = sales_query.filter(Branch.id == -1)
+                else:
+                    sales_query = sales_query.filter(Branch.id == branch_id_int)
+            except ValueError:
+                pass
+        if vendedor_id:
+            try:
+                sales_query = sales_query.filter(VentaFactura.vendedor_id == int(vendedor_id))
+            except ValueError:
+                pass
+
+        sales_rows = sales_query.order_by(VentaFactura.fecha.asc(), VentaFactura.id.asc(), VentaItem.id.asc()).all()
+        for factura, item, producto, cliente, vendedor, branch in sales_rows:
+            day_key = factura.fecha.date().isoformat() if factura.fecha else start_date.isoformat()
+            product_id = int(producto.id)
+            if product_id not in matrix_map or day_key not in day_totals:
+                continue
+            cantidad = Decimal(str(item.cantidad or 0))
+            subtotal_cs = Decimal(str(item.subtotal_cs or 0))
+            subtotal_usd = Decimal(str(item.subtotal_usd or 0))
+            matrix_row = matrix_map[product_id]
+            matrix_row["cells"][day_key] = float(Decimal(str(matrix_row["cells"][day_key])) + cantidad)
+            matrix_row["total_qty"] = float(Decimal(str(matrix_row["total_qty"])) + cantidad)
+            matrix_row["total_cs"] = float(Decimal(str(matrix_row["total_cs"])) + subtotal_cs)
+            matrix_row["total_usd"] = float(Decimal(str(matrix_row["total_usd"])) + subtotal_usd)
+            day_totals[day_key] = float(Decimal(str(day_totals[day_key])) + cantidad)
+            total_qty += cantidad
+            total_cs += subtotal_cs
+            total_usd += subtotal_usd
+            factura_ids.add(int(factura.id))
+
+            if product_id not in product_summary:
+                product_summary[product_id] = {
+                    "codigo": producto.cod_producto or "-",
+                    "producto": producto.descripcion or "-",
+                    "cantidad": Decimal("0"),
+                    "venta_cs": Decimal("0"),
+                    "venta_usd": Decimal("0"),
+                    "facturas": set(),
+                }
+            summary = product_summary[product_id]
+            summary["cantidad"] += cantidad
+            summary["venta_cs"] += subtotal_cs
+            summary["venta_usd"] += subtotal_usd
+            summary["facturas"].add(int(factura.id))
+
+            cell_key = f"{product_id}|{day_key}"
+            details_by_cell[cell_key].append(
+                {
+                    "fecha_hora": factura.fecha.strftime("%d/%m/%Y %H:%M") if factura.fecha else "",
+                    "factura": factura.numero or f"FAC-{factura.id}",
+                    "cliente": cliente.nombre if cliente else "Consumidor final",
+                    "vendedor": vendedor.nombre if vendedor else "-",
+                    "sucursal": branch.name if branch else "-",
+                    "codigo": producto.cod_producto or "-",
+                    "producto": producto.descripcion or "-",
+                    "cantidad": float(cantidad),
+                    "precio_cs": float(item.precio_unitario_cs or 0),
+                    "precio_usd": float(item.precio_unitario_usd or 0),
+                    "subtotal_cs": float(subtotal_cs),
+                    "subtotal_usd": float(subtotal_usd),
+                }
+            )
+
+    matrix_rows = sorted(
+        matrix_map.values(),
+        key=lambda row: (float(row.get("total_qty") or 0) <= 0, str(row.get("producto") or "")),
+    )
+    item_rows = [
+        {
+            "codigo": row["codigo"],
+            "producto": row["producto"],
+            "cantidad": float(row["cantidad"]),
+            "venta_cs": float(row["venta_cs"]),
+            "venta_usd": float(row["venta_usd"]),
+            "facturas": len(row["facturas"]),
+        }
+        for row in sorted(
+            product_summary.values(),
+            key=lambda value: (value["cantidad"], value["venta_cs"]),
+            reverse=True,
+        )
+    ]
+    return {
+        "days": [{"key": key, "label": day.strftime("%d/%m")} for key, day in zip(day_keys, days)],
+        "matrix_rows": matrix_rows,
+        "item_rows": item_rows,
+        "day_totals": day_totals,
+        "details_json": json.dumps(details_by_cell, ensure_ascii=False),
+        "marked_count": len(catalog_rows),
+        "sold_product_count": len(product_summary),
+        "total_qty": float(total_qty),
+        "total_cs": float(total_cs),
+        "total_usd": float(total_usd),
+        "total_facturas": len(factura_ids),
+    }
+
+
 def _depositos_report_filters(request: Request):
     start_raw = request.query_params.get("start_date")
     end_raw = request.query_params.get("end_date")
@@ -21136,6 +21385,265 @@ def report_sales_products(
             "total_facturas": total_facturas,
             "version": settings.UI_VERSION,
         },
+    )
+
+
+@router.get("/reports/inventario-estancado")
+def report_stagnant_inventory_sales(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/reports", status_code=303)
+    start_date, end_date, branch_id, vendedor_id, producto_q = _stagnant_inventory_report_filters(request)
+    payload = _build_stagnant_inventory_report(db, user, start_date, end_date, branch_id, vendedor_id, producto_q)
+
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
+    vendedores = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre.asc()).all()
+
+    return request.app.state.templates.TemplateResponse(
+        "report_stagnant_inventory.html",
+        {
+            "request": request,
+            "user": user,
+            "branches": branches,
+            "vendedores": vendedores,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "selected_branch": branch_id or "",
+            "selected_vendedor": vendedor_id or "",
+            "producto_q": producto_q,
+            "version": settings.UI_VERSION,
+            **payload,
+        },
+    )
+
+
+@router.get("/reports/inventario-estancado/export.xlsx")
+def report_stagnant_inventory_export_xlsx(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    if not _is_hollpacas_mode():
+        raise HTTPException(status_code=404, detail="Reporte no disponible")
+    start_date, end_date, branch_id, vendedor_id, producto_q = _stagnant_inventory_report_filters(request)
+    payload = _build_stagnant_inventory_report(db, user, start_date, end_date, branch_id, vendedor_id, producto_q)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Pivot"
+    ws.append(["Control de ventas de inventario estancado"])
+    ws.append(["Desde", start_date.isoformat(), "Hasta", end_date.isoformat(), "Sucursal", branch_id or "all", "Vendedor", vendedor_id or "Todos"])
+    ws.append([])
+    headers = ["Codigo", "Producto", "Motivo"] + [day["label"] for day in payload["days"]] + ["Total", "Venta C$", "Venta USD"]
+    ws.append(headers)
+    for cell in ws[4]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    for row in payload["matrix_rows"]:
+        ws.append(
+            [row["codigo"], row["producto"], row.get("motivo") or ""]
+            + [float(row["cells"].get(day["key"], 0) or 0) for day in payload["days"]]
+            + [float(row.get("total_qty") or 0), float(row.get("total_cs") or 0), float(row.get("total_usd") or 0)]
+        )
+    ws.append([])
+    ws.append(["Totales", "", ""] + [float(payload["day_totals"].get(day["key"], 0) or 0) for day in payload["days"]] + [float(payload["total_qty"] or 0), float(payload["total_cs"] or 0), float(payload["total_usd"] or 0)])
+    for col in range(1, min(len(headers), 18) + 1):
+        ws.column_dimensions[chr(64 + col)].width = 16
+    ws.column_dimensions["B"].width = 42
+    ws.freeze_panes = "D5"
+
+    ws_items = wb.create_sheet("Items vendidos")
+    ws_items.append(["Codigo", "Producto", "Cantidad", "Venta C$", "Venta USD", "Facturas"])
+    for cell in ws_items[1]:
+        cell.font = Font(bold=True)
+    for row in payload["item_rows"]:
+        ws_items.append([row["codigo"], row["producto"], row["cantidad"], row["venta_cs"], row["venta_usd"], row["facturas"]])
+    ws_items.column_dimensions["A"].width = 18
+    ws_items.column_dimensions["B"].width = 46
+
+    ws_detail = wb.create_sheet("Detalle")
+    ws_detail.append(["Fecha y hora", "Factura", "Cliente", "Vendedor", "Sucursal", "Codigo", "Producto", "Cantidad", "Precio C$", "Precio USD", "Subtotal C$", "Subtotal USD"])
+    for cell in ws_detail[1]:
+        cell.font = Font(bold=True)
+    details_by_cell = json.loads(payload.get("details_json") or "{}")
+    for rows in details_by_cell.values():
+        for row in rows:
+            ws_detail.append(
+                [
+                    row.get("fecha_hora", ""),
+                    row.get("factura", ""),
+                    row.get("cliente", ""),
+                    row.get("vendedor", ""),
+                    row.get("sucursal", ""),
+                    row.get("codigo", ""),
+                    row.get("producto", ""),
+                    float(row.get("cantidad") or 0),
+                    float(row.get("precio_cs") or 0),
+                    float(row.get("precio_usd") or 0),
+                    float(row.get("subtotal_cs") or 0),
+                    float(row.get("subtotal_usd") or 0),
+                ]
+            )
+    ws_detail.column_dimensions["A"].width = 18
+    ws_detail.column_dimensions["C"].width = 28
+    ws_detail.column_dimensions["G"].width = 46
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"inventario_estancado_{start_date.isoformat()}_{end_date.isoformat()}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/reports/inventario-estancado/export.pdf")
+def report_stagnant_inventory_export_pdf(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    if not _is_hollpacas_mode():
+        raise HTTPException(status_code=404, detail="Reporte no disponible")
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.pdfgen import canvas
+
+    start_date, end_date, branch_id, vendedor_id, producto_q = _stagnant_inventory_report_filters(request)
+    payload = _build_stagnant_inventory_report(db, user, start_date, end_date, branch_id, vendedor_id, producto_q)
+    buffer = io.BytesIO()
+    page_size = landscape(A4)
+    width, height = page_size
+    pdf = canvas.Canvas(buffer, pagesize=page_size)
+    margin = 26
+    bottom = 28
+    primary = colors.HexColor("#0b3b6f")
+    light = colors.HexColor("#eef4fc")
+
+    def draw_header(chunk_title: str) -> float:
+        pdf.setFillColor(primary)
+        pdf.rect(0, height - 54, width, 54, fill=1, stroke=0)
+        pdf.setFillColor(colors.white)
+        pdf.setFont("Helvetica-Bold", 13)
+        pdf.drawString(margin, height - 24, "Control de ventas de inventario estancado")
+        pdf.setFont("Helvetica", 8.5)
+        pdf.drawString(
+            margin,
+            height - 40,
+            f"{start_date.isoformat()} a {end_date.isoformat()} | Sucursal: {branch_id or 'all'} | Vendedor: {vendedor_id or 'Todos'} | Producto: {producto_q or 'Todos'}",
+        )
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(margin, height - 74, chunk_title)
+        pdf.setFont("Helvetica", 8.5)
+        pdf.drawRightString(
+            width - margin,
+            height - 74,
+            f"Marcados: {payload['marked_count']} | Vendido: {float(payload['total_qty'] or 0):,.2f} | C$ {float(payload['total_cs'] or 0):,.2f}",
+        )
+        return height - 94
+
+    days = payload["days"]
+    rows = payload["matrix_rows"]
+    chunk_size = 10
+    if not days:
+        days = []
+    for start_idx in range(0, max(len(days), 1), chunk_size):
+        chunk = days[start_idx:start_idx + chunk_size]
+        if start_idx > 0:
+            pdf.showPage()
+        y = draw_header(f"Pivot diario {chunk[0]['label'] if chunk else ''} - {chunk[-1]['label'] if chunk else ''}")
+        code_w = 62
+        product_w = 190
+        total_w = 52
+        day_w = (width - (margin * 2) - code_w - product_w - total_w) / max(len(chunk), 1)
+
+        def draw_table_header(y_pos: float) -> float:
+            pdf.setFillColor(light)
+            pdf.rect(margin, y_pos - 15, width - margin * 2, 18, fill=1, stroke=0)
+            pdf.setFillColor(colors.black)
+            pdf.setFont("Helvetica-Bold", 7.5)
+            x = margin + 3
+            pdf.drawString(x, y_pos - 9, "Codigo")
+            x += code_w
+            pdf.drawString(x, y_pos - 9, "Producto")
+            x += product_w
+            for day in chunk:
+                pdf.drawRightString(x + day_w - 4, y_pos - 9, day["label"])
+                x += day_w
+            pdf.drawRightString(width - margin - 4, y_pos - 9, "Total")
+            return y_pos - 24
+
+        y = draw_table_header(y)
+        pdf.setFont("Helvetica", 7)
+        for row in rows:
+            if y < bottom + 22:
+                pdf.showPage()
+                y = draw_header(f"Pivot diario {chunk[0]['label'] if chunk else ''} - {chunk[-1]['label'] if chunk else ''}")
+                y = draw_table_header(y)
+                pdf.setFont("Helvetica", 7)
+            x = margin + 3
+            pdf.drawString(x, y, str(row["codigo"])[:14])
+            x += code_w
+            pdf.drawString(x, y, str(row["producto"])[:42])
+            x += product_w
+            for day in chunk:
+                pdf.drawRightString(x + day_w - 4, y, f"{float(row['cells'].get(day['key'], 0) or 0):,.2f}")
+                x += day_w
+            pdf.setFont("Helvetica-Bold", 7)
+            pdf.drawRightString(width - margin - 4, y, f"{float(row.get('total_qty') or 0):,.2f}")
+            pdf.setFont("Helvetica", 7)
+            y -= 14
+        y -= 6
+        pdf.setFont("Helvetica-Bold", 7.5)
+        pdf.drawString(margin + 3, y, "Totales por dia")
+        x = margin + code_w + product_w + 3
+        for day in chunk:
+            pdf.drawRightString(x + day_w - 4, y, f"{float(payload['day_totals'].get(day['key'], 0) or 0):,.2f}")
+            x += day_w
+        pdf.drawRightString(width - margin - 4, y, f"{float(payload['total_qty'] or 0):,.2f}")
+
+    pdf.showPage()
+    y = draw_header("Items vendidos")
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(margin, y, "Codigo")
+    pdf.drawString(margin + 80, y, "Producto")
+    pdf.drawRightString(width - 210, y, "Cantidad")
+    pdf.drawRightString(width - 120, y, "Venta C$")
+    pdf.drawRightString(width - margin, y, "Venta USD")
+    y -= 16
+    pdf.setFont("Helvetica", 8)
+    for row in payload["item_rows"]:
+        if y < bottom + 18:
+            pdf.showPage()
+            y = draw_header("Items vendidos")
+        pdf.drawString(margin, y, str(row["codigo"])[:16])
+        pdf.drawString(margin + 80, y, str(row["producto"])[:58])
+        pdf.drawRightString(width - 210, y, f"{float(row['cantidad'] or 0):,.2f}")
+        pdf.drawRightString(width - 120, y, f"C$ {float(row['venta_cs'] or 0):,.2f}")
+        pdf.drawRightString(width - margin, y, f"$ {float(row['venta_usd'] or 0):,.2f}")
+        y -= 14
+
+    pdf.save()
+    buffer.seek(0)
+    filename = f"inventario_estancado_{start_date.isoformat()}_{end_date.isoformat()}.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={filename}"},
     )
 
 
@@ -23463,6 +23971,141 @@ def data_setato_update(
     referer = request.headers.get("referer") or "/data/setato"
     sep = "&" if "?" in referer else "?"
     return RedirectResponse(f"{referer}{sep}success={msg}", status_code=303)
+
+
+@router.get("/data/productos-estancados")
+def data_stagnant_products(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/data", status_code=303)
+
+    q = (request.query_params.get("q") or "").strip()
+    marked_rows = (
+        db.query(ProductoEstancado, Producto)
+        .join(Producto, Producto.id == ProductoEstancado.producto_id)
+        .order_by(ProductoEstancado.activo.desc(), Producto.descripcion.asc())
+        .all()
+    )
+    marked_ids = {int(producto.id) for _marked, producto in marked_rows}
+
+    product_query = db.query(Producto).filter(Producto.activo.is_(True))
+    if marked_ids:
+        product_query = product_query.filter(~Producto.id.in_(marked_ids))
+    candidate_products = product_query.order_by(Producto.descripcion.asc()).all()
+    if q:
+        scored_products = []
+        for producto in candidate_products:
+            match = _smart_product_match(producto, q)
+            scored_products.append(
+                {
+                    "producto": producto,
+                    "score": int(match["score"] or 0),
+                    "reason": str(match["reason"] or "parecido"),
+                }
+            )
+        ranked_products = [row for row in scored_products if int(row["score"] or 0) >= 8]
+        if not ranked_products:
+            ranked_products = scored_products[:]
+        ranked_products.sort(
+            key=lambda row: (
+                -int(row["score"] or 0),
+                _ascii_lower(row["producto"].descripcion),
+                _ascii_lower(row["producto"].cod_producto),
+            )
+        )
+        available_products = ranked_products[:80]
+    else:
+        available_products = [
+            {"producto": producto, "score": 0, "reason": "Disponible"}
+            for producto in candidate_products[:80]
+        ]
+
+    return request.app.state.templates.TemplateResponse(
+        "data_productos_estancados.html",
+        {
+            "request": request,
+            "user": user,
+            "items": marked_rows,
+            "available_products": available_products,
+            "q": q,
+            "success": request.query_params.get("success") or "",
+            "error": request.query_params.get("error") or "",
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.post("/data/productos-estancados")
+def data_stagnant_products_add(
+    request: Request,
+    producto_id: int = Form(...),
+    motivo: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/data", status_code=303)
+    producto = db.query(Producto).filter(Producto.id == producto_id, Producto.activo.is_(True)).first()
+    if not producto:
+        return RedirectResponse("/data/productos-estancados?error=Producto+no+encontrado", status_code=303)
+    existing = db.query(ProductoEstancado).filter(ProductoEstancado.producto_id == producto.id).first()
+    if existing:
+        existing.activo = True
+        existing.motivo = (motivo or existing.motivo or "").strip()[:240] or None
+    else:
+        db.add(
+            ProductoEstancado(
+                producto_id=producto.id,
+                motivo=(motivo or "").strip()[:240] or None,
+                activo=True,
+                usuario_registro=(user.full_name or user.email or "").strip()[:120] or None,
+            )
+        )
+    db.commit()
+    return RedirectResponse("/data/productos-estancados?success=Producto+marcado+como+estancado", status_code=303)
+
+
+@router.post("/data/productos-estancados/{item_id}/update")
+def data_stagnant_products_update(
+    request: Request,
+    item_id: int,
+    motivo: Optional[str] = Form(None),
+    activo: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/data", status_code=303)
+    item = db.query(ProductoEstancado).filter(ProductoEstancado.id == item_id).first()
+    if not item:
+        return RedirectResponse("/data/productos-estancados?error=Registro+no+encontrado", status_code=303)
+    item.motivo = (motivo or "").strip()[:240] or None
+    item.activo = activo == "on"
+    db.commit()
+    return RedirectResponse("/data/productos-estancados?success=Registro+actualizado", status_code=303)
+
+
+@router.post("/data/productos-estancados/{item_id}/delete")
+def data_stagnant_products_delete(
+    request: Request,
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/data", status_code=303)
+    item = db.query(ProductoEstancado).filter(ProductoEstancado.id == item_id).first()
+    if item:
+        db.delete(item)
+        db.commit()
+    return RedirectResponse("/data/productos-estancados?success=Producto+quitado+del+catalogo", status_code=303)
 
 
 @router.get("/data/mesas")

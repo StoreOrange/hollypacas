@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+  .stagnant-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 1rem;
+  }
+  .stagnant-grid-wrap {
+    max-height: 64vh;
+    overflow: auto;
+    border: 1px solid #dbe3ef;
+    border-radius: 10px;
+    background: #fff;
+  }
+  .stagnant-grid {
+    border-collapse: separate;
+    border-spacing: 0;
+    min-width: 900px;
+    width: 100%;
+    font-size: .78rem;
+  }
+  .stagnant-grid th,
+  .stagnant-grid td {
+    border-bottom: 1px solid #e8eef8;
+    border-right: 1px solid #eff4fb;
+    padding: .42rem .55rem;
+    white-space: nowrap;
+  }
+  .stagnant-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: #edf4fc;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    font-size: .68rem;
+  }
+  .stagnant-grid tfoot td {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    background: #dce9fb;
+    font-weight: 700;
+  }
+  .stagnant-grid .sticky-code {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    min-width: 110px;
+    background: #fff;
+  }
+  .stagnant-grid .sticky-name {
+    position: sticky;
+    left: 110px;
+    z-index: 2;
+    min-width: 260px;
+    max-width: 320px;
+    background: #fff;
+    white-space: normal;
+  }
+  .stagnant-grid thead .sticky-code,
+  .stagnant-grid thead .sticky-name {
+    z-index: 5;
+    background: #e5eefb;
+  }
+  .stagnant-grid tfoot .sticky-code,
+  .stagnant-grid tfoot .sticky-name {
+    background: #dce9fb;
+  }
+  .stagnant-grid tbody tr:nth-child(even) td {
+    background-color: #fbfdff;
+  }
+  .stagnant-grid tbody tr:hover td {
+    background-color: #edf4ff;
+  }
+  .pivot-cell {
+    border: 0;
+    background: transparent;
+    color: #0f172a;
+    font: inherit;
+    min-width: 58px;
+    text-align: right;
+    width: 100%;
+  }
+  .pivot-cell.has-sales {
+    color: #0b3b6f;
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    cursor: pointer;
+  }
+  .items-panel {
+    max-height: 64vh;
+    overflow: auto;
+  }
+  @media (max-width: 1180px) {
+    .stagnant-layout {
+      grid-template-columns: 1fr;
+    }
+    .items-panel {
+      max-height: none;
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Informes</li>
+                <li class="breadcrumb-item active" aria-current="page">Inventario estancado</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Control de ventas de inventario estancado</div>
+            <div class="odoo-subtitle mt-1 text-sm">Medicion diaria de articulos seleccionados por sucursal, vendedor y rango de fechas.</div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="odoo-pill primary"><i class="bi bi-box-seam"></i> Marcados: {{ marked_count }}</div>
+            <div class="odoo-pill"><i class="bi bi-receipt"></i> Facturas: {{ total_facturas }}</div>
+            <div class="odoo-pill primary"><i class="bi bi-graph-up"></i> Vendido: {{ "{:,.2f}".format(total_qty or 0) }}</div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item"><a class="nav-link" href="/reports">Informes</a></li>
+          <li class="nav-item"><a class="nav-link active" href="/reports/inventario-estancado">Inventario estancado</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/ventas-productos">Ventas por producto</a></li>
+          <li class="nav-item"><a class="nav-link" href="/data/productos-estancados">Catalogo</a></li>
+        </ul>
+      </div>
+
+      <div class="odoo-card mt-3">
+        <form class="row g-2 align-items-end" method="get" action="/reports/inventario-estancado">
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+            <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+            <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor</label>
+            <select name="vendedor_id" class="form-select form-select-sm">
+              <option value="">Todos</option>
+              {% for vendedor in vendedores %}
+              <option value="{{ vendedor.id }}" {% if selected_vendedor == vendedor.id|string %}selected{% endif %}>{{ vendedor.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto</label>
+            <input name="producto" class="form-control form-control-sm" value="{{ producto_q }}" placeholder="Codigo o descripcion">
+          </div>
+          <div class="col-12 col-md-auto">
+            <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i> Generar</button>
+            <a
+              class="btn btn-outline-danger btn-sm"
+              href="/reports/inventario-estancado/export.pdf?start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&vendedor_id={{ selected_vendedor }}&producto={{ producto_q|urlencode }}"
+              target="_blank"
+            ><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+            <a
+              class="btn btn-outline-success btn-sm"
+              href="/reports/inventario-estancado/export.xlsx?start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&vendedor_id={{ selected_vendedor }}&producto={{ producto_q|urlencode }}"
+            ><i class="bi bi-file-earmark-excel"></i> Excel</a>
+            <a class="btn btn-outline-secondary btn-sm" href="/reports/inventario-estancado"><i class="bi bi-eraser"></i> Hoy</a>
+          </div>
+        </form>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-lg-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Productos vendidos</div>
+            <div class="odoo-title text-xl mt-1">{{ sold_product_count }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Cantidad vendida</div>
+            <div class="odoo-title text-xl mt-1">{{ "{:,.2f}".format(total_qty or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Venta C$</div>
+            <div class="odoo-title text-xl mt-1">C$ {{ "{:,.2f}".format(total_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Venta USD</div>
+            <div class="odoo-title text-xl mt-1">$ {{ "{:,.2f}".format(total_usd or 0) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stagnant-layout mt-3">
+        <div class="odoo-card text-sm">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div class="odoo-section-title text-base">Panel pivot diario</div>
+            <span class="text-slate text-xs">Doble clic sobre una cantidad para ver detalle.</span>
+          </div>
+          <div class="stagnant-grid-wrap">
+            <table class="stagnant-grid">
+              <thead>
+                <tr>
+                  <th class="sticky-code">Codigo</th>
+                  <th class="sticky-name">Producto</th>
+                  {% for day in days %}
+                  <th class="text-end">{{ day.label }}</th>
+                  {% endfor %}
+                  <th class="text-end">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in matrix_rows %}
+                <tr>
+                  <td class="sticky-code fw-semibold">{{ row.codigo }}</td>
+                  <td class="sticky-name">
+                    <div class="fw-semibold">{{ row.producto }}</div>
+                    {% if row.motivo %}
+                    <div class="text-slate text-xs">{{ row.motivo }}</div>
+                    {% endif %}
+                  </td>
+                  {% for day in days %}
+                  {% set qty = row.cells[day.key] %}
+                  <td class="text-end">
+                    <button
+                      type="button"
+                      class="pivot-cell {% if qty %}has-sales{% endif %}"
+                      data-cell="{{ row.producto_id }}|{{ day.key }}"
+                      data-title="{{ row.codigo }} - {{ day.label }}"
+                      {% if not qty %}disabled{% endif %}
+                    >{{ "{:,.2f}".format(qty or 0) }}</button>
+                  </td>
+                  {% endfor %}
+                  <td class="text-end fw-semibold">{{ "{:,.2f}".format(row.total_qty or 0) }}</td>
+                </tr>
+                {% endfor %}
+                {% if matrix_rows|length == 0 %}
+                <tr>
+                  <td colspan="{{ days|length + 3 }}" class="text-center text-slate py-4">No hay productos estancados activos para el filtro.</td>
+                </tr>
+                {% endif %}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td class="sticky-code">Total</td>
+                  <td class="sticky-name">Cantidad por dia</td>
+                  {% for day in days %}
+                  <td class="text-end">{{ "{:,.2f}".format(day_totals[day.key] or 0) }}</td>
+                  {% endfor %}
+                  <td class="text-end">{{ "{:,.2f}".format(total_qty or 0) }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="odoo-card text-sm items-panel">
+          <div class="odoo-section-title mb-3 text-base">Items vendidos</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover odoo-table align-middle">
+              <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                <tr>
+                  <th>Producto</th>
+                  <th class="text-end">Cant.</th>
+                  <th class="text-end">Venta C$</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in item_rows %}
+                <tr>
+                  <td>
+                    <div class="fw-semibold">{{ row.codigo }}</div>
+                    <div>{{ row.producto }}</div>
+                    <div class="text-slate text-xs">{{ row.facturas }} factura(s)</div>
+                  </td>
+                  <td class="text-end fw-semibold">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
+                  <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                </tr>
+                {% endfor %}
+                {% if item_rows|length == 0 %}
+                <tr>
+                  <td colspan="3" class="text-center text-slate py-3">Sin ventas en el rango.</td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal fade" id="cellDetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="cellDetailTitle">Detalle de venta</h5>
+          <div class="text-slate text-sm" id="cellDetailSubtitle"></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle">
+            <thead>
+              <tr>
+                <th>Fecha y hora</th>
+                <th>Factura</th>
+                <th>Cliente</th>
+                <th>Vendedor</th>
+                <th>Sucursal</th>
+                <th class="text-end">Cantidad</th>
+                <th class="text-end">Precio C$</th>
+                <th class="text-end">Subtotal C$</th>
+              </tr>
+            </thead>
+            <tbody id="cellDetailBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  (function () {
+    const details = {{ details_json|safe }};
+    const modalEl = document.getElementById("cellDetailModal");
+    const body = document.getElementById("cellDetailBody");
+    const title = document.getElementById("cellDetailTitle");
+    const subtitle = document.getElementById("cellDetailSubtitle");
+    if (!modalEl || !body || !title) return;
+    const modal = new bootstrap.Modal(modalEl);
+    const fmt = new Intl.NumberFormat("es-NI", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      }[char]));
+    }
+
+    document.querySelectorAll(".pivot-cell.has-sales").forEach((btn) => {
+      btn.addEventListener("dblclick", () => {
+        const rows = details[btn.dataset.cell] || [];
+        const qty = rows.reduce((sum, row) => sum + Number(row.cantidad || 0), 0);
+        const cs = rows.reduce((sum, row) => sum + Number(row.subtotal_cs || 0), 0);
+        title.textContent = btn.dataset.title || "Detalle de venta";
+        subtitle.textContent = `${rows.length} movimiento(s) | Cantidad ${fmt.format(qty)} | C$ ${fmt.format(cs)}`;
+        body.innerHTML = rows.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.fecha_hora)}</td>
+            <td class="fw-semibold">${escapeHtml(row.factura)}</td>
+            <td>${escapeHtml(row.cliente)}</td>
+            <td>${escapeHtml(row.vendedor)}</td>
+            <td>${escapeHtml(row.sucursal)}</td>
+            <td class="text-end fw-semibold">${fmt.format(Number(row.cantidad || 0))}</td>
+            <td class="text-end">C$ ${fmt.format(Number(row.precio_cs || 0))}</td>
+            <td class="text-end">C$ ${fmt.format(Number(row.subtotal_cs || 0))}</td>
+          </tr>
+        `).join("");
+        modal.show();
+      });
+    });
+  })();
+</script>
+{% endblock %}

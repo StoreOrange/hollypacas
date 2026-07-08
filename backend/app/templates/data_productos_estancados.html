@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Datos</li>
+                <li class="breadcrumb-item active" aria-current="page">Productos estancados</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Catalogo de productos estancados</div>
+            <div class="odoo-subtitle mt-1 text-sm">Selecciona los articulos que deben medirse en el control de ventas.</div>
+          </div>
+          <a class="btn btn-outline-secondary btn-sm" href="/reports/inventario-estancado">
+            <i class="bi bi-table"></i>
+            Ver reporte
+          </a>
+        </div>
+      </div>
+
+      {% if success %}
+      <div class="alert alert-success py-2 mt-3">{{ success }}</div>
+      {% endif %}
+      {% if error %}
+      <div class="alert alert-danger py-2 mt-3">{{ error }}</div>
+      {% endif %}
+
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-xl-4">
+          <div class="odoo-card h-100">
+            <div class="odoo-section-title mb-3 text-base">Agregar producto</div>
+            <form class="row g-2" method="get" action="/data/productos-estancados">
+              <div class="col-12">
+                <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Buscar</label>
+                <input name="q" class="form-control form-control-sm" value="{{ q }}" placeholder="Ej: pac 15, blusa roja, camiza, codigo parcial" autofocus>
+              </div>
+              <div class="col-12">
+                <button class="btn btn-outline-secondary btn-sm" type="submit">
+                  <i class="bi bi-search"></i>
+                  Buscar
+                </button>
+                <a class="btn btn-outline-secondary btn-sm" href="/data/productos-estancados">
+                  <i class="bi bi-eraser"></i>
+                  Limpiar
+                </a>
+              </div>
+            </form>
+            <hr>
+            <form method="post" action="/data/productos-estancados" class="row g-2">
+              <div class="col-12">
+                <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto</label>
+                <select name="producto_id" class="form-select form-select-sm" required>
+                  <option value="">Selecciona un producto</option>
+                  {% for result in available_products %}
+                  {% set producto = result.producto %}
+                  <option value="{{ producto.id }}">
+                    {% if q %}{{ result.score }}% - {% endif %}{{ producto.cod_producto }} - {{ producto.descripcion }}
+                  </option>
+                  {% endfor %}
+                </select>
+                {% if q %}
+                <div class="form-text">{{ available_products|length }} sugerencias ordenadas por cercania.</div>
+                {% endif %}
+              </div>
+              {% if q %}
+              <div class="col-12">
+                <div class="border rounded-3 bg-light p-2" style="max-height: 260px; overflow: auto;">
+                  {% for result in available_products[:12] %}
+                  {% set producto = result.producto %}
+                  <button
+                    type="button"
+                    class="btn btn-light border w-100 text-start mb-2 product-pick"
+                    data-product-id="{{ producto.id }}"
+                  >
+                    <div class="d-flex align-items-center justify-content-between gap-2">
+                      <div class="fw-semibold">{{ producto.cod_producto }} - {{ producto.descripcion }}</div>
+                      <span class="badge text-bg-primary">{{ result.score }}%</span>
+                    </div>
+                    <div class="text-muted small">Coincidencia: {{ result.reason }}</div>
+                  </button>
+                  {% endfor %}
+                  {% if available_products|length == 0 %}
+                  <div class="text-muted small py-2">Sin sugerencias cercanas. Prueba con menos palabras o parte del codigo.</div>
+                  {% endif %}
+                </div>
+              </div>
+              {% endif %}
+              <div class="col-12">
+                <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Motivo</label>
+                <input name="motivo" class="form-control form-control-sm" maxlength="240" placeholder="Ej: lento movimiento, liquidacion, temporada anterior">
+              </div>
+              <div class="col-12">
+                <button class="btn btn-primary btn-sm" type="submit">
+                  <i class="bi bi-plus-circle"></i>
+                  Marcar como estancado
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-8">
+          <div class="odoo-card">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+              <div class="odoo-section-title text-base">Productos marcados</div>
+              <span class="odoo-pill primary">
+                <i class="bi bi-box-seam"></i>
+                {{ items|length }} registros
+              </span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table align-middle">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr>
+                    <th>Codigo</th>
+                    <th>Producto</th>
+                    <th>Motivo</th>
+                    <th>Activo</th>
+                    <th class="text-end">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item, producto in items %}
+                  <tr>
+                    <td class="fw-semibold">{{ producto.cod_producto }}</td>
+                    <td>{{ producto.descripcion }}</td>
+                    <td style="min-width: 220px;">
+                      <form id="update-{{ item.id }}" method="post" action="/data/productos-estancados/{{ item.id }}/update" class="d-flex gap-2 align-items-center">
+                        <input name="motivo" class="form-control form-control-sm" maxlength="240" value="{{ item.motivo or '' }}">
+                        <div class="form-check form-switch m-0">
+                          <input class="form-check-input" type="checkbox" name="activo" {% if item.activo %}checked{% endif %} aria-label="Activo">
+                        </div>
+                      </form>
+                    </td>
+                    <td>
+                      {% if item.activo %}
+                      <span class="badge text-bg-success">Activo</span>
+                      {% else %}
+                      <span class="badge text-bg-secondary">Inactivo</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      <button class="btn btn-outline-primary btn-sm" type="submit" form="update-{{ item.id }}">
+                        <i class="bi bi-save"></i>
+                      </button>
+                      <form method="post" action="/data/productos-estancados/{{ item.id }}/delete" class="d-inline" onsubmit="return confirm('Quitar producto del catalogo?');">
+                        <button class="btn btn-outline-danger btn-sm" type="submit">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                  {% if items|length == 0 %}
+                  <tr>
+                    <td colspan="5" class="text-center text-slate py-3">Aun no hay productos estancados marcados.</td>
+                  </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  (function () {
+    const select = document.querySelector('select[name="producto_id"]');
+    document.querySelectorAll(".product-pick").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (!select) return;
+        select.value = button.dataset.productId || "";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    });
+  })();
+</script>
+{% endblock %}
