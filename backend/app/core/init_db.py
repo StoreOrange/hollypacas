@@ -936,7 +936,17 @@ def _seed_recibos_motivos(db: Session) -> None:
         "Gastos de papeleria",
         "Gastos de ventas",
         "Compra de insumos",
+        "Compra de articulos de limpieza",
         "Compra de materiales de limpieza",
+        "Transporte",
+        "Acarreo",
+        "Combustible",
+        "Viaticos",
+        "Mantenimiento",
+        "Reparaciones",
+        "Alquiler",
+        "Fletes",
+        "Otros gastos",
         "Pago por servicios de seguridad",
     ]
     existing = {m.nombre for m in db.query(ReciboMotivo).all()}

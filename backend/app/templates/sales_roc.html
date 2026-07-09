@@ -89,7 +89,7 @@
               <div class="col-12">
                 <label class="odoo-field-label">Rubro *</label>
                 <select class="form-select odoo-input" name="rubro_id" id="roc-rubro" required>
-                  <option value="">Selecciona</option>
+                  <option value="">Selecciona categoria contable</option>
                   {% for rubro in rubros %}
                   <option
                     value="{{ rubro.id }}"
@@ -102,9 +102,9 @@
                 </select>
               </div>
               <div class="col-12">
-                <label class="odoo-field-label">Motivo *</label>
+                <label class="odoo-field-label">Tipo de gasto / ingreso *</label>
                 <select class="form-select odoo-input" name="motivo_id" id="roc-motivo" required>
-                  <option value="">Selecciona</option>
+                  <option value="">Selecciona el tipo de movimiento</option>
                   {% for motivo in motivos %}
                   <option value="{{ motivo.id }}" data-tipo="{{ motivo.tipo }}">{{ motivo.nombre }}</option>
                   {% endfor %}
