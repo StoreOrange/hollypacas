@@ -16071,7 +16071,7 @@ def sales_roc(
             start_date = today_value
             end_date = today_value
     branch, bodega = _resolve_branch_bodega(db, user)
-    rubros = db.query(ReciboRubro).filter(ReciboRubro.activo.is_(True)).order_by(ReciboRubro.nombre).all()
+    rubros = db.query(ReciboRubro).filter(ReciboRubro.activo.is_(True)).order_by(ReciboRubro.tipo, ReciboRubro.nombre).all()
     motivos = db.query(ReciboMotivo).filter(ReciboMotivo.activo.is_(True)).order_by(ReciboMotivo.tipo, ReciboMotivo.nombre).all()
     recibos_query = db.query(ReciboCaja)
     if bodega:
@@ -16604,7 +16604,15 @@ async def sales_roc_create(
     if not bodega:
         return RedirectResponse("/sales/roc?error=Bodega+no+configurada+para+la+sucursal", status_code=303)
 
-    rubro = db.query(ReciboRubro).filter(ReciboRubro.id == int(rubro_id), ReciboRubro.activo.is_(True)).first()
+    rubro = (
+        db.query(ReciboRubro)
+        .filter(
+            ReciboRubro.id == int(rubro_id),
+            ReciboRubro.activo.is_(True),
+            or_(ReciboRubro.tipo == tipo, ReciboRubro.tipo == "AMBOS", ReciboRubro.tipo.is_(None)),
+        )
+        .first()
+    )
     motivo = db.query(ReciboMotivo).filter(ReciboMotivo.id == int(motivo_id), ReciboMotivo.tipo == tipo, ReciboMotivo.activo.is_(True)).first()
     if not rubro or not motivo:
         return RedirectResponse("/sales/roc?error=Rubro+o+motivo+no+valido", status_code=303)
@@ -25554,7 +25562,7 @@ def data_recibos_rubros(
     edit_item = None
     if edit_id:
         edit_item = db.query(ReciboRubro).filter(ReciboRubro.id == int(edit_id)).first()
-    items = db.query(ReciboRubro).order_by(ReciboRubro.nombre).all()
+    items = db.query(ReciboRubro).order_by(ReciboRubro.tipo, ReciboRubro.nombre).all()
     cuentas = db.query(CuentaContable).filter(CuentaContable.activo.is_(True)).order_by(CuentaContable.codigo).all()
     return request.app.state.templates.TemplateResponse(
         "data_recibos_rubros.html",
@@ -25575,6 +25583,7 @@ def data_recibos_rubros(
 def data_recibos_rubros_create(
     request: Request,
     nombre: str = Form(...),
+    tipo: str = Form("AMBOS"),
     cuenta_id: Optional[int] = Form(None),
     activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -25582,12 +25591,15 @@ def data_recibos_rubros_create(
 ):
     _enforce_permission(request, user, "access.data.catalogs")
     nombre = nombre.strip()
+    tipo = (tipo or "AMBOS").strip().upper()
+    if tipo not in {"INGRESO", "EGRESO", "AMBOS"}:
+        return RedirectResponse("/data/recibos-rubros?error=Tipo+no+valido", status_code=303)
     if not nombre:
         return RedirectResponse("/data/recibos-rubros?error=Nombre+requerido", status_code=303)
     exists = db.query(ReciboRubro).filter(func.lower(ReciboRubro.nombre) == nombre.lower()).first()
     if exists:
         return RedirectResponse("/data/recibos-rubros?error=Rubro+ya+existe", status_code=303)
-    db.add(ReciboRubro(nombre=nombre, activo=activo == "on", cuenta_id=cuenta_id))
+    db.add(ReciboRubro(nombre=nombre, tipo=tipo, activo=activo == "on", cuenta_id=cuenta_id))
     db.commit()
     return RedirectResponse("/data/recibos-rubros?success=Rubro+creado", status_code=303)
 
@@ -25597,6 +25609,7 @@ def data_recibos_rubros_update(
     request: Request,
     item_id: int,
     nombre: str = Form(...),
+    tipo: str = Form("AMBOS"),
     cuenta_id: Optional[int] = Form(None),
     activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -25606,7 +25619,11 @@ def data_recibos_rubros_update(
     item = db.query(ReciboRubro).filter(ReciboRubro.id == item_id).first()
     if not item:
         return RedirectResponse("/data/recibos-rubros?error=Rubro+no+existe", status_code=303)
+    tipo = (tipo or "AMBOS").strip().upper()
+    if tipo not in {"INGRESO", "EGRESO", "AMBOS"}:
+        return RedirectResponse("/data/recibos-rubros?error=Tipo+no+valido", status_code=303)
     item.nombre = nombre.strip()
+    item.tipo = tipo
     item.activo = activo == "on"
     item.cuenta_id = cuenta_id
     db.commit()

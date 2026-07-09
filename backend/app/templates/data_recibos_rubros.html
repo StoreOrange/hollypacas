@@ -43,6 +43,14 @@
                 <input class="form-control odoo-input" name="nombre" value="{{ edit_item.nombre if edit_item else '' }}" required />
               </div>
               <div class="col-12">
+                <label class="odoo-field-label">Tipo *</label>
+                <select class="form-select odoo-input" name="tipo" required>
+                  <option value="AMBOS" {% if edit_item is none or edit_item.tipo == "AMBOS" %}selected{% endif %}>Ingreso y egreso</option>
+                  <option value="INGRESO" {% if edit_item and edit_item.tipo == "INGRESO" %}selected{% endif %}>Ingreso</option>
+                  <option value="EGRESO" {% if edit_item and edit_item.tipo == "EGRESO" %}selected{% endif %}>Egreso</option>
+                </select>
+              </div>
+              <div class="col-12">
                 <label class="odoo-field-label">Cuenta contable</label>
                 <select class="form-select odoo-input" name="cuenta_id">
                   <option value="">Sin cuenta</option>
@@ -78,6 +86,8 @@
                 <thead>
                   <tr>
                     <th>Nombre</th>
+                    <th>Tipo</th>
+                    <th>Cuenta</th>
                     <th class="text-center">Activo</th>
                     <th class="text-end">Acciones</th>
                   </tr>
@@ -86,6 +96,16 @@
                   {% for item in items %}
                   <tr>
                     <td>{{ item.nombre }}</td>
+                    <td>
+                      {% if item.tipo == "INGRESO" %}
+                      <span class="badge text-bg-success">Ingreso</span>
+                      {% elif item.tipo == "EGRESO" %}
+                      <span class="badge text-bg-danger">Egreso</span>
+                      {% else %}
+                      <span class="badge text-bg-secondary">Ambos</span>
+                      {% endif %}
+                    </td>
+                    <td>{{ item.cuenta.codigo ~ ' - ' ~ item.cuenta.nombre if item.cuenta else '-' }}</td>
                     <td class="text-center">{{ "Si" if item.activo else "No" }}</td>
                     <td class="text-end">
                       <a class="btn btn-sm btn-outline-secondary" href="/data/recibos-rubros?edit_id={{ item.id }}">Editar</a>

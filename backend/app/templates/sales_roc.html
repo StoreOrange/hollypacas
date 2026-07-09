@@ -91,7 +91,13 @@
                 <select class="form-select odoo-input" name="rubro_id" id="roc-rubro" required>
                   <option value="">Selecciona</option>
                   {% for rubro in rubros %}
-                  <option value="{{ rubro.id }}" data-codigo="{{ rubro.cuenta.codigo if rubro.cuenta else '9999' }}">{{ rubro.nombre }}</option>
+                  <option
+                    value="{{ rubro.id }}"
+                    data-tipo="{{ rubro.tipo or 'AMBOS' }}"
+                    data-codigo="{{ rubro.cuenta.codigo if rubro.cuenta else '9999' }}"
+                  >
+                    {{ rubro.nombre }}
+                  </option>
                   {% endfor %}
                 </select>
               </div>
@@ -287,6 +293,20 @@
     });
   };
 
+  const updateRubros = () => {
+    if (!rocRubro || !rocTipo) return;
+    const tipo = rocTipo.value;
+    rocRubro.querySelectorAll("option").forEach((opt) => {
+      if (!opt.value) return;
+      const rubroTipo = opt.dataset.tipo || "AMBOS";
+      const ok = rubroTipo === "AMBOS" || rubroTipo === tipo;
+      opt.hidden = !ok;
+      if (!ok && opt.selected) {
+        opt.selected = false;
+      }
+    });
+  };
+
   const parseAmount = (value) => {
     if (!value) return 0;
     const cleaned = value.replace(/[^0-9.]/g, "");
@@ -357,8 +377,12 @@
   };
 
   if (rocTipo) {
-    rocTipo.addEventListener("change", updateMotivos);
+    rocTipo.addEventListener("change", () => {
+      updateMotivos();
+      updateRubros();
+    });
     updateMotivos();
+    updateRubros();
   }
   if (rocMoneda) {
     rocMoneda.addEventListener("change", updateTotals);

@@ -585,6 +585,7 @@ class ReciboRubro(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(120), nullable=False, unique=True)
+    tipo = Column(String(20), nullable=False, default="AMBOS")
     cuenta_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=True)
     activo = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())

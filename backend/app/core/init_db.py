@@ -917,7 +917,7 @@ def _seed_recibos_rubros(db: Session) -> None:
             continue
         if normalized in existing or normalized in seen_in_batch:
             continue
-        db.add(ReciboRubro(nombre=nombre.strip(), activo=True))
+        db.add(ReciboRubro(nombre=nombre.strip(), tipo="AMBOS", activo=True))
         seen_in_batch.add(normalized)
     db.commit()
 
@@ -1747,6 +1747,10 @@ def init_db() -> None:
         if "cuenta_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE recibos_rubros ADD COLUMN cuenta_id INTEGER"))
+        if "tipo" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE recibos_rubros ADD COLUMN tipo VARCHAR(20) DEFAULT 'AMBOS'"))
+                conn.execute(text("UPDATE recibos_rubros SET tipo = 'AMBOS' WHERE tipo IS NULL OR tipo = ''"))
     if "cuentas_contables" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("cuentas_contables")}
         if "tipo" not in columns:
