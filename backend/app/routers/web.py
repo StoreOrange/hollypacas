@@ -25,6 +25,7 @@ from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 from dotenv import dotenv_values
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font
+from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
 from PIL import Image, ImageDraw, ImageFont
 
@@ -2148,6 +2149,53 @@ def _balances_by_bodega(
         .filter(VentaFactura.bodega_id.in_(bodega_ids))
         .filter(VentaItem.producto_id.in_(product_ids))
         .filter(VentaFactura.estado != "ANULADA")
+        .group_by(VentaItem.producto_id, VentaFactura.bodega_id)
+        .all()
+    )
+    balances: dict[tuple[int, int], Decimal] = {}
+    for producto_id, bodega_id, qty in ingreso_rows:
+        balances[(producto_id, bodega_id)] = Decimal(str(qty or 0))
+    for producto_id, bodega_id, qty in egreso_rows:
+        balances[(producto_id, bodega_id)] = balances.get((producto_id, bodega_id), Decimal("0")) - Decimal(str(qty or 0))
+    for producto_id, bodega_id, qty in venta_rows:
+        balances[(producto_id, bodega_id)] = balances.get((producto_id, bodega_id), Decimal("0")) - Decimal(str(qty or 0))
+    return balances
+
+
+def _balances_by_bodega_until(
+    db: Session,
+    bodega_ids: list[int],
+    product_ids: list[int],
+    cutoff_date: date,
+) -> dict[tuple[int, int], Decimal]:
+    if not bodega_ids or not product_ids:
+        return {}
+    cutoff_dt = datetime.combine(cutoff_date + timedelta(days=1), datetime.min.time())
+    ingreso_rows = (
+        db.query(IngresoItem.producto_id, IngresoInventario.bodega_id, func.sum(IngresoItem.cantidad))
+        .join(IngresoInventario, IngresoInventario.id == IngresoItem.ingreso_id)
+        .filter(IngresoInventario.bodega_id.in_(bodega_ids))
+        .filter(IngresoItem.producto_id.in_(product_ids))
+        .filter(IngresoInventario.fecha <= cutoff_date)
+        .group_by(IngresoItem.producto_id, IngresoInventario.bodega_id)
+        .all()
+    )
+    egreso_rows = (
+        db.query(EgresoItem.producto_id, EgresoInventario.bodega_id, func.sum(EgresoItem.cantidad))
+        .join(EgresoInventario, EgresoInventario.id == EgresoItem.egreso_id)
+        .filter(EgresoInventario.bodega_id.in_(bodega_ids))
+        .filter(EgresoItem.producto_id.in_(product_ids))
+        .filter(EgresoInventario.fecha <= cutoff_date)
+        .group_by(EgresoItem.producto_id, EgresoInventario.bodega_id)
+        .all()
+    )
+    venta_rows = (
+        db.query(VentaItem.producto_id, VentaFactura.bodega_id, func.sum(VentaItem.cantidad))
+        .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+        .filter(VentaFactura.bodega_id.in_(bodega_ids))
+        .filter(VentaItem.producto_id.in_(product_ids))
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(VentaFactura.fecha < cutoff_dt)
         .group_by(VentaItem.producto_id, VentaFactura.bodega_id)
         .all()
     )
@@ -17481,9 +17529,50 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
     product_ids = [int(product.id) for product in products]
     product_map = {int(product.id): product for product in products}
 
+    inbound_map: dict[int, dict[str, object]] = {}
     transfer_map: dict[int, dict[str, object]] = {}
     sales_map: dict[int, dict[str, object]] = {}
     if bodega_ids and product_ids:
+        inbound_rows = (
+            db.query(IngresoInventario, IngresoItem, IngresoTipo, Bodega, Branch)
+            .join(IngresoItem, IngresoItem.ingreso_id == IngresoInventario.id)
+            .join(IngresoTipo, IngresoTipo.id == IngresoInventario.tipo_id, isouter=True)
+            .join(Bodega, Bodega.id == IngresoInventario.bodega_id)
+            .join(Branch, Branch.id == Bodega.branch_id)
+            .filter(IngresoInventario.fecha.between(start_date, end_date))
+            .filter(IngresoInventario.bodega_id.in_(bodega_ids))
+            .filter(IngresoItem.producto_id.in_(product_ids))
+            .order_by(IngresoInventario.fecha.asc(), IngresoInventario.id.asc())
+            .all()
+        )
+        for ingreso, item, tipo, bodega, branch in inbound_rows:
+            product_id = int(item.producto_id)
+            qty = Decimal(str(item.cantidad or 0))
+            row = inbound_map.setdefault(
+                product_id,
+                {
+                    "ingresado_qty": Decimal("0"),
+                    "primer_ingreso": None,
+                    "ultimo_ingreso": None,
+                    "primer_ingreso_qty": Decimal("0"),
+                    "ingresos_movimientos": 0,
+                    "bodegas": set(),
+                    "sucursales": set(),
+                    "tipos": set(),
+                },
+            )
+            row["ingresado_qty"] += qty
+            row["ingresos_movimientos"] += 1
+            row["bodegas"].add(bodega.name if bodega else "-")
+            row["sucursales"].add(branch.name if branch else "-")
+            row["tipos"].add(tipo.nombre if tipo else "Ingreso")
+            fecha = ingreso.fecha
+            if fecha and (row["primer_ingreso"] is None or fecha < row["primer_ingreso"]):
+                row["primer_ingreso"] = fecha
+                row["primer_ingreso_qty"] = qty
+            if fecha and (row["ultimo_ingreso"] is None or fecha > row["ultimo_ingreso"]):
+                row["ultimo_ingreso"] = fecha
+
         transfer_rows = (
             db.query(EgresoInventario, EgresoItem, EgresoTipo, Bodega, Branch)
             .join(EgresoItem, EgresoItem.egreso_id == EgresoInventario.id)
@@ -17503,25 +17592,16 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
             row = transfer_map.setdefault(
                 product_id,
                 {
-                    "enviado_qty": Decimal("0"),
-                    "primer_envio": None,
-                    "ultimo_envio": None,
-                    "primer_envio_qty": Decimal("0"),
-                    "movimientos": 0,
+                    "traslado_qty": Decimal("0"),
+                    "traslado_movimientos": 0,
                     "bodegas": set(),
                     "sucursales": set(),
                 },
             )
-            row["enviado_qty"] += qty
-            row["movimientos"] += 1
+            row["traslado_qty"] += qty
+            row["traslado_movimientos"] += 1
             row["bodegas"].add(bodega.name if bodega else "-")
             row["sucursales"].add(branch.name if branch else "-")
-            fecha = egreso.fecha
-            if fecha and (row["primer_envio"] is None or fecha < row["primer_envio"]):
-                row["primer_envio"] = fecha
-                row["primer_envio_qty"] = qty
-            if fecha and (row["ultimo_envio"] is None or fecha > row["ultimo_envio"]):
-                row["ultimo_envio"] = fecha
 
         start_dt = datetime.combine(start_date, datetime.min.time())
         end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
@@ -17549,6 +17629,7 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
                     "venta_usd": Decimal("0"),
                     "facturas": set(),
                     "ultima_venta": None,
+                    "fechas_venta": set(),
                     "vendedores": set(),
                     "bodegas": set(),
                     "sucursales": set(),
@@ -17564,43 +17645,57 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
             sale_date = factura.fecha.date() if factura.fecha else None
             if sale_date and (row["ultima_venta"] is None or sale_date > row["ultima_venta"]):
                 row["ultima_venta"] = sale_date
+            if sale_date:
+                row["fechas_venta"].add(sale_date)
 
-    balances = _balances_by_bodega(db, bodega_ids, product_ids)
+    balances = _balances_by_bodega_until(db, bodega_ids, product_ids, end_date)
     report_rows: list[dict[str, object]] = []
     total_enviado = Decimal("0")
     total_vendido = Decimal("0")
     total_saldo = Decimal("0")
     total_cs = Decimal("0")
-    today = local_today()
+    period_days = max((end_date - start_date).days + 1, 1)
     for product_id, product in product_map.items():
+        inbound = inbound_map.get(product_id, {})
         transfer = transfer_map.get(product_id, {})
         sale = sales_map.get(product_id, {})
-        enviado_qty = Decimal(str(transfer.get("enviado_qty") or 0))
+        enviado_qty = Decimal(str(inbound.get("ingresado_qty") or 0))
+        traslado_qty = Decimal(str(transfer.get("traslado_qty") or 0))
         vendido_qty = Decimal(str(sale.get("vendido_qty") or 0))
         saldo_qty = sum((balances.get((product_id, bid), Decimal("0")) for bid in bodega_ids), Decimal("0"))
-        if not selected_product_ids and enviado_qty == 0 and vendido_qty == 0 and saldo_qty == 0:
+        if not selected_product_ids and enviado_qty == 0 and traslado_qty == 0 and vendido_qty == 0 and saldo_qty == 0:
             continue
         base_qty = enviado_qty if enviado_qty > 0 else (vendido_qty + max(saldo_qty, Decimal("0")))
         eficacia_pct = (vendido_qty / base_qty * Decimal("100")) if base_qty > 0 else Decimal("0")
-        primer_envio = transfer.get("primer_envio")
+        pendiente_qty = max(Decimal("0"), enviado_qty - vendido_qty)
+        ritmo_diario = vendido_qty / Decimal(str(period_days))
+        primer_envio = inbound.get("primer_ingreso")
+        ultimo_ingreso = inbound.get("ultimo_ingreso")
         ultima_venta = sale.get("ultima_venta")
-        dias_desde_envio = (today - primer_envio).days if primer_envio else None
-        dias_sin_venta = (today - ultima_venta).days if ultima_venta else None
-        movimientos = int(transfer.get("movimientos") or 0)
-        primer_envio_qty = Decimal(str(transfer.get("primer_envio_qty") or 0))
+        dias_desde_envio = (end_date - primer_envio).days if primer_envio else None
+        fechas_venta = {
+            sale_date
+            for sale_date in (sale.get("fechas_venta") or set())
+            if start_date <= sale_date <= end_date
+        }
+        dias_con_venta = len(fechas_venta)
+        dias_sin_venta = max(period_days - dias_con_venta, 0)
+        movimientos = int(inbound.get("ingresos_movimientos") or 0)
+        primer_envio_qty = Decimal(str(inbound.get("primer_ingreso_qty") or 0))
         relleno_qty = max(Decimal("0"), enviado_qty - primer_envio_qty) if movimientos > 1 else Decimal("0")
+        venta_sobre_saldo_pct = (vendido_qty / (vendido_qty + max(saldo_qty, Decimal("0"))) * Decimal("100")) if (vendido_qty + max(saldo_qty, Decimal("0"))) > 0 else Decimal("0")
         if eficacia_pct < 25:
             estado = "CRITICO"
-            analisis = "Baja salida: mucha mercaderia enviada contra venta real."
+            analisis = "Gestion critica: el ingreso a bodega no se esta convirtiendo en venta."
         elif eficacia_pct < 60:
             estado = "LENTO"
-            analisis = "Rotacion lenta: requiere seguimiento o impulso comercial."
+            analisis = "Gestion lenta: hay inventario ingresado con salida baja."
         elif eficacia_pct < 85:
             estado = "ACEPTABLE"
-            analisis = "Venta razonable, todavia queda margen por liquidar."
+            analisis = "Gestion aceptable: vende, pero aun queda inventario por empujar."
         else:
             estado = "ALTO"
-            analisis = "Alta eficacia: buen aprovechamiento del inventario enviado."
+            analisis = "Gestion alta: buen aprovechamiento del inventario ingresado."
         if status_filter != "all" and estado.lower() != status_filter:
             continue
         total_enviado += enviado_qty
@@ -17612,22 +17707,30 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
                 "codigo": product.cod_producto or "-",
                 "producto": product.descripcion or "-",
                 "estancado": product_id in stagnant_ids,
-                "sucursales": ", ".join(sorted((transfer.get("sucursales") or set()) | (sale.get("sucursales") or set()))) or "-",
-                "bodegas": ", ".join(sorted((transfer.get("bodegas") or set()) | (sale.get("bodegas") or set()))) or "-",
+                "sucursales": ", ".join(sorted((inbound.get("sucursales") or set()) | (transfer.get("sucursales") or set()) | (sale.get("sucursales") or set()))) or "-",
+                "bodegas": ", ".join(sorted((inbound.get("bodegas") or set()) | (transfer.get("bodegas") or set()) | (sale.get("bodegas") or set()))) or "-",
                 "vendedores": ", ".join(sorted(sale.get("vendedores") or set())) or (selected_vendedor.nombre if selected_vendedor else "-"),
                 "enviado_qty": float(enviado_qty),
+                "traslado_qty": float(traslado_qty),
                 "vendido_qty": float(vendido_qty),
+                "pendiente_qty": float(pendiente_qty),
                 "saldo_qty": float(saldo_qty),
                 "relleno_qty": float(relleno_qty),
                 "movimientos": movimientos,
+                "traslado_movimientos": int(transfer.get("traslado_movimientos") or 0),
                 "facturas": len(sale.get("facturas") or set()),
                 "venta_cs": float(sale.get("venta_cs") or 0),
                 "venta_usd": float(sale.get("venta_usd") or 0),
                 "eficacia_pct": float(eficacia_pct),
+                "venta_sobre_saldo_pct": float(venta_sobre_saldo_pct),
+                "ritmo_diario": float(ritmo_diario),
+                "dias_con_venta": dias_con_venta,
                 "dias_desde_envio": dias_desde_envio,
                 "dias_sin_venta": dias_sin_venta,
                 "primer_envio": primer_envio.isoformat() if primer_envio else "-",
+                "ultimo_ingreso": ultimo_ingreso.isoformat() if ultimo_ingreso else "-",
                 "ultima_venta": ultima_venta.isoformat() if ultima_venta else "-",
+                "tipos_ingreso": ", ".join(sorted(inbound.get("tipos") or set())) or "-",
                 "estado": estado,
                 "analisis": analisis,
             }
@@ -21804,16 +21907,25 @@ def report_vendor_effort_export_xlsx(
         "Sucursal",
         "Bodega",
         "Vendedor",
-        "Enviado",
+        "Ingresado a bodega",
         "Vendido",
-        "Saldo actual",
+        "Pendiente ingreso vs venta",
+        "Saldo al corte",
         "Relleno",
+        "Traslados referencia",
         "% eficacia",
+        "% venta sobre stock",
+        "Ritmo diario",
         "Estado",
-        "Dias desde envio",
+        "Dias desde ingreso",
+        "Dias con venta",
         "Dias sin venta",
-        "Primer envio",
+        "Primer ingreso",
+        "Ultimo ingreso",
         "Ultima venta",
+        "Tipo ingreso",
+        "Mov. ingreso",
+        "Mov. traslado",
         "Facturas",
         "Venta C$",
         "Venta USD",
@@ -21834,23 +21946,32 @@ def report_vendor_effort_export_xlsx(
                 row["vendedores"],
                 row["enviado_qty"],
                 row["vendido_qty"],
+                row["pendiente_qty"],
                 row["saldo_qty"],
                 row["relleno_qty"],
+                row["traslado_qty"],
                 row["eficacia_pct"],
+                row["venta_sobre_saldo_pct"],
+                row["ritmo_diario"],
                 row["estado"],
                 row["dias_desde_envio"] if row["dias_desde_envio"] is not None else "",
+                row["dias_con_venta"],
                 row["dias_sin_venta"] if row["dias_sin_venta"] is not None else "",
                 row["primer_envio"],
+                row["ultimo_ingreso"],
                 row["ultima_venta"],
+                row["tipos_ingreso"],
+                row["movimientos"],
+                row["traslado_movimientos"],
                 row["facturas"],
                 row["venta_cs"],
                 row["venta_usd"],
                 row["analisis"],
             ]
         )
-    widths = [16, 46, 12, 22, 24, 24, 12, 12, 12, 12, 12, 14, 16, 14, 14, 14, 10, 14, 14, 48]
+    widths = [16, 46, 12, 22, 24, 24, 16, 12, 16, 12, 12, 14, 12, 14, 12, 14, 16, 14, 14, 14, 14, 14, 28, 12, 12, 10, 14, 14, 52]
     for idx, width in enumerate(widths, start=1):
-        ws.column_dimensions[chr(64 + idx) if idx <= 26 else "Z"].width = width
+        ws.column_dimensions[get_column_letter(idx)].width = width
     ws.freeze_panes = "A5"
 
     buffer = io.BytesIO()
@@ -21905,7 +22026,18 @@ def report_vendor_effort_export_pdf(
         pdf.rect(margin, y - 14, width - margin * 2, 18, fill=1, stroke=0)
         pdf.setFillColor(colors.black)
         pdf.setFont("Helvetica-Bold", 7)
-        headers = [("Codigo", 0), ("Producto", 62), ("Env.", 250), ("Vend.", 295), ("Saldo", 340), ("% Eff.", 388), ("Estado", 438), ("Dias", 500), ("Analisis", 548)]
+        headers = [
+            ("Codigo", 0),
+            ("Producto", 58),
+            ("Ing.", 238),
+            ("Vend.", 284),
+            ("Pend.", 330),
+            ("Saldo", 376),
+            ("% Eff.", 422),
+            ("Ritmo", 470),
+            ("Estado", 514),
+            ("Analisis", 568),
+        ]
         for label, x in headers:
             pdf.drawString(margin + x, y - 8, label)
         return y - 24
@@ -21920,15 +22052,15 @@ def report_vendor_effort_export_pdf(
             y = draw_table_header(y)
             pdf.setFont("Helvetica", 7)
         pdf.drawString(margin, y, str(row["codigo"])[:13])
-        pdf.drawString(margin + 62, y, str(row["producto"])[:38])
-        pdf.drawRightString(margin + 285, y, f"{float(row['enviado_qty'] or 0):,.2f}")
-        pdf.drawRightString(margin + 330, y, f"{float(row['vendido_qty'] or 0):,.2f}")
-        pdf.drawRightString(margin + 380, y, f"{float(row['saldo_qty'] or 0):,.2f}")
-        pdf.drawRightString(margin + 430, y, f"{float(row['eficacia_pct'] or 0):,.1f}%")
-        pdf.drawString(margin + 438, y, str(row["estado"])[:11])
-        dias = row["dias_sin_venta"] if row["dias_sin_venta"] is not None else "-"
-        pdf.drawString(margin + 500, y, str(dias))
-        pdf.drawString(margin + 548, y, str(row["analisis"])[:46])
+        pdf.drawString(margin + 58, y, str(row["producto"])[:34])
+        pdf.drawRightString(margin + 276, y, f"{float(row['enviado_qty'] or 0):,.2f}")
+        pdf.drawRightString(margin + 322, y, f"{float(row['vendido_qty'] or 0):,.2f}")
+        pdf.drawRightString(margin + 368, y, f"{float(row['pendiente_qty'] or 0):,.2f}")
+        pdf.drawRightString(margin + 414, y, f"{float(row['saldo_qty'] or 0):,.2f}")
+        pdf.drawRightString(margin + 462, y, f"{float(row['eficacia_pct'] or 0):,.1f}%")
+        pdf.drawRightString(margin + 506, y, f"{float(row['ritmo_diario'] or 0):,.2f}")
+        pdf.drawString(margin + 514, y, str(row["estado"])[:10])
+        pdf.drawString(margin + 568, y, str(row["analisis"])[:42])
         y -= 13
     pdf.save()
     buffer.seek(0)
