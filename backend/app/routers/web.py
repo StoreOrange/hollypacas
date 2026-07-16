@@ -17353,6 +17353,307 @@ def _stagnant_inventory_report_filters(request: Request):
     return start_date, end_date, branch_id, vendedor_id, producto_q
 
 
+def _vendor_effort_report_filters(request: Request):
+    today = local_today()
+    start_date = today - timedelta(days=30)
+    end_date = today
+    start_raw = request.query_params.get("start_date")
+    end_raw = request.query_params.get("end_date")
+    if start_raw:
+        try:
+            start_date = date.fromisoformat(start_raw)
+        except ValueError:
+            pass
+    if end_raw:
+        try:
+            end_date = date.fromisoformat(end_raw)
+        except ValueError:
+            pass
+    if end_date < start_date:
+        end_date = start_date
+
+    def _id_list(name: str) -> list[int]:
+        values: list[int] = []
+        for raw in request.query_params.getlist(name):
+            for piece in str(raw or "").split(","):
+                piece = piece.strip()
+                if piece.isdigit():
+                    values.append(int(piece))
+        return sorted(set(values))
+
+    stagnant_scope = (request.query_params.get("stagnant_scope") or "").strip().lower()
+    status_filter = (request.query_params.get("status") or "all").strip().lower()
+    if stagnant_scope not in {"all", "selected", ""}:
+        stagnant_scope = ""
+    if status_filter not in {"all", "critico", "lento", "aceptable", "alto"}:
+        status_filter = "all"
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "branch_id": request.query_params.get("branch_id") or "all",
+        "bodega_id": request.query_params.get("bodega_id") or "all",
+        "vendedor_id": request.query_params.get("vendedor_id") or "",
+        "producto_ids": _id_list("producto_ids"),
+        "stagnant_product_ids": _id_list("stagnant_product_ids"),
+        "stagnant_scope": stagnant_scope,
+        "status_filter": status_filter,
+        "q": (request.query_params.get("q") or "").strip(),
+    }
+
+
+def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, object]) -> dict[str, object]:
+    start_date: date = filters["start_date"]  # type: ignore[assignment]
+    end_date: date = filters["end_date"]  # type: ignore[assignment]
+    branch_id = str(filters.get("branch_id") or "all")
+    bodega_id = str(filters.get("bodega_id") or "all")
+    vendedor_id = str(filters.get("vendedor_id") or "")
+    producto_ids = list(filters.get("producto_ids") or [])
+    stagnant_product_ids = list(filters.get("stagnant_product_ids") or [])
+    stagnant_scope = str(filters.get("stagnant_scope") or "")
+    status_filter = str(filters.get("status_filter") or "all")
+    q = str(filters.get("q") or "").strip()
+
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name.asc())
+        .all()
+    )
+    branch_ids = [int(branch.id) for branch in branches]
+    if branch_id != "all":
+        try:
+            wanted_branch_id = int(branch_id)
+            branch_ids = [wanted_branch_id] if wanted_branch_id in scoped_branch_ids else []
+        except ValueError:
+            branch_ids = []
+
+    bodegas_q = _scoped_bodegas_query(db)
+    bodegas_q = bodegas_q.filter(Bodega.branch_id.in_(branch_ids)) if branch_ids else bodegas_q.filter(Bodega.id == -1)
+    if bodega_id != "all":
+        try:
+            bodegas_q = bodegas_q.filter(Bodega.id == int(bodega_id))
+        except ValueError:
+            bodegas_q = bodegas_q.filter(Bodega.id == -1)
+
+    selected_vendedor = None
+    if vendedor_id:
+        try:
+            selected_vendedor = db.query(Vendedor).filter(Vendedor.id == int(vendedor_id), Vendedor.activo.is_(True)).first()
+        except ValueError:
+            selected_vendedor = None
+    if selected_vendedor and bodega_id == "all":
+        assigned_ids = [
+            int(row.bodega_id)
+            for row in db.query(VendedorBodega).filter(VendedorBodega.vendedor_id == selected_vendedor.id).all()
+        ]
+        if assigned_ids:
+            bodegas_q = bodegas_q.filter(Bodega.id.in_(assigned_ids))
+
+    bodegas = bodegas_q.order_by(Bodega.name.asc()).all()
+    bodega_ids = [int(bodega.id) for bodega in bodegas]
+    vendedores = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre.asc()).all()
+    productos_catalog = db.query(Producto).filter(Producto.activo.is_(True)).order_by(Producto.descripcion.asc()).all()
+    stagnant_rows = (
+        db.query(ProductoEstancado, Producto)
+        .join(Producto, Producto.id == ProductoEstancado.producto_id)
+        .filter(ProductoEstancado.activo.is_(True), Producto.activo.is_(True))
+        .order_by(Producto.descripcion.asc())
+        .all()
+    )
+    stagnant_ids = {int(producto.id) for _marked, producto in stagnant_rows}
+
+    selected_product_ids = set(int(pid) for pid in producto_ids)
+    if stagnant_scope == "all":
+        selected_product_ids.update(stagnant_ids)
+    selected_product_ids.update(int(pid) for pid in stagnant_product_ids)
+
+    products_q = db.query(Producto).filter(Producto.activo.is_(True))
+    if selected_product_ids:
+        products_q = products_q.filter(Producto.id.in_(selected_product_ids))
+    if q:
+        like = f"%{q.lower()}%"
+        products_q = products_q.filter(
+            or_(func.lower(Producto.cod_producto).like(like), func.lower(Producto.descripcion).like(like))
+        )
+    products = products_q.order_by(Producto.descripcion.asc()).all()
+    product_ids = [int(product.id) for product in products]
+    product_map = {int(product.id): product for product in products}
+
+    transfer_map: dict[int, dict[str, object]] = {}
+    sales_map: dict[int, dict[str, object]] = {}
+    if bodega_ids and product_ids:
+        transfer_rows = (
+            db.query(EgresoInventario, EgresoItem, EgresoTipo, Bodega, Branch)
+            .join(EgresoItem, EgresoItem.egreso_id == EgresoInventario.id)
+            .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id, isouter=True)
+            .join(Bodega, Bodega.id == EgresoInventario.bodega_destino_id)
+            .join(Branch, Branch.id == Bodega.branch_id)
+            .filter(EgresoInventario.fecha.between(start_date, end_date))
+            .filter(EgresoInventario.bodega_destino_id.in_(bodega_ids))
+            .filter(EgresoItem.producto_id.in_(product_ids))
+            .filter(func.lower(EgresoTipo.nombre).like("%traslado%"))
+            .order_by(EgresoInventario.fecha.asc(), EgresoInventario.id.asc())
+            .all()
+        )
+        for egreso, item, _tipo, bodega, branch in transfer_rows:
+            product_id = int(item.producto_id)
+            qty = Decimal(str(item.cantidad or 0))
+            row = transfer_map.setdefault(
+                product_id,
+                {
+                    "enviado_qty": Decimal("0"),
+                    "primer_envio": None,
+                    "ultimo_envio": None,
+                    "primer_envio_qty": Decimal("0"),
+                    "movimientos": 0,
+                    "bodegas": set(),
+                    "sucursales": set(),
+                },
+            )
+            row["enviado_qty"] += qty
+            row["movimientos"] += 1
+            row["bodegas"].add(bodega.name if bodega else "-")
+            row["sucursales"].add(branch.name if branch else "-")
+            fecha = egreso.fecha
+            if fecha and (row["primer_envio"] is None or fecha < row["primer_envio"]):
+                row["primer_envio"] = fecha
+                row["primer_envio_qty"] = qty
+            if fecha and (row["ultimo_envio"] is None or fecha > row["ultimo_envio"]):
+                row["ultimo_envio"] = fecha
+
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+        sales_query = (
+            db.query(VentaFactura, VentaItem, Vendedor, Bodega, Branch)
+            .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+            .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
+            .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+            .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+            .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+            .filter(VentaFactura.estado != "ANULADA")
+            .filter(VentaFactura.bodega_id.in_(bodega_ids))
+            .filter(VentaItem.producto_id.in_(product_ids))
+        )
+        if selected_vendedor:
+            sales_query = sales_query.filter(VentaFactura.vendedor_id == selected_vendedor.id)
+        for factura, item, vendedor, bodega, branch in sales_query.order_by(VentaFactura.fecha.asc()).all():
+            product_id = int(item.producto_id)
+            qty = Decimal(str(item.cantidad or 0))
+            row = sales_map.setdefault(
+                product_id,
+                {
+                    "vendido_qty": Decimal("0"),
+                    "venta_cs": Decimal("0"),
+                    "venta_usd": Decimal("0"),
+                    "facturas": set(),
+                    "ultima_venta": None,
+                    "vendedores": set(),
+                    "bodegas": set(),
+                    "sucursales": set(),
+                },
+            )
+            row["vendido_qty"] += qty
+            row["venta_cs"] += Decimal(str(item.subtotal_cs or 0))
+            row["venta_usd"] += Decimal(str(item.subtotal_usd or 0))
+            row["facturas"].add(int(factura.id))
+            row["vendedores"].add(vendedor.nombre if vendedor else "-")
+            row["bodegas"].add(bodega.name if bodega else "-")
+            row["sucursales"].add(branch.name if branch else "-")
+            sale_date = factura.fecha.date() if factura.fecha else None
+            if sale_date and (row["ultima_venta"] is None or sale_date > row["ultima_venta"]):
+                row["ultima_venta"] = sale_date
+
+    balances = _balances_by_bodega(db, bodega_ids, product_ids)
+    report_rows: list[dict[str, object]] = []
+    total_enviado = Decimal("0")
+    total_vendido = Decimal("0")
+    total_saldo = Decimal("0")
+    total_cs = Decimal("0")
+    today = local_today()
+    for product_id, product in product_map.items():
+        transfer = transfer_map.get(product_id, {})
+        sale = sales_map.get(product_id, {})
+        enviado_qty = Decimal(str(transfer.get("enviado_qty") or 0))
+        vendido_qty = Decimal(str(sale.get("vendido_qty") or 0))
+        saldo_qty = sum((balances.get((product_id, bid), Decimal("0")) for bid in bodega_ids), Decimal("0"))
+        if not selected_product_ids and enviado_qty == 0 and vendido_qty == 0 and saldo_qty == 0:
+            continue
+        base_qty = enviado_qty if enviado_qty > 0 else (vendido_qty + max(saldo_qty, Decimal("0")))
+        eficacia_pct = (vendido_qty / base_qty * Decimal("100")) if base_qty > 0 else Decimal("0")
+        primer_envio = transfer.get("primer_envio")
+        ultima_venta = sale.get("ultima_venta")
+        dias_desde_envio = (today - primer_envio).days if primer_envio else None
+        dias_sin_venta = (today - ultima_venta).days if ultima_venta else None
+        movimientos = int(transfer.get("movimientos") or 0)
+        primer_envio_qty = Decimal(str(transfer.get("primer_envio_qty") or 0))
+        relleno_qty = max(Decimal("0"), enviado_qty - primer_envio_qty) if movimientos > 1 else Decimal("0")
+        if eficacia_pct < 25:
+            estado = "CRITICO"
+            analisis = "Baja salida: mucha mercaderia enviada contra venta real."
+        elif eficacia_pct < 60:
+            estado = "LENTO"
+            analisis = "Rotacion lenta: requiere seguimiento o impulso comercial."
+        elif eficacia_pct < 85:
+            estado = "ACEPTABLE"
+            analisis = "Venta razonable, todavia queda margen por liquidar."
+        else:
+            estado = "ALTO"
+            analisis = "Alta eficacia: buen aprovechamiento del inventario enviado."
+        if status_filter != "all" and estado.lower() != status_filter:
+            continue
+        total_enviado += enviado_qty
+        total_vendido += vendido_qty
+        total_saldo += saldo_qty
+        total_cs += Decimal(str(sale.get("venta_cs") or 0))
+        report_rows.append(
+            {
+                "codigo": product.cod_producto or "-",
+                "producto": product.descripcion or "-",
+                "estancado": product_id in stagnant_ids,
+                "sucursales": ", ".join(sorted((transfer.get("sucursales") or set()) | (sale.get("sucursales") or set()))) or "-",
+                "bodegas": ", ".join(sorted((transfer.get("bodegas") or set()) | (sale.get("bodegas") or set()))) or "-",
+                "vendedores": ", ".join(sorted(sale.get("vendedores") or set())) or (selected_vendedor.nombre if selected_vendedor else "-"),
+                "enviado_qty": float(enviado_qty),
+                "vendido_qty": float(vendido_qty),
+                "saldo_qty": float(saldo_qty),
+                "relleno_qty": float(relleno_qty),
+                "movimientos": movimientos,
+                "facturas": len(sale.get("facturas") or set()),
+                "venta_cs": float(sale.get("venta_cs") or 0),
+                "venta_usd": float(sale.get("venta_usd") or 0),
+                "eficacia_pct": float(eficacia_pct),
+                "dias_desde_envio": dias_desde_envio,
+                "dias_sin_venta": dias_sin_venta,
+                "primer_envio": primer_envio.isoformat() if primer_envio else "-",
+                "ultima_venta": ultima_venta.isoformat() if ultima_venta else "-",
+                "estado": estado,
+                "analisis": analisis,
+            }
+        )
+    report_rows.sort(key=lambda row: (float(row["eficacia_pct"]), -float(row["saldo_qty"]), str(row["producto"])))
+    eficacia_total = float((total_vendido / total_enviado * Decimal("100")) if total_enviado > 0 else Decimal("0"))
+    return {
+        "branches": branches,
+        "bodegas": bodegas,
+        "vendedores": vendedores,
+        "productos": productos_catalog,
+        "stagnant_products": [{"marked": marked, "producto": producto} for marked, producto in stagnant_rows],
+        "rows": report_rows,
+        "kpis": {
+            "items": len(report_rows),
+            "enviado_qty": float(total_enviado),
+            "vendido_qty": float(total_vendido),
+            "saldo_qty": float(total_saldo),
+            "venta_cs": float(total_cs),
+            "eficacia_total": eficacia_total,
+            "criticos": len([row for row in report_rows if row["estado"] == "CRITICO"]),
+            "lentos": len([row for row in report_rows if row["estado"] == "LENTO"]),
+        },
+    }
+
+
 def _sales_special_report_filters(request: Request):
     start_raw = request.query_params.get("start_date")
     end_raw = request.query_params.get("end_date")
@@ -21432,6 +21733,210 @@ def report_stagnant_inventory_sales(
             "version": settings.UI_VERSION,
             **payload,
         },
+    )
+
+
+@router.get("/reports/esfuerzo-vendedor")
+def report_vendor_effort(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    filters = _vendor_effort_report_filters(request)
+    payload = _build_vendor_effort_report(db, user, filters)
+    query_string = urlencode(
+        [
+            ("start_date", filters["start_date"].isoformat()),
+            ("end_date", filters["end_date"].isoformat()),
+            ("branch_id", str(filters["branch_id"])),
+            ("bodega_id", str(filters["bodega_id"])),
+            ("vendedor_id", str(filters["vendedor_id"])),
+            ("stagnant_scope", str(filters["stagnant_scope"])),
+            ("status", str(filters["status_filter"])),
+            ("q", str(filters["q"])),
+            *[("producto_ids", str(pid)) for pid in filters["producto_ids"]],
+            *[("stagnant_product_ids", str(pid)) for pid in filters["stagnant_product_ids"]],
+        ]
+    )
+    return request.app.state.templates.TemplateResponse(
+        "report_vendor_effort.html",
+        {
+            "request": request,
+            "user": user,
+            "start_date": filters["start_date"].isoformat(),
+            "end_date": filters["end_date"].isoformat(),
+            "selected_branch": filters["branch_id"],
+            "selected_bodega": filters["bodega_id"],
+            "selected_vendedor": filters["vendedor_id"],
+            "selected_product_ids": set(filters["producto_ids"]),
+            "selected_stagnant_product_ids": set(filters["stagnant_product_ids"]),
+            "stagnant_scope": filters["stagnant_scope"],
+            "status_filter": filters["status_filter"],
+            "q": filters["q"],
+            "export_query": query_string,
+            "version": settings.UI_VERSION,
+            **payload,
+        },
+    )
+
+
+@router.get("/reports/esfuerzo-vendedor/export.xlsx")
+def report_vendor_effort_export_xlsx(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    filters = _vendor_effort_report_filters(request)
+    payload = _build_vendor_effort_report(db, user, filters)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Esfuerzo vendedor"
+    ws.append(["Informe de esfuerzo real del vendedor"])
+    ws.append(["Desde", filters["start_date"].isoformat(), "Hasta", filters["end_date"].isoformat()])
+    ws.append([])
+    headers = [
+        "Codigo",
+        "Producto",
+        "Estancado",
+        "Sucursal",
+        "Bodega",
+        "Vendedor",
+        "Enviado",
+        "Vendido",
+        "Saldo actual",
+        "Relleno",
+        "% eficacia",
+        "Estado",
+        "Dias desde envio",
+        "Dias sin venta",
+        "Primer envio",
+        "Ultima venta",
+        "Facturas",
+        "Venta C$",
+        "Venta USD",
+        "Analisis",
+    ]
+    ws.append(headers)
+    for cell in ws[4]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    for row in payload["rows"]:
+        ws.append(
+            [
+                row["codigo"],
+                row["producto"],
+                "Si" if row["estancado"] else "No",
+                row["sucursales"],
+                row["bodegas"],
+                row["vendedores"],
+                row["enviado_qty"],
+                row["vendido_qty"],
+                row["saldo_qty"],
+                row["relleno_qty"],
+                row["eficacia_pct"],
+                row["estado"],
+                row["dias_desde_envio"] if row["dias_desde_envio"] is not None else "",
+                row["dias_sin_venta"] if row["dias_sin_venta"] is not None else "",
+                row["primer_envio"],
+                row["ultima_venta"],
+                row["facturas"],
+                row["venta_cs"],
+                row["venta_usd"],
+                row["analisis"],
+            ]
+        )
+    widths = [16, 46, 12, 22, 24, 24, 12, 12, 12, 12, 12, 14, 16, 14, 14, 14, 10, 14, 14, 48]
+    for idx, width in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + idx) if idx <= 26 else "Z"].width = width
+    ws.freeze_panes = "A5"
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"esfuerzo_vendedor_{filters['start_date'].isoformat()}_{filters['end_date'].isoformat()}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/reports/esfuerzo-vendedor/export.pdf")
+def report_vendor_effort_export_pdf(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.pdfgen import canvas
+
+    filters = _vendor_effort_report_filters(request)
+    payload = _build_vendor_effort_report(db, user, filters)
+    buffer = io.BytesIO()
+    page_size = landscape(A4)
+    width, height = page_size
+    pdf = canvas.Canvas(buffer, pagesize=page_size)
+    margin = 24
+    bottom = 28
+    primary = colors.HexColor("#0f3d5e")
+    light = colors.HexColor("#edf5fb")
+
+    def draw_header() -> float:
+        pdf.setFillColor(primary)
+        pdf.rect(0, height - 54, width, 54, fill=1, stroke=0)
+        pdf.setFillColor(colors.white)
+        pdf.setFont("Helvetica-Bold", 13)
+        pdf.drawString(margin, height - 24, "Informe de esfuerzo real del vendedor")
+        pdf.setFont("Helvetica", 8.5)
+        pdf.drawString(
+            margin,
+            height - 40,
+            f"{filters['start_date'].isoformat()} a {filters['end_date'].isoformat()} | Eficacia total: {payload['kpis']['eficacia_total']:,.2f}% | Items: {payload['kpis']['items']}",
+        )
+        pdf.setFillColor(colors.black)
+        return height - 78
+
+    def draw_table_header(y: float) -> float:
+        pdf.setFillColor(light)
+        pdf.rect(margin, y - 14, width - margin * 2, 18, fill=1, stroke=0)
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica-Bold", 7)
+        headers = [("Codigo", 0), ("Producto", 62), ("Env.", 250), ("Vend.", 295), ("Saldo", 340), ("% Eff.", 388), ("Estado", 438), ("Dias", 500), ("Analisis", 548)]
+        for label, x in headers:
+            pdf.drawString(margin + x, y - 8, label)
+        return y - 24
+
+    y = draw_header()
+    y = draw_table_header(y)
+    pdf.setFont("Helvetica", 7)
+    for row in payload["rows"]:
+        if y < bottom + 18:
+            pdf.showPage()
+            y = draw_header()
+            y = draw_table_header(y)
+            pdf.setFont("Helvetica", 7)
+        pdf.drawString(margin, y, str(row["codigo"])[:13])
+        pdf.drawString(margin + 62, y, str(row["producto"])[:38])
+        pdf.drawRightString(margin + 285, y, f"{float(row['enviado_qty'] or 0):,.2f}")
+        pdf.drawRightString(margin + 330, y, f"{float(row['vendido_qty'] or 0):,.2f}")
+        pdf.drawRightString(margin + 380, y, f"{float(row['saldo_qty'] or 0):,.2f}")
+        pdf.drawRightString(margin + 430, y, f"{float(row['eficacia_pct'] or 0):,.1f}%")
+        pdf.drawString(margin + 438, y, str(row["estado"])[:11])
+        dias = row["dias_sin_venta"] if row["dias_sin_venta"] is not None else "-"
+        pdf.drawString(margin + 500, y, str(dias))
+        pdf.drawString(margin + 548, y, str(row["analisis"])[:46])
+        y -= 13
+    pdf.save()
+    buffer.seek(0)
+    filename = f"esfuerzo_vendedor_{filters['start_date'].isoformat()}_{filters['end_date'].isoformat()}.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={filename}"},
     )
 
 

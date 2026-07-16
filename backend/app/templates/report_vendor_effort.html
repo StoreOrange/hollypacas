@@ -1,0 +1,644 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+  .effort-layout {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+  .effort-main,
+  .effort-report,
+  .effort-report .odoo-page,
+  .effort-report .odoo-header,
+  .effort-report .odoo-card {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .effort-report .odoo-header,
+  .effort-report .odoo-card {
+    overflow: clip;
+  }
+  .effort-header-body {
+    min-width: 0;
+  }
+  .effort-header-title {
+    min-width: 240px;
+    max-width: 100%;
+  }
+  .effort-header-kpis {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .effort-header-kpis .odoo-pill {
+    font-size: .76rem;
+    padding: .25rem .45rem;
+    max-width: 100%;
+  }
+  .effort-check-panel {
+    max-height: 136px;
+    overflow: auto;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    padding: .35rem;
+    background: #fff;
+  }
+  .effort-filter-card {
+    padding: .85rem;
+  }
+  .effort-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+  }
+  .effort-actions .btn {
+    white-space: nowrap;
+  }
+  .effort-filter-card .form-label {
+    margin-bottom: .25rem;
+    font-size: .64rem;
+    letter-spacing: .08em;
+  }
+  .effort-picker {
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #f8fbff;
+    overflow: hidden;
+  }
+  .effort-picker summary {
+    list-style: none;
+    cursor: pointer;
+    padding: .5rem .65rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    font-size: .78rem;
+    font-weight: 700;
+    color: #334155;
+  }
+  .effort-picker summary::-webkit-details-marker {
+    display: none;
+  }
+  .effort-picker summary::after {
+    content: "+";
+    font-size: 1rem;
+    line-height: 1;
+    color: #64748b;
+  }
+  .effort-picker[open] summary::after {
+    content: "-";
+  }
+  .effort-picker-tools {
+    padding: 0 .65rem .45rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: .75rem;
+    font-size: .72rem;
+  }
+  .effort-picker-tools .form-control {
+    min-height: 30px;
+    font-size: .76rem;
+  }
+  .effort-picker-actions {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    white-space: nowrap;
+  }
+  .effort-check-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: .15rem .45rem;
+  }
+  .effort-check-item {
+    min-height: 26px;
+    padding: .18rem .25rem;
+    border-radius: 6px;
+    font-size: .72rem;
+    line-height: 1.15;
+  }
+  .effort-check-item:hover {
+    background: #eef6ff;
+  }
+  .effort-check-item .form-check-input {
+    width: .82rem;
+    height: .82rem;
+    margin-top: .05rem;
+  }
+  .effort-grid-wrap {
+    max-height: 62vh;
+    overflow: auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    border: 1px solid #dbe3ef;
+    border-radius: 10px;
+    background: #fff;
+    -webkit-overflow-scrolling: touch;
+  }
+  .effort-grid {
+    min-width: 1120px;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: .72rem;
+  }
+  .effort-grid th,
+  .effort-grid td {
+    padding: .34rem .42rem;
+    border-bottom: 1px solid #e8eef8;
+    border-right: 1px solid #eff4fb;
+    white-space: nowrap;
+  }
+  .effort-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #eaf3fb;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    font-size: .68rem;
+  }
+  .effort-grid .sticky-code {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    min-width: 84px;
+    max-width: 84px;
+    background: #fff;
+  }
+  .effort-grid .sticky-product {
+    position: sticky;
+    left: 84px;
+    z-index: 2;
+    min-width: 220px;
+    max-width: 260px;
+    background: #fff;
+    white-space: normal;
+  }
+  .effort-grid thead .sticky-code,
+  .effort-grid thead .sticky-product {
+    z-index: 4;
+    background: #dfeefb;
+  }
+  .effort-grid tbody tr:nth-child(even) td {
+    background: #fbfdff;
+  }
+  .effort-grid tbody tr:hover td {
+    background: #edf6ff;
+  }
+  .effort-meter {
+    width: 58px;
+    height: 8px;
+    border-radius: 999px;
+    background: #e5e7eb;
+    overflow: hidden;
+    display: inline-block;
+  }
+  .effort-meter span {
+    display: block;
+    height: 100%;
+    background: #0f766e;
+  }
+  .effort-kpis .odoo-card {
+    padding: .75rem .85rem;
+  }
+  .effort-kpis .odoo-title {
+    font-size: 1rem;
+    line-height: 1.2;
+  }
+  @media (max-width: 991px) {
+    .effort-layout {
+      display: block;
+    }
+    .effort-main {
+      width: 100%;
+      overflow-x: hidden;
+    }
+    .effort-header-kpis {
+      width: 100%;
+    }
+    .effort-actions,
+    .effort-actions .btn {
+      width: 100%;
+    }
+    .effort-actions .btn {
+      justify-content: center;
+    }
+  }
+  @media (max-width: 767px) {
+    .effort-check-panel {
+      max-height: 118px;
+    }
+    .effort-check-list {
+      grid-template-columns: 1fr;
+    }
+    .effort-picker-tools {
+      grid-template-columns: 1fr;
+      gap: .25rem;
+    }
+    .effort-picker-actions {
+      justify-content: space-between;
+      width: 100%;
+    }
+    .effort-grid-wrap {
+      max-height: none;
+      overflow: visible;
+      border: 0;
+      background: transparent;
+    }
+    .effort-grid,
+    .effort-grid thead,
+    .effort-grid tbody,
+    .effort-grid tr,
+    .effort-grid td {
+      display: block;
+      min-width: 0;
+      width: 100%;
+    }
+    .effort-grid {
+      border-spacing: 0;
+      font-size: .78rem;
+    }
+    .effort-grid thead {
+      display: none;
+    }
+    .effort-grid tr {
+      border: 1px solid #dbe3ef;
+      border-radius: 10px;
+      background: #fff;
+      margin-bottom: .75rem;
+      overflow: hidden;
+    }
+    .effort-grid td {
+      border-right: 0;
+      padding: .42rem .6rem;
+      white-space: normal;
+      text-align: left !important;
+    }
+    .effort-grid td::before {
+      content: attr(data-label);
+      display: block;
+      color: #64748b;
+      font-size: .65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: .1rem;
+    }
+    .effort-grid .sticky-code,
+    .effort-grid .sticky-product {
+      position: static;
+      min-width: 0;
+      max-width: none;
+      background: transparent;
+    }
+    .effort-meter {
+      width: 100%;
+      max-width: 160px;
+      margin-right: .35rem;
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div id="layout" class="effort-layout min-h-screen grid bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="effort-main p-4 lg:p-6 text-[15px]">
+    <div class="odoo-page effort-report">
+      <div class="odoo-header">
+        <div class="effort-header-body d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div class="effort-header-title">
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Informes</li>
+                <li class="breadcrumb-item active" aria-current="page">Esfuerzo vendedor</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Esfuerzo real del vendedor</div>
+            <div class="odoo-subtitle mt-1 text-sm">Compara mercaderia enviada, saldo vigente y venta real por producto, bodega y vendedor.</div>
+          </div>
+          <div class="effort-header-kpis d-flex flex-wrap align-items-center gap-2">
+            <div class="odoo-pill primary"><i class="bi bi-box-arrow-in-down"></i> Enviado: {{ "{:,.2f}".format(kpis.enviado_qty or 0) }}</div>
+            <div class="odoo-pill primary"><i class="bi bi-bag-check"></i> Vendido: {{ "{:,.2f}".format(kpis.vendido_qty or 0) }}</div>
+            <div class="odoo-pill"><i class="bi bi-percent"></i> Eficacia: {{ "{:,.2f}".format(kpis.eficacia_total or 0) }}%</div>
+            <div class="odoo-pill"><i class="bi bi-exclamation-triangle"></i> Criticos: {{ kpis.criticos }}</div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3">
+          <li class="nav-item"><a class="nav-link" href="/reports">Informes</a></li>
+          <li class="nav-item"><a class="nav-link active" href="/reports/esfuerzo-vendedor">Esfuerzo vendedor</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/inventario-estancado">Inventario estancado</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/inventario-rotacion">Inventario y rotacion</a></li>
+        </ul>
+      </div>
+
+      <div class="odoo-card effort-filter-card mt-3">
+        <form method="get" action="/reports/esfuerzo-vendedor" id="effort-form">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-2">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+              <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+              <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+              <select name="branch_id" class="form-select form-select-sm">
+                <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+                {% for branch in branches %}
+                <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Bodega</label>
+              <select name="bodega_id" class="form-select form-select-sm">
+                <option value="all" {% if selected_bodega in ["", "all"] %}selected{% endif %}>Todas</option>
+                {% for bodega in bodegas %}
+                <option value="{{ bodega.id }}" {% if selected_bodega == bodega.id|string %}selected{% endif %}>{{ bodega.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor</label>
+              <select name="vendedor_id" class="form-select form-select-sm">
+                <option value="">Todos</option>
+                {% for vendedor in vendedores %}
+                <option value="{{ vendedor.id }}" {% if selected_vendedor == vendedor.id|string %}selected{% endif %}>{{ vendedor.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Estado</label>
+              <select name="status" class="form-select form-select-sm">
+                <option value="all" {% if status_filter == "all" %}selected{% endif %}>Todos</option>
+                <option value="critico" {% if status_filter == "critico" %}selected{% endif %}>Critico</option>
+                <option value="lento" {% if status_filter == "lento" %}selected{% endif %}>Lento</option>
+                <option value="aceptable" {% if status_filter == "aceptable" %}selected{% endif %}>Aceptable</option>
+                <option value="alto" {% if status_filter == "alto" %}selected{% endif %}>Alto</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Buscar</label>
+              <input name="q" class="form-control form-control-sm" value="{{ q }}" placeholder="Codigo o descripcion">
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Productos estancados</label>
+              <select name="stagnant_scope" class="form-select form-select-sm">
+                <option value="" {% if not stagnant_scope %}selected{% endif %}>Solo seleccionados abajo</option>
+                <option value="all" {% if stagnant_scope == "all" %}selected{% endif %}>Incluir todos los estancados</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-auto">
+              <div class="effort-actions">
+              <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i> Analizar</button>
+              <a class="btn btn-outline-danger btn-sm" href="/reports/esfuerzo-vendedor/export.pdf?{{ export_query }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+              <a class="btn btn-outline-success btn-sm" href="/reports/esfuerzo-vendedor/export.xlsx?{{ export_query }}"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+              <a class="btn btn-outline-secondary btn-sm" href="/reports/esfuerzo-vendedor"><i class="bi bi-eraser"></i> Limpiar</a>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-2 mt-2">
+            <div class="col-12 col-xl-6">
+              <details class="effort-picker" open>
+                <summary>
+                  <span>Items seleccionados</span>
+                  <span class="text-slate fw-normal">{{ selected_product_ids|length }} seleccionado(s)</span>
+                </summary>
+                <div class="effort-picker-tools">
+                  <input class="form-control form-control-sm effort-list-search" type="search" placeholder="Buscar item por codigo o descripcion" data-search-target="product-check">
+                  <div class="effort-picker-actions">
+                    <span class="text-slate" data-count-for="product-check">{{ productos|length }} items</span>
+                    <button class="btn btn-link btn-sm p-0" type="button" data-check-target="product-check">Todos / ninguno</button>
+                  </div>
+                </div>
+                <div class="effort-check-panel">
+                  <div class="effort-check-list">
+                {% for producto in productos %}
+                <label class="effort-check-item d-flex gap-2 align-items-start">
+                  <input class="form-check-input product-check" type="checkbox" name="producto_ids" value="{{ producto.id }}" {% if producto.id in selected_product_ids %}checked{% endif %}>
+                  <span><strong>{{ producto.cod_producto }}</strong> {{ producto.descripcion }}</span>
+                </label>
+                {% endfor %}
+                  </div>
+                </div>
+              </details>
+            </div>
+            <div class="col-12 col-xl-6">
+              <details class="effort-picker" open>
+                <summary>
+                  <span>Cartera de estancados</span>
+                  <span class="text-slate fw-normal">{{ selected_stagnant_product_ids|length }} seleccionado(s)</span>
+                </summary>
+                <div class="effort-picker-tools">
+                  <input class="form-control form-control-sm effort-list-search" type="search" placeholder="Buscar estancado por codigo o descripcion" data-search-target="stagnant-check">
+                  <div class="effort-picker-actions">
+                    <span class="text-slate" data-count-for="stagnant-check">{{ stagnant_products|length }} items</span>
+                    <button class="btn btn-link btn-sm p-0" type="button" data-check-target="stagnant-check">Todos / ninguno</button>
+                  </div>
+                </div>
+                <div class="effort-check-panel">
+                  <div class="effort-check-list">
+                {% for item in stagnant_products %}
+                {% set producto = item.producto %}
+                <label class="effort-check-item d-flex gap-2 align-items-start">
+                  <input class="form-check-input stagnant-check" type="checkbox" name="stagnant_product_ids" value="{{ producto.id }}" {% if producto.id in selected_stagnant_product_ids %}checked{% endif %}>
+                  <span><strong>{{ producto.cod_producto }}</strong> {{ producto.descripcion }}{% if item.marked.motivo %}<span class="text-slate"> - {{ item.marked.motivo }}</span>{% endif %}</span>
+                </label>
+                {% endfor %}
+                  </div>
+                {% if stagnant_products|length == 0 %}
+                <div class="text-slate text-sm">No hay productos estancados activos.</div>
+                {% endif %}
+                </div>
+              </details>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="row g-2 mt-1 effort-kpis">
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Items analizados</div>
+            <div class="odoo-title text-xl mt-1">{{ kpis["items"] }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Saldo vigente</div>
+            <div class="odoo-title text-xl mt-1">{{ "{:,.2f}".format(kpis.saldo_qty or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Venta C$</div>
+            <div class="odoo-title text-xl mt-1">C$ {{ "{:,.2f}".format(kpis.venta_cs or 0) }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Lentos</div>
+            <div class="odoo-title text-xl mt-1">{{ kpis.lentos }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card mt-3 text-sm">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <div class="odoo-section-title text-base">Grid inteligente de esfuerzo</div>
+          <span class="text-slate text-xs">Eficacia = vendido / enviado. Si no hay envio, usa vendido + saldo como base estimada.</span>
+        </div>
+        <div class="effort-grid-wrap">
+          <table class="effort-grid">
+            <thead>
+              <tr>
+                <th class="sticky-code">Codigo</th>
+                <th class="sticky-product">Producto</th>
+                <th>Vendedor</th>
+                <th>Bodega</th>
+                <th class="text-end">Enviado</th>
+                <th class="text-end">Vendido</th>
+                <th class="text-end">Saldo</th>
+                <th class="text-end">Relleno</th>
+                <th class="text-end">% eficacia</th>
+                <th>Estado</th>
+                <th class="text-end">Dias envio</th>
+                <th class="text-end">Dias sin venta</th>
+                <th>Primer envio</th>
+                <th>Ultima venta</th>
+                <th class="text-end">Facturas</th>
+                <th class="text-end">Venta C$</th>
+                <th>Analisis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr>
+                <td class="sticky-code fw-semibold" data-label="Codigo">{{ row.codigo }}</td>
+                <td class="sticky-product" data-label="Producto">
+                  <div class="fw-semibold">{{ row.producto }}</div>
+                  {% if row.estancado %}<span class="badge text-bg-warning">Estancado</span>{% endif %}
+                </td>
+                <td data-label="Vendedor">{{ row.vendedores }}</td>
+                <td data-label="Bodega">{{ row.bodegas }}</td>
+                <td class="text-end" data-label="Enviado">{{ "{:,.2f}".format(row.enviado_qty or 0) }}</td>
+                <td class="text-end fw-semibold" data-label="Vendido">{{ "{:,.2f}".format(row.vendido_qty or 0) }}</td>
+                <td class="text-end" data-label="Saldo">{{ "{:,.2f}".format(row.saldo_qty or 0) }}</td>
+                <td class="text-end" data-label="Relleno">{{ "{:,.2f}".format(row.relleno_qty or 0) }}</td>
+                <td class="text-end" data-label="% eficacia">
+                  <span class="effort-meter"><span style="width: {{ [row.eficacia_pct, 100]|min }}%"></span></span>
+                  {{ "{:,.2f}".format(row.eficacia_pct or 0) }}%
+                </td>
+                <td data-label="Estado">
+                  {% if row.estado == "CRITICO" %}
+                    <span class="badge text-bg-danger">Critico</span>
+                  {% elif row.estado == "LENTO" %}
+                    <span class="badge text-bg-warning">Lento</span>
+                  {% elif row.estado == "ACEPTABLE" %}
+                    <span class="badge text-bg-primary">Aceptable</span>
+                  {% else %}
+                    <span class="badge text-bg-success">Alto</span>
+                  {% endif %}
+                </td>
+                <td class="text-end" data-label="Dias envio">{{ row.dias_desde_envio if row.dias_desde_envio is not none else "-" }}</td>
+                <td class="text-end" data-label="Dias sin venta">{{ row.dias_sin_venta if row.dias_sin_venta is not none else "-" }}</td>
+                <td data-label="Primer envio">{{ row.primer_envio }}</td>
+                <td data-label="Ultima venta">{{ row.ultima_venta }}</td>
+                <td class="text-end" data-label="Facturas">{{ row.facturas }}</td>
+                <td class="text-end" data-label="Venta C$">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                <td data-label="Analisis">{{ row.analisis }}</td>
+              </tr>
+              {% endfor %}
+              {% if rows|length == 0 %}
+              <tr><td colspan="17" class="text-center text-slate py-4">Sin resultados para los filtros seleccionados.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const normalizeEffortText = (value) => String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+
+    const rowsFor = (targetClass) => Array.from(document.querySelectorAll(`.${targetClass}`))
+      .map((box) => box.closest(".effort-check-item"))
+      .filter(Boolean);
+
+    const isRowVisible = (row) => row.style.display !== "none";
+
+    const showRow = (row, visible) => {
+      if (visible) {
+        row.style.removeProperty("display");
+      } else {
+        row.style.setProperty("display", "none", "important");
+      }
+    };
+
+    const updateCount = (targetClass) => {
+      const rows = rowsFor(targetClass);
+      const visible = rows.filter(isRowVisible).length;
+      const checked = rows.filter((row) => row.querySelector("input")?.checked).length;
+      const counter = document.querySelector(`[data-count-for="${targetClass}"]`);
+      if (counter) counter.textContent = `${visible} visibles | ${checked} marcados`;
+    };
+
+    const applySearch = (input) => {
+      const targetClass = input.dataset.searchTarget || "";
+      const query = normalizeEffortText(input.value);
+      rowsFor(targetClass).forEach((row) => {
+        const text = normalizeEffortText(row.textContent);
+        showRow(row, !query || text.includes(query));
+      });
+      updateCount(targetClass);
+    };
+
+    document.querySelectorAll(".effort-list-search").forEach((input) => {
+      const picker = input.closest("details");
+      input.addEventListener("focus", () => {
+        if (picker) picker.open = true;
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") event.preventDefault();
+      });
+      input.addEventListener("input", () => applySearch(input));
+      input.addEventListener("search", () => applySearch(input));
+      applySearch(input);
+    });
+
+    document.querySelectorAll("[data-check-target]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const targetClass = button.dataset.checkTarget || "";
+        const boxes = rowsFor(targetClass)
+          .filter(isRowVisible)
+          .map((row) => row.querySelector(`.${targetClass}`))
+          .filter(Boolean);
+        const shouldCheck = boxes.some((box) => !box.checked);
+        boxes.forEach((box) => { box.checked = shouldCheck; });
+        updateCount(targetClass);
+      });
+    });
+
+    document.querySelectorAll(".product-check, .stagnant-check").forEach((box) => {
+      box.addEventListener("change", () => {
+        if (box.classList.contains("product-check")) updateCount("product-check");
+        if (box.classList.contains("stagnant-check")) updateCount("stagnant-check");
+      });
+    });
+  });
+</script>
+{% endblock %}
