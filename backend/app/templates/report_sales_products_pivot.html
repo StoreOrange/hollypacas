@@ -295,7 +295,7 @@
           </div>
           <div class="filter-wide">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto rapido</label>
-            <input name="producto" class="form-control form-control-sm" placeholder="Codigo, referencia o descripcion" value="{{ producto_q or '' }}">
+            <input name="producto" class="form-control form-control-sm" placeholder="Codigo, referencia, descripcion: 25 lbs, 25lbs, paca..." value="{{ producto_q or '' }}">
           </div>
           <div class="filter-wide">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto exacto</label>
@@ -434,6 +434,63 @@
                   {% for row in bodega_rows %}
                   <tr><td class="fw-semibold">{{ row.nombre }}</td><td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td><td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td><td class="text-end">{{ "{:,.2f}".format(row.margen_pct or 0) }}%</td></tr>
                   {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-xl-6">
+          <div class="odoo-card text-sm h-100">
+            <div class="odoo-section-title text-base mb-3">Totales por grupo / sublinea</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table align-middle">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr><th>Grupo</th><th class="text-end">Cant.</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">%</th></tr>
+                </thead>
+                <tbody>
+                  {% for row in segment_rows %}
+                  <tr>
+                    <td class="fw-semibold">{{ row.nombre }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
+                    <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                    <td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td>
+                    <td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(row.participacion or 0) }}%</td>
+                  </tr>
+                  {% endfor %}
+                  {% if segment_rows|length == 0 %}
+                  <tr><td colspan="6" class="text-center text-slate py-3">Sin grupos.</td></tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-xl-6">
+          <div class="odoo-card text-sm h-100">
+            <div class="odoo-section-title text-base mb-3">Totales por linea</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table align-middle">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr><th>Linea</th><th class="text-end">Cant.</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">%</th></tr>
+                </thead>
+                <tbody>
+                  {% for row in line_rows %}
+                  <tr>
+                    <td class="fw-semibold">{{ row.nombre }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
+                    <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                    <td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td>
+                    <td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(row.participacion or 0) }}%</td>
+                  </tr>
+                  {% endfor %}
+                  {% if line_rows|length == 0 %}
+                  <tr><td colspan="6" class="text-center text-slate py-3">Sin lineas.</td></tr>
+                  {% endif %}
                 </tbody>
               </table>
             </div>

@@ -17596,12 +17596,33 @@ def _build_sales_products_pivot_report(db: Session, user: User, filters: dict[st
             pass
     producto_q = str(filters.get("producto_q") or "").strip()
     if producto_q:
-        like = f"%{producto_q.lower()}%"
+        normalized_query = re.sub(r"\s+", " ", producto_q.lower()).strip()
+        compact_query = normalized_query.replace(" ", "")
+        searchable_text = (
+            func.coalesce(Producto.cod_producto, "")
+            + " "
+            + func.coalesce(Producto.descripcion, "")
+            + " "
+            + func.coalesce(Producto.referencia_producto, "")
+            + " "
+            + func.coalesce(Linea.linea, "")
+            + " "
+            + func.coalesce(Segmento.segmento, "")
+        )
+        searchable = func.lower(searchable_text)
+        searchable_compact = func.replace(searchable, " ", "")
+        token_filters = [
+            searchable.like(f"%{token}%")
+            for token in re.split(r"\s+", normalized_query)
+            if token
+        ]
+        smart_filters = [searchable.like(f"%{normalized_query}%")]
+        if compact_query and compact_query != normalized_query:
+            smart_filters.append(searchable_compact.like(f"%{compact_query}%"))
         query = query.filter(
             or_(
-                func.lower(Producto.cod_producto).like(like),
-                func.lower(Producto.descripcion).like(like),
-                func.lower(func.coalesce(Producto.referencia_producto, "")).like(like),
+                *smart_filters,
+                and_(*token_filters) if token_filters else searchable.like("%"),
             )
         )
 
