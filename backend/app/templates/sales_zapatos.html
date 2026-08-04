@@ -3058,6 +3058,24 @@
     activeProductRows = Array.from(productList.querySelectorAll(".product-pick-row"));
   };
 
+  const getActiveProductRow = () => {
+    refreshActiveRows();
+    if (!activeProductRows.length) {
+      activeProductIndex = -1;
+      return null;
+    }
+    const markedRow = productList.querySelector(".product-pick-row.product-active");
+    const markedIndex = markedRow ? activeProductRows.indexOf(markedRow) : -1;
+    if (markedIndex >= 0) {
+      activeProductIndex = markedIndex;
+      return markedRow;
+    }
+    if (activeProductIndex < 0 || activeProductIndex >= activeProductRows.length) {
+      activeProductIndex = 0;
+    }
+    return activeProductRows[activeProductIndex] || null;
+  };
+
   const setActiveProduct = (index) => {
     refreshActiveRows();
     if (!activeProductRows.length) {
@@ -3186,9 +3204,9 @@
   const NAV_DELAY = 80;
 
   const addActiveProduct = async () => {
-    refreshActiveRows();
-    if (activeProductIndex < 0 || !activeProductRows[activeProductIndex]) return;
-    const button = activeProductRows[activeProductIndex].querySelector(".add-item");
+    const activeRow = getActiveProductRow();
+    if (!activeRow) return;
+    const button = activeRow.querySelector(".add-item");
     if (button) {
       const added = await handleAddItem(button);
       if (added && productSearch) {
@@ -3248,6 +3266,11 @@
     productListPanel.addEventListener("dblclick", async (event) => {
       const row = event.target.closest(".product-pick-row");
       if (!row) return;
+      refreshActiveRows();
+      const index = activeProductRows.indexOf(row);
+      if (index >= 0) {
+        setActiveProduct(index);
+      }
       const button = row.querySelector(".add-item");
       if (!button) return;
       const added = await handleAddItem(button);

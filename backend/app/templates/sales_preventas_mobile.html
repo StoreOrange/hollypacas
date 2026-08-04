@@ -111,12 +111,14 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem 0.75rem;
-    margin-top: 0.6rem;
+    margin-top: 0.45rem;
   }
-  .mobile-preventa .app-topbar .subtitle {
-    opacity: 0.85;
-    font-size: 0.82rem;
-    letter-spacing: 0.02em;
+  .mobile-preventa .app-location {
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: right;
   }
   .mobile-preventa .app-topbar .btn {
     border-radius: 12px;
@@ -140,8 +142,12 @@
   }
   .mobile-preventa .push-alert-hint {
     margin-top: 0.55rem;
+    display: none;
     font-size: 0.74rem;
     color: rgba(255, 255, 255, 0.82);
+  }
+  .mobile-preventa .push-alert-hint.has-message {
+    display: block;
   }
   .mobile-preventa .app-actionbar {
     position: fixed;
@@ -405,7 +411,6 @@
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div>
         <h4 class="m-0 fw-bold">Preventa movil</h4>
-        <div class="subtitle">Registro rapido de prefactura</div>
       </div>
       <div class="d-flex gap-2">
         <a class="btn btn-light btn-sm" href="/home">
@@ -423,17 +428,14 @@
         <img src="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="{{ branding.get('trade_name', 'Empresa') }}">
         <span class="small fw-semibold">{{ branding.get("trade_name", "Empresa") }}</span>
       </div>
-      <div class="small opacity-75">Sucursal: {{ branch.name }} &middot; Bodega: {{ bodega.name }}</div>
+      <div class="app-location">Sucursal: {{ branch.name }} &middot; Bodega: {{ bodega.name }}</div>
     </div>
     <div class="mt-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
       <button id="pushAlertsBtn" class="push-alert-btn" type="button">
         <i class="bi bi-bell me-1"></i>
         Activar alertas
       </button>
-      <div id="pushAlertsHint" class="push-alert-hint">Recibe aviso cuando una preventa se facture, se congele, se descongele, se borre o pase mas de 2 horas pendiente.</div>
-    </div>
-    <div class="mt-2 small text-muted">
-      Compatible con Chrome, Brave y Safari. En iPhone/iPad usa Safari y agrega esta pantalla al inicio para que las alertas push trabajen correctamente.
+      <div id="pushAlertsHint" class="push-alert-hint" aria-live="polite"></div>
     </div>
   </div>
 
@@ -737,6 +739,7 @@
       }
       if (pushAlertsHint && message) {
         pushAlertsHint.textContent = message;
+        pushAlertsHint.classList.toggle("has-message", state !== "active");
       }
     }
 
