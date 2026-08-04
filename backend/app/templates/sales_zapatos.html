@@ -4009,6 +4009,9 @@
     }
     if (vendedorSelect) {
       vendedorSelect.addEventListener("change", updatePartySummary);
+      if (window.$ && $.fn.select2) {
+        $(vendedorSelect).on("change select2:select select2:clear", updatePartySummary);
+      }
     }
     if (fechaInput) {
       fechaInput.addEventListener("change", updatePartySummary);
@@ -4054,6 +4057,11 @@
             }
           });
         }
+        if (vendedorSelect) {
+          $(vendedorSelect)
+            .off("change.partySummary select2:select.partySummary select2:clear.partySummary")
+            .on("change.partySummary select2:select.partySummary select2:clear.partySummary", updatePartySummary);
+        }
         const $payment = $("#payment-modal .select2");
         if ($payment.length) {
           $payment.each(function () {
@@ -4077,6 +4085,7 @@
       const salesPartyModalEl = document.getElementById("sales-party-modal");
       if (salesPartyModalEl) {
         salesPartyModalEl.addEventListener("shown.bs.modal", initPartySelects);
+        salesPartyModalEl.addEventListener("hidden.bs.modal", updatePartySummary);
       }
 
       const clienteSearchOpen = document.getElementById("cliente-search-open");
