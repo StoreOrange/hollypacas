@@ -1,0 +1,507 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+  .sales-pivot-wrap {
+    max-height: 62vh;
+    width: 100%;
+    max-width: 100%;
+    overflow: auto;
+    border: 1px solid #d9e4f2;
+    border-radius: 12px;
+    background: #fff;
+    overscroll-behavior: contain;
+  }
+  .sales-pivot-table {
+    min-width: 1180px;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: .78rem;
+  }
+  .sales-pivot-table th,
+  .sales-pivot-table td {
+    border-bottom: 1px solid #e7eef8;
+    border-right: 1px solid #edf2f8;
+    padding: .42rem .55rem;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  .sales-pivot-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: #edf4fc;
+    color: #334155;
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    cursor: pointer;
+    user-select: none;
+  }
+  .sales-pivot-table tbody tr:nth-child(even) td {
+    background: #fbfdff;
+  }
+  .sales-pivot-table tbody tr:hover td {
+    background: #eef6ff;
+  }
+  .sales-pivot-table .sticky-code {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    min-width: 96px;
+    background: inherit;
+  }
+  .sales-pivot-table .sticky-product {
+    position: sticky;
+    left: 96px;
+    z-index: 2;
+    min-width: 220px;
+    max-width: 260px;
+    background: inherit;
+    white-space: normal;
+  }
+  .sales-pivot-table thead .sticky-code,
+  .sales-pivot-table thead .sticky-product {
+    z-index: 5;
+    background: #dfeaf8;
+  }
+  .sales-pivot-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .sales-pivot-table.compact th,
+  .sales-pivot-table.compact td {
+    padding: .28rem .42rem;
+    font-size: .72rem;
+  }
+  .pivot-mini-card {
+    border: 1px solid #dbe5f2;
+    border-radius: 12px;
+    background: #fff;
+    padding: .75rem;
+    height: 100%;
+  }
+  .pivot-mini-card .metric {
+    color: #0f172a;
+    font-weight: 900;
+    font-size: 1.25rem;
+    line-height: 1.1;
+  }
+  .pivot-mini-card .label {
+    color: #64748b;
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .pivot-toolbar {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .pivot-toolbar input {
+    width: min(100%, 360px);
+  }
+  .pivot-toolbar > div:last-child {
+    min-width: min(100%, 360px);
+  }
+  .pivot-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: .65rem;
+    align-items: end;
+  }
+  .pivot-filter-grid .filter-wide {
+    grid-column: span 2;
+  }
+  .pivot-filter-actions {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .pivot-filter-actions .btn {
+    min-width: 112px;
+  }
+  .pivot-report-header {
+    min-width: 0;
+  }
+  .pivot-report-pills {
+    max-width: 100%;
+  }
+  .pivot-report-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+  .pivot-report-tabs .nav-link {
+    white-space: nowrap;
+  }
+  @media (max-width: 768px) {
+    main {
+      padding-left: .75rem !important;
+      padding-right: .75rem !important;
+    }
+    .odoo-page,
+    .odoo-card,
+    .odoo-header,
+    .pivot-report-header {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+    .pivot-report-pills .odoo-pill {
+      font-size: .72rem;
+      padding: .3rem .5rem;
+    }
+    .sales-pivot-wrap {
+      max-height: 58vh;
+    }
+    .sales-pivot-table {
+      min-width: 980px;
+      font-size: .72rem;
+    }
+    .sales-pivot-table .sticky-code,
+    .sales-pivot-table .sticky-product {
+      position: static;
+      min-width: auto;
+      max-width: none;
+    }
+    .sales-pivot-table thead .sticky-code,
+    .sales-pivot-table thead .sticky-product {
+      z-index: 4;
+    }
+    .pivot-toolbar {
+      align-items: stretch;
+    }
+    .pivot-toolbar > div,
+    .pivot-toolbar input {
+      width: 100%;
+      max-width: 100%;
+    }
+    .pivot-filter-grid {
+      grid-template-columns: 1fr;
+    }
+    .pivot-filter-grid .filter-wide {
+      grid-column: auto;
+    }
+    .pivot-filter-actions .btn {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+  }
+  @media (min-width: 769px) and (max-width: 1280px) {
+    .sales-pivot-table {
+      min-width: 1120px;
+    }
+    .sales-pivot-table .sticky-product {
+      min-width: 200px;
+      max-width: 230px;
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="pivot-report-header d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Informes</li>
+                <li class="breadcrumb-item active" aria-current="page">Productos pivote</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Reporte inteligente de productos vendidos</div>
+            <div class="odoo-subtitle mt-1 text-sm">Analisis por fecha, vendedor, linea, producto, sucursal y bodega.</div>
+          </div>
+          <div class="pivot-report-pills d-flex flex-wrap align-items-center gap-2">
+            <div class="odoo-pill primary"><i class="bi bi-box-seam"></i> Productos: {{ total_productos }}</div>
+            <div class="odoo-pill"><i class="bi bi-receipt"></i> Facturas: {{ total_facturas }}</div>
+            <div class="odoo-pill primary"><i class="bi bi-currency-exchange"></i> C$ {{ "{:,.2f}".format(total_cs or 0) }}</div>
+            <div class="odoo-pill"><i class="bi bi-currency-dollar"></i> $ {{ "{:,.2f}".format(total_usd or 0) }}</div>
+            <div class="odoo-pill primary"><i class="bi bi-graph-up-arrow"></i> Utilidad: C$ {{ "{:,.2f}".format(total_margin_cs or 0) }}</div>
+          </div>
+        </div>
+        <ul class="nav nav-tabs mt-3 pivot-report-tabs">
+          <li class="nav-item"><a class="nav-link" href="/reports">Informes</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/ventas">Ventas detallado</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/ventas-productos">Ventas por producto</a></li>
+          <li class="nav-item"><a class="nav-link active" href="/reports/ventas-productos-pivot">Productos pivote</a></li>
+          <li class="nav-item"><a class="nav-link" href="/reports/ventas-especial">Ventas especial</a></li>
+        </ul>
+      </div>
+
+      <div class="odoo-card">
+        <form class="pivot-filter-grid" method="get" action="/reports/ventas-productos-pivot">
+          <div>
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+            <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+          </div>
+          <div>
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+            <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+          </div>
+          <div>
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+            <select name="branch_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for branch in branches %}
+              <option value="{{ branch.id }}" {% if selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Bodega</label>
+            <select name="bodega_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_bodega in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for bodega in bodegas %}
+              <option value="{{ bodega.id }}" {% if selected_bodega == bodega.id|string %}selected{% endif %}>{{ bodega.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor</label>
+            <select name="vendedor_id" class="form-select form-select-sm">
+              <option value="">Todos</option>
+              {% for vendedor in vendedores %}
+              <option value="{{ vendedor.id }}" {% if selected_vendedor == vendedor.id|string %}selected{% endif %}>{{ vendedor.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Linea</label>
+            <select name="linea_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_linea in ["", "all"] %}selected{% endif %}>Todas</option>
+              {% for linea in lineas %}
+              <option value="{{ linea.id }}" {% if selected_linea == linea.id|string %}selected{% endif %}>{{ linea.linea }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Grupo / sublinea</label>
+            <select name="segmento_id" class="form-select form-select-sm">
+              <option value="all" {% if selected_segmento in ["", "all"] %}selected{% endif %}>Todos</option>
+              {% for segmento in segmentos %}
+              <option value="{{ segmento.id }}" {% if selected_segmento == segmento.id|string %}selected{% endif %}>{{ segmento.segmento }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="filter-wide">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto rapido</label>
+            <input name="producto" class="form-control form-control-sm" placeholder="Codigo, referencia o descripcion" value="{{ producto_q or '' }}">
+          </div>
+          <div class="filter-wide">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto exacto</label>
+            <select name="producto_id" class="form-select form-select-sm">
+              <option value="">Todos</option>
+              {% for producto in productos %}
+              <option value="{{ producto.id }}" {% if selected_producto == producto.id|string %}selected{% endif %}>{{ producto.cod_producto }} - {{ producto.descripcion }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Pivot</label>
+            <select name="pivot_by" class="form-select form-select-sm">
+              <option value="vendedor" {% if pivot_by == "vendedor" %}selected{% endif %}>Vendedor</option>
+              <option value="bodega" {% if pivot_by == "bodega" %}selected{% endif %}>Bodega</option>
+              <option value="sucursal" {% if pivot_by == "sucursal" %}selected{% endif %}>Sucursal</option>
+              <option value="linea" {% if pivot_by == "linea" %}selected{% endif %}>Linea</option>
+              <option value="segmento" {% if pivot_by == "segmento" %}selected{% endif %}>Grupo / sublinea</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Valor pivot</label>
+            <select name="metric" class="form-select form-select-sm">
+              <option value="qty" {% if metric == "qty" %}selected{% endif %}>Cantidad</option>
+              <option value="cs" {% if metric == "cs" %}selected{% endif %}>Venta C$</option>
+              <option value="usd" {% if metric == "usd" %}selected{% endif %}>Venta USD</option>
+            </select>
+          </div>
+          <div class="pivot-filter-actions">
+            <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i> Generar</button>
+            <a class="btn btn-outline-secondary btn-sm" href="/reports/ventas-productos-pivot"><i class="bi bi-eraser"></i> Hoy</a>
+          </div>
+        </form>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Bultos / unidades</div><div class="metric">{{ "{:,.2f}".format(total_qty or 0) }}</div></div></div>
+        <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Venta cordobas</div><div class="metric">C$ {{ "{:,.2f}".format(total_cs or 0) }}</div></div></div>
+        <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Costo vendido</div><div class="metric">C$ {{ "{:,.2f}".format(total_cost_cs or 0) }}</div></div></div>
+        <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Utilidad estimada</div><div class="metric">C$ {{ "{:,.2f}".format(total_margin_cs or 0) }}</div></div></div>
+        <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Margen</div><div class="metric">{{ "{:,.2f}".format(total_margin_pct or 0) }}%</div></div></div>
+        <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Facturas</div><div class="metric">{{ total_facturas }}</div></div></div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="pivot-toolbar mb-3">
+          <div>
+            <div class="odoo-section-title text-base">Grid pivote por producto</div>
+            <div class="text-slate text-xs">Columnas dinamicas por {{ pivot_by }}; metricas base siempre visibles.</div>
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <input id="pivotSearch" class="form-control form-control-sm" placeholder="Filtrar dentro de la grid...">
+            <button id="densityBtn" class="btn btn-outline-secondary btn-sm" type="button"><i class="bi bi-arrows-collapse"></i></button>
+          </div>
+        </div>
+        <div class="sales-pivot-wrap">
+          <table id="pivotTable" class="sales-pivot-table">
+            <thead>
+              <tr>
+                <th class="sticky-code" data-sort="text">Codigo</th>
+                <th class="sticky-product" data-sort="text">Producto</th>
+                <th data-sort="text">Linea</th>
+                <th data-sort="text">Grupo</th>
+                <th class="num" data-sort="number">Cantidad</th>
+                <th class="num" data-sort="number">Venta C$</th>
+                <th class="num" data-sort="number">Venta USD</th>
+                <th class="num" data-sort="number">Costo C$</th>
+                <th class="num" data-sort="number">Costo USD</th>
+                <th class="num" data-sort="number">Utilidad C$</th>
+                <th class="num" data-sort="number">Margen</th>
+                <th class="num" data-sort="number">Facturas</th>
+                <th class="num" data-sort="number">% Venta</th>
+                {% for col in pivot_columns %}
+                <th class="num" data-sort="number">{{ col }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr>
+                <td class="sticky-code fw-bold text-primary">{{ row.codigo }}</td>
+                <td class="sticky-product fw-semibold">{{ row.producto }}</td>
+                <td>{{ row.linea }}</td>
+                <td>{{ row.segmento }}</td>
+                <td class="num" data-value="{{ row.cantidad }}">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
+                <td class="num" data-value="{{ row.venta_cs }}">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                <td class="num" data-value="{{ row.venta_usd }}">$ {{ "{:,.2f}".format(row.venta_usd or 0) }}</td>
+                <td class="num" data-value="{{ row.costo_cs }}">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td>
+                <td class="num" data-value="{{ row.costo_usd }}">$ {{ "{:,.2f}".format(row.costo_usd or 0) }}</td>
+                <td class="num fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}" data-value="{{ row.margen_cs }}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td>
+                <td class="num" data-value="{{ row.margen_pct }}">{{ "{:,.2f}".format(row.margen_pct or 0) }}%</td>
+                <td class="num" data-value="{{ row.facturas }}">{{ row.facturas }}</td>
+                <td class="num" data-value="{{ row.participacion }}">{{ "{:,.2f}".format(row.participacion or 0) }}%</td>
+                {% for col in pivot_columns %}
+                {% set value = row.pivot.get(col, 0) %}
+                <td class="num" data-value="{{ value }}">
+                  {% if metric == "cs" %}C$ {{ "{:,.2f}".format(value or 0) }}
+                  {% elif metric == "usd" %}$ {{ "{:,.2f}".format(value or 0) }}
+                  {% else %}{{ "{:,.2f}".format(value or 0) }}
+                  {% endif %}
+                </td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+              {% if rows|length == 0 %}
+              <tr><td colspan="{{ 13 + (pivot_columns|length) }}" class="text-center text-slate py-3">Sin resultados.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-xl-6">
+          <div class="odoo-card text-sm h-100">
+            <div class="odoo-section-title text-base mb-3">Resumen por vendedor</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table align-middle">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]"><tr><th>Vendedor</th><th class="text-end">Cant.</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">Margen</th></tr></thead>
+                <tbody>
+                  {% for row in vendor_rows %}
+                  <tr><td class="fw-semibold">{{ row.nombre }}</td><td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td><td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td><td class="text-end">{{ "{:,.2f}".format(row.margen_pct or 0) }}%</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-xl-6">
+          <div class="odoo-card text-sm h-100">
+            <div class="odoo-section-title text-base mb-3">Resumen por bodega</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table align-middle">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]"><tr><th>Bodega</th><th class="text-end">Cant.</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">Margen</th></tr></thead>
+                <tbody>
+                  {% for row in bodega_rows %}
+                  <tr><td class="fw-semibold">{{ row.nombre }}</td><td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td><td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td><td class="text-end">{{ "{:,.2f}".format(row.margen_pct or 0) }}%</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card text-sm mt-3">
+        <div class="odoo-section-title text-base mb-3">Detalle de facturas {% if detail_limited %}<span class="text-xs text-slate">(primeras 800 lineas)</span>{% endif %}</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr><th>Fecha</th><th>Factura</th><th>Sucursal</th><th>Bodega</th><th>Vendedor</th><th>Linea</th><th>Grupo</th><th>Codigo</th><th>Producto</th><th class="text-end">Cant.</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">Venta USD</th></tr>
+            </thead>
+            <tbody>
+              {% for row in detail_rows %}
+              <tr>
+                <td>{{ row.fecha }}</td><td class="fw-semibold">{{ row.factura }}</td><td>{{ row.sucursal }}</td><td>{{ row.bodega }}</td><td>{{ row.vendedor }}</td><td>{{ row.linea }}</td><td>{{ row.segmento }}</td><td class="fw-semibold">{{ row.codigo }}</td><td>{{ row.producto }}</td>
+                <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td><td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td><td class="text-end">$ {{ "{:,.2f}".format(row.venta_usd or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if detail_rows|length == 0 %}
+              <tr><td colspan="14" class="text-center text-slate py-3">Sin detalle.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  (() => {
+    const table = document.getElementById("pivotTable");
+    const search = document.getElementById("pivotSearch");
+    const densityBtn = document.getElementById("densityBtn");
+    const tbody = table?.querySelector("tbody");
+    const rows = () => Array.from(tbody?.querySelectorAll("tr") || []).filter((row) => row.children.length > 1);
+
+    search?.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase();
+      rows().forEach((row) => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
+      });
+    });
+
+    densityBtn?.addEventListener("click", () => {
+      table?.classList.toggle("compact");
+    });
+
+    table?.querySelectorAll("thead th").forEach((th, index) => {
+      th.addEventListener("click", () => {
+        const type = th.dataset.sort || "text";
+        const direction = th.dataset.dir === "asc" ? "desc" : "asc";
+        th.dataset.dir = direction;
+        const sorted = rows().sort((a, b) => {
+          const ac = a.children[index];
+          const bc = b.children[index];
+          const av = type === "number" ? Number(ac?.dataset.value || ac?.textContent.replace(/[^0-9.-]/g, "") || 0) : (ac?.textContent || "").trim().toLowerCase();
+          const bv = type === "number" ? Number(bc?.dataset.value || bc?.textContent.replace(/[^0-9.-]/g, "") || 0) : (bc?.textContent || "").trim().toLowerCase();
+          if (av < bv) return direction === "asc" ? -1 : 1;
+          if (av > bv) return direction === "asc" ? 1 : -1;
+          return 0;
+        });
+        sorted.forEach((row) => tbody.appendChild(row));
+      });
+    });
+  })();
+</script>
+{% endblock %}

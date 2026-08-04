@@ -17506,6 +17506,316 @@ def _sales_products_report_filters(request: Request):
     return start_date, end_date, branch_id, vendedor_id, producto_id, producto_q
 
 
+def _sales_products_pivot_filters(request: Request):
+    start_date, end_date, branch_id, vendedor_id, producto_id, producto_q = _sales_products_report_filters(request)
+    if end_date < start_date:
+        end_date = start_date
+    bodega_id = request.query_params.get("bodega_id") or "all"
+    linea_id = request.query_params.get("linea_id") or "all"
+    segmento_id = request.query_params.get("segmento_id") or "all"
+    pivot_by = (request.query_params.get("pivot_by") or "vendedor").strip().lower()
+    metric = (request.query_params.get("metric") or "qty").strip().lower()
+    if pivot_by not in {"vendedor", "bodega", "sucursal", "linea", "segmento"}:
+        pivot_by = "vendedor"
+    if metric not in {"qty", "cs", "usd"}:
+        metric = "qty"
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "branch_id": branch_id or "all",
+        "bodega_id": bodega_id,
+        "vendedor_id": vendedor_id or "",
+        "linea_id": linea_id,
+        "segmento_id": segmento_id,
+        "producto_id": producto_id or "",
+        "producto_q": producto_q,
+        "pivot_by": pivot_by,
+        "metric": metric,
+    }
+
+
+def _build_sales_products_pivot_report(db: Session, user: User, filters: dict[str, object]) -> dict[str, object]:
+    allowed_codes = _allowed_branch_codes(db)
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    start_date = filters["start_date"]
+    end_date = filters["end_date"]
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+
+    query = (
+        db.query(VentaFactura, VentaItem, Producto, Bodega, Branch, Vendedor, Linea, Segmento)
+        .join(VentaItem, VentaItem.factura_id == VentaFactura.id)
+        .join(Producto, Producto.id == VentaItem.producto_id)
+        .join(Bodega, Bodega.id == VentaFactura.bodega_id, isouter=True)
+        .join(Branch, Branch.id == Bodega.branch_id, isouter=True)
+        .join(Vendedor, Vendedor.id == VentaFactura.vendedor_id, isouter=True)
+        .join(Linea, Linea.id == Producto.linea_id, isouter=True)
+        .join(Segmento, Segmento.id == Producto.segmento_id, isouter=True)
+        .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
+        .filter(VentaFactura.estado != "ANULADA")
+        .filter(func.lower(Branch.code).in_(allowed_codes))
+        .filter(Branch.id.in_(scoped_branch_ids))
+    )
+
+    branch_id = str(filters.get("branch_id") or "all")
+    if branch_id != "all":
+        try:
+            branch_id_int = int(branch_id)
+            query = query.filter(Branch.id == branch_id_int if branch_id_int in scoped_branch_ids else Branch.id == -1)
+        except ValueError:
+            pass
+    bodega_id = str(filters.get("bodega_id") or "all")
+    if bodega_id != "all":
+        try:
+            query = query.filter(VentaFactura.bodega_id == int(bodega_id))
+        except ValueError:
+            pass
+    vendedor_id = str(filters.get("vendedor_id") or "")
+    if vendedor_id:
+        try:
+            query = query.filter(VentaFactura.vendedor_id == int(vendedor_id))
+        except ValueError:
+            pass
+    linea_id = str(filters.get("linea_id") or "all")
+    if linea_id != "all":
+        try:
+            query = query.filter(Producto.linea_id == int(linea_id))
+        except ValueError:
+            pass
+    segmento_id = str(filters.get("segmento_id") or "all")
+    if segmento_id != "all":
+        try:
+            query = query.filter(Producto.segmento_id == int(segmento_id))
+        except ValueError:
+            pass
+    producto_id = str(filters.get("producto_id") or "")
+    if producto_id:
+        try:
+            query = query.filter(VentaItem.producto_id == int(producto_id))
+        except ValueError:
+            pass
+    producto_q = str(filters.get("producto_q") or "").strip()
+    if producto_q:
+        like = f"%{producto_q.lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+                func.lower(func.coalesce(Producto.referencia_producto, "")).like(like),
+            )
+        )
+
+    rows = query.order_by(VentaFactura.fecha.desc(), VentaFactura.id.desc(), VentaItem.id.asc()).all()
+    pivot_by = str(filters.get("pivot_by") or "vendedor")
+    metric = str(filters.get("metric") or "qty")
+    pivot_columns_map: dict[str, str] = {}
+    product_map: dict[int, dict[str, object]] = {}
+    vendor_map: dict[str, dict[str, object]] = {}
+    line_map: dict[str, dict[str, object]] = {}
+    branch_map: dict[str, dict[str, object]] = {}
+    bodega_map: dict[str, dict[str, object]] = {}
+    segment_map: dict[str, dict[str, object]] = {}
+    detail_rows: list[dict[str, object]] = []
+    invoice_ids: set[int] = set()
+
+    total_qty = Decimal("0")
+    total_cs = Decimal("0")
+    total_usd = Decimal("0")
+    total_cost_cs = Decimal("0")
+    total_cost_usd = Decimal("0")
+
+    def money_values(factura: VentaFactura, item: VentaItem) -> tuple[Decimal, Decimal]:
+        moneda = factura.moneda or "CS"
+        tasa = Decimal(str(factura.tasa_cambio or 0))
+        subtotal_usd = Decimal(str(item.subtotal_usd or 0))
+        subtotal_cs = Decimal(str(item.subtotal_cs or 0))
+        venta_usd = subtotal_usd if moneda == "USD" else (subtotal_cs / tasa if tasa else Decimal("0"))
+        venta_cs = subtotal_cs if moneda == "CS" else (subtotal_usd * tasa if tasa else Decimal("0"))
+        return venta_cs, venta_usd
+
+    def cost_values(factura: VentaFactura, producto: Producto, qty: Decimal) -> tuple[Decimal, Decimal]:
+        tasa = Decimal(str(factura.tasa_cambio or 0))
+        cost_cs = Decimal(str(producto.costo_producto or 0)) * qty
+        cost_usd = cost_cs / tasa if tasa else Decimal("0")
+        return cost_cs, cost_usd
+
+    def pivot_label(branch: Optional[Branch], bodega: Optional[Bodega], vendedor: Optional[Vendedor], linea: Optional[Linea], segmento: Optional[Segmento]) -> str:
+        if pivot_by == "bodega":
+            return bodega.name if bodega else "Sin bodega"
+        if pivot_by == "sucursal":
+            return branch.name if branch else "Sin sucursal"
+        if pivot_by == "linea":
+            return linea.linea if linea else "Sin linea"
+        if pivot_by == "segmento":
+            return segmento.segmento if segmento else "Sin grupo"
+        return vendedor.nombre if vendedor else "Sin vendedor"
+
+    def metric_value(qty: Decimal, venta_cs: Decimal, venta_usd: Decimal) -> Decimal:
+        if metric == "cs":
+            return venta_cs
+        if metric == "usd":
+            return venta_usd
+        return qty
+
+    for factura, item, producto, bodega, branch, vendedor, linea, segmento in rows:
+        qty = Decimal(str(item.cantidad or 0))
+        venta_cs, venta_usd = money_values(factura, item)
+        cost_cs, cost_usd = cost_values(factura, producto, qty)
+        total_qty += qty
+        total_cs += venta_cs
+        total_usd += venta_usd
+        total_cost_cs += cost_cs
+        total_cost_usd += cost_usd
+        invoice_ids.add(int(factura.id))
+
+        line_name = linea.linea if linea else "Sin linea"
+        segment_name = segmento.segmento if segmento else "Sin grupo"
+        branch_name = branch.name if branch else "Sin sucursal"
+        bodega_name = bodega.name if bodega else "Sin bodega"
+        vendedor_name = vendedor.nombre if vendedor else "Sin vendedor"
+        pivot_name = pivot_label(branch, bodega, vendedor, linea, segmento)
+        pivot_key = pivot_name
+        pivot_columns_map[pivot_key] = pivot_name
+
+        pid = int(producto.id)
+        if pid not in product_map:
+            product_map[pid] = {
+                "producto_id": pid,
+                "codigo": producto.cod_producto,
+                "producto": producto.descripcion,
+                "linea": line_name,
+                "segmento": segment_name,
+                "cantidad": Decimal("0"),
+                "venta_cs": Decimal("0"),
+                "venta_usd": Decimal("0"),
+                "costo_cs": Decimal("0"),
+                "costo_usd": Decimal("0"),
+                "facturas": set(),
+                "vendedores": set(),
+                "bodegas": set(),
+                "sucursales": set(),
+                "pivot": {},
+            }
+        prow = product_map[pid]
+        prow["cantidad"] += qty
+        prow["venta_cs"] += venta_cs
+        prow["venta_usd"] += venta_usd
+        prow["costo_cs"] += cost_cs
+        prow["costo_usd"] += cost_usd
+        prow["facturas"].add(int(factura.id))
+        prow["vendedores"].add(vendedor_name)
+        prow["bodegas"].add(bodega_name)
+        prow["sucursales"].add(branch_name)
+        prow["pivot"][pivot_key] = prow["pivot"].get(pivot_key, Decimal("0")) + metric_value(qty, venta_cs, venta_usd)
+
+        for bucket, key in [
+            (vendor_map, vendedor_name),
+            (line_map, line_name),
+            (segment_map, segment_name),
+            (branch_map, branch_name),
+            (bodega_map, bodega_name),
+        ]:
+            bucket.setdefault(key, {"nombre": key, "cantidad": Decimal("0"), "venta_cs": Decimal("0"), "venta_usd": Decimal("0"), "costo_cs": Decimal("0"), "costo_usd": Decimal("0"), "facturas": set()})
+            bucket[key]["cantidad"] += qty
+            bucket[key]["venta_cs"] += venta_cs
+            bucket[key]["venta_usd"] += venta_usd
+            bucket[key]["costo_cs"] += cost_cs
+            bucket[key]["costo_usd"] += cost_usd
+            bucket[key]["facturas"].add(int(factura.id))
+
+        if len(detail_rows) < 800:
+            detail_rows.append(
+                {
+                    "fecha": factura.fecha.strftime("%d/%m/%Y") if factura.fecha else "",
+                    "factura": factura.numero or f"FAC-{factura.id}",
+                    "sucursal": branch_name,
+                    "bodega": bodega_name,
+                    "vendedor": vendedor_name,
+                    "linea": line_name,
+                    "segmento": segment_name,
+                    "codigo": producto.cod_producto,
+                    "producto": producto.descripcion,
+                    "cantidad": float(qty),
+                    "costo_cs": float(cost_cs),
+                    "costo_usd": float(cost_usd),
+                    "margen_cs": float(venta_cs - cost_cs),
+                    "margen_usd": float(venta_usd - cost_usd),
+                    "venta_cs": float(venta_cs),
+                    "venta_usd": float(venta_usd),
+                }
+            )
+
+    pivot_columns = sorted(pivot_columns_map.values())
+    product_rows: list[dict[str, object]] = []
+    for row in product_map.values():
+        product_rows.append(
+            {
+                "producto_id": row["producto_id"],
+                "codigo": row["codigo"],
+                "producto": row["producto"],
+                "linea": row["linea"],
+                "segmento": row["segmento"],
+                "cantidad": float(row["cantidad"]),
+                "venta_cs": float(row["venta_cs"]),
+                "venta_usd": float(row["venta_usd"]),
+                "costo_cs": float(row["costo_cs"]),
+                "costo_usd": float(row["costo_usd"]),
+                "margen_cs": float(row["venta_cs"] - row["costo_cs"]),
+                "margen_usd": float(row["venta_usd"] - row["costo_usd"]),
+                "margen_pct": float(((row["venta_cs"] - row["costo_cs"]) / row["venta_cs"] * Decimal("100")) if row["venta_cs"] else Decimal("0")),
+                "facturas": len(row["facturas"]),
+                "vendedores": ", ".join(sorted(row["vendedores"])),
+                "bodegas": ", ".join(sorted(row["bodegas"])),
+                "sucursales": ", ".join(sorted(row["sucursales"])),
+                "participacion": float((row["venta_cs"] / total_cs * Decimal("100")) if total_cs else Decimal("0")),
+                "pivot": {col: float(row["pivot"].get(col, Decimal("0"))) for col in pivot_columns},
+            }
+        )
+    product_rows.sort(key=lambda r: (float(r["venta_cs"] or 0), float(r["cantidad"] or 0)), reverse=True)
+
+    def bucket_rows(bucket: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+        output = []
+        for item in bucket.values():
+            output.append(
+                {
+                    "nombre": item["nombre"],
+                    "cantidad": float(item["cantidad"]),
+                    "venta_cs": float(item["venta_cs"]),
+                    "venta_usd": float(item["venta_usd"]),
+                    "costo_cs": float(item["costo_cs"]),
+                    "costo_usd": float(item["costo_usd"]),
+                    "margen_cs": float(item["venta_cs"] - item["costo_cs"]),
+                    "margen_usd": float(item["venta_usd"] - item["costo_usd"]),
+                    "margen_pct": float(((item["venta_cs"] - item["costo_cs"]) / item["venta_cs"] * Decimal("100")) if item["venta_cs"] else Decimal("0")),
+                    "facturas": len(item["facturas"]),
+                    "participacion": float((item["venta_cs"] / total_cs * Decimal("100")) if total_cs else Decimal("0")),
+                }
+            )
+        return sorted(output, key=lambda r: (r["venta_cs"], r["cantidad"]), reverse=True)
+
+    return {
+        "rows": product_rows,
+        "detail_rows": detail_rows,
+        "pivot_columns": pivot_columns,
+        "vendor_rows": bucket_rows(vendor_map),
+        "line_rows": bucket_rows(line_map),
+        "segment_rows": bucket_rows(segment_map),
+        "branch_rows": bucket_rows(branch_map),
+        "bodega_rows": bucket_rows(bodega_map),
+        "total_qty": float(total_qty),
+        "total_cs": float(total_cs),
+        "total_usd": float(total_usd),
+        "total_cost_cs": float(total_cost_cs),
+        "total_cost_usd": float(total_cost_usd),
+        "total_margin_cs": float(total_cs - total_cost_cs),
+        "total_margin_usd": float(total_usd - total_cost_usd),
+        "total_margin_pct": float(((total_cs - total_cost_cs) / total_cs * Decimal("100")) if total_cs else Decimal("0")),
+        "total_facturas": len(invoice_ids),
+        "total_productos": len(product_rows),
+        "detail_limited": len(rows) > len(detail_rows),
+    }
+
+
 def _stagnant_inventory_report_filters(request: Request):
     start_date, end_date, branch_id, vendedor_id, _producto_id, producto_q = _sales_products_report_filters(request)
     if end_date < start_date:
@@ -21911,6 +22221,68 @@ def report_sales_products(
             "total_cost_cs": float(total_cost_cs),
             "total_facturas": total_facturas,
             "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/reports/ventas-productos-pivot")
+def report_sales_products_pivot(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    filters = _sales_products_pivot_filters(request)
+    payload = _build_sales_products_pivot_report(db, user, filters)
+
+    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(scoped_branch_ids))
+        .order_by(Branch.name)
+        .all()
+    )
+    bodegas = (
+        db.query(Bodega)
+        .filter(Bodega.branch_id.in_(scoped_branch_ids))
+        .order_by(Bodega.name.asc())
+        .all()
+    )
+    vendedores = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre.asc()).all()
+    lineas = db.query(Linea).filter(Linea.activo.is_(True)).order_by(Linea.linea.asc()).all()
+    segmentos = db.query(Segmento).order_by(Segmento.segmento.asc()).all()
+    productos = (
+        db.query(Producto)
+        .filter(Producto.activo.is_(True))
+        .order_by(Producto.descripcion.asc())
+        .limit(1000)
+        .all()
+    )
+
+    return request.app.state.templates.TemplateResponse(
+        "report_sales_products_pivot.html",
+        {
+            "request": request,
+            "user": user,
+            "branches": branches,
+            "bodegas": bodegas,
+            "vendedores": vendedores,
+            "lineas": lineas,
+            "segmentos": segmentos,
+            "productos": productos,
+            "start_date": filters["start_date"].isoformat(),
+            "end_date": filters["end_date"].isoformat(),
+            "selected_branch": filters["branch_id"],
+            "selected_bodega": filters["bodega_id"],
+            "selected_vendedor": filters["vendedor_id"],
+            "selected_linea": filters["linea_id"],
+            "selected_segmento": filters["segmento_id"],
+            "selected_producto": filters["producto_id"],
+            "producto_q": filters["producto_q"],
+            "pivot_by": filters["pivot_by"],
+            "metric": filters["metric"],
+            "version": settings.UI_VERSION,
+            **payload,
         },
     )
 
