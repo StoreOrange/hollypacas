@@ -149,6 +149,61 @@
   .mobile-preventa .push-alert-hint.has-message {
     display: block;
   }
+  .mobile-preventa .seller-score-card {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 16px;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.07);
+    padding: 0.78rem 0.85rem;
+  }
+  .mobile-preventa .seller-score-card .score-label {
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+  .mobile-preventa .seller-score-card .score-value {
+    color: #0f172a;
+    font-size: 1.55rem;
+    font-weight: 900;
+    line-height: 1;
+  }
+  .mobile-preventa .seller-score-card .score-vendor {
+    color: #1d4ed8;
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+  .mobile-preventa .seller-score-card .score-message {
+    margin-top: 0.35rem;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.86rem;
+    font-weight: 800;
+    line-height: 1.25;
+  }
+  .mobile-preventa .seller-score-card .score-emoji {
+    font-size: 1.2rem;
+    line-height: 1;
+  }
+  .mobile-preventa .seller-score-empty .score-message {
+    color: #dc2626;
+    font-size: 0.94rem;
+    font-weight: 900;
+  }
+  .mobile-preventa .seller-score-low .score-message {
+    color: #b91c1c;
+  }
+  .mobile-preventa .seller-score-good .score-message {
+    color: #047857;
+  }
+  .mobile-preventa .seller-score-near .score-message {
+    color: #a16207;
+  }
+  .mobile-preventa .seller-score-hot .score-message {
+    color: #1d4ed8;
+  }
   .mobile-preventa .app-actionbar {
     position: fixed;
     left: 0;
@@ -438,6 +493,25 @@
       <div id="pushAlertsHint" class="push-alert-hint" aria-live="polite"></div>
     </div>
   </div>
+
+  {% if preventa_vendor_score %}
+  <div class="seller-score-card seller-score-{{ preventa_vendor_score.level }} mb-3">
+    <div class="d-flex align-items-start justify-content-between gap-3">
+      <div>
+        <div class="score-label">Bultos hoy</div>
+        <div class="score-value">{{ preventa_vendor_score.total_bultos }}</div>
+      </div>
+      <div class="text-end">
+        <div class="score-label">Vendedor</div>
+        <div class="score-vendor">{{ preventa_vendor_score.vendedor }}</div>
+      </div>
+    </div>
+    <div class="score-message">
+      <span class="score-emoji" aria-hidden="true">{{ preventa_vendor_score.emoji }}</span>
+      <span>{{ preventa_vendor_score.message }}</span>
+    </div>
+  </div>
+  {% endif %}
 
   {% if success %}
   <div class="alert alert-success">{{ success }}</div>

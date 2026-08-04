@@ -11883,6 +11883,48 @@ def mobile_preventas_page(
     consumidor = _get_or_create_consumidor_final(db)
     today_start = datetime.combine(local_today(), datetime.min.time())
     today_end = today_start + timedelta(days=1)
+    score_vendedor_id = vendedor_user_id or default_vendedor_id
+    score_total_bultos = Decimal("0")
+    score_vendedor_nombre = "-"
+    if score_vendedor_id:
+        score_total_bultos = Decimal(str(
+            db.query(func.coalesce(func.sum(PreventaItem.cantidad), 0))
+            .join(Preventa, Preventa.id == PreventaItem.preventa_id)
+            .filter(
+                Preventa.branch_id == branch.id,
+                Preventa.bodega_id == bodega.id,
+                Preventa.vendedor_id == score_vendedor_id,
+                Preventa.fecha >= today_start,
+                Preventa.fecha < today_end,
+                Preventa.estado != "ANULADA",
+            )
+            .scalar()
+            or 0
+        ))
+        score_vendedor_nombre = next((v.nombre for v in vendedores if int(v.id) == int(score_vendedor_id)), "")
+        if not score_vendedor_nombre and vendedor_user_id:
+            score_vendedor_nombre = user.full_name or user.username or "-"
+        score_vendedor_nombre = score_vendedor_nombre or "-"
+    if score_total_bultos >= Decimal("20"):
+        score_level = "hot"
+        score_message = "Coronado, estas en buena racha."
+        score_emoji = "👑"
+    elif score_total_bultos >= Decimal("11"):
+        score_level = "near"
+        score_message = "Te falta poco para alcanzar la venta minima, hazlo."
+        score_emoji = "⚡"
+    elif score_total_bultos >= Decimal("5"):
+        score_level = "good"
+        score_message = "Sigue asi, vas bien."
+        score_emoji = "👍"
+    elif score_total_bultos >= Decimal("1"):
+        score_level = "low"
+        score_message = "Estas quemado, necesitas vender mas."
+        score_emoji = "🐴"
+    else:
+        score_level = "empty"
+        score_message = "Deberias cambiar de trabajo."
+        score_emoji = "💩"
     recent_preventas_query = (
         db.query(Preventa)
         .filter(Preventa.branch_id == branch.id, Preventa.bodega_id == bodega.id)
@@ -11907,6 +11949,13 @@ def mobile_preventas_page(
             "is_vendedor_role": _is_vendedor_role(user),
             "consumidor_final_id": consumidor.id,
             "consumidor_final_nombre": consumidor.nombre,
+            "preventa_vendor_score": {
+                "vendedor": score_vendedor_nombre,
+                "total_bultos": _format_qty(score_total_bultos),
+                "message": score_message,
+                "emoji": score_emoji,
+                "level": score_level,
+            },
             "recent_preventas": [
                 {
                     "id": p.id,
