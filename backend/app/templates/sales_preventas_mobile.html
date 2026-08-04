@@ -479,6 +479,7 @@
 
   <form method="post" action="/m/preventas" id="preventaForm" autocomplete="off">
     <input type="hidden" name="moneda" value="USD">
+    <input type="hidden" name="freeze_preventa" id="freezePreventa" value="0">
     <div class="card mb-3">
       <div class="card-body">
         <div class="row g-2">
@@ -580,10 +581,16 @@
 
 <div class="app-actionbar">
   <div class="container" style="max-width: 780px;">
-    <button id="submitPreventaBtn" class="btn btn-primary w-100" type="submit" form="preventaForm">
-      <i class="bi bi-send-check me-1"></i>
-      Enviar preventa
-    </button>
+    <div class="d-grid gap-2">
+      <button id="freezePreventaBtn" class="btn btn-outline-primary w-100" type="submit" form="preventaForm" data-freeze-choice="1">
+        <i class="bi bi-snow2 me-1"></i>
+        Congelar preventa
+      </button>
+      <button id="submitPreventaBtn" class="btn btn-primary w-100" type="submit" form="preventaForm" data-freeze-choice="0">
+        <i class="bi bi-send-check me-1"></i>
+        Enviar directo a facturacion
+      </button>
+    </div>
   </div>
 </div>
 
@@ -647,9 +654,11 @@
     const btnProductSearch = document.getElementById("btnProductSearch");
     const productResults = document.getElementById("productSearchResults");
     const preventaForm = document.getElementById("preventaForm");
+    const freezePreventa = document.getElementById("freezePreventa");
     const itemsBody = document.getElementById("itemsBody");
     const noItemsRow = document.getElementById("noItemsRow");
     const submitButtons = Array.from(document.querySelectorAll('button[type="submit"][form="preventaForm"], #preventaForm button[type="submit"]'));
+    let requestedFreezeChoice = "0";
 
     const btnOpenCombo = document.getElementById("btnOpenCombo");
     const comboModalEl = document.getElementById("combo-modal");
@@ -1766,7 +1775,43 @@
     });
     comboApply?.addEventListener("click", applyComboToItems);
 
-    preventaForm?.addEventListener("submit", (event) => {
+    async function confirmPreventaSubmit(freezeChoice) {
+      const freeze = String(freezeChoice || "0") === "1";
+      const title = freeze ? "Congelar preventa" : "Enviar directo a facturacion";
+      const text = freeze
+        ? "La preventa quedara congelada y no entrara caliente al panel de facturacion."
+        : "La preventa quedara caliente y disponible para facturar directamente.";
+      if (typeof Swal === "undefined") {
+        return window.confirm(text);
+      }
+      const result = await Swal.fire({
+        icon: freeze ? "info" : "question",
+        title,
+        html: `<div>${esc(text)}</div>`,
+        showCancelButton: true,
+        showCloseButton: true,
+        confirmButtonText: freeze ? "Si, congelar" : "Si, enviar directo",
+        cancelButtonText: "Cancelar",
+        buttonsStyling: false,
+        customClass: {
+          popup: "mobile-swal",
+          title: "mobile-swal-title",
+          htmlContainer: "mobile-swal-text",
+          confirmButton: "mobile-swal-confirm",
+          cancelButton: "mobile-swal-cancel",
+          closeButton: "mobile-swal-close",
+        },
+      });
+      return result.isConfirmed;
+    }
+
+    submitButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        requestedFreezeChoice = String(button.dataset.freezeChoice || "0");
+      });
+    });
+
+    preventaForm?.addEventListener("submit", async (event) => {
       if (isSubmittingPreventa) {
         event.preventDefault();
         return;
@@ -1777,8 +1822,17 @@
         notify("warning", "Preventa", "Agrega al menos un item antes de enviar.");
         return;
       }
+      event.preventDefault();
+      const confirmed = await confirmPreventaSubmit(requestedFreezeChoice);
+      if (!confirmed) {
+        return;
+      }
+      if (freezePreventa) {
+        freezePreventa.value = requestedFreezeChoice === "1" ? "1" : "0";
+      }
       isSubmittingPreventa = true;
       setSubmittingState(true);
+      preventaForm.submit();
     });
 
     if (flashSuccess) {

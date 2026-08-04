@@ -66,12 +66,497 @@
     flex-direction: column;
     justify-content: flex-start;
   }
+  .inventory-egreso-modern {
+    --egreso-ui-border: #dbe4ef;
+    --egreso-ui-soft: #f8fafc;
+    --egreso-ui-head: #f1f5f9;
+    --egreso-ui-ink: #0f172a;
+    --egreso-ui-red: #f28b8f;
+    --egreso-ui-blue: #2563eb;
+  }
+  .inventory-egreso-modern .card {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 18px;
+    box-shadow: 0 18px 44px rgba(15, 23, 42, 0.07) !important;
+  }
+  .inventory-egreso-modern .inventory-tabs {
+    gap: 0.35rem;
+    border-bottom: 1px solid #dbe4ef;
+  }
+  .inventory-egreso-modern .inventory-tabs .nav-link {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    color: #475569;
+    font-weight: 800;
+  }
+  .inventory-egreso-modern .inventory-tabs .nav-link.active {
+    background: #fff1f2;
+    border-color: #fecdd3;
+    color: #be123c;
+  }
+  .inventory-egreso-modern #ingreso-panel {
+    border: 1px solid var(--egreso-ui-border);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06) !important;
+  }
+  .inventory-egreso-modern #ingreso-panel .odoo-modal-header {
+    padding: 0.9rem 1.1rem;
+    background: linear-gradient(135deg, #fff7f7 0%, #f8fbff 100%);
+    border-bottom: 1px solid var(--egreso-ui-border);
+  }
+  .inventory-egreso-modern #ingreso-panel .odoo-section-title {
+    font-size: 1.25rem !important;
+    letter-spacing: 0;
+  }
+  .inventory-egreso-modern #ingreso-panel .odoo-modal-body {
+    max-height: none !important;
+    padding: 0.9rem 1rem 1.1rem !important;
+    background: #fbfdff;
+  }
+  .inventory-egreso-modern .odoo-modal-section,
+  .inventory-egreso-modern .search-panel {
+    border: 1px solid var(--egreso-ui-border) !important;
+    border-radius: 16px !important;
+    background: #ffffff !important;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  }
+  .inventory-egreso-modern .movement-meta-grid {
+    row-gap: 0.65rem;
+  }
+  .inventory-egreso-modern .movement-meta-grid .form-label {
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+  .inventory-egreso-modern .movement-meta-grid .form-control,
+  .inventory-egreso-modern .movement-meta-grid .form-select,
+  .inventory-egreso-modern .movement-meta-grid .select2-container--default .select2-selection--single {
+    border-color: #dbe4ef !important;
+    border-radius: 10px !important;
+    background: #fbfdff;
+  }
+  .inventory-egreso-modern .search-panel .input-group {
+    border: 1px solid #dbe4ef;
+    border-radius: 999px !important;
+  }
+  .inventory-egreso-modern .search-panel .odoo-table-wrap {
+    border: 1px solid var(--egreso-ui-border);
+    border-radius: 14px;
+    background: #fff;
+  }
+  .inventory-egreso-modern .search-panel table {
+    font-size: 0.82rem;
+    margin-bottom: 0;
+  }
+  .inventory-egreso-modern .search-panel thead th,
+  .inventory-egreso-modern #egresos-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--egreso-ui-head) !important;
+    border-bottom: 1px solid var(--egreso-ui-border) !important;
+    color: #334155;
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+  .inventory-egreso-modern .search-panel tbody td,
+  .inventory-egreso-modern #egresos-table tbody td {
+    border-bottom: 1px solid #edf2f7;
+  }
+  .inventory-egreso-modern .product-pick-row:hover td,
+  .inventory-egreso-modern .result-product-pick-row:hover td,
+  .inventory-egreso-modern #egresos-table tbody tr:hover td {
+    background: #fff7f7 !important;
+  }
+  .inventory-egreso-modern .qty-input,
+  .inventory-egreso-modern .result-qty-input {
+    border-radius: 10px !important;
+    border-color: #cbd5e1 !important;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .inventory-egreso-modern .add-item,
+  .inventory-egreso-modern .add-result-item {
+    border-color: #fecdd3 !important;
+    color: #be123c !important;
+    border-radius: 999px !important;
+  }
+  .inventory-egreso-modern .add-item:hover,
+  .inventory-egreso-modern .add-result-item:hover {
+    background: #fff1f2 !important;
+  }
+  .inventory-egreso-modern .totals-bar {
+    border-top: 0 !important;
+    padding: 0.75rem;
+    border-radius: 16px;
+    background: #f8fafc;
+    border: 1px solid var(--egreso-ui-border);
+  }
+  .inventory-egreso-modern .totals-bar > div:not(.label) {
+    min-width: 116px;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    background: #ffffff;
+  }
+  .inventory-egreso-modern .totals-bar .label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .inventory-egreso-modern .totals-bar .value {
+    font-size: 1rem;
+    font-weight: 900;
+    color: #1d4ed8;
+  }
+  .inventory-egreso-modern #submit-egreso {
+    border-color: #be123c;
+    background: #be123c;
+    font-weight: 900;
+  }
+  .inventory-egreso-modern #submit-egreso:hover {
+    background: #9f1239;
+  }
+  .egreso-grid-shell {
+    border: 1px solid #cfd9e6 !important;
+    border-radius: 16px !important;
+    background: #ffffff;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 12px 28px rgba(15,23,42,0.06);
+  }
+  .egreso-pro-grid {
+    margin: 0 !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    width: 100%;
+    font-size: 0.78rem !important;
+    color: #0f172a;
+  }
+  .egreso-pro-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: #eaf1f8 !important;
+    border-bottom: 1px solid #cfd9e6 !important;
+    border-right: 1px solid #dbe4ef !important;
+    color: #24364d !important;
+    font-size: 0.66rem !important;
+    font-weight: 900 !important;
+    letter-spacing: 0.08em !important;
+    padding: 0.58rem 0.65rem !important;
+    white-space: nowrap;
+  }
+  .egreso-pro-grid tbody td {
+    border-bottom: 1px solid #e6edf5 !important;
+    border-right: 1px solid #eef3f8 !important;
+    padding: 0.48rem 0.65rem !important;
+    vertical-align: middle;
+    background: #ffffff;
+  }
+  .egreso-pro-grid tbody tr:nth-child(even) td {
+    background: #fbfdff;
+  }
+  .egreso-pro-grid tbody tr:hover td {
+    background: #fff4f4 !important;
+  }
+  .egreso-pro-grid tbody td:last-child,
+  .egreso-pro-grid thead th:last-child {
+    border-right: 0 !important;
+  }
+  .egreso-pro-grid .font-semibold,
+  .egreso-pro-grid .text-ink {
+    font-weight: 850 !important;
+    color: #0f172a !important;
+  }
+  .egreso-pro-grid .text-right,
+  .egreso-pro-grid .text-end {
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+  }
+  .egreso-pro-grid input[type="number"] {
+    height: 28px;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 9px !important;
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+  .egreso-pro-grid .add-item,
+  .egreso-pro-grid .add-result-item {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 999px !important;
+    border-color: #f6b4b7 !important;
+    color: #b91c1c !important;
+    background: #fff !important;
+  }
+  .egreso-pro-grid .add-item:hover,
+  .egreso-pro-grid .add-result-item:hover {
+    background: #fff1f2 !important;
+    border-color: #ef7f84 !important;
+  }
+  #items-table-grid tbody tr:not(#empty-items) td:first-child,
+  #result-items-table-grid tbody tr:not(#empty-result-items) td:first-child {
+    font-weight: 900;
+    color: #111827;
+  }
+  #egresos-table.egreso-pro-grid tbody tr.table-primary td,
+  #egresos-table.egreso-pro-grid tbody tr.is-selected td {
+    background: #ffecec !important;
+    box-shadow: inset 3px 0 0 #ef7f84;
+  }
+  {% if pacasholl_egresos_ui %}
+  .egresos-pro-shell {
+    --egreso-border: #d8e2ef;
+    --egreso-head: #f3f7fb;
+    --egreso-soft: #f8fafc;
+    --egreso-ink: #0f172a;
+    --egreso-blue: #2563eb;
+    --egreso-red: #ef6f73;
+  }
+  .egresos-pro-shell .odoo-header {
+    padding-bottom: 0.75rem;
+  }
+  .egresos-pro-shell .odoo-title {
+    font-size: 1.25rem;
+  }
+  .egresos-pro-shell .odoo-subtitle {
+    font-size: 0.84rem;
+  }
+  .egresos-pro-shell .card {
+    border-radius: 18px;
+    background: #ffffff;
+  }
+  .egresos-list-card {
+    border: 1px solid var(--egreso-border);
+    border-radius: 18px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 18px 44px rgba(15, 23, 42, 0.07);
+  }
+  .egresos-list-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    background: linear-gradient(135deg, #f8fbff 0%, #f4fbf8 100%);
+    border-bottom: 1px solid var(--egreso-border);
+  }
+  .egresos-list-title {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    font-size: 1rem;
+    font-weight: 900;
+    color: var(--egreso-ink);
+  }
+  .egresos-list-title .icon {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+  .egresos-list-subtitle {
+    margin-top: 0.2rem;
+    color: #64748b;
+    font-size: 0.78rem;
+  }
+  .egresos-filter-form {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .egresos-filter-form .input-group {
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid #dbe4ef;
+    background: #fff;
+    box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+  }
+  .egresos-filter-form .input-group-text,
+  .egresos-filter-form .form-control,
+  .egresos-filter-form .form-select {
+    border: 0;
+    min-height: 34px;
+    font-size: 0.8rem;
+    background: #fff;
+  }
+  .egresos-grid-wrap {
+    max-height: 68vh;
+    overflow: auto;
+    background: #fff;
+  }
+  .egresos-grid {
+    margin-bottom: 0 !important;
+    border-collapse: separate;
+    border-spacing: 0;
+    min-width: 1120px;
+    font-size: 0.82rem;
+  }
+  .egresos-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--egreso-head) !important;
+    border-bottom: 1px solid var(--egreso-border) !important;
+    border-right: 1px solid #e5edf7;
+    color: #334155;
+    font-size: 0.7rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    padding: 0.72rem 0.8rem !important;
+    white-space: nowrap;
+  }
+  .egresos-grid thead th:last-child,
+  .egresos-grid tbody td:last-child {
+    border-right: 0;
+  }
+  .egresos-grid tbody td {
+    border-right: 1px solid #edf2f7;
+    border-bottom: 1px solid #edf2f7;
+    padding: 0.62rem 0.8rem !important;
+    vertical-align: middle;
+  }
+  .egresos-grid tbody tr:nth-child(even) td {
+    background: #fbfdff;
+  }
+  .egresos-grid tbody tr:hover td {
+    background: #fff7f7 !important;
+  }
+  .egresos-grid tbody tr.is-selected td {
+    background: #ffecec !important;
+    box-shadow: inset 3px 0 0 var(--egreso-red);
+  }
+  .egreso-date-pill,
+  .egreso-type-pill,
+  .egreso-place-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 999px;
+    padding: 0.28rem 0.55rem;
+    white-space: nowrap;
+  }
+  .egreso-date-pill {
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 800;
+  }
+  .egreso-type-pill {
+    background: #fff1f2;
+    color: #be123c;
+    font-weight: 900;
+  }
+  .egreso-place-pill {
+    background: #f8fafc;
+    color: #334155;
+    border: 1px solid #e2e8f0;
+    font-weight: 700;
+  }
+  .egreso-destino-empty {
+    color: #94a3b8;
+    font-weight: 700;
+  }
+  .egreso-money {
+    display: inline-block;
+    min-width: 92px;
+    color: #0f172a;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+  }
+  .egreso-money.usd {
+    color: #166534;
+  }
+  .egreso-money.cs {
+    color: #1d4ed8;
+  }
+  .egreso-motivo {
+    max-width: 280px;
+    display: inline-block;
+    color: #475569;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+  }
+  .egreso-doc-btn {
+    min-width: 84px;
+    border-radius: 999px;
+    font-weight: 800;
+  }
+  .egresos-grid-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--egreso-border);
+    background: var(--egreso-soft);
+    color: #64748b;
+    font-size: 0.78rem;
+  }
+  .egresos-pro-shell .dataTables_wrapper .dataTables_info,
+  .egresos-pro-shell .dataTables_wrapper .dataTables_paginate {
+    padding: 0.75rem 1rem;
+    font-size: 0.78rem;
+    color: #64748b;
+  }
+  .egresos-pro-shell .dt-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.75rem 1rem 0;
+  }
+  .egresos-pro-shell .dt-button {
+    border: 1px solid #dbe4ef !important;
+    border-radius: 999px !important;
+    background: #fff !important;
+    color: #334155 !important;
+    font-size: 0.76rem !important;
+    font-weight: 800 !important;
+    padding: 0.35rem 0.7rem !important;
+  }
+  .egresos-pro-shell .search-panel {
+    border-radius: 18px !important;
+    background: #f8fafc !important;
+  }
+  .egresos-pro-shell .search-panel .odoo-table-wrap {
+    border: 1px solid #dbe4ef;
+    border-radius: 14px;
+    background: #fff;
+  }
+  .egresos-pro-shell .search-panel thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f1f5f9 !important;
+    border-bottom: 1px solid #dbe4ef !important;
+  }
+  @media (max-width: 991.98px) {
+    .egresos-list-head {
+      flex-direction: column;
+    }
+    .egresos-filter-form {
+      justify-content: flex-start;
+      width: 100%;
+    }
+  }
+  {% endif %}
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
-  <main class="p-6 lg:p-8 text-[18px]">
-    <div class="odoo-page">
+  <main class="p-6 lg:p-8 {% if pacasholl_egresos_ui %}text-[16px]{% else %}text-[18px]{% endif %}">
+    <div class="odoo-page inventory-egreso-modern{% if pacasholl_egresos_ui %} egresos-pro-shell{% endif %}">
       <div class="odoo-header inventory-compact-header">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
           <div>
@@ -168,11 +653,21 @@
       </ul>
 
       <section id="egreso-list-section" class="hidden">
-      <div class="odoo-card">
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
-          <div class="odoo-section-title">Egresos registrados</div>
+      <div class="odoo-card{% if pacasholl_egresos_ui %} egresos-list-card p-0{% endif %}">
+        <div class="{% if pacasholl_egresos_ui %}egresos-list-head{% else %}d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3{% endif %}">
+          <div>
+            {% if pacasholl_egresos_ui %}
+            <div class="egresos-list-title">
+              <span class="icon"><i class="bi bi-box-arrow-up"></i></span>
+              <span>Egresos registrados</span>
+            </div>
+            <div class="egresos-list-subtitle">Consulta operativa de salidas, traslados, bajas y documentos generados.</div>
+            {% else %}
+            <div class="odoo-section-title">Egresos registrados</div>
+            {% endif %}
+          </div>
           <div class="d-flex flex-wrap align-items-center gap-3 text-sm text-slate">
-            <form class="d-flex flex-wrap align-items-center gap-2" method="get" action="/inventory/egresos">
+            <form class="{% if pacasholl_egresos_ui %}egresos-filter-form{% else %}d-flex flex-wrap align-items-center gap-2{% endif %}" method="get" action="/inventory/egresos">
               <input type="hidden" name="view" value="list" />
               <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
                 <span class="input-group-text bg-white border-0"><i class="bi bi-calendar-range text-brand"></i></span>
@@ -205,7 +700,7 @@
               </button>
               <a class="btn btn-outline-secondary btn-sm" href="/inventory/egresos?view=list">
                 <i class="bi bi-eraser"></i>
-                Ultimos 7 dias
+                Limpiar
               </a>
             </form>
             <span class="odoo-pill success">
@@ -214,8 +709,8 @@
             </span>
           </div>
         </div>
-        <div class="table-responsive">
-          <table id="egresos-table" class="table table-striped table-sm align-middle text-sm odoo-table">
+        <div class="table-responsive egreso-grid-shell{% if pacasholl_egresos_ui %} egresos-grid-wrap{% endif %}">
+          <table id="egresos-table" class="table table-striped table-sm align-middle text-sm odoo-table egreso-pro-grid{% if pacasholl_egresos_ui %} egresos-grid{% endif %}">
             <thead class="text-xs uppercase tracking-[0.15em] text-slate bg-slate-50">
               <tr>
                 <th class="text-left px-4 py-3">Fecha</th>
@@ -235,15 +730,47 @@
                 data-egreso-id="{{ egreso.id }}"
                 data-product-ids="{{ egreso.items | map(attribute='producto_id') | join(',') }}"
               >
-                <td class="px-4 py-3 text-slate" data-order="{{ egreso.created_at.isoformat() if egreso.created_at else egreso.fecha.isoformat() }}">{{ egreso.fecha }}</td>
-                <td class="px-4 py-3 font-semibold text-ink">{{ egreso.tipo.nombre if egreso.tipo else "-" }}</td>
-                <td class="px-4 py-3 text-slate">{{ egreso.bodega.name if egreso.bodega else "-" }}</td>
-                <td class="px-4 py-3 text-slate">{{ egreso.bodega_destino.name if egreso.bodega_destino else "-" }}</td>
-                {% if not inventory_cs_only %}<td class="px-4 py-3 text-right text-slate">$ {{ "%.2f"|format(egreso.total_usd or 0) }}</td>{% endif %}
-                <td class="px-4 py-3 text-right text-slate">C$ {{ "%.2f"|format(egreso.total_cs or 0) }}</td>
-                <td class="px-4 py-3 text-slate">{{ egreso.observacion or "-" }}</td>
+                <td class="px-4 py-3 text-slate" data-order="{{ egreso.created_at.isoformat() if egreso.created_at else egreso.fecha.isoformat() }}">
+                  {% if pacasholl_egresos_ui %}
+                  <span class="egreso-date-pill"><i class="bi bi-calendar2-week"></i>{{ egreso.fecha }}</span>
+                  {% else %}
+                  {{ egreso.fecha }}
+                  {% endif %}
+                </td>
+                <td class="px-4 py-3 font-semibold text-ink">
+                  {% if pacasholl_egresos_ui %}
+                  <span class="egreso-type-pill">{{ egreso.tipo.nombre if egreso.tipo else "-" }}</span>
+                  {% else %}
+                  {{ egreso.tipo.nombre if egreso.tipo else "-" }}
+                  {% endif %}
+                </td>
+                <td class="px-4 py-3 text-slate">
+                  {% if pacasholl_egresos_ui %}
+                  <span class="egreso-place-pill"><i class="bi bi-box-seam"></i>{{ egreso.bodega.name if egreso.bodega else "-" }}</span>
+                  {% else %}
+                  {{ egreso.bodega.name if egreso.bodega else "-" }}
+                  {% endif %}
+                </td>
+                <td class="px-4 py-3 text-slate">
+                  {% if pacasholl_egresos_ui and egreso.bodega_destino %}
+                  <span class="egreso-place-pill"><i class="bi bi-arrow-right"></i>{{ egreso.bodega_destino.name }}</span>
+                  {% elif pacasholl_egresos_ui %}
+                  <span class="egreso-destino-empty">Sin destino</span>
+                  {% else %}
+                  {{ egreso.bodega_destino.name if egreso.bodega_destino else "-" }}
+                  {% endif %}
+                </td>
+                {% if not inventory_cs_only %}<td class="px-4 py-3 text-right text-slate"><span class="{% if pacasholl_egresos_ui %}egreso-money usd{% endif %}">$ {{ "%.2f"|format(egreso.total_usd or 0) }}</span></td>{% endif %}
+                <td class="px-4 py-3 text-right text-slate"><span class="{% if pacasholl_egresos_ui %}egreso-money cs{% endif %}">C$ {{ "%.2f"|format(egreso.total_cs or 0) }}</span></td>
+                <td class="px-4 py-3 text-slate">
+                  {% if pacasholl_egresos_ui %}
+                  <span class="egreso-motivo" title="{{ egreso.observacion or '-' }}">{{ egreso.observacion or "-" }}</span>
+                  {% else %}
+                  {{ egreso.observacion or "-" }}
+                  {% endif %}
+                </td>
                 <td class="px-4 py-3 text-center">
-                  <a class="btn btn-outline-secondary btn-sm" href="/inventory/egresos/{{ egreso.id }}/pdf" target="_blank" rel="noopener">
+                  <a class="btn btn-outline-secondary btn-sm{% if pacasholl_egresos_ui %} egreso-doc-btn{% endif %}" href="/inventory/egresos/{{ egreso.id }}/pdf" target="_blank" rel="noopener">
                     <i class="bi bi-printer"></i>
                     PDF
                   </a>
@@ -255,7 +782,14 @@
             </tbody>
           </table>
         </div>
+        {% if pacasholl_egresos_ui %}
+        <div class="egresos-grid-footer">
+          <span><i class="bi bi-info-circle me-1"></i>Doble clic sobre una fila para imprimir el PDF del egreso.</span>
+          <span>Version {{ version }}</span>
+        </div>
+        {% else %}
         <div class="text-end text-slate text-sm mt-4">Version {{ version }}</div>
+        {% endif %}
       </div>
     </div>
       </section>
@@ -380,8 +914,8 @@
                         <input id="product-search" class="form-control border-0 text-uppercase" type="text" placeholder="BUSCAR PRODUCTO" />
                         </div>
                       </div>
-                      <div class="odoo-table-wrap max-h-52 overflow-y-auto">
-                        <table class="table table-sm align-middle mb-0 odoo-table text-sm w-100">
+                      <div class="odoo-table-wrap max-h-52 overflow-y-auto egreso-grid-shell">
+                        <table class="table table-sm align-middle mb-0 odoo-table text-sm w-100 egreso-pro-grid">
                           <thead class="odoo-table-head text-xs uppercase tracking-[0.2em]">
                             <tr>
                               <th class="text-left px-3 py-2">Codigo</th>
@@ -435,8 +969,8 @@
                         <div class="odoo-modal-title odoo-accent">Productos cargados a la vista de egreso</div>
                         <span class="odoo-pill">Items en lista</span>
                       </div>
-                      <div class="odoo-table-wrap overflow-x-auto max-h-44 overflow-y-auto">
-                        <table class="table table-sm align-middle mb-0 odoo-table text-base w-100">
+                      <div class="odoo-table-wrap overflow-x-auto max-h-44 overflow-y-auto egreso-grid-shell">
+                        <table id="items-table-grid" class="table table-sm align-middle mb-0 odoo-table text-base w-100 egreso-pro-grid">
                           <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
                             <tr>
                               <th class="text-left px-3 py-2">Producto</th>
@@ -471,8 +1005,8 @@
                       <input id="result-product-search" class="form-control border-0 text-uppercase" type="text" placeholder="BUSCAR PRODUCTO RESULTADO" />
                     </div>
                   </div>
-                  <div class="odoo-table-wrap max-h-52 overflow-y-auto">
-                    <table class="table table-sm align-middle mb-0 odoo-table text-sm w-100">
+                  <div class="odoo-table-wrap max-h-52 overflow-y-auto egreso-grid-shell">
+                    <table class="table table-sm align-middle mb-0 odoo-table text-sm w-100 egreso-pro-grid">
                       <thead class="odoo-table-head text-xs uppercase tracking-[0.2em]">
                         <tr>
                           <th class="text-left px-3 py-2">Codigo</th>
@@ -522,8 +1056,8 @@
                   <div class="mt-3 mb-2 d-flex align-items-center justify-content-between">
                     <div class="odoo-modal-title odoo-accent">Items de resultado cargados</div>
                   </div>
-                  <div class="odoo-table-wrap overflow-x-auto max-h-44 overflow-y-auto">
-                    <table class="table table-sm align-middle mb-0 odoo-table text-base w-100">
+                  <div class="odoo-table-wrap overflow-x-auto max-h-44 overflow-y-auto egreso-grid-shell">
+                    <table id="result-items-table-grid" class="table table-sm align-middle mb-0 odoo-table text-base w-100 egreso-pro-grid">
                       <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
                         <tr>
                           <th class="text-left px-3 py-2">Producto</th>
@@ -618,6 +1152,7 @@
   }
 
   const ingresoTabs = document.querySelectorAll(".ingreso-tab");
+  const pacashollEgresosUi = {{ (pacasholl_egresos_ui or False)|tojson }};
   const ingresoPanels = document.querySelectorAll(".ingreso-panel");
   const productList = document.getElementById("product-list");
   const productSearch = document.getElementById("product-search");
@@ -753,6 +1288,27 @@
       const payload = `${row.dataset.code} ${row.dataset.name}`.toLowerCase();
       row.style.display = payload.includes(normalized) ? "" : "none";
     });
+  };
+
+  const resetProductSearchGrid = () => {
+    if (!productSearch) return;
+    productSearch.value = "";
+    filterProductRows("");
+    updateSaldoCells();
+    window.setTimeout(() => {
+      productSearch.focus();
+      productSearch.select();
+    }, 0);
+  };
+
+  const resetResultProductSearchGrid = () => {
+    if (!resultProductSearch) return;
+    resultProductSearch.value = "";
+    filterResultProductRows("");
+    window.setTimeout(() => {
+      resultProductSearch.focus();
+      resultProductSearch.select();
+    }, 0);
   };
 
   const isTrasladoSelected = () => {
@@ -1152,12 +1708,14 @@
     setEgresoView("form");
   }
 
+  let egresosTable = null;
   if (window.DataTable) {
-    const egresosTable = new DataTable("#egresos-table", {
+    egresosTable = new DataTable("#egresos-table", {
       searching: true,
       paging: true,
       info: true,
-      lengthChange: false,
+      lengthChange: pacashollEgresosUi,
+      pageLength: pacashollEgresosUi ? 25 : 10,
       order: [[0, "desc"]],
       language: {
         search: "Buscar:",
@@ -1172,8 +1730,47 @@
         },
       },
       dom: "Brtip",
-      buttons: ["copy", "excel", "pdf", "print"],
+      buttons: pacashollEgresosUi
+        ? [
+            { extend: "copy", text: "Copiar" },
+            { extend: "excel", text: "Excel" },
+            { extend: "pdf", text: "PDF" },
+            { extend: "print", text: "Imprimir" },
+          ]
+        : ["copy", "excel", "pdf", "print"],
     });
+  }
+  if (pacashollEgresosUi) {
+    const egresosTableEl = document.getElementById("egresos-table");
+    const selectEgresoRow = (row) => {
+      if (!row) return;
+      egresosTableEl?.querySelectorAll("tbody tr").forEach((candidate) => {
+        candidate.classList.remove("is-selected");
+      });
+      row.classList.add("is-selected");
+    };
+    egresosTableEl?.addEventListener("click", (event) => {
+      const row = event.target.closest("tbody tr");
+      if (!row || event.target.closest("a, button, input, select, textarea")) return;
+      selectEgresoRow(row);
+    });
+    egresosTableEl?.addEventListener("dblclick", (event) => {
+      const row = event.target.closest("tbody tr");
+      if (!row || event.target.closest("a, button, input, select, textarea")) return;
+      selectEgresoRow(row);
+      const pdfLink = row.querySelector('a[href*="/inventory/egresos/"][href$="/pdf"]');
+      if (pdfLink) {
+        window.open(pdfLink.href, "_blank", "noopener");
+      }
+    });
+    egresosTable?.on?.("draw", () => {
+      const firstVisible = egresosTableEl?.querySelector("tbody tr");
+      if (firstVisible && !egresosTableEl.querySelector("tbody tr.is-selected")) {
+        firstVisible.classList.add("is-selected");
+      }
+    });
+    const firstRow = egresosTableEl?.querySelector("tbody tr");
+    if (firstRow) firstRow.classList.add("is-selected");
   }
 
   const errorBanner = document.querySelector("[data-error-banner]");
@@ -1457,10 +2054,7 @@
         subtotalCs,
         focusTarget: focusTarget || "qty",
       });
-      if (productSearch && focusTarget === "search") {
-        productSearch.value = "";
-        productSearch.focus();
-      }
+      resetProductSearchGrid();
       saveDraft();
     };
 
@@ -1477,7 +2071,7 @@
           const row = input.closest("tr");
           const button = row.querySelector(".add-item");
           if (button) {
-            handleAddItem(button, "cost");
+            handleAddItem(button, "search");
           }
         }
       });
@@ -1530,10 +2124,7 @@
         subtotalUsd,
         subtotalCs,
       });
-      if (resultProductSearch) {
-        resultProductSearch.value = "";
-        resultProductSearch.focus();
-      }
+      resetResultProductSearchGrid();
       saveDraft();
     };
 

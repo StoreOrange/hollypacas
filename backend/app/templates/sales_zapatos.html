@@ -20,26 +20,66 @@
     background: var(--hp-primary-100) !important;
     color: var(--hp-primary) !important;
   }
-  #layout main section.sticky {
-    padding: 0.45rem 1rem !important;
-    border-radius: 20px !important;
-  }
-  #layout main section.sticky .text-xl {
-    font-size: 1rem !important;
-    line-height: 1.2 !important;
-  }
-  #layout main section.sticky p {
-    font-size: 0.72rem !important;
-    margin-bottom: 0 !important;
-  }
+  {% if pacasholl_libreado_enabled %}
+    #layout main section.sticky {
+      padding: 0.35rem 0.9rem !important;
+      border-radius: 18px !important;
+    }
+    #layout main section.sticky > .relative {
+      gap: .65rem !important;
+      align-items: center !important;
+    }
+    #layout main section.sticky .toggle-sidebar {
+      width: 2rem !important;
+      height: 2rem !important;
+      border-radius: .7rem !important;
+    }
+    #layout main section.sticky .breadcrumb {
+      font-size: .72rem !important;
+    }
+    #layout main section.sticky .text-xl {
+      font-size: .92rem !important;
+      line-height: 1.12 !important;
+    }
+    #layout main section.sticky p {
+      font-size: 0.66rem !important;
+      line-height: 1.15 !important;
+      margin-bottom: 0 !important;
+    }
+    #layout main section.sticky .grid.grid-cols-3 {
+      gap: .4rem !important;
+    }
+    #layout main section.sticky .grid.grid-cols-3 > div {
+      border-radius: .72rem !important;
+      padding: .32rem .62rem !important;
+    }
+    #layout main section.sticky .grid.grid-cols-3 .text-xs {
+      font-size: .62rem !important;
+      letter-spacing: .11em !important;
+      line-height: 1.1 !important;
+    }
+    #layout main section.sticky .grid.grid-cols-3 .text-sm {
+      font-size: .82rem !important;
+      line-height: 1.15 !important;
+    }
+    #layout main section.sticky .nav-tabs {
+      margin-top: .35rem !important;
+    }
+    #layout main section.sticky .nav-link {
+      padding: .22rem .62rem !important;
+      font-size: .74rem !important;
+    }
+  {% endif %}
   #product-search {
     font-size: 1.15rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.02em;
   }
-  #product-list-panel {
-    max-height: 520px !important;
-  }
+  {% if pacasholl_libreado_enabled %}
+    #product-list-panel {
+      max-height: calc(100vh - 275px) !important;
+    }
+  {% endif %}
   .barcode-ready {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--hp-primary) 22%, transparent);
     border-radius: 14px;
@@ -88,6 +128,332 @@
   }
   .cash-qty-input {
     max-width: 110px;
+  }
+  .pay-modal .pay-method-btn {
+    min-height: 4.1rem;
+    text-align: left;
+  }
+  .pay-modal .payment-method-name {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .pay-modal .payment-method-detail {
+    display: block;
+    margin-top: .15rem;
+    font-size: .72rem;
+    color: #64748b;
+    font-weight: 700;
+  }
+  .pay-modal .payment-amount-main {
+    font-weight: 900;
+    color: var(--hp-primary);
+    white-space: nowrap;
+  }
+  .pay-modal .payment-amount-equivalent {
+    display: block;
+    font-size: .72rem;
+    color: #64748b;
+    font-weight: 700;
+  }
+  .sales-command-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+    align-items: start;
+  }
+  .sales-command-main,
+  .sales-command-side {
+    display: grid;
+    gap: 0;
+  }
+  .sales-command-main {
+    border: 1px solid color-mix(in srgb, var(--hp-primary) 20%, #dbe3ee);
+    border-radius: 28px;
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.97));
+    box-shadow: 0 22px 60px rgba(15, 23, 42, .12);
+    padding: 1.25rem;
+  }
+  .sales-command-side {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, .38fr) auto;
+    gap: .85rem;
+    align-items: stretch;
+  }
+  .sales-command-side .sales-smart-card {
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .07);
+  }
+  .sales-command-side > .flex {
+    align-self: center;
+    justify-content: flex-end;
+  }
+  .sales-command-main > .sales-smart-card {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+  }
+  .sales-command-main > .sales-smart-card + .sales-smart-card {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(148, 163, 184, .22);
+  }
+  .sales-smart-card {
+    border: 1px solid color-mix(in srgb, var(--hp-primary) 18%, #e2e8f0);
+    background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.96));
+    box-shadow: 0 20px 55px rgba(15, 23, 42, .10);
+  }
+  .sales-panel-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #101827;
+    letter-spacing: 0;
+  }
+  .sales-panel-kicker {
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--hp-primary);
+  }
+  #product-list {
+    background: #fff;
+  }
+  .product-pick-row {
+    cursor: pointer;
+    background: #fff;
+  }
+  .product-pick-row:hover {
+    background: #fff7f7;
+  }
+  .product-pick-row.product-active {
+    background: #fff1f2;
+    outline: 2px solid rgba(244, 114, 114, .62);
+    outline-offset: -2px;
+    box-shadow: inset 0 0 0 1px rgba(248, 113, 113, .18);
+  }
+  .add-item {
+    background: var(--hp-primary) !important;
+    color: #fff !important;
+    border-color: var(--hp-primary) !important;
+  }
+  #items-table {
+    background: #fffaf0;
+  }
+  #items-table tr.sales-item-row {
+    background: #fff7df;
+  }
+  #items-table tr.sales-item-row td {
+    background: #fff7df !important;
+    border-top: 2px solid #f3d99b;
+    border-bottom: 2px solid #f3d99b;
+  }
+  #items-table #empty-items {
+    background: #fff;
+  }
+  .sales-unified-grid-wrap {
+    border: 1px solid #d6dee4;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .sales-unified-grid {
+    table-layout: fixed;
+    margin: 0;
+    font-size: .82rem;
+  }
+  .sales-unified-grid th {
+    background: #eef5f4;
+    color: #334155;
+    font-size: .66rem;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  .sales-unified-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    box-shadow: 0 1px 0 #dbe3eb;
+  }
+  .sales-unified-grid td,
+  .sales-unified-grid th {
+    padding: .34rem .45rem;
+    vertical-align: middle;
+    border-color: #eef2f6;
+    border-width: 1px;
+  }
+  .sales-unified-grid .text-end,
+  .sales-unified-grid .subtotal-usd-cell,
+  .sales-unified-grid .subtotal-cs-cell,
+  .sales-unified-grid .row-price,
+  .sales-unified-grid .row-qty {
+    white-space: nowrap;
+  }
+  .sales-unified-grid .subtotal-usd-cell,
+  .sales-unified-grid .subtotal-cs-cell {
+    display: inline-block;
+    min-width: 5.75rem;
+    text-align: right;
+    font-size: .78rem;
+    letter-spacing: 0;
+  }
+  .sales-unified-grid .row-price {
+    width: 5.8rem !important;
+  }
+  .sales-unified-grid .row-qty {
+    width: 4.2rem !important;
+  }
+  .sales-unified-grid tbody tr {
+    border-color: #eef2f6;
+  }
+  .sales-grid-search-row td {
+    position: sticky;
+    top: 29px;
+    z-index: 7;
+    background: #fff;
+    border-bottom: 2px solid var(--hp-primary);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, .06);
+  }
+  .sales-grid-search-input {
+    width: 100%;
+    border: 0;
+    outline: none;
+    font-size: .9rem;
+    font-weight: 800;
+    color: #17202a;
+    background: transparent;
+  }
+  .sales-grid-search-input::placeholder {
+    color: #94a3b8;
+    font-weight: 700;
+  }
+  .sales-grid-section-row td {
+    background: #f8fafc;
+    color: var(--hp-primary);
+    font-size: .64rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+  }
+  .sales-line-name {
+    font-size: .84rem;
+    font-weight: 800;
+    color: #111827;
+    line-height: 1.18;
+  }
+  .sales-line-metric {
+    display: inline-flex;
+    align-items: center;
+    gap: .42rem;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, .28);
+    background: #fff;
+    padding: .22rem .42rem;
+    min-height: 1.75rem;
+    font-size: .74rem;
+  }
+  .sales-unified-grid .fw-bold,
+  .sales-unified-grid .fw-semibold,
+  .sales-unified-grid .font-semibold,
+  .sales-unified-grid .font-extrabold {
+    font-size: .82rem;
+  }
+  .sales-unified-grid .small,
+  .sales-unified-grid .text-xs {
+    font-size: .66rem !important;
+  }
+  .sales-unified-grid .qty-input,
+  .sales-unified-grid .row-qty,
+  .sales-unified-grid .row-price {
+    font-size: .78rem;
+    min-height: 1.65rem;
+    padding-top: .12rem;
+    padding-bottom: .12rem;
+  }
+  .sales-unified-grid .add-item,
+  .sales-unified-grid .remove-item {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: .78rem;
+  }
+  .sales-line-metric strong,
+  .sales-line-metric input {
+    font-weight: 800 !important;
+    color: #0f172a !important;
+  }
+  .sales-line-metric.price {
+    background: #fff7ed;
+    border-color: #fed7aa;
+  }
+  .sales-line-metric.price input {
+    color: #c2410c !important;
+  }
+  .sales-line-metric.qty {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+  }
+  .sales-line-metric.qty input {
+    color: #1d4ed8 !important;
+  }
+  .sales-line-metric.total {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+  }
+  .sales-line-metric.total .subtotal-cell {
+    color: #047857 !important;
+  }
+  .sales-total-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .75rem;
+  }
+  .sales-total-pill {
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, .24);
+    background: #fff;
+    padding: .75rem .9rem;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, .06);
+  }
+  .sales-party-status {
+    border: 1px solid #bfdbfe;
+    background: linear-gradient(180deg, #eff6ff, #ffffff);
+    border-radius: 14px;
+    padding: .65rem .8rem;
+    color: #1d4ed8;
+    font-size: .78rem;
+    font-weight: 800;
+  }
+  .sales-party-status span {
+    color: #0f172a;
+    font-weight: 800;
+  }
+  .party-compact-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .9rem;
+  }
+  .party-compact-grid .party-wide {
+    grid-column: 1 / -1;
+  }
+  @media (max-width: 1199.98px) {
+    .sales-command-main {
+      order: 1;
+    }
+    .sales-command-side {
+      grid-template-columns: 1fr;
+      order: 2;
+    }
+  }
+  @media (max-width: 767.98px) {
+    #product-list,
+    #items-table,
+    .sales-total-strip,
+    .party-compact-grid {
+      grid-template-columns: 1fr;
+    }
   }
   .preventa-live-inline {
     display: none;
@@ -229,58 +595,157 @@
       {% endif %}
 
       <form id="sales-form" class="rounded-[30px] border border-slate-200 bg-white/90 shadow-2xl p-7 space-y-6 backdrop-blur -mt-4" method="post" action="/sales">
-        <div class="grid xl:grid-cols-[1.1fr_0.9fr] gap-6">
-          <div class="space-y-5">
-            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
-              <div class="flex items-center justify-between mb-2">
-                <div>
-                  <div class="text-lg font-semibold text-ink">Facturacion Virtual</div>
-                  <div class="text-sm text-slate">Vista virtual del ticket actual.</div>
+        <div class="sales-command-grid">
+          <div class="sales-command-main">
+            <div class="rounded-[28px] sales-smart-card p-5">
+              <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <div class="sales-panel-title d-flex align-items-center gap-2">
+                  <button id="open-combo-modal" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
+                    <i class="bi bi-boxes"></i>
+                    Combos
+                  </button>
+                  <button id="open-variant-modal" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2" type="button" data-bs-toggle="modal" data-bs-target="#variant-search-modal">
+                    <i class="bi bi-grid-3x3-gap"></i>
+                    Buscar variantes
+                  </button>
+                  <div id="preventa-live-inline" class="preventa-live-inline">
+                    <span id="preventa-live-text" class="preventa-live-text">Nueva preventa recibida</span>
+                    <a id="preventa-live-btn" class="preventa-live-btn text-decoration-none" href="/sales/preventas">
+                      Ver preventas
+                    </a>
+                  </div>
                 </div>
-                <span class="rounded-full bg-[#efe7f0] text-brand text-xs uppercase tracking-[0.2em] font-semibold px-3 py-1">
-                  Items seleccionados
-                </span>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                  {% if pacasholl_libreado_enabled %}
+                  <a href="/sales/preventas" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2">
+                    <i class="bi bi-journal-richtext"></i>
+                    Ver preventas
+                  </a>
+                  {% endif %}
+                  <button id="open-sales-party-modal" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2" type="button" onclick="const modalEl = document.getElementById('sales-party-modal'); if (modalEl) { if (window.bootstrap?.Modal) { window.bootstrap.Modal.getOrCreateInstance(modalEl).show(); } else { modalEl.style.display = 'block'; modalEl.classList.add('show'); modalEl.removeAttribute('aria-hidden'); document.body.classList.add('modal-open'); } } return false;">
+                    <i class="bi bi-person-vcard"></i>
+                    Registro de cliente y vendedor
+                  </button>
+                  <button id="clear-sale" class="btn btn-outline-secondary btn-sm" type="button">
+                    Limpiar venta
+                  </button>
+                  <button id="register-sale" class="btn btn-primary btn-sm d-inline-flex align-items-center gap-2 shadow-sm" type="button">
+                    <i class="bi bi-check2-circle"></i>
+                    Registrar venta
+                  </button>
+                  <span id="scanner-state" class="scanner-badge">
+                    <i class="bi bi-upc-scan"></i>
+                    Lector listo
+                  </span>
+                  <span id="scanner-last-code" class="scanner-last">Ultimo: -</span>
+                  <label for="price-list-select" class="text-xs text-slate fw-semibold mb-0">Lista:</label>
+                  <select id="price-list-select" class="form-select form-select-sm odoo-input" style="min-width: 110px;">
+                    <option value="1" selected>P1</option>
+                    <option value="2">P2</option>
+                    <option value="3">P3</option>
+                    <option value="4">P4</option>
+                    <option value="5">P5</option>
+                    <option value="6">P6</option>
+                    <option value="7">P7</option>
+                  </select>
+                </div>
               </div>
-              <div class="odoo-table-wrap overflow-x-auto max-h-80 overflow-y-auto rounded-2xl border border-slate-100">
-                <table class="table table-sm table-hover align-middle mb-0 odoo-table text-base">
-                  <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]" style="background:#efe4f3;color:#5a2f6b;">
+              <div id="product-list-panel" class="sales-unified-grid-wrap overflow-y-auto" style="max-height: {% if pacasholl_libreado_enabled %}calc(100vh - 275px){% else %}calc(100vh - 330px){% endif %};" tabindex="0" role="listbox" aria-label="Grid de venta">
+                <table class="table table-sm sales-unified-grid align-middle">
+                  <colgroup>
+                    <col style="width: 11%;">
+                    <col style="width: 29%;">
+                    <col style="width: 7%;">
+                    <col style="width: 8%;">
+                    <col style="width: 11%;">
+                    <col style="width: 13%;">
+                    <col style="width: 8%;">
+                    <col style="width: 13%;">
+                  </colgroup>
+                  <thead>
                     <tr>
-                      <th class="text-left px-3 py-2" style="background:#efe4f3;color:#5a2f6b;">Detalle del producto</th>
-                      <th class="text-center px-3 py-2" style="background:#efe4f3;color:#5a2f6b;">Quitar</th>
+                      <th>Codigo</th>
+                      <th>Producto</th>
+                      <th class="text-end">Exist.</th>
+                      <th>Lista</th>
+                      <th class="text-end">Precio $</th>
+                      <th class="text-end">Subtotal $</th>
+                      <th class="text-end">Cant.</th>
+                      <th class="text-end">Total</th>
                     </tr>
                   </thead>
+                  <tbody>
+                    <tr class="sales-grid-search-row">
+                      <td colspan="8">
+                        <div class="d-flex align-items-center gap-2">
+                          <i class="bi bi-search text-brand"></i>
+                          <input id="product-search" class="sales-grid-search-input text-uppercase" type="text" placeholder="ESCANEA CODIGO O BUSCA POR NOMBRE / CODIGO / DESCRIPCION" autocomplete="off" />
+                          <span class="small text-slate text-nowrap">Buscar</span>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                  <tbody id="product-list" class="odoo-muted">
+                    <tr id="product-empty">
+                      <td colspan="8" class="text-center py-3 text-slate">Escribe para buscar productos.</td>
+                    </tr>
+                  </tbody>
+                  <tbody>
+                    <tr class="sales-grid-section-row">
+                      <td colspan="8">Factura cargada: cantidad, precio, subtotal $ y total C$</td>
+                    </tr>
+                  </tbody>
                   <tbody id="items-table" class="odoo-muted">
                     <tr id="empty-items">
-                      <td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td>
+                      <td colspan="8" class="text-center py-4 text-slate">Sin items agregados</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <div class="mt-4 flex flex-wrap items-center gap-4 text-base">
-                <div class="flex items-center gap-2">
-                  <span class="text-slate">Total USD</span>
-                  <span id="total-usd" class="font-semibold text-brand">$ 0.00</span>
+              <div class="sales-total-strip mt-4 text-base">
+                <div class="sales-total-pill">
+                  <span class="block text-xs uppercase tracking-[0.16em] text-slate">Total USD</span>
+                  <span id="total-usd" class="block font-extrabold text-brand">$ 0.00</span>
                 </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-slate">Total C$</span>
-                  <span id="total-cs" class="font-semibold text-brand">C$ 0.00</span>
+                <div class="sales-total-pill">
+                  <span class="block text-xs uppercase tracking-[0.16em] text-slate">Total C$</span>
+                  <span id="total-cs" class="block font-extrabold text-brand">C$ 0.00</span>
                 </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-slate">Items</span>
-                  <span id="total-items" class="font-semibold text-ink">0</span>
+                <div class="sales-total-pill">
+                  <span class="block text-xs uppercase tracking-[0.16em] text-slate">Items</span>
+                  <span id="total-items" class="block font-extrabold text-ink">0</span>
                 </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-slate">Bultos</span>
-                  <span id="total-bultos" class="font-semibold text-ink">0</span>
+                <div class="sales-total-pill">
+                  <span class="block text-xs uppercase tracking-[0.16em] text-slate">Bultos</span>
+                  <span id="total-bultos" class="block font-extrabold text-ink">0</span>
                 </div>
               </div>
+              <div class="sales-party-status mt-3 d-flex flex-wrap align-items-center gap-3">
+                <div>Cliente: <span id="cliente-summary">Cliente local</span></div>
+                <div>Vendedor: <span id="vendedor-summary">Vendedor de Tienda</span></div>
+                <div>Fecha: <span id="fecha-summary">--</span></div>
+                <div>Hora: <span id="hora-summary">--</span></div>
+              </div>
             </div>
-
-            <div id="party-inline" class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
-              <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Datos de venta</div>
-              <div class="text-lg font-semibold text-ink mt-1">Cliente, vendedor y fecha</div>
-              <div class="grid gap-4 mt-4">
-                <div>
+          </div>
+        </div>
+      </form>
+          <div class="modal fade" id="sales-party-modal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+              <div class="modal-content rounded-4 border-0 shadow-lg">
+                <div class="modal-header border-0">
+                  <div>
+                    <div class="sales-panel-kicker">Registro</div>
+                    <div class="sales-panel-title">Registro de cliente y vendedor</div>
+                  </div>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body pt-0 sales-command-side">
+            <div id="party-inline" class="rounded-[28px] sales-smart-card p-5">
+              <div class="sales-panel-kicker">Datos de venta</div>
+              <div class="sales-panel-title mt-1">Cliente, vendedor y fecha</div>
+              <div class="party-compact-grid mt-4">
+                <div class="party-wide">
                   <label class="block text-sm font-semibold text-ink d-flex align-items-center gap-2">
                     <i class="bi bi-person text-brand"></i>
                     Cliente
@@ -349,82 +814,22 @@
               </div>
             </div>
 
-            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
-              <div class="text-lg font-semibold text-ink">Observacion</div>
-              <input name="observacion" class="mt-3 w-full odoo-input form-control" placeholder="Detalle o nota de venta" />
+            <div class="rounded-[28px] sales-smart-card p-5">
+              <div class="sales-panel-title">Observacion</div>
+              <input name="observacion" form="sales-form" class="mt-3 w-full odoo-input form-control" placeholder="Detalle o nota de venta" />
             </div>
 
-            <div class="flex items-center justify-end gap-3">
-              <button id="clear-sale" class="btn btn-outline-secondary btn-md" type="button">
-                Limpiar venta
-              </button>
-              <button class="btn btn-primary btn-md d-inline-flex align-items-center gap-2 shadow-lg" type="button" data-bs-toggle="modal" data-bs-target="#payment-modal">
-                <i class="bi bi-check2-circle"></i>
-                Registrar venta
-              </button>
-            </div>
-          </div>
-
-          <div class="space-y-5">
-            <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
-              <div class="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <div class="text-lg font-semibold text-ink d-flex align-items-center gap-2">
-                    Buscador de productos
-                    <button id="open-combo-modal" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
-                      <i class="bi bi-boxes"></i>
-                      Combos
-                    </button>
-                    <button id="open-variant-modal" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2" type="button" data-bs-toggle="modal" data-bs-target="#variant-search-modal">
-                      <i class="bi bi-grid-3x3-gap"></i>
-                      Buscar variantes
-                    </button>
-                    <div id="preventa-live-inline" class="preventa-live-inline">
-                      <span id="preventa-live-text" class="preventa-live-text">Nueva preventa recibida</span>
-                      <a id="preventa-live-btn" class="preventa-live-btn text-decoration-none" href="/sales/preventas">
-                        Ver preventas
-                      </a>
-                    </div>
-                  </div>
-                  <div class="flex flex-wrap items-center gap-2">
-                    <div class="text-sm text-slate">Escanea codigo de barra o busca manual por nombre, codigo o descripcion.</div>
-                    <span id="scanner-state" class="scanner-badge">
-                      <i class="bi bi-upc-scan"></i>
-                      Lector listo
-                    </span>
-                    <span id="scanner-last-code" class="scanner-last">Ultimo: -</span>
-                    <div class="d-inline-flex align-items-center gap-2 ms-2">
-                      <label for="price-list-select" class="text-xs text-slate fw-semibold mb-0">Lista:</label>
-                      <select id="price-list-select" class="form-select form-select-sm odoo-input" style="min-width: 110px;">
-                        <option value="1" selected>P1</option>
-                        <option value="2">P2</option>
-                        <option value="3">P3</option>
-                        <option value="4">P4</option>
-                        <option value="5">P5</option>
-                        <option value="6">P6</option>
-                        <option value="7">P7</option>
-                      </select>
-                    </div>
-                  </div>
                 </div>
-                <div class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm w-full">
-                  <i class="bi bi-search text-brand"></i>
-                  <input id="product-search" class="flex-grow text-sm font-semibold uppercase border-0 bg-transparent focus:outline-none" type="text" placeholder="ESCANEA CODIGO O BUSCA POR NOMBRE / CODIGO / DESCRIPCION" />
-                </div>
-              </div>
-              <div id="product-list-panel" class="odoo-table-wrap mt-4 max-h-[320px] lg:max-h-[360px] overflow-y-auto rounded-2xl border border-slate-100" tabindex="0" role="listbox" aria-label="Resultados de productos">
-                <div class="flex items-center justify-between px-3 py-2 text-xs uppercase tracking-[0.2em] font-semibold" style="background:#efe4f3;color:#5a2f6b;">
-                  <span>Producto</span>
-                  <span>Cargar</span>
-                </div>
-                <div id="product-list" class="odoo-muted divide-y">
-                  <div id="product-empty" class="text-center py-3 text-slate">Escribe para buscar productos.</div>
+                <div class="modal-footer border-0">
+                  <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
+                    Guardar datos de venta
+                  </button>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </form>
+
+
     </div>
   </main>
 </div>
@@ -1006,6 +1411,7 @@
   const paymentAppliedCard = document.getElementById("payment-applied-card");
   const creditModeNote = document.getElementById("credit-mode-note");
   const confirmSale = document.getElementById("confirm-sale");
+  const registerSale = document.getElementById("register-sale");
   const addPayment = document.getElementById("add-payment");
   const productListPanel = document.getElementById("product-list-panel");
   const openComboModal = document.getElementById("open-combo-modal");
@@ -1055,6 +1461,10 @@
       maximumFractionDigits: 2,
     }).format(number);
     return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
+  };
+
+  const roundMoney = (value) => {
+    return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
   };
 
   const parseMoneyValue = (value) => {
@@ -1407,11 +1817,27 @@
     }
     paymentList.innerHTML = paymentItems
       .map((item, index) => {
+        const equivalent = item.moneda === "USD"
+          ? `Equiv. ${formatMoney(toCs(item.monto, "USD"), "CS")}`
+          : `Equiv. ${formatMoney(toUsd(item.monto, "CS"), "USD")}`;
+        const methodIcon = item.formaLabel.toLowerCase().includes("efectivo")
+          ? "bi-cash-coin"
+          : item.formaLabel.toLowerCase().includes("tarjeta")
+            ? "bi-credit-card"
+            : item.formaLabel.toLowerCase().includes("transferencia") || item.formaLabel.toLowerCase().includes("banco") || item.formaLabel.toLowerCase().includes("deposito")
+              ? "bi-bank"
+              : "bi-wallet2";
         return `
           <tr>
-            <td>${item.formaLabel}</td>
+            <td>
+              <span class="payment-method-name"><i class="bi ${methodIcon} text-brand"></i>${item.formaLabel}</span>
+              <span class="payment-method-detail">${item.bancoLabel || "Sin banco"}${item.cuentaId ? " / cuenta seleccionada" : ""}</span>
+            </td>
             <td>${item.moneda}</td>
-            <td class="text-end">${formatMoney(item.monto, item.moneda)}</td>
+            <td class="text-end">
+              <span class="payment-amount-main">${formatMoney(item.monto, item.moneda)}</span>
+              <span class="payment-amount-equivalent">${equivalent}</span>
+            </td>
             <td class="text-end">${item.bancoLabel || "-"}</td>
             <td class="text-end">
               <button class="btn btn-sm btn-outline-danger" type="button" data-remove-payment="${index}">
@@ -1425,6 +1851,18 @@
     paymentEnterStage = 1;
     updatePaymentSummary();
     syncPaymentHidden();
+  };
+
+  const updateRowSubtotalLabels = (row) => {
+    if (!row) return;
+    const subtotalUsdCell = row.querySelector(".subtotal-usd-cell");
+    const subtotalCsCell = row.querySelector(".subtotal-cs-cell");
+    if (subtotalUsdCell) {
+      subtotalUsdCell.textContent = formatMoney(parseFloat(row.dataset.subtotalUsd || 0), "USD");
+    }
+    if (subtotalCsCell) {
+      subtotalCsCell.textContent = formatMoney(parseFloat(row.dataset.subtotalCs || 0), "CS");
+    }
   };
 
   const addItemRow = (payload) => {
@@ -1467,47 +1905,41 @@
         ].filter(Boolean).join(" | ")}</div>`
       : "";
     row.innerHTML = `
-      <td class="px-3 py-0.5">
-        <div class="text-xs uppercase tracking-[0.2em] text-brand font-semibold d-flex align-items-center">
-          ${payload.code}
-          ${badgeHtml}
-        </div>
-        <div class="font-semibold text-ink text-base">${payload.name}</div>
-        ${variantMeta}
-        <div class="mt-0.5 flex flex-wrap items-center justify-between gap-2 text-sm">
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-slate uppercase tracking-[0.18em]">Cantidad</span>
-            <input class="row-qty w-20 text-left border-0 bg-transparent focus:outline-none font-semibold text-ink" type="text" inputmode="numeric" value="${payload.qtyValueDisplay}" />
-          </div>
-          <div class="flex flex-wrap items-center gap-2 text-right">
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-slate uppercase tracking-[0.18em]">Precio</span>
-              <input class="row-price w-24 text-right border-0 bg-transparent focus:outline-none font-semibold text-ink" type="text" inputmode="decimal" value="${payload.priceValue}" name="item_precio" ${payload.lockPrice ? "readonly" : ""} />
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-slate uppercase tracking-[0.18em]">Desc.</span>
-              <span class="discount-cell font-semibold text-ink">0.00</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-slate uppercase tracking-[0.18em]">Subtotal</span>
-              <span class="subtotal-cell font-semibold text-brand">${payload.subtotalLabel}</span>
-            </div>
-          </div>
-        </div>
+      <td>
+        <span class="text-brand fw-bold">${payload.code}</span>
+        ${badgeHtml}
+        <input type="hidden" name="item_producto_id" value="${payload.productId}" />
+        <input type="hidden" name="item_variante_id" value="${payload.variantId || ""}" />
+        <input type="hidden" name="item_cantidad" value="${payload.qtyValue}" />
+        <input type="hidden" name="item_role" value="${payload.role || ""}" />
+        <input type="hidden" name="item_combo_group" value="${payload.comboGroup || ""}" />
       </td>
-      <td class="px-3 py-0.5 text-center align-middle">
+      <td>
+        <div class="sales-line-name">${payload.name}</div>
+        ${variantMeta}
+      </td>
+      <td class="text-end">
+        <input class="row-qty w-20 text-end border-0 bg-transparent focus:outline-none fw-bold" type="text" inputmode="numeric" value="${payload.qtyValueDisplay}" />
+      </td>
+      <td><span class="rounded-full bg-[#efe7f0] text-brand text-xs fw-bold px-2 py-1">Venta</span></td>
+      <td class="text-end">
+        <input class="row-price w-24 text-end border-0 bg-transparent focus:outline-none fw-bold text-brand" type="text" inputmode="decimal" value="${payload.priceValue}" name="item_precio" ${(payload.lockPrice || preventaIdInput?.value) ? "readonly" : ""} />
+      </td>
+      <td class="text-end">
+        <span class="subtotal-usd-cell fw-bold text-brand">${formatMoney(payload.subtotalUsd, "USD")}</span>
+      </td>
+      <td class="text-end">
+        <span class="subtotal-cell subtotal-cs-cell fw-bold text-emerald-700">${formatMoney(payload.subtotalCs, "CS")}</span>
+      </td>
+      <td class="px-3 py-2 text-center align-middle">
         <button class="remove-item text-brand" type="button" aria-label="Eliminar item">
           <i class="bi bi-trash3"></i>
         </button>
       </td>
-      <input type="hidden" name="item_producto_id" value="${payload.productId}" />
-      <input type="hidden" name="item_variante_id" value="${payload.variantId || ""}" />
-      <input type="hidden" name="item_cantidad" value="${payload.qtyValue}" />
-      <input type="hidden" name="item_role" value="${payload.role || ""}" />
-      <input type="hidden" name="item_combo_group" value="${payload.comboGroup || ""}" />
     `;
     itemsTable.appendChild(row);
     updateTotals();
+    refreshVisibleProductBalances();
     const qtyInput = row.querySelector(".row-qty");
     if (qtyInput) {
       qtyInput.focus();
@@ -1544,6 +1976,19 @@
       return String(row.dataset.productId || "") === normalizedProduct
         && String(row.dataset.variantId || "") === normalizedVariant;
     }) || null;
+  };
+
+  const getInvoiceVariantQty = (productId, variantId) => {
+    let sum = 0;
+    const normalizedProduct = String(productId || "");
+    const normalizedVariant = String(variantId || "");
+    itemsTable.querySelectorAll("tr[data-item-row]").forEach((row) => {
+      if (String(row.dataset.productId || "") !== normalizedProduct) return;
+      if (String(row.dataset.variantId || "") !== normalizedVariant) return;
+      const qtyValue = row.querySelector("input[name='item_cantidad']")?.value;
+      sum += parseFloat(qtyValue || 0);
+    });
+    return sum;
   };
 
   const pauseNavForAlert = (config) => {
@@ -1722,7 +2167,10 @@
       existingRow.dataset.subtotalCs = moneda === "USD" ? (subtotal * rateToday).toFixed(2) : subtotal.toFixed(2);
       const subtotalCell = existingRow.querySelector(".subtotal-cell");
       if (subtotalCell) subtotalCell.textContent = formatMoney(subtotal, moneda === "USD" ? "USD" : "CS");
+      updateRowSubtotalLabels(existingRow);
       updateTotals();
+      refreshVisibleProductBalances();
+      refreshVariantBalances();
       return true;
     }
     const moneda = monedaField.value || "USD";
@@ -1749,6 +2197,7 @@
       subtotalUsd,
       subtotalCs,
     });
+    refreshVariantBalances();
     return true;
   };
 
@@ -1760,9 +2209,10 @@
     }
     variantSearchBody.innerHTML = items
       .map((item) => {
-        const existencia = Number(item.existencia || 0);
+        const rawExistencia = Number(item.existencia || 0);
+        const existencia = Math.max(0, rawExistencia - getInvoiceVariantQty(item.producto_id, item.variant_id));
         const disabled = existencia <= 0;
-        const defaultQty = Math.max(1, Math.min(Math.trunc(existencia || 0) || 1, pendingVariantQty || 1));
+        const defaultQty = disabled ? 0 : Math.max(1, Math.min(Math.trunc(existencia || 0) || 1, pendingVariantQty || 1));
         return `
           <tr class="variant-row" data-variant='${encodeURIComponent(JSON.stringify(item))}'>
             <td class="fw-semibold">${escapeHtml(item.cod_variante)}</td>
@@ -1772,7 +2222,7 @@
             </td>
             <td class="text-center">${escapeHtml(item.color)}</td>
             <td class="text-center">${escapeHtml(item.talla)}</td>
-            <td class="text-end ${existencia > 0 ? "text-success" : "text-danger"} fw-semibold">${existencia.toFixed(0)}</td>
+            <td class="text-end ${existencia > 0 ? "text-success" : "text-danger"} fw-semibold variant-balance-cell">${existencia.toFixed(0)}</td>
             <td class="text-end">${formatMoney(item.selected_price_cs || item.precio_venta1, "CS")}</td>
             <td class="text-center">
               <input class="form-control form-control-sm text-end variant-qty" type="number" min="1" step="1" max="${Math.max(1, Math.trunc(existencia))}" value="${defaultQty}" ${disabled ? "disabled" : ""} />
@@ -1786,6 +2236,85 @@
         `;
       })
       .join("");
+  };
+
+  const refreshVariantBalances = () => {
+    if (!variantSearchBody) return;
+    variantSearchBody.querySelectorAll(".variant-row").forEach((row) => {
+      let variant = null;
+      try {
+        variant = JSON.parse(decodeURIComponent(row.dataset.variant || ""));
+      } catch (_) {
+        variant = null;
+      }
+      if (!variant) return;
+      const rawExistencia = Number(variant.existencia || 0);
+      const existencia = Math.max(0, rawExistencia - getInvoiceVariantQty(variant.producto_id, variant.variant_id));
+      const balanceCell = row.querySelector(".variant-balance-cell");
+      const qtyInput = row.querySelector(".variant-qty");
+      const addBtn = row.querySelector(".variant-add");
+      if (balanceCell) {
+        balanceCell.textContent = existencia.toFixed(0);
+        balanceCell.classList.toggle("text-success", existencia > 0);
+        balanceCell.classList.toggle("text-danger", existencia <= 0);
+      }
+      if (qtyInput) {
+        qtyInput.max = String(Math.max(1, Math.trunc(existencia)));
+        qtyInput.disabled = existencia <= 0;
+        const currentQty = parseQty(qtyInput.value || 0);
+        if (existencia <= 0) {
+          qtyInput.value = "0";
+        } else if (!currentQty || currentQty > existencia) {
+          qtyInput.value = String(Math.min(1, Math.trunc(existencia)));
+        }
+      }
+      if (addBtn) {
+        addBtn.disabled = existencia <= 0;
+      }
+    });
+  };
+
+  const getSaleReadiness = () => {
+    const rows = Array.from(itemsTable.querySelectorAll("tr[data-item-row]"));
+    if (!rows.length) {
+      return {
+        ok: false,
+        title: "Venta sin productos",
+        text: "Agrega al menos un producto a la factura antes de registrar la venta.",
+      };
+    }
+    const hasPositiveQty = rows.some((row) => {
+      const qty = parseFloat(row.querySelector("input[name='item_cantidad']")?.value || 0);
+      return qty > 0;
+    });
+    if (!hasPositiveQty) {
+      return {
+        ok: false,
+        title: "Cantidad invalida",
+        text: "La factura debe tener cantidades mayores que cero.",
+      };
+    }
+    const hasPositiveTotal = roundMoney(currentTotals.usd) > 0 || roundMoney(currentTotals.cs) > 0;
+    if (!hasPositiveTotal) {
+      return {
+        ok: false,
+        title: "Total en cero",
+        text: "La venta debe tener un total positivo para poder registrarse.",
+      };
+    }
+    return { ok: true };
+  };
+
+  const canProceedWithSale = () => {
+    updateTotals();
+    const readiness = getSaleReadiness();
+    if (readiness.ok) return true;
+    pauseNavForAlert({ icon: "warning", title: readiness.title, text: readiness.text });
+    if (productSearch) {
+      productSearch.focus();
+      productSearch.select();
+    }
+    return false;
   };
 
   const runVariantSearch = async (force = false) => {
@@ -2105,6 +2634,35 @@
       sum += parseFloat(qtyValue || 0);
     });
     return sum;
+  };
+
+  const getVisualFreeQty = (productId, freeQty) => {
+    return Math.max(0, Number(freeQty || 0) - getInvoiceQty(productId));
+  };
+
+  const refreshVisibleProductBalances = () => {
+    if (!productList) return;
+    productList.querySelectorAll(".product-pick-row").forEach((row) => {
+      const button = row.querySelector(".add-item");
+      const qtyInput = row.querySelector(".qty-input");
+      const balanceCell = row.children[2];
+      if (!button || !balanceCell) return;
+      const freeQty = Number(button.dataset.freeQty || button.dataset.existencia || 0);
+      const visualFreeQty = getVisualFreeQty(button.dataset.productId, freeQty);
+      balanceCell.textContent = visualFreeQty.toFixed(0);
+      balanceCell.classList.toggle("text-red-600", visualFreeQty > 0);
+      balanceCell.classList.toggle("text-slate", visualFreeQty <= 0);
+      if (qtyInput) {
+        qtyInput.max = String(visualFreeQty);
+        qtyInput.disabled = visualFreeQty <= 0;
+        const current = parseFloat(qtyInput.value || 0);
+        if (visualFreeQty <= 0) {
+          qtyInput.value = "0";
+        } else if (!current || current > visualFreeQty) {
+          qtyInput.value = String(Math.min(1, Math.floor(visualFreeQty)));
+        }
+      }
+    });
   };
 
   if (openComboModal) {
@@ -2444,6 +3002,7 @@
           qtyInput.select();
         }
         pendingVariantQty = 1;
+        refreshVariantBalances();
         setTimeout(() => {
           if (productSearch) {
             productSearch.focus();
@@ -2525,51 +3084,33 @@
     if (!productList) return;
     const visibleItems = items || [];
     if (!visibleItems.length) {
-      productList.innerHTML = `<div id="product-empty" class="text-center py-3 text-slate">Sin resultados.</div>`;
+      productList.innerHTML = `<tr id="product-empty"><td colspan="8" class="text-center py-3 text-slate">Sin resultados.</td></tr>`;
       activeProductRows = [];
       activeProductIndex = -1;
       return;
     }
     productList.innerHTML = visibleItems
       .map((item) => {
+        const rawFreeQty = Number(item.free_qty ?? item.existencia ?? 0);
+        const visualFreeQty = getVisualFreeQty(item.id, rawFreeQty);
+        const defaultQty = String(Math.min(1, Math.max(0, Math.floor(visualFreeQty))));
         return `
-          <div class="product-pick-row px-3 py-2 flex items-center justify-between gap-3" data-name="${item.descripcion}" data-code="${item.cod_producto}" role="option">
-            <div class="flex-1">
-              <div class="text-xs uppercase tracking-[0.2em] text-brand font-semibold">${item.cod_producto}</div>
-              <div class="font-semibold text-ink text-base">${item.descripcion}</div>
-              <div class="mt-1 flex flex-wrap items-center justify-between gap-3 text-sm">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs uppercase tracking-[0.18em] text-slate">Saldo</span>
-                  <span class="font-semibold text-red-600">${item.free_qty ?? item.existencia}</span>
-                </div>
-                ${(Number(item.reserved_qty || 0) > 0)
-                  ? `<div class="flex items-center gap-2 text-amber-700">
-                      <span class="text-xs uppercase tracking-[0.18em]">Reservado</span>
-                      <span class="font-semibold">${item.reserved_qty}</span>
-                    </div>`
-                  : ""}
-                <div class="flex flex-wrap items-center gap-3 text-right">
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs uppercase tracking-[0.18em] text-slate">USD</span>
-                    <span class="font-semibold text-brand">${formatMoney(item.selected_price_usd ?? item.precio_venta1_usd, "USD")}</span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs uppercase tracking-[0.18em] text-slate">C$</span>
-                    <span class="font-semibold text-brand">${formatMoney(item.selected_price_cs ?? item.precio_venta1, "CS")}</span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs uppercase tracking-[0.18em] text-slate">Lista</span>
-                    <span class="font-semibold text-ink">P${item.selected_price_tier || 1}</span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs uppercase tracking-[0.18em] text-slate">Cantidad</span>
-                    <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" max="${item.free_qty ?? item.existencia}" value="1" />
-                  </div>
-                </div>
-              </div>
-            </div>
-            <button
-              class="add-item inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 bg-white text-brand hover:bg-slate-50 shadow-sm"
+          <tr class="product-pick-row" data-name="${item.descripcion}" data-code="${item.cod_producto}" role="option">
+            <td><span class="rm-code text-brand fw-bold">${item.cod_producto}</span></td>
+            <td>
+              <div class="fw-bold text-ink">${item.descripcion}</div>
+              ${(Number(item.reserved_qty || 0) > 0) ? `<div class="small text-amber-700 fw-semibold">Reservado: ${item.reserved_qty}</div>` : `<div class="small text-slate">Resultado de busqueda</div>`}
+            </td>
+            <td class="text-end fw-bold ${visualFreeQty > 0 ? "text-red-600" : "text-slate"}">${visualFreeQty.toFixed(0)}</td>
+            <td><span class="rounded-full bg-[#efe7f0] text-brand text-xs fw-bold px-2 py-1">P${item.selected_price_tier || 1}</span></td>
+            <td class="text-end fw-bold text-brand">${formatMoney(item.selected_price_usd ?? item.precio_venta1_usd, "USD")}</td>
+            <td class="text-end fw-bold text-brand">${formatMoney(item.selected_price_cs ?? item.precio_venta1, "CS")}</td>
+            <td class="text-end">
+              <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="1" min="1" max="${visualFreeQty}" value="${defaultQty}" ${visualFreeQty <= 0 ? "disabled" : ""} />
+            </td>
+            <td class="text-end">
+              <button
+              class="add-item inline-flex items-center justify-center w-8 h-8 rounded-md border border-slate-200 bg-white text-brand hover:bg-slate-50 shadow-sm"
               type="button"
               data-add-item="1"
               data-product-id="${item.id}"
@@ -2584,7 +3125,8 @@
             >
               <i class="bi bi-plus-lg"></i>
             </button>
-          </div>`;
+            </td>
+          </tr>`;
       })
       .join("");
     refreshActiveRows();
@@ -2594,7 +3136,7 @@
   const fetchProducts = async (query) => {
     if (!query || query.length < 2) {
       if (productList && productEmptyRow) {
-        productList.innerHTML = productEmptyRow.outerHTML;
+        productList.innerHTML = `<tr id="product-empty"><td colspan="8" class="text-center py-3 text-slate">Escribe para buscar productos.</td></tr>`;
       }
       return;
     }
@@ -2706,7 +3248,7 @@
     productListPanel.addEventListener("dblclick", async (event) => {
       const row = event.target.closest(".product-pick-row");
       if (!row) return;
-      const button = row.querySelector("[data-add-item]");
+      const button = row.querySelector(".add-item");
       if (!button) return;
       const added = await handleAddItem(button);
       if (added) {
@@ -2915,18 +3457,22 @@
               itemRow.remove();
             });
             if (itemsTable.querySelectorAll("tr[data-item-row]").length === 0) {
-              itemsTable.innerHTML = `<tr id="empty-items"><td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
+              itemsTable.innerHTML = `<tr id="empty-items"><td colspan="8" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
             }
             updateTotals();
+            refreshVisibleProductBalances();
+            refreshVariantBalances();
           });
         }
         return;
       }
       row.remove();
       if (itemsTable.querySelectorAll("tr[data-item-row]").length === 0) {
-        itemsTable.innerHTML = `<tr id="empty-items"><td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
+        itemsTable.innerHTML = `<tr id="empty-items"><td colspan="8" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
       }
       updateTotals();
+      refreshVisibleProductBalances();
+      refreshVariantBalances();
     });
     itemsTable.addEventListener("input", (event) => {
       const row = event.target.closest("tr");
@@ -2959,7 +3505,10 @@
       if (subtotalCell) {
         subtotalCell.textContent = formatMoney(subtotal, moneda === "USD" ? "USD" : "CS");
       }
+      updateRowSubtotalLabels(row);
       updateTotals();
+      refreshVisibleProductBalances();
+      refreshVariantBalances();
     });
   }
 
@@ -3019,8 +3568,19 @@
     });
   }
 
+  if (registerSale) {
+    registerSale.addEventListener("click", () => {
+      if (!canProceedWithSale()) return;
+      const paymentModal = document.getElementById("payment-modal");
+      if (paymentModal && window.bootstrap?.Modal) {
+        window.bootstrap.Modal.getOrCreateInstance(paymentModal).show();
+      }
+    });
+  }
+
   if (confirmSale) {
     confirmSale.addEventListener("click", () => {
+      if (!canProceedWithSale()) return;
       if (isCreditSale()) {
         const clienteId = (document.getElementById("cliente-id")?.value || "").trim();
         const clienteLabel = (getClienteLabel() || "").trim().toLowerCase();
@@ -3135,7 +3695,7 @@
   const salesForm = document.getElementById("sales-form");
   if (salesForm) {
     salesForm.addEventListener("submit", (event) => {
-      if (itemsTable.querySelectorAll("tr[data-item-row]").length === 0) {
+      if (!canProceedWithSale()) {
         event.preventDefault();
       }
     });
@@ -3145,9 +3705,26 @@
   if (clearSale) {
     clearSale.addEventListener("click", () => {
       if (itemsTable) {
-        itemsTable.innerHTML = `<tr id="empty-items"><td colspan="2" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
+        itemsTable.innerHTML = `<tr id="empty-items"><td colspan="8" class="text-center py-3 text-slate">Sin items agregados</td></tr>`;
       }
       updateTotals();
+      refreshVisibleProductBalances();
+    });
+  }
+
+  const openSalesPartyModal = document.getElementById("open-sales-party-modal");
+  const salesPartyModal = document.getElementById("sales-party-modal");
+  if (openSalesPartyModal && salesPartyModal) {
+    openSalesPartyModal.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (window.bootstrap?.Modal) {
+        window.bootstrap.Modal.getOrCreateInstance(salesPartyModal).show();
+      } else {
+        salesPartyModal.classList.add("show");
+        salesPartyModal.style.display = "block";
+        salesPartyModal.removeAttribute("aria-hidden");
+      }
     });
   }
 
@@ -3364,8 +3941,8 @@
     if (preventaIdInput) {
       preventaIdInput.value = String(initialPreventa.id || "");
     }
-    if (fechaInput && initialPreventa.fecha) {
-      fechaInput.value = enableSaleDatetimeOverride ? normalizeDateTimeLocalValue(initialPreventa.fecha) : initialPreventa.fecha;
+    if (fechaInput) {
+      fechaInput.value = enableSaleDatetimeOverride ? formatLocalDateTime() : formatLocalDate();
     }
     if (monedaField && initialPreventa.moneda) {
       monedaField.value = initialPreventa.moneda;
@@ -3408,7 +3985,7 @@
         subtotalLabel: formatMoney(invoiceCurrency === "USD" ? subtotalUsd : subtotalCs, invoiceCurrency),
         role: it.combo_role || "",
         comboGroup: it.combo_group || "",
-        lockPrice: Boolean(it.combo_role),
+        lockPrice: true,
       });
     });
     updatePartySummary();
@@ -3460,13 +4037,16 @@
         if ($party.length) {
           $party.each(function () {
             const $el = $(this);
-            if ($el.data("select2")) return;
+            if ($el.data("select2")) {
+              $el.select2("destroy");
+            }
             $el.select2({
               width: "100%",
               placeholder: "Selecciona",
               allowClear: true,
               minimumResultsForSearch: 0,
               matcher: tokenMatcher,
+              dropdownParent: $("#sales-party-modal"),
             });
             const instance = $el.data("select2");
             if (instance && instance.$container) {
@@ -3494,6 +4074,10 @@
       };
 
       initPartySelects();
+      const salesPartyModalEl = document.getElementById("sales-party-modal");
+      if (salesPartyModalEl) {
+        salesPartyModalEl.addEventListener("shown.bs.modal", initPartySelects);
+      }
 
       const clienteSearchOpen = document.getElementById("cliente-search-open");
       if (clienteSearchOpen && clienteModal && window.bootstrap) {

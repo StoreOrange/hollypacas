@@ -81,6 +81,116 @@
     outline: 2px solid #2563eb;
     outline-offset: -2px;
   }
+  .invoice-preview-link {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: #2563eb;
+    font-weight: 800;
+    text-decoration: none;
+    letter-spacing: 0.01em;
+  }
+  .invoice-preview-link:hover,
+  .invoice-preview-link:focus {
+    color: #1d4ed8;
+    text-decoration: underline;
+    outline: none;
+  }
+  .invoice-hover-card {
+    position: fixed;
+    z-index: 2050;
+    width: min(520px, calc(100vw - 24px));
+    max-height: min(520px, calc(100vh - 24px));
+    overflow: auto;
+    display: none;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+    color: #0f172a;
+  }
+  .invoice-hover-card.is-visible {
+    display: block;
+  }
+  .invoice-hover-head {
+    padding: 14px 16px;
+    background: linear-gradient(135deg, #eff6ff 0%, #eefdf7 100%);
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .invoice-hover-title {
+    font-size: 1rem;
+    font-weight: 900;
+    color: #1d4ed8;
+  }
+  .invoice-hover-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 12px 16px;
+    font-size: 0.78rem;
+  }
+  .invoice-hover-meta span {
+    display: block;
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .invoice-hover-total {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 0 16px 12px;
+  }
+  .invoice-hover-total div {
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    background: #f8fafc;
+    padding: 10px 12px;
+  }
+  .invoice-hover-total span {
+    display: block;
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .invoice-hover-total strong {
+    font-size: 1rem;
+    color: #0f172a;
+  }
+  .invoice-hover-items {
+    padding: 0 16px 14px;
+  }
+  .invoice-hover-items table {
+    margin-bottom: 0;
+    font-size: 0.76rem;
+  }
+  .invoice-hover-items th {
+    color: #475569;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+  .invoice-hover-items td {
+    vertical-align: top;
+  }
+  .invoice-hover-product {
+    font-weight: 800;
+    color: #111827;
+  }
+  .invoice-hover-muted {
+    color: #64748b;
+    font-size: 0.72rem;
+  }
+  @media (max-width: 575.98px) {
+    .invoice-hover-meta,
+    .invoice-hover-total {
+      grid-template-columns: 1fr;
+    }
+  }
   {% if shoes_mode %}
   .cobranza-ui-shoes .odoo-card {
     border-radius: 20px;
@@ -356,7 +466,20 @@
               {% for row in ventas %}
               {% set factura = row.factura %}
               <tr>
-                <td>{{ factura.numero }}</td>
+                <td>
+                  {% if pacasholl_cobranza_preview %}
+                  <button
+                    class="invoice-preview-link"
+                    type="button"
+                    data-detail="{{ factura.id }}"
+                    data-invoice-preview="{{ factura.id }}"
+                  >
+                    {{ factura.numero }}
+                  </button>
+                  {% else %}
+                  {{ factura.numero }}
+                  {% endif %}
+                </td>
                 <td>{{ factura.cliente.nombre if factura.cliente else 'Consumidor final' }}</td>
                 <td>{{ factura.vendedor.nombre if factura.vendedor else '-' }}</td>
                 <td>{{ factura.fecha.date() if factura.fecha else '-' }}</td>
@@ -429,6 +552,10 @@
     </div>
   </main>
 </div>
+
+{% if pacasholl_cobranza_preview %}
+<div class="invoice-hover-card" id="invoice-hover-card" role="dialog" aria-hidden="true"></div>
+{% endif %}
 
 <div class="modal fade" id="cobranza-detail-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -549,6 +676,145 @@
     const disableAbonoPrintPreview = {{ (disable_abono_print_preview or False)|tojson }};
     const cobranzaRefreshUrl = `${window.location.pathname}${window.location.search || ""}`;
     const cobranzaTable = document.querySelector(".cobranza-table");
+    const invoicePreviewCard = document.getElementById("invoice-hover-card");
+    const invoicePreviewCache = new Map();
+    let invoicePreviewTimer = null;
+    let invoicePreviewActiveTrigger = null;
+
+    const escapeHtml = (value) => String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+
+    const formatPreviewMoney = (value, currency) => {
+      const number = Number(value || 0);
+      const prefix = currency === "USD" ? "$" : "C$";
+      return `${prefix} ${number.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    const positionInvoicePreview = (trigger) => {
+      if (!invoicePreviewCard || !trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const gap = 10;
+      const cardRect = invoicePreviewCard.getBoundingClientRect();
+      let left = rect.left;
+      let top = rect.bottom + gap;
+      if (left + cardRect.width > window.innerWidth - 12) {
+        left = window.innerWidth - cardRect.width - 12;
+      }
+      if (top + cardRect.height > window.innerHeight - 12) {
+        top = rect.top - cardRect.height - gap;
+      }
+      invoicePreviewCard.style.left = `${Math.max(12, left)}px`;
+      invoicePreviewCard.style.top = `${Math.max(12, top)}px`;
+    };
+
+    const renderInvoicePreview = (factura) => {
+      const items = (factura.items || []).slice(0, 10).map((item) => {
+        const variant = [item.color, item.talla].filter(Boolean).join(" / ");
+        return `
+          <tr>
+            <td>
+              <div class="invoice-hover-product">${escapeHtml(item.descripcion || "-")}</div>
+              <div class="invoice-hover-muted">${escapeHtml(item.codigo || "-")}${variant ? ` | ${escapeHtml(variant)}` : ""}</div>
+            </td>
+            <td class="text-end">${Number(item.cantidad || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}</td>
+            <td class="text-end">${formatPreviewMoney(item.subtotal_usd || 0, "USD")}</td>
+            <td class="text-end">${formatPreviewMoney(item.subtotal_cs || 0, "CS")}</td>
+          </tr>
+        `;
+      }).join("");
+      const extraCount = Math.max(0, (factura.items || []).length - 10);
+      return `
+        <div class="invoice-hover-head">
+          <div class="invoice-hover-title">Factura ${escapeHtml(factura.numero || "-")}</div>
+          <div class="invoice-hover-muted">${escapeHtml(factura.condicion_venta || "-")} | ${escapeHtml((factura.fecha || "").slice(0, 10) || "-")}</div>
+        </div>
+        <div class="invoice-hover-meta">
+          <div><span>Cliente</span>${escapeHtml(factura.cliente || "Consumidor final")}</div>
+          <div><span>Vendedor</span>${escapeHtml(factura.vendedor || "-")}</div>
+          <div><span>Sucursal</span>${escapeHtml(factura.sucursal || "-")}</div>
+          <div><span>Bodega</span>${escapeHtml(factura.bodega || "-")}</div>
+        </div>
+        <div class="invoice-hover-total">
+          <div><span>Total dolares</span><strong>${formatPreviewMoney(factura.total_usd || 0, "USD")}</strong></div>
+          <div><span>Total cordobas</span><strong>${formatPreviewMoney(factura.total_cs || 0, "CS")}</strong></div>
+        </div>
+        <div class="invoice-hover-items">
+          <table class="table table-sm">
+            <thead>
+              <tr><th>Producto</th><th class="text-end">Cant</th><th class="text-end">USD</th><th class="text-end">C$</th></tr>
+            </thead>
+            <tbody>
+              ${items || `<tr><td colspan="4" class="text-center text-muted py-3">Sin productos facturados.</td></tr>`}
+            </tbody>
+          </table>
+          ${extraCount ? `<div class="invoice-hover-muted mt-2">+ ${extraCount} productos adicionales. Clic para ver detalle completo.</div>` : ""}
+        </div>
+      `;
+    };
+
+    const showInvoicePreview = async (trigger) => {
+      if (!invoicePreviewCard || !trigger) return;
+      const id = trigger.dataset.invoicePreview;
+      if (!id) return;
+      invoicePreviewActiveTrigger = trigger;
+      invoicePreviewCard.innerHTML = '<div class="p-3 text-sm text-slate">Cargando detalle...</div>';
+      invoicePreviewCard.classList.add("is-visible");
+      invoicePreviewCard.setAttribute("aria-hidden", "false");
+      positionInvoicePreview(trigger);
+      try {
+        let payload = invoicePreviewCache.get(id);
+        if (!payload) {
+          payload = await handleFetchJson(`/sales/${id}/detail`);
+          if (payload?.ok) {
+            invoicePreviewCache.set(id, payload);
+          }
+        }
+        if (!payload || !payload.ok) {
+          invoicePreviewCard.innerHTML = `<div class="p-3 text-danger">${escapeHtml(payload?.message || "No se pudo cargar el detalle.")}</div>`;
+        } else {
+          invoicePreviewCard.innerHTML = renderInvoicePreview(payload.factura || {});
+        }
+        positionInvoicePreview(trigger);
+      } catch (error) {
+        invoicePreviewCard.innerHTML = '<div class="p-3 text-danger">No se pudo cargar el detalle.</div>';
+        positionInvoicePreview(trigger);
+      }
+    };
+
+    const hideInvoicePreview = () => {
+      if (!invoicePreviewCard) return;
+      invoicePreviewCard.classList.remove("is-visible");
+      invoicePreviewCard.setAttribute("aria-hidden", "true");
+      invoicePreviewActiveTrigger = null;
+    };
+
+    document.addEventListener("mouseover", (event) => {
+      const trigger = event.target.closest("[data-invoice-preview]");
+      if (!trigger) return;
+      clearTimeout(invoicePreviewTimer);
+      invoicePreviewTimer = setTimeout(() => showInvoicePreview(trigger), 180);
+    });
+    document.addEventListener("mouseout", (event) => {
+      const trigger = event.target.closest("[data-invoice-preview]");
+      if (!trigger) return;
+      const next = event.relatedTarget;
+      if (next && invoicePreviewCard && invoicePreviewCard.contains(next)) return;
+      clearTimeout(invoicePreviewTimer);
+      invoicePreviewTimer = setTimeout(hideInvoicePreview, 160);
+    });
+    if (invoicePreviewCard) {
+      invoicePreviewCard.addEventListener("mouseenter", () => clearTimeout(invoicePreviewTimer));
+      invoicePreviewCard.addEventListener("mouseleave", () => {
+        invoicePreviewTimer = setTimeout(hideInvoicePreview, 160);
+      });
+      window.addEventListener("scroll", () => positionInvoicePreview(invoicePreviewActiveTrigger), true);
+      window.addEventListener("resize", () => positionInvoicePreview(invoicePreviewActiveTrigger));
+    }
+
     if (cobranzaTable) {
       const rows = Array.from(cobranzaTable.querySelectorAll("tbody tr"));
       const selectRow = (row, focus = false) => {

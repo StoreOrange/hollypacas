@@ -6,18 +6,26 @@
     <title>{{ factura.numero }} - Ticket</title>
     <style>
       @page { size: 80mm {{ "%.0f"|format(page_height_mm or 255) }}mm; margin: 2mm; }
-      html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; color: #111; }
-      body { line-height: 1.4; }
-      .ticket { width: 75mm; margin: 0 auto; font-size: 14px; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; width: 80mm; min-width: 80mm; font-family: Arial, sans-serif; color: #111; }
+      body { line-height: 1.4; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .ticket { box-sizing: border-box; width: 76mm; max-width: 76mm; margin: 0 auto; font-size: 14px; transform: none !important; zoom: 1 !important; overflow: visible; }
+      .ticket, .ticket * { max-width: 100%; }
+      .ticket.lock-font { font-size: 14px; }
+      .ticket.lock-font .small { font-size: 12px; }
       .center { text-align: center; }
       .bold { font-weight: 700; }
       .line { border-top: 1px dashed #444; margin: 6px 0; }
-      .row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+      .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 2px 0; min-width: 0; }
+      .row span { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+      .row span:first-child { flex: 0 0 auto; }
+      .row span:last-child { flex: 1 1 auto; text-align: right; }
       .small { font-size: 12px; }
       .logo { display: block; margin: 0 auto 10px; width: 75mm; height: 26mm; object-fit: contain; }
       .items { margin-top: 6px; }
       .item-block { margin-bottom: 10px; }
-      .item-desc { font-weight: 600; }
+      .item-desc { font-weight: 600; overflow-wrap: anywhere; word-break: break-word; }
+      .item-price-line { display: block; width: 100%; text-align: right; overflow-wrap: anywhere; word-break: break-word; }
       .footer { margin-top: 12px; }
       .top-meta {
         display: flex;
@@ -87,6 +95,11 @@
       }
       @media print {
         .screen-actions { display: none !important; }
+        html, body { width: 80mm !important; min-width: 80mm !important; overflow: visible !important; }
+        .ticket { width: 76mm !important; max-width: 76mm !important; margin: 0 auto !important; transform: none !important; zoom: 1 !important; overflow: visible !important; page-break-inside: auto !important; break-inside: auto !important; }
+        .ticket, .ticket * { max-width: 100% !important; }
+        .ticket.lock-font { font-size: 14px !important; }
+        .ticket.lock-font .small { font-size: 12px !important; }
       }
     </style>
   </head>
@@ -101,7 +114,7 @@
         <button class="screen-btn" type="button" id="ticket-refresh-return">Nueva venta</button>
       </div>
     </div>
-    <div class="ticket{% if compact_ticket %} compact{% endif %}">
+    <div class="ticket{% if compact_ticket %} compact{% endif %}{% if lock_ticket_font %} lock-font{% endif %}">
       <div class="top-meta">
         <span class="left">{{ factura.numero }} - TICKET</span>
         <span class="right">{{ branding.get("website") or branding.get("trade_name", "Empresa") }}</span>
@@ -141,9 +154,9 @@
           <div class="row small">
             <span>Cant: {{ "%.2f"|format(item.cantidad) }}</span>
             {% if show_item_subtotal or item.es_libreado or (show_item_subtotal_if_multi_qty and item.cantidad >= 2) %}
-            <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }} | Subt: {{ currency_label }} {{ format_amount(item.subtotal) }}</span>
+            <span class="item-price-line">Precio: {{ currency_label }} {{ format_amount(item.precio) }} | Subt: {{ currency_label }} {{ format_amount(item.subtotal) }}</span>
             {% else %}
-            <span>Precio: {{ currency_label }} {{ format_amount(item.precio) }}</span>
+            <span class="item-price-line">Precio: {{ currency_label }} {{ format_amount(item.precio) }}</span>
             {% endif %}
           </div>
           <div class="line"></div>
@@ -163,7 +176,10 @@
       <div class="line"></div>
       <div class="bold">Pagos aplicados</div>
       {% for pago in pagos %}
-      <div class="row"><span>{{ pago.label }}</span><span>{{ currency_label }} {{ format_amount(pago.monto) }}</span></div>
+      <div class="row"><span>{{ pago.label }}</span><span>{{ pago.amount_label }}</span></div>
+      {% if pago.equivalent_label %}
+      <div class="row small"><span>Equivalente</span><span>{{ pago.equivalent_label }}</span></div>
+      {% endif %}
       {% endfor %}
       {% endif %}
 
@@ -191,14 +207,42 @@
           copies = 2;
         }
         const ticket = document.querySelector(".ticket");
-        if (ticket) {
+        const dynamicStyle = document.createElement("style");
+        dynamicStyle.setAttribute("data-ticket-page-size", "true");
+        document.head.appendChild(dynamicStyle);
+        const initialPageMm = Number({{ "%.0f"|format(page_height_mm or 255) }});
+
+        const syncTicketPageSize = () => {
+          if (!ticket) return;
           const pxPerMm = 96 / 25.4;
-          const contentPx = ticket.scrollHeight + 8;
-          const dynamicPageMm = Math.max(90, Math.ceil(contentPx / pxPerMm) + 4);
-          const dynamicStyle = document.createElement("style");
+          const rectHeight = ticket.getBoundingClientRect().height;
+          const documentHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight || 0);
+          const contentPx = Math.max(ticket.scrollHeight, rectHeight, documentHeight) + 28;
+          const dynamicPageMm = Math.max(initialPageMm || 120, 120, Math.ceil(contentPx / pxPerMm) + 12);
           dynamicStyle.textContent = `@page { size: 80mm ${dynamicPageMm}mm; margin: 2mm; }`;
-          document.head.appendChild(dynamicStyle);
-        }
+        };
+
+        const waitForTicketReady = async () => {
+          if (document.fonts && document.fonts.ready) {
+            try { await document.fonts.ready; } catch (_) {}
+          }
+          const images = Array.from(document.images || []);
+          await Promise.all(images.map((img) => {
+            if (img.complete) return Promise.resolve();
+            if (img.decode) {
+              return img.decode().catch(() => {});
+            }
+            return new Promise((resolve) => {
+              img.addEventListener("load", resolve, { once: true });
+              img.addEventListener("error", resolve, { once: true });
+            });
+          }));
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          syncTicketPageSize();
+        };
+
+        syncTicketPageSize();
+        window.addEventListener("beforeprint", syncTicketPageSize);
         let printed = 0;
         let printing = false;
         let printRequestedAt = 0;
@@ -207,6 +251,7 @@
         const triggerPrint = () => {
           if (exited || printing) return;
           if (printed >= copies) return;
+          syncTicketPageSize();
           printing = true;
           printRequestedAt = Date.now();
           if (closeFallbackTimer) {
@@ -267,7 +312,9 @@
           });
         }
 
-        setTimeout(() => triggerPrint(), 420);
+        waitForTicketReady().finally(() => {
+          setTimeout(() => triggerPrint(), 180);
+        });
       });
     </script>
   </body>

@@ -4027,6 +4027,17 @@
     });
   };
 
+  const resetProductSearchGrid = () => {
+    if (!productSearch) return;
+    productSearch.value = "";
+    filterProductRows("");
+    updateSaldoCells();
+    window.setTimeout(() => {
+      productSearch.focus();
+      productSearch.select();
+    }, 0);
+  };
+
   const updateBodegaBanner = () => {
     const bodegaField = ingresoForm?.querySelector("select[name='bodega_id']");
     const banner = document.getElementById("bodega-banner");
@@ -4194,10 +4205,7 @@
         subtotalCs,
         focusTarget: focusTarget || "qty",
       });
-      if (productSearch && focusTarget === "search") {
-        productSearch.value = "";
-        productSearch.focus();
-      }
+      resetProductSearchGrid();
       saveDraft();
     };
 
@@ -4214,7 +4222,7 @@
           const row = input.closest("tr");
           const button = row.querySelector(".add-item");
           if (button) {
-            handleAddItem(button, "cost");
+            handleAddItem(button, "search");
           }
         }
       });
@@ -4289,10 +4297,7 @@
       }
       if (priceInput) {
         event.preventDefault();
-        if (productSearch) {
-          productSearch.value = "";
-          productSearch.focus();
-        }
+        resetProductSearchGrid();
       }
     });
   }

@@ -2830,6 +2830,30 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     def format_amount(value: float) -> str:
         return f"{value:,.2f}"
 
+    def payment_render_payload(pago: VentaPago) -> dict[str, str | float]:
+        forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
+        banco = pago.banco.nombre if pago.banco else ""
+        label = f"{forma} {banco}".strip()
+        pago_moneda = (getattr(pago, "moneda", None) or "").strip().upper()
+        if pago_moneda not in {"USD", "CS"}:
+            pago_moneda = "USD" if float(pago.monto_usd or 0) > 0 and float(pago.monto_cs or 0) <= 0 else "CS"
+        monto_original = float(getattr(pago, "monto_original", 0) or 0)
+        if monto_original <= 0:
+            monto_original = float(pago.monto_usd or 0) if pago_moneda == "USD" else float(pago.monto_cs or 0)
+        amount_label = f"$ {format_amount(monto_original)}" if pago_moneda == "USD" else f"C$ {format_amount(monto_original)}"
+        equivalent_label = ""
+        if pago_moneda == "USD" and float(pago.monto_cs or 0) > 0:
+            equivalent_label = f"C$ {format_amount(float(pago.monto_cs or 0))}"
+        elif pago_moneda == "CS" and float(pago.monto_usd or 0) > 0:
+            equivalent_label = f"$ {format_amount(float(pago.monto_usd or 0))}"
+        return {
+            "label": label,
+            "moneda": pago_moneda,
+            "monto": monto_original,
+            "amount_label": amount_label,
+            "equivalent_label": equivalent_label,
+        }
+
     branch = factura.bodega.branch if factura.bodega else None
     company_profile = profile or _default_company_profile_payload()
     identity = _company_identity(branch, company_profile)
@@ -2969,13 +2993,9 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
         add_line("-" * 32, "center")
         add_line("Pagos aplicados", "left", True, normal_size)
         for pago in pagos:
-            forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
-            banco = pago.banco.nombre if pago.banco else ""
-            label = f"{forma} {banco}".strip()
-            monto = (
-                float(pago.monto_cs or 0)
-            )
-            add_line(f"{label}: {currency_label} {format_amount(monto)}", "left", False, normal_size)
+            payment = payment_render_payload(pago)
+            equiv = f" ({payment['equivalent_label']})" if payment["equivalent_label"] else ""
+            add_line(f"{payment['label']}: {payment['amount_label']}{equiv}", "left", False, normal_size)
 
     if saldo >= 0:
         add_line(f"Vuelto: {currency_label} {format_amount(saldo)}", "left", True, normal_size)
@@ -10917,6 +10937,7 @@ def inventory_egresos_page(
             "print_result_id": print_result_id,
             "print_mode": print_mode,
             "inventory_cs_only": inventory_cs_only,
+            "pacasholl_egresos_ui": False,
             "version": settings.UI_VERSION,
         },
     )
@@ -11167,6 +11188,13 @@ def sales_page(
             .filter(Preventa.id == int(preventa_id_raw))
             .first()
         )
+        if preventa and (
+            not branch
+            or not bodega
+            or int(preventa.branch_id or 0) != int(branch.id)
+            or int(preventa.bodega_id or 0) != int(bodega.id)
+        ):
+            return RedirectResponse("/sales/preventas?error=Preventa+fuera+de+tu+sucursal", status_code=303)
         if preventa and preventa.estado in {"PENDIENTE", "REVISION"}:
             item_rows = (
                 db.query(PreventaItem, Producto)
@@ -13032,6 +13060,7 @@ async def mobile_preventas_create(
     item_roles = form.getlist("item_role")
     item_combo_groups = form.getlist("item_combo_group")
     preventa_id_raw = str(form.get("preventa_id") or "").strip()
+    freeze_preventa = str(form.get("freeze_preventa") or "").strip().lower() in {"1", "true", "on", "si", "sí"}
 
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch or not bodega:
@@ -13223,6 +13252,8 @@ async def mobile_preventas_create(
         vendedor_id=vendedor.id,
         fecha=fecha_dt,
         estado="PENDIENTE",
+        is_frozen=freeze_preventa,
+        frozen_at=local_now_naive() if freeze_preventa else None,
         observacion=observacion,
         total_usd=total_usd,
         total_cs=total_cs,
@@ -13247,8 +13278,19 @@ async def mobile_preventas_create(
             )
         )
     db.commit()
+    if freeze_preventa:
+        try:
+            _send_mobile_preventa_push_notifications(
+                db,
+                preventa=preventa,
+                actor_name=user.full_name or user.email or "Vendedor",
+                branch_name=branch.name if branch else "",
+                event_code="CONGELADA",
+            )
+        except Exception:
+            pass
     return RedirectResponse(
-        f"/m/preventas?success=Preventa+{preventa.numero}+registrada",
+        f"/m/preventas?success=Preventa+{preventa.numero}+{'congelada' if freeze_preventa else 'registrada'}",
         status_code=303,
     )
 
@@ -13268,13 +13310,18 @@ def sales_preventas_panel(
     branch_id = (request.query_params.get("branch_id") or "all").strip()
     error = request.query_params.get("error")
     success = request.query_params.get("success")
+    current_branch, current_bodega = _resolve_branch_bodega(db, user)
+    pacasholl_scope_enabled = _is_pacasholl_company()
     try:
         fecha_value = date.fromisoformat(fecha)
     except ValueError:
         fecha_value = today
 
     query = _preventa_scope_query(db, user).filter(func.date(Preventa.fecha) == fecha_value)
-    if branch_id and branch_id != "all":
+    if pacasholl_scope_enabled and current_branch and current_bodega:
+        query = query.filter(Preventa.branch_id == current_branch.id, Preventa.bodega_id == current_bodega.id)
+        branch_id = str(current_branch.id)
+    elif branch_id and branch_id != "all":
         if branch_id.isdigit():
             query = query.filter(Preventa.branch_id == int(branch_id))
     if vendedor_id and vendedor_id.isdigit():
@@ -13293,13 +13340,16 @@ def sales_preventas_panel(
     if repaired_any:
         db.commit()
     scoped_branch_ids = _user_scoped_branch_ids(db, user)
-    branches = (
-        _scoped_branches_query(db)
-        .filter(Branch.id.in_(scoped_branch_ids))
-        .order_by(Branch.name)
-        .all()
-    )
-    vendedores = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre).all()
+    if pacasholl_scope_enabled and current_branch:
+        branches = [current_branch]
+    else:
+        branches = (
+            _scoped_branches_query(db)
+            .filter(Branch.id.in_(scoped_branch_ids))
+            .order_by(Branch.name)
+            .all()
+        )
+    vendedores = _vendedores_for_bodega(db, current_bodega) if pacasholl_scope_enabled else db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre).all()
     rows = [
         {
             "id": p.id,
@@ -13345,9 +13395,17 @@ def sales_preventas_detail(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.sales.preventas")
-    preventa = db.query(Preventa).filter(Preventa.id == preventa_id).first()
+    current_branch, current_bodega = _resolve_branch_bodega(db, user)
+    preventa = _preventa_scope_query(db, user).filter(Preventa.id == preventa_id).first()
     if not preventa:
         return JSONResponse({"ok": False, "message": "Preventa no encontrada"}, status_code=404)
+    if _is_pacasholl_company() and (
+        not current_branch
+        or not current_bodega
+        or int(preventa.branch_id or 0) != int(current_branch.id)
+        or int(preventa.bodega_id or 0) != int(current_bodega.id)
+    ):
+        return JSONResponse({"ok": False, "message": "Preventa fuera de tu sucursal/bodega"}, status_code=403)
     if _repair_preventa_currency_if_needed(db, preventa):
         db.commit()
     rows = (
@@ -13450,6 +13508,14 @@ async def sales_preventas_usar_en_factura(
     preventa = _preventa_scope_query(db, user).filter(Preventa.id == preventa_id).first()
     if not preventa:
         return RedirectResponse("/sales/preventas?error=Preventa+no+encontrada", status_code=303)
+    current_branch, current_bodega = _resolve_branch_bodega(db, user)
+    if _is_pacasholl_company() and (
+        not current_branch
+        or not current_bodega
+        or int(preventa.branch_id or 0) != int(current_branch.id)
+        or int(preventa.bodega_id or 0) != int(current_bodega.id)
+    ):
+        return RedirectResponse("/sales/preventas?error=Preventa+fuera+de+tu+sucursal", status_code=303)
     if preventa.estado not in {"PENDIENTE", "REVISION"}:
         return RedirectResponse("/sales/preventas?error=Preventa+no+disponible+para+facturar", status_code=303)
     item_rows = (
@@ -28582,19 +28648,41 @@ def sales_ticket_print(
         forma = pago.forma_pago.nombre if pago.forma_pago else "Pago"
         banco = pago.banco.nombre if pago.banco else ""
         label = f"{forma} {banco}".strip()
-        monto = float(pago.monto_cs or 0)
-        pagos_render.append({"label": label, "monto": monto})
+        pago_moneda = (getattr(pago, "moneda", None) or "").strip().upper()
+        if pago_moneda not in {"USD", "CS"}:
+            pago_moneda = "USD" if float(pago.monto_usd or 0) > 0 and float(pago.monto_cs or 0) <= 0 else "CS"
+        monto_original = float(getattr(pago, "monto_original", 0) or 0)
+        if monto_original <= 0:
+            monto_original = float(pago.monto_usd or 0) if pago_moneda == "USD" else float(pago.monto_cs or 0)
+        amount_label = f"$ {format_amount(monto_original)}" if pago_moneda == "USD" else f"C$ {format_amount(monto_original)}"
+        equivalent_label = ""
+        if pago_moneda == "USD" and float(pago.monto_cs or 0) > 0:
+            equivalent_label = f"C$ {format_amount(float(pago.monto_cs or 0))}"
+        elif pago_moneda == "CS" and float(pago.monto_usd or 0) > 0:
+            equivalent_label = f"$ {format_amount(float(pago.monto_usd or 0))}"
+        pagos_render.append({
+            "label": label,
+            "moneda": pago_moneda,
+            "monto": monto_original,
+            "amount_label": amount_label,
+            "equivalent_label": equivalent_label,
+        })
     if pagos_render:
         line_count += 2  # divider + title
         line_count += len(pagos_render)
+        line_count += sum(1 for pago in pagos_render if pago.get("equivalent_label"))
     line_count += 1  # vuelto/saldo
     if usd_equivalent_amount > 0:
         line_count += 1  # equivalente USD
     line_count += 4  # footer
 
-    # Keep page height tight to content to avoid trailing white space in POS print
-    line_height_mm = 3.55
-    page_height_mm = max(96.0, 8.0 + line_count * line_height_mm + 8.0)
+    # Use a generous initial continuous-roll height; the browser recalculates the
+    # exact content size before printing, but a short first @page can trigger
+    # shrink-to-fit in POS drivers when invoices have many items.
+    line_height_mm = 4.6 if is_amajo_mode else 5.65
+    page_height_mm = max(180.0, 18.0 + line_count * line_height_mm + 18.0)
+    if (_is_pacasholl_company() or is_hollpacas_mode) and line_count >= 55:
+        page_height_mm = max(page_height_mm, 1200.0)
 
     return request.app.state.templates.TemplateResponse(
         "sales_ticket_print.html",
@@ -28628,6 +28716,7 @@ def sales_ticket_print(
             "copies": copies,
             "page_height_mm": page_height_mm,
             "compact_ticket": is_amajo_mode,
+            "lock_ticket_font": _is_pacasholl_company() or is_hollpacas_mode,
             "show_sale_type": show_sale_type,
             "show_item_code": show_item_code,
             "show_item_subtotal": show_item_subtotal,
@@ -31962,6 +32051,8 @@ async def restaurant_order_invoice(
                     forma_pago_id=int(forma_id_clean),
                     banco_id=int(banco_pago) if banco_pago.isdigit() else None,
                     cuenta_id=int(cuenta_pago) if cuenta_pago.isdigit() else None,
+                    moneda=moneda_pago,
+                    monto_original=Decimal(str(monto_pago)).quantize(Decimal("0.01")),
                     monto_usd=Decimal(str(pago_usd)).quantize(Decimal("0.01")),
                     monto_cs=Decimal(str(pago_cs)).quantize(Decimal("0.01")),
                 )
@@ -31976,6 +32067,8 @@ async def restaurant_order_invoice(
                 forma_pago_id=int(forma_pago_id),
                 banco_id=int(banco_id) if banco_id.isdigit() else None,
                 cuenta_id=int(cuenta_id) if cuenta_id.isdigit() else None,
+                moneda=moneda,
+                monto_original=Decimal(str(monto_pago)).quantize(Decimal("0.01")),
                 monto_usd=Decimal(str(pago_usd)).quantize(Decimal("0.01")),
                 monto_cs=Decimal(str(pago_cs)).quantize(Decimal("0.01")),
             )
@@ -32096,6 +32189,7 @@ async def sales_create_invoice(
         return Decimal(str(value or 0))
 
     tasa = float(rate_today.rate) if rate_today else 0
+    pacasholl_libreado_enabled = _is_pacasholl_company()
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch:
         return RedirectResponse("/sales?error=Usuario+sin+sucursal+asignada", status_code=303)
@@ -32115,7 +32209,10 @@ async def sales_create_invoice(
     numero = f"{prefix}-{next_seq:0{width}d}"
 
     now_local = local_now().replace(second=0, microsecond=0)
-    if _is_global_company():
+    if pacasholl_libreado_enabled and preventa_id_raw:
+        fecha_dt = now_local.replace(tzinfo=None)
+        fecha_value = fecha_dt.date()
+    elif _is_global_company():
         fecha_raw = str(fecha or "").strip()
         try:
             normalized_fecha = fecha_raw.replace(" ", "T")
@@ -32151,6 +32248,29 @@ async def sales_create_invoice(
     db.flush()
     preventa: Optional[Preventa] = None
     source_items: list[dict[str, object]] = []
+    preventa_locked_prices: dict[int, tuple[float, float]] = {}
+
+    def append_form_source_items() -> None:
+        for index, product_id in enumerate(item_ids):
+            if not str(product_id).isdigit():
+                continue
+            variant_id_raw = item_variant_ids[index] if index < len(item_variant_ids) else None
+            variant_id = int(variant_id_raw) if str(variant_id_raw or "").isdigit() else None
+            source_items.append(
+                {
+                    "product_id": int(product_id),
+                    "variant_id": variant_id,
+                    "qty": to_float(item_qtys[index] if index < len(item_qtys) else 0),
+                    "peso_lbs": to_float(item_peso_lbs[index] if index < len(item_peso_lbs) else 0),
+                    "price_usd": None,
+                    "price_cs": None,
+                    "price_input": to_float(item_prices[index] if index < len(item_prices) else 0),
+                    "discount_pct": _discount_percent_value(item_discount_pcts[index] if index < len(item_discount_pcts) else "0"),
+                    "role": item_roles[index] if index < len(item_roles) else None,
+                    "combo_group": item_combo_groups[index] if index < len(item_combo_groups) else None,
+                }
+            )
+
     if preventa_id_raw:
         if not preventa_id_raw.isdigit():
             db.rollback()
@@ -32178,37 +32298,29 @@ async def sales_create_invoice(
         if not p_items:
             db.rollback()
             return RedirectResponse("/sales?error=Preventa+sin+items", status_code=303)
-        for p_item in p_items:
-            source_items.append(
-                {
-                    "product_id": int(p_item.producto_id),
-                    "qty": to_float(str(p_item.cantidad or 0)),
-                    "price_usd": to_float(str(p_item.precio_unitario_usd or 0)),
-                    "price_cs": to_float(str(p_item.precio_unitario_cs or 0)),
-                    "role": p_item.combo_role or None,
-                    "combo_group": p_item.combo_group or None,
-                }
-            )
+        if pacasholl_libreado_enabled:
+            preventa_locked_prices = {
+                int(p_item.producto_id): (
+                    to_float(str(p_item.precio_unitario_usd or 0)),
+                    to_float(str(p_item.precio_unitario_cs or 0)),
+                )
+                for p_item in p_items
+            }
+            append_form_source_items()
+        else:
+            for p_item in p_items:
+                source_items.append(
+                    {
+                        "product_id": int(p_item.producto_id),
+                        "qty": to_float(str(p_item.cantidad or 0)),
+                        "price_usd": to_float(str(p_item.precio_unitario_usd or 0)),
+                        "price_cs": to_float(str(p_item.precio_unitario_cs or 0)),
+                        "role": p_item.combo_role or None,
+                        "combo_group": p_item.combo_group or None,
+                    }
+                )
     else:
-        for index, product_id in enumerate(item_ids):
-            if not str(product_id).isdigit():
-                continue
-            variant_id_raw = item_variant_ids[index] if index < len(item_variant_ids) else None
-            variant_id = int(variant_id_raw) if str(variant_id_raw or "").isdigit() else None
-            source_items.append(
-                {
-                    "product_id": int(product_id),
-                    "variant_id": variant_id,
-                    "qty": to_float(item_qtys[index] if index < len(item_qtys) else 0),
-                    "peso_lbs": to_float(item_peso_lbs[index] if index < len(item_peso_lbs) else 0),
-                    "price_usd": None,
-                    "price_cs": None,
-                    "price_input": to_float(item_prices[index] if index < len(item_prices) else 0),
-                    "discount_pct": _discount_percent_value(item_discount_pcts[index] if index < len(item_discount_pcts) else "0"),
-                    "role": item_roles[index] if index < len(item_roles) else None,
-                    "combo_group": item_combo_groups[index] if index < len(item_combo_groups) else None,
-                }
-            )
+        append_form_source_items()
     if not source_items:
         db.rollback()
         return RedirectResponse("/sales?error=No+hay+items+validos", status_code=303)
@@ -32245,7 +32357,6 @@ async def sales_create_invoice(
     total_items = 0.0
     total_cost_cs = Decimal("0")
     weighted_sales_enabled = _weighted_sales_enabled_mode(db)
-    pacasholl_libreado_enabled = _is_pacasholl_company()
     product_ids = [int(it["product_id"]) for it in source_items if int(it["product_id"]) > 0]
     balances = _balances_by_bodega(db, [bodega.id], list(set(product_ids))) if product_ids else {}
     for src in source_items:
@@ -32317,9 +32428,21 @@ async def sales_create_invoice(
                 return RedirectResponse(f"/sales?error={mensaje}", status_code=303)
             variant_stock.existencia = Decimal(str(variant_available)) - to_decimal(stock_qty)
 
-        if preventa:
+        if preventa and (src.get("price_usd") is not None or src.get("price_cs") is not None):
             precio_usd = to_float(str(src.get("price_usd") or 0))
             precio_cs = to_float(str(src.get("price_cs") or 0))
+        elif preventa and pacasholl_libreado_enabled:
+            locked_price = preventa_locked_prices.get(int(product_id))
+            if locked_price:
+                precio_usd = to_float(str(locked_price[0] or 0))
+                precio_cs = to_float(str(locked_price[1] or 0))
+            else:
+                precio_usd = to_float(str(producto.precio_venta1_usd or 0))
+                precio_cs = to_float(str(producto.precio_venta1 or 0))
+            if precio_usd <= 0 and precio_cs > 0 and tasa:
+                precio_usd = precio_cs / tasa
+            if precio_cs <= 0 and precio_usd > 0 and tasa:
+                precio_cs = precio_usd * tasa
         else:
             price = to_float(str(src.get("price_input") or 0))
             if moneda == "USD":
@@ -32374,6 +32497,14 @@ async def sales_create_invoice(
 
         # No usar saldo global; el stock se calcula por movimientos/bodega.
 
+    if pacasholl_libreado_enabled:
+        if total_items <= 0:
+            db.rollback()
+            return RedirectResponse("/sales?error=Agrega+items+validos+a+la+venta", status_code=303)
+        if total_usd <= 0 and total_cs <= 0:
+            db.rollback()
+            return RedirectResponse("/sales?error=La+venta+debe+tener+un+total+positivo", status_code=303)
+
     net_after_item_discount_usd = Decimal(str(total_usd)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     net_after_item_discount_cs = Decimal(str(total_cs)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     descuento_global_usd = (net_after_item_discount_usd * descuento_global_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -32414,6 +32545,8 @@ async def sales_create_invoice(
                         forma_pago_id=int(forma_id),
                         banco_id=int(banco_pago) if banco_pago else None,
                         cuenta_id=int(cuenta_pago) if cuenta_pago else None,
+                        moneda=moneda_pago,
+                        monto_original=Decimal(str(monto_pago)).quantize(Decimal("0.01")),
                         monto_usd=pago_usd,
                         monto_cs=pago_cs,
                     )
@@ -32428,6 +32561,8 @@ async def sales_create_invoice(
                     forma_pago_id=int(forma_pago_id),
                     banco_id=int(banco_id) if banco_id else None,
                     cuenta_id=int(cuenta_id) if cuenta_id else None,
+                    moneda=moneda,
+                    monto_original=Decimal(str(monto_pago)).quantize(Decimal("0.01")),
                     monto_usd=pago_usd,
                     monto_cs=pago_cs,
                 )
@@ -33053,6 +33188,7 @@ def sales_cobranza(
             "base_cobranza_url": base_cobranza_url,
             "estado_cuenta_return_to": estado_cuenta_return_to,
             "shoes_mode": _is_shoes_mode(),
+            "pacasholl_cobranza_preview": _is_pacasholl_company(),
             "version": settings.UI_VERSION,
         },
     )

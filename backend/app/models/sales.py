@@ -469,6 +469,8 @@ class VentaPago(Base):
     forma_pago_id = Column(Integer, ForeignKey("formas_pago.id"), nullable=False)
     banco_id = Column(Integer, ForeignKey("bancos.id"), nullable=True)
     cuenta_id = Column(Integer, ForeignKey("cuentas_bancarias.id"), nullable=True)
+    moneda = Column(String(10), nullable=False, default="CS")
+    monto_original = Column(Numeric(14, 2), default=0)
     monto_usd = Column(Numeric(14, 2), default=0)
     monto_cs = Column(Numeric(14, 2), default=0)
 

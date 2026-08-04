@@ -1894,6 +1894,22 @@ def init_db() -> None:
         if "unfrozen_at" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_preventas ADD COLUMN unfrozen_at TIMESTAMP"))
+    if "ventas_pagos" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("ventas_pagos")}
+        if "moneda" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_pagos ADD COLUMN moneda VARCHAR(10) DEFAULT 'CS'"))
+                conn.execute(text("UPDATE ventas_pagos SET moneda = 'CS' WHERE moneda IS NULL OR moneda = ''"))
+        if "monto_original" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_pagos ADD COLUMN monto_original NUMERIC(14, 2) DEFAULT 0"))
+                conn.execute(
+                    text(
+                        "UPDATE ventas_pagos "
+                        "SET monto_original = CASE WHEN moneda = 'USD' THEN COALESCE(monto_usd, 0) ELSE COALESCE(monto_cs, 0) END "
+                        "WHERE monto_original IS NULL OR monto_original = 0"
+                    )
+                )
     if "company_profile_settings" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("company_profile_settings")}
         if "ruc" not in columns:
