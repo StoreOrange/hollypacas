@@ -11888,15 +11888,15 @@ def mobile_preventas_page(
     score_vendedor_nombre = "-"
     if score_vendedor_id:
         score_total_bultos = Decimal(str(
-            db.query(func.coalesce(func.sum(PreventaItem.cantidad), 0))
-            .join(Preventa, Preventa.id == PreventaItem.preventa_id)
+            db.query(func.coalesce(func.sum(VentaItem.cantidad), 0))
+            .select_from(VentaItem)
+            .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
             .filter(
-                Preventa.branch_id == branch.id,
-                Preventa.bodega_id == bodega.id,
-                Preventa.vendedor_id == score_vendedor_id,
-                Preventa.fecha >= today_start,
-                Preventa.fecha < today_end,
-                Preventa.estado != "ANULADA",
+                VentaFactura.bodega_id == bodega.id,
+                VentaFactura.vendedor_id == score_vendedor_id,
+                VentaFactura.fecha >= today_start,
+                VentaFactura.fecha < today_end,
+                VentaFactura.estado != "ANULADA",
             )
             .scalar()
             or 0
