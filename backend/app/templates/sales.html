@@ -2022,12 +2022,11 @@
   };
 
   const getPromotionGiftUsage = () => {
-    const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
     let unitsQty = 0;
     let referenceUsd = 0;
     comboGifts.forEach((gift) => {
       gift.promoPolicy = "UNIDADES";
-      const qty = Number(gift.cantidad || 0) * comboQty;
+      const qty = Number(gift.cantidad || 0);
       const valueUsd = Number(gift.precioReferenciaUsd || 0) * qty;
       referenceUsd += valueUsd;
       unitsQty += qty;
@@ -2156,7 +2155,7 @@
                   <span class="font-semibold text-ink">${gift.codigo} - ${gift.descripcion}</span>
                 </div>
                 <div class="text-end">
-                  <div class="text-slate">x${gift.cantidad * comboQty}</div>
+                  <div class="text-slate">x${gift.cantidad}</div>
                   <div class="text-emerald-700 text-[11px] fw-semibold">No cobra</div>
                 </div>
               </div>
@@ -2207,7 +2206,8 @@
     });
     for (const item of required) {
       const available = getAvailableQty(item.id, item.existencia);
-      if (available < item.perUnit * comboQty) {
+      const requestedQty = item.id === comboParent.id ? item.perUnit * comboQty : item.perUnit;
+      if (available < requestedQty) {
         pauseNavForAlert({
           icon: "warning",
           title: "Saldo insuficiente",
@@ -2235,7 +2235,7 @@
     let maxQty = Infinity;
     perUnitList.forEach((item) => {
       const available = getAvailableQty(item.id, item.existencia);
-      const limit = item.perUnit > 0 ? Math.floor(available / item.perUnit) : 0;
+      const limit = item.id === comboParent.id && item.perUnit > 0 ? Math.floor(available / item.perUnit) : Infinity;
       maxQty = Math.min(maxQty, limit);
     });
     if (!isFinite(maxQty) || maxQty <= 0) {
@@ -2657,7 +2657,7 @@
       };
       addRequired(comboParent.id, comboQty);
       comboGifts.forEach((gift) => {
-        addRequired(gift.id, gift.cantidad * comboQty);
+        addRequired(gift.id, gift.cantidad);
       });
       for (const [id, qty] of requiredMap.entries()) {
         const producto = id === comboParent.id ? comboParent : comboGifts.find((g) => String(g.id) === String(id));
@@ -2713,7 +2713,7 @@
         comboGroup: comboGroupId,
       });
       comboGifts.forEach((gift) => {
-        const giftQty = gift.cantidad * comboQty;
+        const giftQty = gift.cantidad;
         const giftSubtotal = 0;
         const giftSubtotalUsd = currency === "USD" ? 0 : 0;
         const giftSubtotalCs = currency === "USD" ? 0 : 0;

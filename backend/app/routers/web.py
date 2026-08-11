@@ -33481,7 +33481,6 @@ async def sales_create_invoice(
     if not source_items:
         db.rollback()
         return RedirectResponse("/sales?error=No+hay+items+validos", status_code=303)
-    combo_parent_qty: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     combo_gift_qty: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     for src in source_items:
         combo_group = str(src.get("combo_group") or "").strip()
@@ -33489,21 +33488,17 @@ async def sales_create_invoice(
         qty_dec = Decimal(str(src.get("qty") or 0))
         if not combo_group or qty_dec <= 0:
             continue
-        if combo_role == "parent":
-            combo_parent_qty[combo_group] += qty_dec
-        elif combo_role == "gift":
+        if combo_role == "gift":
             combo_gift_qty[combo_group] += qty_dec
-    for combo_group, gift_qty in combo_gift_qty.items():
-        parent_qty = combo_parent_qty.get(combo_group, Decimal("0"))
-        if parent_qty <= 0:
+    for combo_group in combo_gift_qty:
+        has_parent = any(
+            str(src.get("combo_group") or "").strip() == combo_group
+            and str(src.get("role") or "").strip().lower() == "parent"
+            for src in source_items
+        )
+        if not has_parent:
             db.rollback()
             return RedirectResponse("/sales?error=Regalia+debe+estar+pegada+a+un+producto+cobrado", status_code=303)
-        if gift_qty > parent_qty:
-            db.rollback()
-            return RedirectResponse(
-                f"/sales?error={quote_plus(f'Regalias exceden bultos vendidos. Vendido: {parent_qty} Regalias: {gift_qty}')}",
-                status_code=303,
-            )
 
     discount_payload = _discount_authorization_payload_from_form(form)
     discount_token_row = None
