@@ -2032,18 +2032,21 @@
 
   const getPromotionGiftUsage = () => {
     const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
-    const unitsByProduct = new Map();
+    let unitsQty = 0;
     let moneyUsd = 0;
+    let referenceUsd = 0;
     comboGifts.forEach((gift) => {
       gift.promoPolicy = normalizeGiftPolicy(gift);
       const qty = Number(gift.cantidad || 0) * comboQty;
-      moneyUsd += Number(gift.precioReferenciaUsd || 0) * qty;
+      const valueUsd = Number(gift.precioReferenciaUsd || 0) * qty;
+      referenceUsd += valueUsd;
       if (gift.promoPolicy === "UNIDADES") {
-        const key = String(gift.id);
-        unitsByProduct.set(key, (unitsByProduct.get(key) || 0) + qty);
+        unitsQty += qty;
+      } else if (gift.promoPolicy === "DINERO") {
+        moneyUsd += valueUsd;
       }
     });
-    return { moneyUsd, unitsByProduct };
+    return { moneyUsd, unitsQty, referenceUsd };
   };
 
   const renderGiftBalanceProjection = () => {
@@ -2051,12 +2054,15 @@
     const usage = getPromotionGiftUsage();
     const baseMoneyUsd = Number(promotionGiftPayload.money_available_usd ?? promotionGiftPayload.remaining_value_usd_total ?? promotionGiftPayload.remaining_usd ?? 0);
     const remainingUsd = Math.max(0, baseMoneyUsd - usage.moneyUsd);
+    const baseUnits = Number(promotionGiftPayload.remaining_units_total || 0);
+    const remainingUnits = Math.max(0, baseUnits - usage.unitsQty);
     comboGiftPolicySummary.innerHTML = `
       <div class="d-flex flex-wrap gap-1 align-items-center">
         <span class="odoo-pill primary" style="font-size:.66rem;padding:.15rem .45rem;">Dinero disp.: $ ${remainingUsd.toFixed(2)}</span>
-        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">En esta promo: $ ${usage.moneyUsd.toFixed(2)}</span>
-        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Prod.: ${Number(promotionGiftPayload.assigned_products_count || 0)}</span>
-        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Und.: ${Number(promotionGiftPayload.assigned_units_total || 0).toFixed(2)}</span>
+        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Consume dinero: $ ${usage.moneyUsd.toFixed(2)}</span>
+        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Valor ref.: $ ${usage.referenceUsd.toFixed(2)}</span>
+        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Cupo und.: ${remainingUnits.toFixed(2)}</span>
+        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Usadas aqui: ${usage.unitsQty.toFixed(2)}</span>
         <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Valor: $ ${Number(promotionGiftPayload.assigned_value_usd_total || 0).toFixed(2)}</span>
       </div>
     `;
@@ -2066,8 +2072,6 @@
       return;
     }
     comboGiftAssignedList.innerHTML = assignedItems.slice(0, 8).map((item) => {
-      const selectedQty = Number(usage.unitsByProduct.get(String(item.id)) || 0);
-      const projectedQty = Math.max(0, Number(item.remaining_qty || 0) - selectedQty);
       return `
         <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-2 py-1 bg-white">
           <div class="min-w-0">
@@ -2076,7 +2080,7 @@
           </div>
           <div class="d-flex align-items-center gap-2">
             <div class="text-end text-slate" style="font-size:.66rem;">
-              <div>Disp. <strong>${projectedQty.toFixed(2)}</strong></div>
+              <div>Cupo vendedor <strong>${remainingUnits.toFixed(2)}</strong></div>
               <div>$ <strong>${Number(item.remaining_value_usd || 0).toFixed(2)}</strong></div>
             </div>
             <button class="btn btn-outline-primary btn-sm py-0 px-2 assigned-gift-pick" type="button" data-product-id="${item.id}" style="font-size:.72rem;">
@@ -2232,6 +2236,15 @@
   const validateComboStock = () => {
     if (!comboParent) return true;
     const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+    const giftUnitsInCombo = comboGifts.reduce((sum, gift) => sum + Number(gift.cantidad || 0), 0);
+    if (giftUnitsInCombo > 1) {
+      pauseNavForAlert({
+        icon: "warning",
+        title: "Regalias excedidas",
+        text: `Este combo permite ${comboQty} regalo(s). Seleccionaste ${(giftUnitsInCombo * comboQty).toFixed(2)}.`,
+      });
+      return false;
+    }
     const required = [];
     required.push({
       id: comboParent.id,
@@ -2260,19 +2273,13 @@
     }
     let cashRequiredUsd = 0;
     let cashLimitUsd = null;
+    let unitsRequired = 0;
+    const unitsLimit = Number(promotionGiftPayload?.remaining_units_total || 0);
     for (const gift of comboGifts) {
       gift.promoPolicy = normalizeGiftPolicy(gift);
       const giftQty = gift.cantidad * comboQty;
       if (gift.promoPolicy === "UNIDADES") {
-        const remainingQty = Number(gift.remainingQty || 0);
-        if (giftQty > remainingQty) {
-          pauseNavForAlert({
-            icon: "warning",
-            title: "Unidades de regalia insuficientes",
-            text: `${gift.codigo} disponible por unidades: ${remainingQty.toFixed(2)}`,
-          });
-          return false;
-        }
+        unitsRequired += giftQty;
       } else if (gift.promoPolicy === "DINERO") {
         cashRequiredUsd += Number(gift.precioReferenciaUsd || 0) * giftQty;
         const remainingCash = Number(gift.cashRemainingUsd || 0);
@@ -2285,6 +2292,14 @@
         });
         return false;
       }
+    }
+    if (unitsRequired > unitsLimit) {
+      pauseNavForAlert({
+        icon: "warning",
+        title: "Cupo de regalos insuficiente",
+        text: `Disponible: ${unitsLimit.toFixed(2)} - requerido: ${unitsRequired.toFixed(2)}`,
+      });
+      return false;
     }
     if (cashLimitUsd !== null && cashRequiredUsd > cashLimitUsd) {
       pauseNavForAlert({

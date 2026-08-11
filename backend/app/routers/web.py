@@ -2520,10 +2520,10 @@ def _regalia_consumption_by_vendor(
     db: Session,
     vendedor_ids: list[int],
     product_ids: Optional[list[int]] = None,
-) -> tuple[dict[int, Decimal], dict[tuple[int, int], Decimal]]:
+) -> tuple[dict[int, Decimal], dict[tuple[int, int], Decimal], dict[int, Decimal]]:
     clean_vendor_ids = [int(v) for v in vendedor_ids if int(v or 0) > 0]
     if not clean_vendor_ids:
-        return {}, {}
+        return {}, {}, {}
     query = (
         db.query(
             VentaFactura.vendedor_id,
@@ -2540,6 +2540,7 @@ def _regalia_consumption_by_vendor(
         query = query.filter(VentaItem.producto_id.in_([int(pid) for pid in product_ids if int(pid or 0) > 0]))
     vendor_money: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     vendor_items: dict[tuple[int, int], Decimal] = defaultdict(lambda: Decimal("0"))
+    vendor_units: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     grouped_rows = query.group_by(VentaFactura.vendedor_id, VentaItem.producto_id, VentaItem.promo_policy).all()
     grouped_product_ids = [int(producto_id) for _, producto_id, _policy, _qty in grouped_rows if producto_id]
     products_by_id = {
@@ -2554,8 +2555,10 @@ def _regalia_consumption_by_vendor(
         amount_dec = _regalia_price_usd(products_by_id[producto_id]) * qty_dec if producto_id in products_by_id else Decimal("0")
         if policy_code in {"", "UNIDADES"}:
             vendor_items[(int(vendedor_id), int(producto_id))] += qty_dec
-        vendor_money[int(vendedor_id)] += amount_dec
-    return dict(vendor_money), dict(vendor_items)
+            vendor_units[int(vendedor_id)] += qty_dec
+        if policy_code == "DINERO":
+            vendor_money[int(vendedor_id)] += amount_dec
+    return dict(vendor_money), dict(vendor_items), dict(vendor_units)
 
 
 def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bodega]) -> dict[str, object]:
@@ -2573,7 +2576,7 @@ def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bode
     )
     product_ids = [int(producto.id) for _, producto in marked_rows]
     balances = _balances_by_bodega(db, [bodega.id], product_ids) if bodega and product_ids else {}
-    vendor_money_used, vendor_item_used = _regalia_consumption_by_vendor(db, [vendedor_id], product_ids)
+    vendor_money_used, vendor_item_used, vendor_units_used = _regalia_consumption_by_vendor(db, [vendedor_id])
     budget_usd = Decimal(str(policy.presupuesto_usd or 0)) if policy else Decimal("0")
     used_usd = Decimal(str(vendor_money_used.get(int(vendedor_id), Decimal("0")) or 0))
     remaining_usd = max(Decimal("0"), budget_usd - used_usd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -2582,12 +2585,14 @@ def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bode
         for item in policy.items:
             if item.activo:
                 item_limits[int(item.producto_id)] = Decimal(str(item.cantidad_disponible or 0))
+    total_unit_limit = sum(item_limits.values(), Decimal("0"))
     items: list[dict[str, object]] = []
     assigned_products_count = 0
     assigned_units_total = Decimal("0")
     assigned_value_usd_total = Decimal("0")
     remaining_units_total = Decimal("0")
     remaining_value_usd_total = Decimal("0")
+    used_units_total = Decimal(str(vendor_units_used.get(int(vendedor_id), Decimal("0")) or 0))
     for marker, producto in marked_rows:
         product_id = int(producto.id)
         existencia = Decimal(str(balances.get((product_id, bodega.id), Decimal("0")) or 0)) if bodega else Decimal("0")
@@ -2604,7 +2609,7 @@ def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bode
         remaining_units_total += remaining_qty
         remaining_value_usd_total += remaining_value_usd
         cash_can_cover = remaining_usd > 0 and price_usd > 0 and remaining_usd >= price_usd
-        unit_can_cover = remaining_qty > 0
+        unit_can_cover = total_unit_limit > used_units_total
         policy_active = bool(policy and policy.activo)
         allowed = bool(policy_active and (unit_can_cover or cash_can_cover))
         prices = _product_price_map(producto)
@@ -2640,7 +2645,8 @@ def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bode
         "assigned_products_count": assigned_products_count,
         "assigned_units_total": assigned_units_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
         "assigned_value_usd_total": assigned_value_usd_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-        "remaining_units_total": remaining_units_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        "used_units_total": used_units_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        "remaining_units_total": max(Decimal("0"), total_unit_limit - used_units_total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
         "remaining_value_usd_total": remaining_value_usd_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
         "items": items,
     }
@@ -25631,6 +25637,7 @@ def data_regalias(
         "assigned_products_count": 0,
         "assigned_units_total": Decimal("0"),
         "assigned_value_usd_total": Decimal("0"),
+        "used_units_total": Decimal("0"),
         "remaining_units_total": Decimal("0"),
         "remaining_value_usd_total": Decimal("0"),
         "items": [],
@@ -28303,22 +28310,75 @@ def sales_promotions_gifts(
     query = _ascii_lower(q or "")
     items = payload["items"]
     if query:
+        policy_active = bool(payload.get("policy") and payload["policy"].activo)
+        remaining_units_total = Decimal(str(payload.get("remaining_units_total") or 0))
+        remaining_usd = Decimal(str(payload.get("remaining_usd") or 0))
+        product_query = db.query(Producto).filter(Producto.activo.is_(True))
+        tokens = [token for token in re.split(r"\s+", query) if token]
+        if tokens:
+            token_filters = []
+            for token in tokens:
+                like = f"%{token}%"
+                token_filters.append(
+                    or_(
+                        func.lower(func.coalesce(Producto.cod_producto, "")).like(like),
+                        func.lower(func.coalesce(Producto.descripcion, "")).like(like),
+                        func.lower(func.coalesce(Producto.marca, "")).like(like),
+                        func.lower(func.coalesce(Producto.referencia_producto, "")).like(like),
+                    )
+                )
+            product_query = product_query.filter(and_(*token_filters))
+        candidates = product_query.order_by(Producto.descripcion.asc()).limit(120).all()
+        product_ids = [int(producto.id) for producto in candidates]
+        balances = _balances_by_bodega(db, [bodega.id], product_ids) if bodega and product_ids else {}
         scored_items: list[tuple[dict[str, object], int]] = []
-        for item in items:
-            pseudo_product = type(
-                "RegaliaSearchProduct",
-                (),
-                {
-                    "cod_producto": str(item.get("cod_producto") or ""),
-                    "descripcion": str(item.get("descripcion") or ""),
-                    "marca": "",
-                    "referencia_producto": "",
-                },
-            )()
-            match = _smart_product_match(pseudo_product, query)
+        for producto in candidates:
+            if not _is_sellable_product(producto):
+                continue
+            match = _smart_product_match(producto, query)
             score = int(match["score"] or 0)
-            if score >= 8:
-                scored_items.append((item, score))
+            searchable = _ascii_lower(
+                " ".join(
+                    [
+                        str(producto.cod_producto or ""),
+                        str(producto.descripcion or ""),
+                        str(getattr(producto, "marca", "") or ""),
+                        str(getattr(producto, "referencia_producto", "") or ""),
+                    ]
+                )
+            )
+            if score < 8 and not all(token in searchable for token in tokens):
+                continue
+            existencia = Decimal(str(balances.get((int(producto.id), bodega.id), Decimal("0")) or 0)) if bodega else Decimal("0")
+            price_usd = _regalia_price_usd(producto)
+            allowed_by_units = policy_active and remaining_units_total > 0
+            allowed_by_cash = policy_active and remaining_usd > 0 and price_usd > 0 and remaining_usd >= price_usd
+            prices = _product_price_map(producto)
+            scored_items.append(
+                (
+                    {
+                        "id": int(producto.id),
+                        "cod_producto": producto.cod_producto,
+                        "descripcion": producto.descripcion,
+                        **prices,
+                        "precio_referencia_usd": float(price_usd),
+                        "existencia": float(existencia),
+                        "free_qty": float(existencia),
+                        "assigned_qty": float(payload.get("assigned_units_total") or 0),
+                        "assigned_value_usd": float(payload.get("assigned_value_usd_total") or 0),
+                        "used_qty": float(payload.get("used_units_total") or 0),
+                        "remaining_qty": float(remaining_units_total),
+                        "remaining_value_usd": float(payload.get("remaining_value_usd_total") or 0),
+                        "cash_remaining_usd": float(remaining_usd),
+                        "money_available_usd": float(payload.get("money_available_usd") or remaining_usd),
+                        "allowed": bool((allowed_by_units or allowed_by_cash) and existencia > 0),
+                        "allowed_by_cash": bool(allowed_by_cash),
+                        "allowed_by_units": bool(allowed_by_units),
+                        "default_policy": "UNIDADES" if allowed_by_units else "DINERO" if allowed_by_cash else "",
+                    },
+                    score,
+                )
+            )
         scored_items.sort(
             key=lambda row: (
                 -row[1],
@@ -28337,6 +28397,7 @@ def sales_promotions_gifts(
             "assigned_products_count": int(payload["assigned_products_count"]),
             "assigned_units_total": float(payload["assigned_units_total"]),
             "assigned_value_usd_total": float(payload["assigned_value_usd_total"]),
+            "used_units_total": float(payload["used_units_total"]),
             "remaining_units_total": float(payload["remaining_units_total"]),
             "remaining_value_usd_total": float(payload["remaining_value_usd_total"]),
             "items": items[:100],
@@ -33426,6 +33487,29 @@ async def sales_create_invoice(
     if not source_items:
         db.rollback()
         return RedirectResponse("/sales?error=No+hay+items+validos", status_code=303)
+    combo_parent_qty: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    combo_gift_qty: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    for src in source_items:
+        combo_group = str(src.get("combo_group") or "").strip()
+        combo_role = str(src.get("role") or "").strip().lower()
+        qty_dec = Decimal(str(src.get("qty") or 0))
+        if not combo_group or qty_dec <= 0:
+            continue
+        if combo_role == "parent":
+            combo_parent_qty[combo_group] += qty_dec
+        elif combo_role == "gift":
+            combo_gift_qty[combo_group] += qty_dec
+    for combo_group, gift_qty in combo_gift_qty.items():
+        parent_qty = combo_parent_qty.get(combo_group, Decimal("0"))
+        if parent_qty <= 0:
+            db.rollback()
+            return RedirectResponse("/sales?error=Regalia+debe+estar+pegada+a+un+producto+cobrado", status_code=303)
+        if gift_qty > parent_qty:
+            db.rollback()
+            return RedirectResponse(
+                f"/sales?error={quote_plus(f'Regalias exceden bultos vendidos. Vendido: {parent_qty} Regalias: {gift_qty}')}",
+                status_code=303,
+            )
 
     discount_payload = _discount_authorization_payload_from_form(form)
     discount_token_row = None
@@ -33468,11 +33552,10 @@ async def sales_create_invoice(
         if str(it.get("role") or "").strip().lower() == "gift" and int(it["product_id"]) > 0
     ]
     gift_policy_payload = _regalia_vendor_payload(db, vendedor_id_int, bodega) if gift_product_ids else None
-    gift_allowed_by_product = {
-        int(item["id"]): item
-        for item in ((gift_policy_payload or {}).get("items") or [])
-    }
-    request_gift_qty: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    gift_policy_active = bool(gift_policy_payload and gift_policy_payload.get("policy") and gift_policy_payload["policy"].activo)
+    gift_units_remaining = Decimal(str((gift_policy_payload or {}).get("remaining_units_total") or 0))
+    gift_cash_remaining = Decimal(str((gift_policy_payload or {}).get("remaining_usd") or 0))
+    request_gift_units = Decimal("0")
     request_gift_value_usd = Decimal("0")
     for src in source_items:
         product_id = int(src["product_id"])
@@ -33507,36 +33590,34 @@ async def sales_create_invoice(
         if stock_qty <= 0:
             continue
         if is_gift_item:
-            gift_rule = gift_allowed_by_product.get(int(product_id))
-            if not gift_rule or not bool(gift_rule.get("allowed")):
+            if not gift_policy_active:
                 db.rollback()
                 return RedirectResponse(
-                    f"/sales?error={quote_plus(f'Regalia no autorizada para {producto.cod_producto} y el vendedor seleccionado')}",
+                    f"/sales?error={quote_plus('El vendedor seleccionado no tiene politica de regalias activa')}",
                     status_code=303,
                 )
-            remaining_units = Decimal(str(gift_rule.get("remaining_qty") or 0))
-            cash_remaining = Decimal(str(gift_rule.get("cash_remaining_usd") or 0))
             price_ref_usd = _regalia_price_usd(producto, tasa)
-            unit_ok = remaining_units > 0 and (request_gift_qty[int(product_id)] + Decimal(str(stock_qty))) <= remaining_units
-            cash_ok = cash_remaining > 0 and (request_gift_value_usd + (price_ref_usd * Decimal(str(stock_qty)))) <= cash_remaining
+            stock_qty_dec = Decimal(str(stock_qty))
+            unit_ok = gift_units_remaining > 0 and (request_gift_units + stock_qty_dec) <= gift_units_remaining
+            cash_ok = gift_cash_remaining > 0 and price_ref_usd > 0 and (request_gift_value_usd + (price_ref_usd * stock_qty_dec)) <= gift_cash_remaining
             if promo_policy not in {"UNIDADES", "DINERO"}:
                 promo_policy = "UNIDADES" if unit_ok else "DINERO" if cash_ok else ""
             if promo_policy == "UNIDADES" and not unit_ok:
                 db.rollback()
                 return RedirectResponse(
-                    f"/sales?error={quote_plus(f'Regalia excede unidades disponibles para {producto.cod_producto}')}",
+                    f"/sales?error={quote_plus(f'Regalia excede el cupo de unidades del vendedor. Disponible: {gift_units_remaining}')}",
                     status_code=303,
                 )
             if promo_policy == "DINERO" and not cash_ok:
                 db.rollback()
                 return RedirectResponse(
-                    f"/sales?error={quote_plus(f'Regalia excede efectivo disponible para {producto.cod_producto}')}",
+                    f"/sales?error={quote_plus(f'Regalia excede efectivo disponible del vendedor. Disponible: ${gift_cash_remaining}')}",
                     status_code=303,
                 )
             if promo_policy == "UNIDADES":
-                request_gift_qty[int(product_id)] += Decimal(str(stock_qty))
+                request_gift_units += stock_qty_dec
             elif promo_policy == "DINERO":
-                request_gift_value_usd += price_ref_usd * Decimal(str(stock_qty))
+                request_gift_value_usd += price_ref_usd * stock_qty_dec
             else:
                 db.rollback()
                 return RedirectResponse(
