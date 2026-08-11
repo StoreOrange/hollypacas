@@ -2061,11 +2061,7 @@
     promotionGiftPayload = payload;
     renderGiftBalanceProjection();
     const items = (payload.items || []).filter((item) => item.allowed);
-    if (!items.length && Number(payload.remaining_units_total || 0) <= 0) {
-      comboGiftResults.innerHTML = `<div class="text-warning text-sm">El vendedor no tiene cupo disponible para regalias.</div>`;
-    } else {
-      renderComboGiftResults(items);
-    }
+    renderComboGiftResults(items);
   };
 
   const loadGiftAssignmentPanel = async () => {
@@ -2194,15 +2190,6 @@
   const validateComboStock = () => {
     if (!comboParent) return true;
     const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
-    const giftUnitsInCombo = comboGifts.reduce((sum, gift) => sum + Number(gift.cantidad || 0), 0);
-    if (giftUnitsInCombo > 1) {
-      pauseNavForAlert({
-        icon: "warning",
-        title: "Regalias excedidas",
-        text: `Este combo permite ${comboQty} regalo(s). Seleccionaste ${(giftUnitsInCombo * comboQty).toFixed(2)}.`,
-      });
-      return false;
-    }
     const required = [];
     required.push({
       id: comboParent.id,
@@ -2229,20 +2216,8 @@
         return false;
       }
     }
-    let unitsRequired = 0;
-    const unitsLimit = Number(promotionGiftPayload?.remaining_units_total || 0);
     for (const gift of comboGifts) {
       gift.promoPolicy = "UNIDADES";
-      const giftQty = gift.cantidad * comboQty;
-      unitsRequired += giftQty;
-    }
-    if (unitsRequired > unitsLimit) {
-      pauseNavForAlert({
-        icon: "warning",
-        title: "Cupo de regalos insuficiente",
-        text: `Disponible: ${unitsLimit.toFixed(2)} - requerido: ${unitsRequired.toFixed(2)}`,
-      });
-      return false;
     }
     return true;
   };
@@ -2321,7 +2296,7 @@
     comboGiftResults.innerHTML = items
       .map((item) => {
         const freeQty = Number(item.free_qty ?? item.existencia ?? 0);
-        const disabled = freeQty <= 0 || !item.allowed_by_units;
+        const disabled = freeQty <= 0;
         const policyStatus = [`Cupo vendedor: ${Number(item.remaining_qty || 0).toFixed(2)}`, `Precio venta: $${Number(item.precio_referencia_usd || 0).toFixed(2)}`].join(" - ");
         return `
           <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
@@ -2342,7 +2317,7 @@
                 data-price-cs="${item.precio_venta1}"
                 data-existencia="${item.existencia}"
                 data-free-qty="${freeQty}"
-                data-allowed-units="${item.allowed_by_units ? "1" : "0"}"
+              data-allowed-units="1"
                 data-remaining-qty="${item.remaining_qty || 0}"
                 data-price-ref-usd="${item.precio_referencia_usd || 0}"
                 data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
@@ -2362,15 +2337,11 @@
     const id = String(source.id || "");
     const existencia = Number(source.existencia || 0);
     const freeQty = Number(source.freeQty ?? source.free_qty ?? existencia);
-    const allowedByUnits = Boolean(source.allowedByUnits ?? source.allowed_by_units);
+    const allowedByUnits = true;
     const requestedQty = Math.max(1, Math.round(Number(source.cantidad || 1)));
     if (!id) return;
     if (freeQty <= 0) {
       pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Esta regalia no tiene saldo." });
-      return;
-    }
-    if (!allowedByUnits) {
-      pauseNavForAlert({ icon: "warning", title: "Sin cupo disponible", text: "Este vendedor no tiene unidades disponibles para regalar." });
       return;
     }
     const existing = comboGifts.find((gift) => String(gift.id) === id);
@@ -2555,11 +2526,7 @@
         const response = await fetch(`/sales/promotions/gifts?${buildPromotionGiftParams(value).toString()}`);
         const payload = await response.json().catch(() => null);
         const items = (payload?.items || []).filter((item) => item.allowed);
-        if (!items.length && payload && Number(payload.remaining_units_total || 0) <= 0) {
-          comboGiftResults.innerHTML = `<div class="text-warning text-sm">El vendedor no tiene cupo disponible para regalias.</div>`;
-        } else {
-          renderComboGiftResults(items);
-        }
+        renderComboGiftResults(items);
       } catch (error) {
         if (comboGiftResults) {
           comboGiftResults.innerHTML = `<div class="text-danger text-sm">Error al buscar productos.</div>`;

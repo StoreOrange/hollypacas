@@ -28297,7 +28297,6 @@ def sales_promotions_gifts(
             bodega = requested
     payload = _regalia_vendor_payload(db, vendedor.id, bodega)
     query = _ascii_lower(q or "")
-    policy_active = bool(payload.get("policy") and payload["policy"].activo)
     remaining_units_total = Decimal(str(payload.get("remaining_units_total") or 0))
     base_product_query = db.query(Producto).filter(Producto.activo.is_(True))
     product_query = base_product_query
@@ -28347,7 +28346,7 @@ def sales_promotions_gifts(
         if existencia <= 0:
             continue
         price_usd = _regalia_price_usd(producto)
-        allowed_by_units = policy_active and remaining_units_total > 0
+        allowed_by_units = True
         prices = _product_price_map(producto)
         scored_items.append(
             (
@@ -28366,10 +28365,10 @@ def sales_promotions_gifts(
                     "remaining_value_usd": 0.0,
                     "cash_remaining_usd": 0.0,
                     "money_available_usd": 0.0,
-                    "allowed": bool(allowed_by_units),
+                    "allowed": True,
                     "allowed_by_cash": False,
                     "allowed_by_units": bool(allowed_by_units),
-                    "default_policy": "UNIDADES" if allowed_by_units else "",
+                    "default_policy": "UNIDADES",
                 },
                 score,
             )
@@ -33540,16 +33539,6 @@ async def sales_create_invoice(
     weighted_sales_enabled = _weighted_sales_enabled_mode(db)
     product_ids = [int(it["product_id"]) for it in source_items if int(it["product_id"]) > 0]
     balances = _balances_by_bodega(db, [bodega.id], list(set(product_ids))) if product_ids else {}
-    vendedor_id_int = int(vendedor_id) if str(vendedor_id or "").isdigit() else 0
-    gift_product_ids = [
-        int(it["product_id"])
-        for it in source_items
-        if str(it.get("role") or "").strip().lower() == "gift" and int(it["product_id"]) > 0
-    ]
-    gift_policy_payload = _regalia_vendor_payload(db, vendedor_id_int, bodega) if gift_product_ids else None
-    gift_policy_active = bool(gift_policy_payload and gift_policy_payload.get("policy") and gift_policy_payload["policy"].activo)
-    gift_units_remaining = Decimal(str((gift_policy_payload or {}).get("remaining_units_total") or 0))
-    request_gift_units = Decimal("0")
     for src in source_items:
         product_id = int(src["product_id"])
         variant_id = int(src.get("variant_id") or 0) or None
@@ -33584,21 +33573,6 @@ async def sales_create_invoice(
             continue
         if is_gift_item:
             promo_policy = "UNIDADES"
-            if not gift_policy_active:
-                db.rollback()
-                return RedirectResponse(
-                    f"/sales?error={quote_plus('El vendedor seleccionado no tiene politica de regalias activa')}",
-                    status_code=303,
-                )
-            stock_qty_dec = Decimal(str(stock_qty))
-            unit_ok = gift_units_remaining > 0 and (request_gift_units + stock_qty_dec) <= gift_units_remaining
-            if not unit_ok:
-                db.rollback()
-                return RedirectResponse(
-                    f"/sales?error={quote_plus(f'Regalia excede el cupo de unidades del vendedor. Disponible: {gift_units_remaining}')}",
-                    status_code=303,
-                )
-            request_gift_units += stock_qty_dec
         if weighted_sales_enabled and bool(getattr(producto, "es_por_peso", False)) and billable_qty <= 0:
             db.rollback()
             return RedirectResponse("/sales?error=Debes+definir+el+peso+a+facturar", status_code=303)
