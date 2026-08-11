@@ -28299,7 +28299,8 @@ def sales_promotions_gifts(
     query = _ascii_lower(q or "")
     policy_active = bool(payload.get("policy") and payload["policy"].activo)
     remaining_units_total = Decimal(str(payload.get("remaining_units_total") or 0))
-    product_query = db.query(Producto).filter(Producto.activo.is_(True))
+    base_product_query = db.query(Producto).filter(Producto.activo.is_(True))
+    product_query = base_product_query
     tokens = [token for token in re.split(r"\s+", query) if token]
     if tokens:
         token_filters = []
@@ -28314,7 +28315,12 @@ def sales_promotions_gifts(
                 )
             )
         product_query = product_query.filter(and_(*token_filters))
-    candidates = product_query.order_by(Producto.descripcion.asc()).limit(180).all()
+    limit = 180 if not query else 400
+    candidates = product_query.order_by(Producto.descripcion.asc()).limit(limit).all()
+    if query and len(candidates) < 25:
+        fallback_candidates = base_product_query.order_by(Producto.descripcion.asc()).limit(2500).all()
+        seen_ids = {int(producto.id) for producto in candidates}
+        candidates.extend([producto for producto in fallback_candidates if int(producto.id) not in seen_ids])
     product_ids = [int(producto.id) for producto in candidates]
     balances = _balances_by_bodega(db, [bodega.id], product_ids) if bodega and product_ids else {}
     scored_items: list[tuple[dict[str, object], int]] = []

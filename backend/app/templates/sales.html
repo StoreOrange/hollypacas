@@ -2060,7 +2060,12 @@
     }
     promotionGiftPayload = payload;
     renderGiftBalanceProjection();
-    renderComboGiftResults((payload.items || []).filter((item) => item.allowed));
+    const items = (payload.items || []).filter((item) => item.allowed);
+    if (!items.length && Number(payload.remaining_units_total || 0) <= 0) {
+      comboGiftResults.innerHTML = `<div class="text-warning text-sm">El vendedor no tiene cupo disponible para regalias.</div>`;
+    } else {
+      renderComboGiftResults(items);
+    }
   };
 
   const loadGiftAssignmentPanel = async () => {
@@ -2546,14 +2551,15 @@
   if (comboGiftSearch) {
     comboGiftSearch.addEventListener("input", async (event) => {
       const value = event.target.value.trim();
-      if (value.length === 1) {
-        return;
-      }
       try {
         const response = await fetch(`/sales/promotions/gifts?${buildPromotionGiftParams(value).toString()}`);
         const payload = await response.json().catch(() => null);
         const items = (payload?.items || []).filter((item) => item.allowed);
-        renderComboGiftResults(items);
+        if (!items.length && payload && Number(payload.remaining_units_total || 0) <= 0) {
+          comboGiftResults.innerHTML = `<div class="text-warning text-sm">El vendedor no tiene cupo disponible para regalias.</div>`;
+        } else {
+          renderComboGiftResults(items);
+        }
       } catch (error) {
         if (comboGiftResults) {
           comboGiftResults.innerHTML = `<div class="text-danger text-sm">Error al buscar productos.</div>`;
