@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+
+  <main class="p-6 lg:p-8 text-[16px]">
+    <div class="odoo-page">
+      <div class="odoo-header">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div>
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">Reportes</li>
+                <li class="breadcrumb-item active" aria-current="page">Regalias</li>
+              </ol>
+            </nav>
+            <div class="odoo-title mt-2 text-xl">Informe de regalias disponibles</div>
+            <div class="odoo-subtitle mt-1 text-sm">Presupuesto, consumo y productos autorizados por vendedor{% if bodega %} en {{ bodega.name }}{% endif %}.</div>
+          </div>
+          <a class="btn btn-outline-secondary btn-sm" href="/data/regalias">
+            <i class="bi bi-sliders"></i>
+            Configurar
+          </a>
+        </div>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Presupuesto</div>
+            <div class="text-2xl fw-bold text-ink mt-1">$ {{ "%.2f"|format(total_budget|float) }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Consumido</div>
+            <div class="text-2xl fw-bold text-ink mt-1">$ {{ "%.2f"|format(total_used|float) }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Dinero disponible</div>
+            <div class="text-2xl fw-bold text-emerald-700 mt-1">$ {{ "%.2f"|format(total_remaining|float) }}</div>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-3">
+          <div class="odoo-card h-100">
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Valor inventario regalo</div>
+            <div class="text-2xl fw-bold text-ink mt-1">$ {{ "%.2f"|format(total_inventory_value|float) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="odoo-card mt-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <div class="odoo-section-title text-base">Detalle de regalos entregados</div>
+          <span class="odoo-pill primary">Total: $ {{ "%.2f"|format(detail_total_usd|float) }}</span>
+        </div>
+        <form class="row g-2 align-items-end mb-3" method="get" action="/reports/regalias">
+          <div class="col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+            <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+            <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor</label>
+            <select name="vendedor_id" class="form-select form-select-sm">
+              <option value="">Todos</option>
+              {% for vendedor in vendedores %}
+              <option value="{{ vendedor.id }}" {% if selected_vendedor_id == vendedor.id %}selected{% endif %}>{{ vendedor.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-primary btn-sm w-100" type="submit"><i class="bi bi-search"></i> Filtrar</button>
+          </div>
+        </form>
+        <div class="row g-2 mb-3">
+          <div class="col-md-4">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div class="text-xs text-slate">Cantidad regalos</div>
+              <div class="fw-bold text-ink">{{ "%.2f"|format(detail_total_qty|float) }}</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div class="text-xs text-slate">Valor entregado USD</div>
+              <div class="fw-bold text-ink">$ {{ "%.2f"|format(detail_total_usd|float) }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table align-middle" style="font-size:.78rem;">
+            <thead class="odoo-table-head text-xs uppercase">
+              <tr>
+                <th>Factura</th>
+                <th>Fecha</th>
+                <th>Vendedor</th>
+                <th>Codigo</th>
+                <th>Producto regalo</th>
+                <th>Politica</th>
+                <th class="text-end">Cantidad</th>
+                <th class="text-end">Precio ref. USD</th>
+                <th class="text-end">Total USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in detail_rows %}
+              <tr>
+                <td class="fw-semibold">{{ row.factura.numero }}</td>
+                <td>{{ row.fecha.strftime("%d/%m/%Y") if row.fecha else "-" }}</td>
+                <td>{{ row.vendedor.nombre if row.vendedor else "-" }}</td>
+                <td class="fw-semibold">{{ row.producto.cod_producto }}</td>
+                <td>{{ row.producto.descripcion }}</td>
+                <td>{{ row.policy }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.cantidad|float) }}</td>
+                <td class="text-end">$ {{ "%.2f"|format(row.precio_ref_usd|float) }}</td>
+                <td class="text-end fw-semibold">$ {{ "%.2f"|format(row.total_ref_usd|float) }}</td>
+              </tr>
+              {% endfor %}
+              {% if detail_rows|length == 0 %}
+              <tr><td colspan="9" class="text-center text-slate py-3">Sin regalos entregados en el filtro seleccionado.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="odoo-card mt-3">
+        <div class="odoo-section-title text-base mb-3">Disponibilidad actual</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table align-middle">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th>Vendedor</th>
+                <th class="text-end">Presupuesto USD</th>
+                <th class="text-end">Usado USD</th>
+                <th class="text-end">Disponible USD</th>
+                <th class="text-end">Unidades disponibles</th>
+                <th class="text-end">Valor inventario USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr class="table-light">
+                <td class="fw-semibold">{{ row.vendedor.nombre }}</td>
+                <td class="text-end">$ {{ "%.2f"|format(row.budget_usd|float) }}</td>
+                <td class="text-end">$ {{ "%.2f"|format(row.used_usd|float) }}</td>
+                <td class="text-end fw-semibold">$ {{ "%.2f"|format(row.remaining_usd|float) }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.unit_remaining|float) }}</td>
+                <td class="text-end">$ {{ "%.2f"|format(row.inventory_value_usd|float) }}</td>
+              </tr>
+              <tr>
+                <td colspan="6" class="p-0">
+                  <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                      <thead>
+                        <tr>
+                          <th class="ps-4">Codigo</th>
+                          <th>Producto</th>
+                          <th class="text-end">Fisico</th>
+                          <th class="text-end">Asignado</th>
+                          <th class="text-end">Usado</th>
+                          <th class="text-end">Disp. unidades</th>
+                          <th class="text-end">Valor ref.</th>
+                          <th class="text-end">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for item in row.items %}
+                        <tr>
+                          <td class="ps-4 fw-semibold">{{ item.cod_producto }}</td>
+                          <td>{{ item.descripcion }}</td>
+                          <td class="text-end">{{ "%.2f"|format(item.existencia|float) }}</td>
+                          <td class="text-end">{{ "%.2f"|format(item.assigned_qty|float) }}</td>
+                          <td class="text-end">{{ "%.2f"|format(item.used_qty|float) }}</td>
+                          <td class="text-end">{{ "%.2f"|format(item.remaining_qty|float) }}</td>
+                          <td class="text-end">$ {{ "%.2f"|format(item.precio_referencia_usd|float) }}</td>
+                          <td class="text-end">
+                            {% if item.allowed %}
+                            <span class="badge text-bg-success">Disponible</span>
+                            {% elif item.existencia|float <= 0 %}
+                            <span class="badge text-bg-secondary">Sin fisico</span>
+                            {% elif not item.allowed_by_units %}
+                            <span class="badge text-bg-warning">Sin unidades</span>
+                            {% elif not item.allowed_by_cash %}
+                            <span class="badge text-bg-warning">Sin dinero</span>
+                            {% else %}
+                            <span class="badge text-bg-secondary">Bloqueado</span>
+                            {% endif %}
+                          </td>
+                        </tr>
+                        {% endfor %}
+                        {% if row.items|length == 0 %}
+                        <tr><td colspan="8" class="text-center text-slate py-3">Sin productos regalables configurados.</td></tr>
+                        {% endif %}
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+              {% if rows|length == 0 %}
+              <tr><td colspan="6" class="text-center text-slate py-3">Sin vendedores activos.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

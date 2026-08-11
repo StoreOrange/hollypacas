@@ -244,6 +244,53 @@ class DiscountAuthorizationToken(Base):
     factura = relationship("VentaFactura")
 
 
+class RegaliaProducto(Base):
+    __tablename__ = "regalias_productos"
+    __table_args__ = (UniqueConstraint("producto_id", name="uq_regalia_producto"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    nota = Column(String(240), nullable=True)
+    activo = Column(Boolean, default=True)
+    usuario_registro = Column(String(120), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    producto = relationship("Producto")
+
+
+class RegaliaVendedorPolitica(Base):
+    __tablename__ = "regalias_vendedores_politicas"
+    __table_args__ = (UniqueConstraint("vendedor_id", name="uq_regalia_vendedor_politica"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    vendedor_id = Column(Integer, ForeignKey("vendedores.id"), nullable=False)
+    presupuesto_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    activo = Column(Boolean, default=True)
+    usuario_registro = Column(String(120), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    vendedor = relationship("Vendedor")
+    items = relationship("RegaliaVendedorItem", back_populates="politica", cascade="all, delete-orphan")
+
+
+class RegaliaVendedorItem(Base):
+    __tablename__ = "regalias_vendedores_items"
+    __table_args__ = (UniqueConstraint("politica_id", "producto_id", name="uq_regalia_vendedor_item"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    politica_id = Column(Integer, ForeignKey("regalias_vendedores_politicas.id"), nullable=False)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    cantidad_disponible = Column(Numeric(14, 2), nullable=False, default=0)
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    politica = relationship("RegaliaVendedorPolitica", back_populates="items")
+    producto = relationship("Producto")
+
+
 class VentaFactura(Base):
     __tablename__ = "ventas_facturas"
 
@@ -305,6 +352,7 @@ class VentaItem(Base):
     subtotal_cs = Column(Numeric(14, 2), default=0)
     combo_role = Column(String(20), nullable=True)
     combo_group = Column(String(60), nullable=True)
+    promo_policy = Column(String(20), nullable=True)
 
     factura = relationship("VentaFactura", back_populates="items")
     producto = relationship("Producto")

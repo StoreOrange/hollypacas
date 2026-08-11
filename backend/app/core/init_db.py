@@ -1698,6 +1698,9 @@ def init_db() -> None:
         if "combo_group" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_items ADD COLUMN combo_group VARCHAR(60)"))
+        if "promo_policy" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_items ADD COLUMN promo_policy VARCHAR(20)"))
         if "variante_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_items ADD COLUMN variante_id INTEGER"))

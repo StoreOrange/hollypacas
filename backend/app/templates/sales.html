@@ -583,7 +583,7 @@
                 <div class="sales-panel-title d-flex align-items-center gap-2">
                   <button id="open-combo-modal" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
                     <i class="bi bi-boxes"></i>
-                    Combos
+                    Venta de promociones
                   </button>
                   <div id="preventa-live-inline" class="preventa-live-inline">
                     <span id="preventa-live-text" class="preventa-live-text">Nueva preventa recibida</span>
@@ -1090,10 +1090,10 @@
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <div class="modal-header border-0">
         <div>
-          <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Combos y ofertas</div>
+          <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Venta de promociones</div>
           <div class="text-2xl font-semibold text-ink d-flex align-items-center gap-2">
             <i class="bi bi-boxes text-brand"></i>
-            Armar combo
+            Armar promocion
           </div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
@@ -1104,11 +1104,11 @@
             <div class="odoo-card">
               <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
                 <i class="bi bi-star text-brand"></i>
-                Producto oferta (padre)
+                Producto a cobrar
               </div>
               <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
                 <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
-                <input id="combo-parent-search" class="form-control border-0" type="text" placeholder="Buscar oferta" />
+                <input id="combo-parent-search" class="form-control border-0" type="text" placeholder="Buscar producto a cobrar" />
               </div>
               <div id="combo-parent-results" class="mt-3 space-y-2 text-sm"></div>
               <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -1123,7 +1123,7 @@
                   Saldo disponible: <strong id="combo-parent-available">0</strong>
                 </div>
                 <div class="mt-2 text-sm text-slate">
-                  Precio combo: <strong id="combo-parent-price">C$ 0.00</strong>
+                  Total cobrado: <strong id="combo-parent-price">C$ 0.00</strong>
                 </div>
               </div>
             </div>
@@ -1132,11 +1132,15 @@
             <div class="odoo-card">
               <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
                 <i class="bi bi-gift text-brand"></i>
-                Regalias (hijas)
+                Regalias autorizadas
               </div>
+              <div id="combo-gift-policy-summary" class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 mb-3 text-slate" style="font-size:.72rem;">
+                Selecciona un vendedor para ver sus regalias asignadas.
+              </div>
+              <div id="combo-gift-assigned-list" class="mb-3 space-y-1" style="font-size:.72rem;"></div>
               <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
                 <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
-                <input id="combo-gift-search" class="form-control border-0" type="text" placeholder="Buscar regalia" />
+                <input id="combo-gift-search" class="form-control border-0" type="text" placeholder="Buscar regalia autorizada" />
               </div>
               <div id="combo-gift-results" class="mt-3 space-y-2 text-sm"></div>
               <div class="mt-3">
@@ -1154,7 +1158,7 @@
             <div class="d-flex justify-content-end mt-3 gap-2">
               <button id="combo-apply" class="btn btn-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
                 <i class="bi bi-check2-circle"></i>
-                Agregar combo
+                Agregar promocion
               </button>
             </div>
             <div class="text-sm text-slate mt-2" id="combo-status"></div>
@@ -1277,6 +1281,8 @@
   const comboGiftSearch = document.getElementById("combo-gift-search");
   const comboGiftResults = document.getElementById("combo-gift-results");
   const comboGiftList = document.getElementById("combo-gift-list");
+  const comboGiftPolicySummary = document.getElementById("combo-gift-policy-summary");
+  const comboGiftAssignedList = document.getElementById("combo-gift-assigned-list");
   const comboApply = document.getElementById("combo-apply");
   const comboStatus = document.getElementById("combo-status");
   const comboPreview = document.getElementById("combo-preview");
@@ -1685,6 +1691,7 @@
         <input type="hidden" name="item_peso_lbs" value="${payload.pesoLbs ? Number(payload.pesoLbs).toFixed(2) : ""}" />
         <input type="hidden" name="item_role" value="${payload.role || ""}" />
         <input type="hidden" name="item_combo_group" value="${payload.comboGroup || ""}" />
+        <input type="hidden" name="item_promo_policy" value="${payload.promoPolicy || ""}" />
       </td>
       <td>
         <div class="sales-line-name">${payload.name}</div>
@@ -2001,10 +2008,115 @@
 
   let comboParent = null;
   let comboGifts = [];
+  let promotionGiftPayload = null;
+
+  const policyLabel = (policy) => policy === "DINERO" ? "Dinero" : policy === "UNIDADES" ? "Unidades" : "Sin politica";
+
+  const normalizeGiftPolicy = (gift) => {
+    if (!gift) return "";
+    if (gift.promoPolicy === "UNIDADES" && gift.allowedByUnits) return "UNIDADES";
+    if (gift.promoPolicy === "DINERO" && gift.allowedByCash) return "DINERO";
+    if (gift.allowedByUnits) return "UNIDADES";
+    if (gift.allowedByCash) return "DINERO";
+    return "";
+  };
+
+  const buildPromotionGiftParams = (query = "") => {
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    const vendedorSelectEl = document.getElementById("vendedor-select");
+    if (vendedorSelectEl?.value) params.set("vendedor_id", vendedorSelectEl.value);
+    if (activeBodegaId > 0) params.set("bodega_id", String(activeBodegaId));
+    return params;
+  };
+
+  const getPromotionGiftUsage = () => {
+    const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+    const unitsByProduct = new Map();
+    let moneyUsd = 0;
+    comboGifts.forEach((gift) => {
+      gift.promoPolicy = normalizeGiftPolicy(gift);
+      const qty = Number(gift.cantidad || 0) * comboQty;
+      moneyUsd += Number(gift.precioReferenciaUsd || 0) * qty;
+      if (gift.promoPolicy === "UNIDADES") {
+        const key = String(gift.id);
+        unitsByProduct.set(key, (unitsByProduct.get(key) || 0) + qty);
+      }
+    });
+    return { moneyUsd, unitsByProduct };
+  };
+
+  const renderGiftBalanceProjection = () => {
+    if (!promotionGiftPayload || !promotionGiftPayload.ok || !comboGiftPolicySummary || !comboGiftAssignedList) return;
+    const usage = getPromotionGiftUsage();
+    const baseMoneyUsd = Number(promotionGiftPayload.money_available_usd ?? promotionGiftPayload.remaining_value_usd_total ?? promotionGiftPayload.remaining_usd ?? 0);
+    const remainingUsd = Math.max(0, baseMoneyUsd - usage.moneyUsd);
+    comboGiftPolicySummary.innerHTML = `
+      <div class="d-flex flex-wrap gap-1 align-items-center">
+        <span class="odoo-pill primary" style="font-size:.66rem;padding:.15rem .45rem;">Dinero disp.: $ ${remainingUsd.toFixed(2)}</span>
+        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">En esta promo: $ ${usage.moneyUsd.toFixed(2)}</span>
+        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Prod.: ${Number(promotionGiftPayload.assigned_products_count || 0)}</span>
+        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Und.: ${Number(promotionGiftPayload.assigned_units_total || 0).toFixed(2)}</span>
+        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Valor: $ ${Number(promotionGiftPayload.assigned_value_usd_total || 0).toFixed(2)}</span>
+      </div>
+    `;
+    const assignedItems = (promotionGiftPayload.items || []).filter((item) => Number(item.assigned_qty || 0) > 0);
+    if (!assignedItems.length) {
+      comboGiftAssignedList.innerHTML = `<div class="text-slate">Este vendedor no tiene productos asignados para regalar.</div>`;
+      return;
+    }
+    comboGiftAssignedList.innerHTML = assignedItems.slice(0, 8).map((item) => {
+      const selectedQty = Number(usage.unitsByProduct.get(String(item.id)) || 0);
+      const projectedQty = Math.max(0, Number(item.remaining_qty || 0) - selectedQty);
+      return `
+        <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-2 py-1 bg-white">
+          <div class="min-w-0">
+            <div class="fw-semibold text-ink">${item.cod_producto} - ${item.descripcion}</div>
+            <div class="text-slate" style="font-size:.66rem;">Precio: $ ${Number(item.precio_referencia_usd || 0).toFixed(2)}</div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="text-end text-slate" style="font-size:.66rem;">
+              <div>Disp. <strong>${projectedQty.toFixed(2)}</strong></div>
+              <div>$ <strong>${Number(item.remaining_value_usd || 0).toFixed(2)}</strong></div>
+            </div>
+            <button class="btn btn-outline-primary btn-sm py-0 px-2 assigned-gift-pick" type="button" data-product-id="${item.id}" style="font-size:.72rem;">
+              <i class="bi bi-plus-lg"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  };
+
+  const renderGiftAssignmentPanel = (payload) => {
+    if (!comboGiftPolicySummary || !comboGiftAssignedList) return;
+    if (!payload || !payload.ok) {
+      promotionGiftPayload = null;
+      comboGiftPolicySummary.innerHTML = `<span class="text-danger">${payload?.message || "No se pudo cargar la asignacion del vendedor."}</span>`;
+      comboGiftAssignedList.innerHTML = "";
+      return;
+    }
+    promotionGiftPayload = payload;
+    renderGiftBalanceProjection();
+  };
+
+  const loadGiftAssignmentPanel = async () => {
+    if (!comboGiftPolicySummary || !comboGiftAssignedList) return;
+    comboGiftPolicySummary.textContent = "Cargando asignacion del vendedor...";
+    comboGiftAssignedList.innerHTML = "";
+    try {
+      const response = await fetch(`/sales/promotions/gifts?${buildPromotionGiftParams().toString()}`);
+      const payload = await response.json().catch(() => null);
+      renderGiftAssignmentPanel(payload);
+    } catch (error) {
+      renderGiftAssignmentPanel({ ok: false, message: "Error al cargar regalias asignadas." });
+    }
+  };
 
   const resetComboModal = () => {
     comboParent = null;
     comboGifts = [];
+    promotionGiftPayload = null;
     if (comboParentSearch) comboParentSearch.value = "";
     if (comboParentResults) comboParentResults.innerHTML = "";
     if (comboParentSelected) comboParentSelected.textContent = "Sin seleccionar";
@@ -2014,6 +2126,8 @@
     if (comboGiftSearch) comboGiftSearch.value = "";
     if (comboGiftResults) comboGiftResults.innerHTML = "";
     if (comboGiftList) comboGiftList.innerHTML = "";
+    if (comboGiftPolicySummary) comboGiftPolicySummary.textContent = "Selecciona un vendedor para ver sus regalias asignadas.";
+    if (comboGiftAssignedList) comboGiftAssignedList.innerHTML = "";
     if (comboPreview) comboPreview.innerHTML = "Sin datos para mostrar.";
     if (comboStatus) comboStatus.textContent = "";
   };
@@ -2026,13 +2140,20 @@
     }
     comboGiftList.innerHTML = comboGifts
       .map((gift, index) => {
+        gift.promoPolicy = normalizeGiftPolicy(gift);
+        const unitText = `Unidades (${Number(gift.remainingQty || 0).toFixed(2)})`;
+        const cashText = `Dinero disp. $${Number(gift.moneyAvailableUsd || gift.cashRemainingUsd || 0).toFixed(2)}`;
         return `
           <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
             <div>
               <div class="font-semibold text-ink">${gift.codigo} - ${gift.descripcion}</div>
-              <div class="text-xs text-slate">Existencia: ${gift.existencia}</div>
+              <div class="text-xs text-slate">Existencia: ${gift.existencia} · Valor ref. $${Number(gift.precioReferenciaUsd || 0).toFixed(2)}</div>
             </div>
             <div class="d-flex align-items-center gap-2">
+              <select class="form-select form-select-sm gift-policy" data-index="${index}" style="width: 160px;">
+                <option value="UNIDADES" ${gift.promoPolicy === "UNIDADES" ? "selected" : ""} ${gift.allowedByUnits ? "" : "disabled"}>${unitText}</option>
+                <option value="DINERO" ${gift.promoPolicy === "DINERO" ? "selected" : ""} ${gift.allowedByCash ? "" : "disabled"}>${cashText}</option>
+              </select>
               <input class="form-control form-control-sm w-20 gift-qty" type="number" min="1" step="1" value="${gift.cantidad}" data-index="${index}" />
               <button class="btn btn-outline-danger btn-sm gift-remove" type="button" data-index="${index}">
                 <i class="bi bi-trash"></i>
@@ -2042,17 +2163,14 @@
         `;
       })
       .join("");
+    renderGiftBalanceProjection();
   };
 
   const renderComboPrice = () => {
     if (!comboParentPrice) return;
     const currency = monedaField?.value || "CS";
     const parentPrice = comboParent ? (currency === "USD" ? comboParent.precioUsd : comboParent.precioCs) : 0;
-    const giftTotal = comboGifts.reduce((acc, gift) => {
-      const price = currency === "USD" ? gift.precioUsd : gift.precioCs;
-      return acc + price * gift.cantidad;
-    }, 0);
-    comboParentPrice.textContent = formatMoney(parentPrice + giftTotal, currency);
+    comboParentPrice.textContent = formatMoney(parentPrice, currency);
     renderComboPreview();
   };
 
@@ -2068,16 +2186,11 @@
       comboParentAvailable.textContent = getAvailableQty(comboParent.id, comboParent.freeQty ?? comboParent.existencia).toFixed(0);
     }
     const parentUnit = currency === "USD" ? comboParent.precioUsd : comboParent.precioCs;
-    const giftsTotal = comboGifts.reduce((acc, gift) => {
-      const price = currency === "USD" ? gift.precioUsd : gift.precioCs;
-      return acc + price * gift.cantidad;
-    }, 0);
-    const comboUnit = parentUnit + giftsTotal;
+    const comboUnit = parentUnit;
     const comboTotal = comboUnit * comboQty;
     const giftsHtml = comboGifts.length
       ? comboGifts
           .map((gift) => {
-            const giftPrice = currency === "USD" ? gift.precioUsd : gift.precioCs;
             return `
               <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
                 <div class="d-flex align-items-center gap-2">
@@ -2086,7 +2199,7 @@
                 </div>
                 <div class="text-end">
                   <div class="text-slate">x${gift.cantidad * comboQty}</div>
-                  <div class="text-slate text-[11px]" style="opacity:0.3;">${formatMoney(giftPrice, currency)}</div>
+                  <div class="text-emerald-700 text-[11px] fw-semibold">No cobra · ${policyLabel(gift.promoPolicy)}</div>
                 </div>
               </div>
             `;
@@ -2102,13 +2215,13 @@
           </div>
           <span class="text-slate">x${comboQty}</span>
         </div>
-        <div class="text-[11px] text-slate mt-2" style="opacity:0.35;">Precio oferta: ${formatMoney(parentUnit, currency)}</div>
-        <div class="text-sm text-slate mt-2">Precio combo: <strong class="text-ink">${formatMoney(comboUnit, currency)}</strong></div>
-        <div class="text-sm text-slate">Total combo: <strong class="text-ink">${formatMoney(comboTotal, currency)}</strong></div>
+        <div class="text-[11px] text-slate mt-2" style="opacity:0.55;">Precio cobrado: ${formatMoney(parentUnit, currency)}</div>
+        <div class="text-sm text-slate mt-2">Total a facturar: <strong class="text-ink">${formatMoney(comboTotal, currency)}</strong></div>
       </div>
       <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold mb-2">Regalias</div>
       <div class="space-y-2">${giftsHtml}</div>
     `;
+    renderGiftBalanceProjection();
   };
 
   const getAvailableQty = (productId, existencia) => {
@@ -2144,6 +2257,42 @@
         });
         return false;
       }
+    }
+    let cashRequiredUsd = 0;
+    let cashLimitUsd = null;
+    for (const gift of comboGifts) {
+      gift.promoPolicy = normalizeGiftPolicy(gift);
+      const giftQty = gift.cantidad * comboQty;
+      if (gift.promoPolicy === "UNIDADES") {
+        const remainingQty = Number(gift.remainingQty || 0);
+        if (giftQty > remainingQty) {
+          pauseNavForAlert({
+            icon: "warning",
+            title: "Unidades de regalia insuficientes",
+            text: `${gift.codigo} disponible por unidades: ${remainingQty.toFixed(2)}`,
+          });
+          return false;
+        }
+      } else if (gift.promoPolicy === "DINERO") {
+        cashRequiredUsd += Number(gift.precioReferenciaUsd || 0) * giftQty;
+        const remainingCash = Number(gift.cashRemainingUsd || 0);
+        cashLimitUsd = cashLimitUsd === null ? remainingCash : Math.min(cashLimitUsd, remainingCash);
+      } else {
+        pauseNavForAlert({
+          icon: "warning",
+          title: "Politica requerida",
+          text: `Selecciona una politica para ${gift.codigo}.`,
+        });
+        return false;
+      }
+    }
+    if (cashLimitUsd !== null && cashRequiredUsd > cashLimitUsd) {
+      pauseNavForAlert({
+        icon: "warning",
+        title: "Efectivo de regalia insuficiente",
+        text: `Disponible: $${cashLimitUsd.toFixed(2)} · requerido: $${cashRequiredUsd.toFixed(2)}`,
+      });
+      return false;
     }
     return true;
   };
@@ -2222,12 +2371,20 @@
     comboGiftResults.innerHTML = items
       .map((item) => {
         const freeQty = Number(item.free_qty ?? item.existencia ?? 0);
-        const disabled = freeQty <= 0;
+        const disabled = freeQty <= 0 || (!item.allowed_by_units && !item.allowed_by_cash);
+        const policyStatus = [
+          `Asignado: ${Number(item.assigned_qty || 0).toFixed(2)}`,
+          `Valor asignado: $${Number(item.assigned_value_usd || 0).toFixed(2)}`,
+          `Precio venta: $${Number(item.precio_referencia_usd || 0).toFixed(2)}`,
+          item.allowed_by_units ? `Unidades: ${Number(item.remaining_qty || 0).toFixed(2)}` : "Sin unidades",
+          `Dinero disponible: $${Number(item.money_available_usd || item.remaining_value_usd || item.cash_remaining_usd || 0).toFixed(2)}`,
+        ].join(" · ");
         return `
           <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
             <div>
               <div class="font-semibold text-ink">${item.cod_producto} - ${item.descripcion}</div>
               <div class="text-xs text-slate">Libre: ${freeQty}${Number(item.reserved_qty || 0) > 0 ? ` · Reservado: ${item.reserved_qty}` : ""}</div>
+              <div class="text-[11px] text-slate">${policyStatus}</div>
             </div>
             <button
               class="btn btn-outline-secondary btn-sm combo-gift-pick"
@@ -2239,6 +2396,13 @@
               data-price-cs="${item.precio_venta1}"
               data-existencia="${item.existencia}"
               data-free-qty="${freeQty}"
+              data-allowed-units="${item.allowed_by_units ? "1" : "0"}"
+              data-allowed-cash="${item.allowed_by_cash ? "1" : "0"}"
+              data-remaining-qty="${item.remaining_qty || 0}"
+              data-cash-remaining-usd="${item.cash_remaining_usd || 0}"
+              data-money-available-usd="${item.money_available_usd || item.remaining_value_usd || item.cash_remaining_usd || 0}"
+              data-price-ref-usd="${item.precio_referencia_usd || 0}"
+              data-default-policy="${item.default_policy || ""}"
               data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
               ${disabled ? "disabled" : ""}
             >
@@ -2249,6 +2413,56 @@
         `;
       })
       .join("");
+  };
+
+  const addPromotionGiftItem = (source) => {
+    const id = String(source.id || "");
+    const existencia = Number(source.existencia || 0);
+    const freeQty = Number(source.freeQty ?? source.free_qty ?? existencia);
+    const allowedByUnits = Boolean(source.allowedByUnits ?? source.allowed_by_units);
+    const allowedByCash = Boolean(source.allowedByCash ?? source.allowed_by_cash);
+    if (!id) return;
+    if (freeQty <= 0) {
+      pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Esta regalia no tiene saldo." });
+      return;
+    }
+    if (!allowedByUnits && !allowedByCash) {
+      pauseNavForAlert({ icon: "warning", title: "Sin politica disponible", text: "Este vendedor no tiene unidades ni dinero disponible para esta regalia." });
+      return;
+    }
+    const existing = comboGifts.find((gift) => String(gift.id) === id);
+    if (existing) {
+      const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
+      const available = Math.max(0, freeQty - getInvoiceQty(existing.id));
+      if ((existing.cantidad + 1) * comboQty > available) {
+        pauseNavForAlert({ icon: "warning", title: "Saldo insuficiente", text: `Disponible: ${available}` });
+        return;
+      }
+      existing.cantidad += 1;
+    } else {
+      comboGifts.push({
+        id,
+        codigo: source.codigo || source.cod_producto || id,
+        descripcion: source.descripcion || "",
+        cantidad: 1,
+        precioUsd: Number(source.precioUsd ?? source.precio_venta1_usd ?? 0),
+        precioCs: Number(source.precioCs ?? source.precio_venta1 ?? 0),
+        existencia,
+        freeQty,
+        allowedByUnits,
+        allowedByCash,
+        remainingQty: Number(source.remainingQty ?? source.remaining_qty ?? 0),
+        cashRemainingUsd: Number(source.cashRemainingUsd ?? source.cash_remaining_usd ?? 0),
+        moneyAvailableUsd: Number(source.moneyAvailableUsd ?? source.money_available_usd ?? source.remaining_value_usd ?? source.cash_remaining_usd ?? 0),
+        precioReferenciaUsd: Number(source.precioReferenciaUsd ?? source.precio_referencia_usd ?? 0),
+        promoPolicy: source.defaultPolicy || source.default_policy || (allowedByUnits ? "UNIDADES" : "DINERO"),
+        reservedDetails: source.reservedDetails || source.reserved_details || [],
+      });
+    }
+    clampComboQty();
+    renderComboGifts();
+    renderComboPreview();
+    renderComboPrice();
   };
 
   const fetchComboItems = async (parentId) => {
@@ -2264,18 +2478,7 @@
 
   const loadComboFromCatalog = async () => {
     if (!comboParent) return;
-    const items = await fetchComboItems(comboParent.id);
-    comboGifts = items.map((item) => ({
-      id: item.child_id,
-      codigo: item.cod_producto,
-      descripcion: item.descripcion,
-      cantidad: Math.max(1, Math.round(item.cantidad || 1)),
-      precioUsd: item.precio_venta1_usd || 0,
-      precioCs: item.precio_venta1 || 0,
-      existencia: item.existencia || 0,
-      freeQty: item.free_qty ?? item.existencia ?? 0,
-      reservedDetails: item.reserved_details || [],
-    }));
+    comboGifts = [];
     renderComboGifts();
     renderComboPrice();
   };
@@ -2413,9 +2616,9 @@
         return;
       }
       try {
-        const response = await fetch(buildProductSearchUrl(value));
+        const response = await fetch(`/sales/promotions/gifts?${buildPromotionGiftParams(value).toString()}`);
         const payload = await response.json().catch(() => null);
-        const items = payload?.items || [];
+        const items = (payload?.items || []).filter((item) => item.allowed);
         renderComboGiftResults(items);
       } catch (error) {
         if (comboGiftResults) {
@@ -2456,48 +2659,47 @@
     comboGiftResults.addEventListener("click", (event) => {
       const button = event.target.closest(".combo-gift-pick");
       if (!button) return;
-      const id = button.dataset.id;
-      const existencia = parseFloat(button.dataset.existencia || 0);
-      const freeQty = parseFloat(button.dataset.freeQty || existencia || 0);
-      if (freeQty <= 0) {
-        pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Esta regalia no tiene saldo." });
-        return;
-      }
-      const existing = comboGifts.find((gift) => String(gift.id) === String(id));
-      if (existing) {
-        const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
-        const available = Math.max(0, freeQty - getInvoiceQty(existing.id));
-        if ((existing.cantidad + 1) * comboQty > available) {
-          pauseNavForAlert({
-            icon: "warning",
-            title: "Saldo insuficiente",
-            text: `Disponible: ${available}`,
-          });
-          return;
-        }
-        existing.cantidad += 1;
-      } else {
-        comboGifts.push({
-          id: id,
-          codigo: button.dataset.code || id,
-          descripcion: button.dataset.desc || "",
-          cantidad: 1,
-          precioUsd: parseFloat(button.dataset.priceUsd || 0),
-          precioCs: parseFloat(button.dataset.priceCs || 0),
-          existencia: existencia,
-          freeQty: freeQty,
-          reservedDetails: parseReservedDetails(button.dataset.reservedDetails || ""),
-        });
-      }
-      clampComboQty();
-      renderComboGifts();
-      renderComboPreview();
-      renderComboPrice();
+      addPromotionGiftItem({
+        id: button.dataset.id,
+        codigo: button.dataset.code || "",
+        descripcion: button.dataset.desc || "",
+        precioUsd: parseFloat(button.dataset.priceUsd || 0),
+        precioCs: parseFloat(button.dataset.priceCs || 0),
+        existencia: parseFloat(button.dataset.existencia || 0),
+        freeQty: parseFloat(button.dataset.freeQty || button.dataset.existencia || 0),
+        allowedByUnits: button.dataset.allowedUnits === "1",
+        allowedByCash: button.dataset.allowedCash === "1",
+        remainingQty: parseFloat(button.dataset.remainingQty || 0),
+        cashRemainingUsd: parseFloat(button.dataset.cashRemainingUsd || 0),
+        moneyAvailableUsd: parseFloat(button.dataset.moneyAvailableUsd || 0),
+        precioReferenciaUsd: parseFloat(button.dataset.priceRefUsd || 0),
+        defaultPolicy: button.dataset.defaultPolicy || "",
+        reservedDetails: parseReservedDetails(button.dataset.reservedDetails || ""),
+      });
+    });
+  }
+
+  if (comboGiftAssignedList) {
+    comboGiftAssignedList.addEventListener("click", (event) => {
+      const button = event.target.closest(".assigned-gift-pick");
+      if (!button || !promotionGiftPayload?.ok) return;
+      const item = (promotionGiftPayload.items || []).find((row) => String(row.id) === String(button.dataset.productId));
+      if (item) addPromotionGiftItem(item);
     });
   }
 
   if (comboGiftList) {
     comboGiftList.addEventListener("input", (event) => {
+      const policySelect = event.target.closest(".gift-policy");
+      if (policySelect) {
+        const index = parseInt(policySelect.dataset.index || "0", 10);
+        const gift = comboGifts[index];
+        if (gift) {
+          gift.promoPolicy = policySelect.value;
+          renderComboPreview();
+        }
+        return;
+      }
       const qtyInput = event.target.closest(".gift-qty");
       if (!qtyInput) return;
       if (event.inputType === "insertText") {
@@ -2595,11 +2797,7 @@
       }
       const currency = monedaField?.value || "CS";
       const parentUnitPrice = currency === "USD" ? comboParent.precioUsd : comboParent.precioCs;
-      const giftTotal = comboGifts.reduce((acc, gift) => {
-        const price = currency === "USD" ? gift.precioUsd : gift.precioCs;
-        return acc + price * gift.cantidad;
-      }, 0);
-      const comboPrice = parentUnitPrice + giftTotal;
+      const comboPrice = parentUnitPrice;
       const subtotal = comboPrice * comboQty;
       const subtotalUsd = currency === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
       const subtotalCs = currency === "USD" ? subtotal * rateToday : subtotal;
@@ -2639,6 +2837,7 @@
           role: "gift",
           lockPrice: true,
           comboGroup: comboGroupId,
+          promoPolicy: gift.promoPolicy,
         });
       });
       resetComboModal();
@@ -2654,6 +2853,7 @@
     comboModal.addEventListener("shown.bs.modal", () => {
       productNavMode = "paused";
       ensureComboSearchActive();
+      loadGiftAssignmentPanel();
     });
     comboModal.addEventListener("hidden.bs.modal", () => {
       productNavMode = "search";
@@ -3599,6 +3799,7 @@
         subtotalLabel: formatMoney(invoiceCurrency === "USD" ? subtotalUsd : subtotalCs, invoiceCurrency),
         role: it.combo_role || "",
         comboGroup: it.combo_group || "",
+        promoPolicy: it.promo_policy || "",
         lockPrice: true,
       });
     });
@@ -3622,9 +3823,23 @@
       });
     }
     if (vendedorSelect) {
-      vendedorSelect.addEventListener("change", updatePartySummary);
+      vendedorSelect.addEventListener("change", () => {
+        updatePartySummary();
+        if (comboModal?.classList.contains("show")) {
+          loadGiftAssignmentPanel();
+          if (comboGiftSearch) comboGiftSearch.value = "";
+          if (comboGiftResults) comboGiftResults.innerHTML = "";
+        }
+      });
       if (window.$ && $.fn.select2) {
-        $(vendedorSelect).on("change select2:select select2:clear", updatePartySummary);
+        $(vendedorSelect).on("change select2:select select2:clear", () => {
+          updatePartySummary();
+          if (comboModal?.classList.contains("show")) {
+            loadGiftAssignmentPanel();
+            if (comboGiftSearch) comboGiftSearch.value = "";
+            if (comboGiftResults) comboGiftResults.innerHTML = "";
+          }
+        });
       }
     }
     if (fechaInput) {

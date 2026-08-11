@@ -218,11 +218,12 @@
                 <li class="breadcrumb-item active" aria-current="page">Productos pivote</li>
               </ol>
             </nav>
-            <div class="odoo-title mt-2 text-xl">Reporte inteligente de productos vendidos</div>
-            <div class="odoo-subtitle mt-1 text-sm">Analisis por fecha, vendedor, linea, producto, sucursal y bodega.</div>
+            <div class="odoo-title mt-2 text-xl">Bultos vendidos por producto</div>
+            <div class="odoo-subtitle mt-1 text-sm">Totales filtrados por fecha, sucursal, bodega, vendedor, linea, grupo y descripcion.</div>
           </div>
           <div class="pivot-report-pills d-flex flex-wrap align-items-center gap-2">
-            <div class="odoo-pill primary"><i class="bi bi-box-seam"></i> Productos: {{ total_productos }}</div>
+            <div class="odoo-pill primary"><i class="bi bi-box-seam"></i> Bultos: {{ "{:,.2f}".format(total_qty or 0) }}</div>
+            <div class="odoo-pill"><i class="bi bi-grid"></i> Productos: {{ total_productos }}</div>
             <div class="odoo-pill"><i class="bi bi-receipt"></i> Facturas: {{ total_facturas }}</div>
             <div class="odoo-pill primary"><i class="bi bi-currency-exchange"></i> C$ {{ "{:,.2f}".format(total_cs or 0) }}</div>
             <div class="odoo-pill"><i class="bi bi-currency-dollar"></i> $ {{ "{:,.2f}".format(total_usd or 0) }}</div>
@@ -295,7 +296,7 @@
           </div>
           <div class="filter-wide">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto rapido</label>
-            <input name="producto" class="form-control form-control-sm" placeholder="Codigo, referencia, descripcion: 25 lbs, 25lbs, paca..." value="{{ producto_q or '' }}">
+            <input name="producto" class="form-control form-control-sm" placeholder="Descripcion/codigo/grupo: 25 lbs, 25lbs, 25, paca..." value="{{ producto_q or '' }}">
           </div>
           <div class="filter-wide">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto exacto</label>
@@ -319,7 +320,7 @@
           <div>
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Valor pivot</label>
             <select name="metric" class="form-select form-select-sm">
-              <option value="qty" {% if metric == "qty" %}selected{% endif %}>Cantidad</option>
+              <option value="qty" {% if metric == "qty" %}selected{% endif %}>Bultos</option>
               <option value="cs" {% if metric == "cs" %}selected{% endif %}>Venta C$</option>
               <option value="usd" {% if metric == "usd" %}selected{% endif %}>Venta USD</option>
             </select>
@@ -332,7 +333,7 @@
       </div>
 
       <div class="row g-3 mt-1">
-        <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Bultos / unidades</div><div class="metric">{{ "{:,.2f}".format(total_qty or 0) }}</div></div></div>
+        <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Bultos vendidos</div><div class="metric">{{ "{:,.2f}".format(total_qty or 0) }}</div></div></div>
         <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Venta cordobas</div><div class="metric">C$ {{ "{:,.2f}".format(total_cs or 0) }}</div></div></div>
         <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Costo vendido</div><div class="metric">C$ {{ "{:,.2f}".format(total_cost_cs or 0) }}</div></div></div>
         <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Utilidad estimada</div><div class="metric">C$ {{ "{:,.2f}".format(total_margin_cs or 0) }}</div></div></div>
@@ -340,11 +341,88 @@
         <div class="col-6 col-xl-2"><div class="pivot-mini-card"><div class="label">Facturas</div><div class="metric">{{ total_facturas }}</div></div></div>
       </div>
 
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-xl-6">
+          <div class="odoo-card text-sm h-100">
+            <div class="odoo-section-title text-base mb-3">Bultos vendidos por grupo / sublinea</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table align-middle">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr><th>Grupo</th><th class="text-end">Bultos</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">% Bultos</th></tr>
+                </thead>
+                <tbody>
+                  {% for row in segment_rows %}
+                  <tr>
+                    <td class="fw-semibold">{{ row.nombre }}</td>
+                    <td class="text-end fw-bold">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
+                    <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                    <td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td>
+                    <td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(row.participacion or 0) }}%</td>
+                  </tr>
+                  {% endfor %}
+                  {% if segment_rows|length == 0 %}
+                  <tr><td colspan="6" class="text-center text-slate py-3">Sin grupos.</td></tr>
+                  {% endif %}
+                </tbody>
+                <tfoot>
+                  <tr class="table-light">
+                    <th>Total filtrado</th>
+                    <th class="text-end">{{ "{:,.2f}".format(total_qty or 0) }}</th>
+                    <th class="text-end">C$ {{ "{:,.2f}".format(total_cs or 0) }}</th>
+                    <th class="text-end">C$ {{ "{:,.2f}".format(total_cost_cs or 0) }}</th>
+                    <th class="text-end">C$ {{ "{:,.2f}".format(total_margin_cs or 0) }}</th>
+                    <th class="text-end">{% if total_qty %}100%{% else %}0%{% endif %}</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-xl-6">
+          <div class="odoo-card text-sm h-100">
+            <div class="odoo-section-title text-base mb-3">Bultos vendidos por linea</div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover odoo-table align-middle">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr><th>Linea</th><th class="text-end">Bultos</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">% Bultos</th></tr>
+                </thead>
+                <tbody>
+                  {% for row in line_rows %}
+                  <tr>
+                    <td class="fw-semibold">{{ row.nombre }}</td>
+                    <td class="text-end fw-bold">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
+                    <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
+                    <td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td>
+                    <td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(row.participacion or 0) }}%</td>
+                  </tr>
+                  {% endfor %}
+                  {% if line_rows|length == 0 %}
+                  <tr><td colspan="6" class="text-center text-slate py-3">Sin lineas.</td></tr>
+                  {% endif %}
+                </tbody>
+                <tfoot>
+                  <tr class="table-light">
+                    <th>Total filtrado</th>
+                    <th class="text-end">{{ "{:,.2f}".format(total_qty or 0) }}</th>
+                    <th class="text-end">C$ {{ "{:,.2f}".format(total_cs or 0) }}</th>
+                    <th class="text-end">C$ {{ "{:,.2f}".format(total_cost_cs or 0) }}</th>
+                    <th class="text-end">C$ {{ "{:,.2f}".format(total_margin_cs or 0) }}</th>
+                    <th class="text-end">{% if total_qty %}100%{% else %}0%{% endif %}</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="odoo-card text-sm mt-3">
         <div class="pivot-toolbar mb-3">
           <div>
-            <div class="odoo-section-title text-base">Grid pivote por producto</div>
-            <div class="text-slate text-xs">Columnas dinamicas por {{ pivot_by }}; metricas base siempre visibles.</div>
+            <div class="odoo-section-title text-base">Productos vendidos segun filtros</div>
+            <div class="text-slate text-xs">La columna Bultos vendidos es la suma exacta de cantidades de facturas activas dentro del filtro.</div>
           </div>
           <div class="d-flex gap-2 align-items-center">
             <input id="pivotSearch" class="form-control form-control-sm" placeholder="Filtrar dentro de la grid...">
@@ -359,7 +437,7 @@
                 <th class="sticky-product" data-sort="text">Producto</th>
                 <th data-sort="text">Linea</th>
                 <th data-sort="text">Grupo</th>
-                <th class="num" data-sort="number">Cantidad</th>
+                <th class="num" data-sort="number">Bultos vendidos</th>
                 <th class="num" data-sort="number">Venta C$</th>
                 <th class="num" data-sort="number">Venta USD</th>
                 <th class="num" data-sort="number">Costo C$</th>
@@ -414,7 +492,7 @@
             <div class="odoo-section-title text-base mb-3">Resumen por vendedor</div>
             <div class="table-responsive">
               <table class="table table-sm table-hover odoo-table align-middle">
-                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]"><tr><th>Vendedor</th><th class="text-end">Cant.</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">Margen</th></tr></thead>
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]"><tr><th>Vendedor</th><th class="text-end">Bultos</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">Margen</th></tr></thead>
                 <tbody>
                   {% for row in vendor_rows %}
                   <tr><td class="fw-semibold">{{ row.nombre }}</td><td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td><td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td><td class="text-end">{{ "{:,.2f}".format(row.margen_pct or 0) }}%</td></tr>
@@ -429,68 +507,11 @@
             <div class="odoo-section-title text-base mb-3">Resumen por bodega</div>
             <div class="table-responsive">
               <table class="table table-sm table-hover odoo-table align-middle">
-                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]"><tr><th>Bodega</th><th class="text-end">Cant.</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">Margen</th></tr></thead>
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]"><tr><th>Bodega</th><th class="text-end">Bultos</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">Margen</th></tr></thead>
                 <tbody>
                   {% for row in bodega_rows %}
                   <tr><td class="fw-semibold">{{ row.nombre }}</td><td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td><td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td><td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td><td class="text-end">{{ "{:,.2f}".format(row.margen_pct or 0) }}%</td></tr>
                   {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="row g-3 mt-1">
-        <div class="col-12 col-xl-6">
-          <div class="odoo-card text-sm h-100">
-            <div class="odoo-section-title text-base mb-3">Totales por grupo / sublinea</div>
-            <div class="table-responsive">
-              <table class="table table-sm table-hover odoo-table align-middle">
-                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-                  <tr><th>Grupo</th><th class="text-end">Cant.</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">%</th></tr>
-                </thead>
-                <tbody>
-                  {% for row in segment_rows %}
-                  <tr>
-                    <td class="fw-semibold">{{ row.nombre }}</td>
-                    <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
-                    <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
-                    <td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td>
-                    <td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td>
-                    <td class="text-end">{{ "{:,.2f}".format(row.participacion or 0) }}%</td>
-                  </tr>
-                  {% endfor %}
-                  {% if segment_rows|length == 0 %}
-                  <tr><td colspan="6" class="text-center text-slate py-3">Sin grupos.</td></tr>
-                  {% endif %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-        <div class="col-12 col-xl-6">
-          <div class="odoo-card text-sm h-100">
-            <div class="odoo-section-title text-base mb-3">Totales por linea</div>
-            <div class="table-responsive">
-              <table class="table table-sm table-hover odoo-table align-middle">
-                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-                  <tr><th>Linea</th><th class="text-end">Cant.</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">%</th></tr>
-                </thead>
-                <tbody>
-                  {% for row in line_rows %}
-                  <tr>
-                    <td class="fw-semibold">{{ row.nombre }}</td>
-                    <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
-                    <td class="text-end">C$ {{ "{:,.2f}".format(row.venta_cs or 0) }}</td>
-                    <td class="text-end">C$ {{ "{:,.2f}".format(row.costo_cs or 0) }}</td>
-                    <td class="text-end fw-bold {% if row.margen_cs < 0 %}text-danger{% else %}text-success{% endif %}">C$ {{ "{:,.2f}".format(row.margen_cs or 0) }}</td>
-                    <td class="text-end">{{ "{:,.2f}".format(row.participacion or 0) }}%</td>
-                  </tr>
-                  {% endfor %}
-                  {% if line_rows|length == 0 %}
-                  <tr><td colspan="6" class="text-center text-slate py-3">Sin lineas.</td></tr>
-                  {% endif %}
                 </tbody>
               </table>
             </div>
@@ -503,7 +524,7 @@
         <div class="table-responsive">
           <table class="table table-sm table-hover odoo-table align-middle">
             <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-              <tr><th>Fecha</th><th>Factura</th><th>Sucursal</th><th>Bodega</th><th>Vendedor</th><th>Linea</th><th>Grupo</th><th>Codigo</th><th>Producto</th><th class="text-end">Cant.</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">Venta USD</th></tr>
+              <tr><th>Fecha</th><th>Factura</th><th>Sucursal</th><th>Bodega</th><th>Vendedor</th><th>Linea</th><th>Grupo</th><th>Codigo</th><th>Producto</th><th class="text-end">Bultos</th><th class="text-end">Venta C$</th><th class="text-end">Costo C$</th><th class="text-end">Utilidad</th><th class="text-end">Venta USD</th></tr>
             </thead>
             <tbody>
               {% for row in detail_rows %}
