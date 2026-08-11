@@ -14,8 +14,8 @@
                 <li class="breadcrumb-item active" aria-current="page">Regalias</li>
               </ol>
             </nav>
-            <div class="odoo-title mt-2 text-xl">Gestion de regalias</div>
-            <div class="odoo-subtitle mt-1 text-sm">Productos 100% regalo con dos politicas por vendedor: dinero disponible y unidades asignadas.</div>
+            <div class="odoo-title mt-2 text-xl">Cupos de regalias</div>
+            <div class="odoo-subtitle mt-1 text-sm">Autoriza unidades por vendedor. En ventas el regalo se elige libremente desde el catalogo con existencia.</div>
           </div>
           <a class="btn btn-outline-secondary btn-sm" href="/reports/regalias">
             <i class="bi bi-bar-chart"></i>
@@ -29,104 +29,50 @@
 
       <div class="row g-3 mt-1">
         <div class="col-12 col-xl-4">
-          <div class="odoo-card h-100">
-            <div class="odoo-section-title mb-3 text-base">Productos regalables</div>
-            <form id="regalia-product-search-form" class="row g-2" method="get" action="/data/regalias">
-              <input type="hidden" name="vendedor_id" value="{{ selected_vendedor_id }}">
+          <div id="regalia-vendor-policy" class="odoo-card h-100">
+            <div class="odoo-section-title mb-3" style="font-size:.86rem;">Editar vendedor</div>
+            <form class="row g-2 mb-3" method="get" action="/data/regalias">
               <div class="col-12">
-                <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Buscar producto</label>
-                <input id="regalia-product-search" name="q" class="form-control form-control-sm" value="{{ q }}" placeholder="Codigo o descripcion" autocomplete="off" autofocus>
-              </div>
-              <div class="col-12">
-                <a class="btn btn-outline-secondary btn-sm" href="/data/regalias?vendedor_id={{ selected_vendedor_id }}"><i class="bi bi-eraser"></i> Limpiar</a>
-              </div>
-            </form>
-            <hr>
-            <form method="post" action="/data/regalias/productos" class="row g-2">
-              <div class="col-12">
-                <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto</label>
-                <select name="producto_id" class="form-select form-select-sm" required>
-                  <option value="">{% if q %}{{ available_products|length }} resultado(s){% else %}Selecciona{% endif %}</option>
-                  {% for result in available_products %}
-                  {% set producto = result.producto %}
-                  <option value="{{ producto.id }}">{% if q %}{{ result.score }}% - {% endif %}{{ producto.cod_producto }} - {{ producto.descripcion }}</option>
+                <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor</label>
+                <select name="vendedor_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                  {% for vendedor in vendedores %}
+                  <option value="{{ vendedor.id }}" {% if vendedor.id == selected_vendedor_id %}selected{% endif %}>{{ vendedor.nombre }}</option>
                   {% endfor %}
                 </select>
-                {% if q and available_products|length == 0 %}
-                <div class="form-text text-danger">No hay productos sin marcar que coincidan con el filtro.</div>
-                {% elif q %}
-                <div class="form-text">{{ available_products|length }} producto(s) filtrado(s).</div>
-                {% endif %}
               </div>
-              {% if q and available_products|length > 0 %}
-              <div class="col-12">
-                <div class="border border-slate-200 rounded-2xl overflow-hidden">
-                  {% for result in available_products[:12] %}
-                  {% set producto = result.producto %}
-                  <div class="d-flex align-items-center justify-content-between gap-2 px-3 py-2 {% if not loop.last %}border-bottom border-slate-200{% endif %}">
-                    <div class="min-w-0">
-                      <div class="fw-semibold text-ink">{{ producto.cod_producto }} - {{ producto.descripcion }}</div>
-                      <div class="text-xs text-slate">Coincidencia {{ result.score }}%</div>
-                    </div>
-                    <button class="btn btn-outline-primary btn-sm" type="button" onclick="this.form.querySelector('[name=producto_id]').value='{{ producto.id }}'; this.form.requestSubmit();">
-                      <i class="bi bi-plus-circle"></i>
-                      Marcar
-                    </button>
-                  </div>
-                  {% endfor %}
-                </div>
+            </form>
+            <form method="post" action="/data/regalias/vendedores">
+              <input type="hidden" name="vendedor_id" value="{{ selected_vendedor_id }}">
+              <div class="mb-3">
+                <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Unidades autorizadas</label>
+                <input name="cupo_unidades_total" type="number" min="0" step="1" class="form-control form-control-sm text-end" value="{{ '%.2f'|format(assigned_units_total|float) }}">
+                <div class="form-text">Este es el cupo total que el vendedor puede entregar como regalo.</div>
               </div>
-              {% endif %}
-              <div class="col-12">
-                <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Nota</label>
-                <input name="nota" class="form-control form-control-sm" maxlength="240" placeholder="Ej: promo verano, liquidacion">
+              <div class="d-flex flex-wrap gap-2 mb-3" style="font-size:.72rem;">
+                <span class="odoo-pill primary">Cupo: {{ "%.2f"|format(assigned_units_total|float) }}</span>
+                <span class="odoo-pill">Usado: {{ "%.2f"|format(used_units_total|float) }}</span>
+                <span class="odoo-pill primary">Saldo: {{ "%.2f"|format(remaining_units_total|float) }}</span>
               </div>
-              <div class="col-12">
-                <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-plus-circle"></i> Marcar como regalo</button>
+              <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" name="activo" {% if policy is none or policy.activo %}checked{% endif %}>
+                <label class="form-check-label">Cupo activo</label>
               </div>
+              <button class="btn btn-primary btn-sm w-100" type="submit">
+                <i class="bi bi-save"></i>
+                Guardar cupo
+              </button>
             </form>
           </div>
         </div>
 
         <div class="col-12 col-xl-8">
-          <div class="odoo-card mb-3">
-            <div class="odoo-section-title mb-3" style="font-size:.86rem;">Resumen por vendedor</div>
-            <div class="row g-2 mb-3" style="font-size:.76rem;">
-              <div class="col-md-4">
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div class="text-xs text-slate">Dinero total asignado</div>
-                  <div class="fw-bold text-ink">$ {{ "%.2f"|format(total_budget_usd|float) }}</div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div class="text-xs text-slate">Dinero consumido</div>
-                  <div class="fw-bold text-ink">$ {{ "%.2f"|format(total_used_usd|float) }}</div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div class="text-xs text-slate">Saldo dinero</div>
-                  <div class="fw-bold text-emerald-700">$ {{ "%.2f"|format(total_remaining_usd|float) }}</div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div class="text-xs text-slate">Productos asignados</div>
-                  <div class="fw-bold text-ink">{{ total_assigned_products }}</div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div class="text-xs text-slate">Unidades asignadas</div>
-                  <div class="fw-bold text-ink">{{ "%.2f"|format(total_assigned_units|float) }}</div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div class="text-xs text-slate">Valor venta disp.</div>
-                  <div class="fw-bold text-ink">$ {{ "%.2f"|format(total_remaining_value_usd|float) }}</div>
-                </div>
+          <div class="odoo-card">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+              <div class="odoo-section-title" style="font-size:.86rem;">Resumen por vendedor</div>
+              <div class="d-flex flex-wrap gap-2" style="font-size:.72rem;">
+                <span class="odoo-pill primary">Total autorizado: {{ "%.2f"|format(total_assigned_units|float) }}</span>
+                <span class="odoo-pill">Usado: {{ "%.2f"|format(total_used_units|float) }}</span>
+                <span class="odoo-pill primary">Saldo: {{ "%.2f"|format((total_assigned_units - total_used_units)|float) }}</span>
               </div>
             </div>
             <div class="table-responsive">
@@ -134,30 +80,21 @@
                 <thead class="odoo-table-head text-xs uppercase">
                   <tr>
                     <th>Vendedor</th>
-                    <th class="text-end">Dinero asignado</th>
-                    <th class="text-end">Dinero usado</th>
-                    <th class="text-end">Dinero disp.</th>
-                    <th class="text-end">Productos</th>
-                    <th class="text-end">Unidades asignadas</th>
-                    <th class="text-end">Valor venta asignado</th>
-                    <th class="text-end">Valor venta disp.</th>
+                    <th class="text-end">Autorizado</th>
+                    <th class="text-end">Usado</th>
+                    <th class="text-end">Saldo</th>
+                    <th>Estado</th>
                     <th class="text-end">Accion</th>
                   </tr>
                 </thead>
                 <tbody>
                   {% for row in vendor_summaries %}
                   <tr {% if row.vendedor.id == selected_vendedor_id %}class="table-light"{% endif %}>
-                    <td class="fw-semibold">
-                      {{ row.vendedor.nombre }}
-                      {% if row.active %}<span class="badge text-bg-success ms-1">Activa</span>{% else %}<span class="badge text-bg-secondary ms-1">Inactiva</span>{% endif %}
-                    </td>
-                    <td class="text-end">$ {{ "%.2f"|format(row.budget_usd|float) }}</td>
-                    <td class="text-end">$ {{ "%.2f"|format(row.used_usd|float) }}</td>
-                    <td class="text-end fw-semibold">$ {{ "%.2f"|format(row.remaining_usd|float) }}</td>
-                    <td class="text-end">{{ row.assigned_products_count }}</td>
+                    <td class="fw-semibold">{{ row.vendedor.nombre }}</td>
                     <td class="text-end">{{ "%.2f"|format(row.assigned_units_total|float) }}</td>
-                    <td class="text-end">$ {{ "%.2f"|format(row.assigned_value_usd_total|float) }}</td>
-                    <td class="text-end">$ {{ "%.2f"|format(row.remaining_value_usd_total|float) }}</td>
+                    <td class="text-end">{{ "%.2f"|format(row.used_units_total|float) }}</td>
+                    <td class="text-end fw-semibold">{{ "%.2f"|format(row.remaining_units_total|float) }}</td>
+                    <td>{% if row.active %}<span class="badge text-bg-success">Activo</span>{% else %}<span class="badge text-bg-secondary">Inactivo</span>{% endif %}</td>
                     <td class="text-end">
                       <a class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size:.68rem;" href="/data/regalias?vendedor_id={{ row.vendedor.id }}#regalia-vendor-policy">
                         <i class="bi bi-pencil-square"></i>
@@ -167,129 +104,7 @@
                   </tr>
                   {% endfor %}
                   {% if vendor_summaries|length == 0 %}
-                  <tr><td colspan="9" class="text-center text-slate py-3">Sin vendedores activos.</td></tr>
-                  {% endif %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div id="regalia-vendor-policy" class="odoo-card mb-3">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-              <div class="odoo-section-title" style="font-size:.86rem;">Politica por vendedor</div>
-              <div class="d-flex flex-wrap gap-2">
-                <span class="odoo-pill primary" style="font-size:.68rem;">Presupuesto: $ {{ "%.2f"|format(budget_usd|float) }}</span>
-                <span class="odoo-pill" style="font-size:.68rem;">Usado: $ {{ "%.2f"|format(used_usd|float) }}</span>
-                <span class="odoo-pill primary" style="font-size:.68rem;">Disponible: $ {{ "%.2f"|format(remaining_usd|float) }}</span>
-                <span class="odoo-pill" style="font-size:.68rem;">Productos: {{ assigned_products_count }}</span>
-                <span class="odoo-pill" style="font-size:.68rem;">Valor asignado: $ {{ "%.2f"|format(assigned_value_usd_total|float) }}</span>
-              </div>
-            </div>
-            <form class="row g-2 mb-3" method="get" action="/data/regalias">
-              <div class="col-md-8">
-                <select name="vendedor_id" class="form-select form-select-sm" onchange="this.form.submit()">
-                  {% for vendedor in vendedores %}
-                  <option value="{{ vendedor.id }}" {% if vendedor.id == selected_vendedor_id %}selected{% endif %}>{{ vendedor.nombre }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="col-md-4">
-                <button class="btn btn-outline-secondary btn-sm w-100" type="submit">Cambiar vendedor</button>
-              </div>
-            </form>
-            <form method="post" action="/data/regalias/vendedores">
-              <input type="hidden" name="vendedor_id" value="{{ selected_vendedor_id }}">
-              <div class="row g-2 align-items-end mb-3">
-                <div class="col-md-4">
-                  <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Efectivo disponible USD</label>
-                  <input name="presupuesto_usd" type="number" min="0" step="0.01" class="form-control form-control-sm" value="{{ '%.2f'|format(budget_usd|float) }}">
-                  <div class="form-text">En ventas se elige si cada regalo consume dinero o unidades.</div>
-                </div>
-                <div class="col-md-4">
-                  <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" name="activo" {% if policy is none or policy.activo %}checked{% endif %}>
-                    <label class="form-check-label">Politica activa</label>
-                  </div>
-                </div>
-                <div class="col-md-4 text-md-end">
-                  <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-save"></i> Guardar politica</button>
-                </div>
-              </div>
-              <div class="table-responsive">
-                <table class="table table-sm table-hover odoo-table align-middle" style="font-size:.76rem;">
-                  <thead class="odoo-table-head text-xs uppercase">
-                    <tr>
-                      <th>Codigo</th>
-                      <th>Producto</th>
-                      <th class="text-end">Fisico</th>
-                      <th class="text-end">Asignado</th>
-                      <th class="text-end">Valor asignado</th>
-                      <th class="text-end">Usado</th>
-                      <th class="text-end">Disponible</th>
-                      <th class="text-end">Valor disp.</th>
-                      <th class="text-end">Valor ref.</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for item in vendor_items %}
-                    <tr>
-                      <td class="fw-semibold">{{ item.cod_producto }}</td>
-                      <td>{{ item.descripcion }}</td>
-                      <td class="text-end">{{ "%.2f"|format(item.existencia|float) }}</td>
-                      <td class="text-end" style="width: 130px;">
-                        <input type="hidden" name="producto_ids" value="{{ item.id }}">
-                        <input name="cantidades" type="number" min="0" step="0.01" class="form-control form-control-sm text-end" value="{{ '%.2f'|format(item.assigned_qty|float) }}">
-                      </td>
-                      <td class="text-end">$ {{ "%.2f"|format(item.assigned_value_usd|float) }}</td>
-                      <td class="text-end">{{ "%.2f"|format(item.used_qty|float) }}</td>
-                      <td class="text-end fw-semibold">{{ "%.2f"|format(item.remaining_qty|float) }}</td>
-                      <td class="text-end">$ {{ "%.2f"|format(item.remaining_value_usd|float) }}</td>
-                      <td class="text-end">$ {{ "%.2f"|format(item.precio_referencia_usd|float) }}</td>
-                    </tr>
-                    {% endfor %}
-                    {% if vendor_items|length == 0 %}
-                    <tr><td colspan="9" class="text-center text-slate py-3">Marca productos regalables para asignarlos a vendedores.</td></tr>
-                    {% endif %}
-                  </tbody>
-                </table>
-              </div>
-            </form>
-          </div>
-
-          <div class="odoo-card">
-            <div class="odoo-section-title text-base mb-3">Catalogo marcado</div>
-            <div class="table-responsive">
-              <table class="table table-sm table-hover odoo-table align-middle">
-                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-                  <tr>
-                    <th>Codigo</th>
-                    <th>Producto</th>
-                    <th>Nota</th>
-                    <th>Activo</th>
-                    <th class="text-end">Accion</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for item, producto in marked_rows %}
-                  <tr>
-                    <td class="fw-semibold">{{ producto.cod_producto }}</td>
-                    <td>{{ producto.descripcion }}</td>
-                    <td>
-                      <form id="regalia-product-{{ item.id }}" method="post" action="/data/regalias/productos/{{ item.id }}/update" class="d-flex gap-2 align-items-center">
-                        <input name="nota" class="form-control form-control-sm" maxlength="240" value="{{ item.nota or '' }}">
-                        <div class="form-check form-switch m-0">
-                          <input class="form-check-input" type="checkbox" name="activo" {% if item.activo %}checked{% endif %}>
-                        </div>
-                      </form>
-                    </td>
-                    <td>{% if item.activo %}<span class="badge text-bg-success">Activo</span>{% else %}<span class="badge text-bg-secondary">Inactivo</span>{% endif %}</td>
-                    <td class="text-end">
-                      <button class="btn btn-outline-primary btn-sm" type="submit" form="regalia-product-{{ item.id }}"><i class="bi bi-save"></i></button>
-                    </td>
-                  </tr>
-                  {% endfor %}
-                  {% if marked_rows|length == 0 %}
-                  <tr><td colspan="5" class="text-center text-slate py-3">Aun no hay productos marcados como regalo.</td></tr>
+                  <tr><td colspan="6" class="text-center text-slate py-3">Sin vendedores activos.</td></tr>
                   {% endif %}
                 </tbody>
               </table>
@@ -300,34 +115,4 @@
     </div>
   </main>
 </div>
-<script>
-  (() => {
-    const form = document.getElementById("regalia-product-search-form");
-    const input = document.getElementById("regalia-product-search");
-    if (!form || !input) return;
-    let timer = null;
-    const submitFilter = () => {
-      const value = input.value.trim();
-      if (value.length === 0 || value.length >= 2) {
-        form.requestSubmit();
-      }
-    };
-    input.addEventListener("input", () => {
-      clearTimeout(timer);
-      timer = setTimeout(submitFilter, 350);
-    });
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        clearTimeout(timer);
-        submitFilter();
-      }
-    });
-    window.addEventListener("load", () => {
-      input.focus();
-      const length = input.value.length;
-      input.setSelectionRange(length, length);
-    });
-  })();
-</script>
 {% endblock %}

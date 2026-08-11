@@ -266,6 +266,7 @@ class RegaliaVendedorPolitica(Base):
     id = Column(Integer, primary_key=True, index=True)
     vendedor_id = Column(Integer, ForeignKey("vendedores.id"), nullable=False)
     presupuesto_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    cupo_unidades_total = Column(Numeric(14, 2), nullable=False, default=0)
     activo = Column(Boolean, default=True)
     usuario_registro = Column(String(120), nullable=True)
     created_at = Column(DateTime, server_default=func.now())

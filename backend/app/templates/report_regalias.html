@@ -14,8 +14,8 @@
                 <li class="breadcrumb-item active" aria-current="page">Regalias</li>
               </ol>
             </nav>
-            <div class="odoo-title mt-2 text-xl">Informe de regalias disponibles</div>
-            <div class="odoo-subtitle mt-1 text-sm">Presupuesto, consumo y productos autorizados por vendedor{% if bodega %} en {{ bodega.name }}{% endif %}.</div>
+            <div class="odoo-title mt-2 text-xl">Informe de regalias</div>
+            <div class="odoo-subtitle mt-1 text-sm">Cupos de unidades, saldos y regalos entregados por vendedor{% if bodega %} en {{ bodega.name }}{% endif %}.</div>
           </div>
           <a class="btn btn-outline-secondary btn-sm" href="/data/regalias">
             <i class="bi bi-sliders"></i>
@@ -27,20 +27,20 @@
       <div class="row g-3 mt-1">
         <div class="col-md-6 col-xl-3">
           <div class="odoo-card h-100">
-            <div class="text-xs uppercase tracking-[0.2em] text-slate">Presupuesto</div>
-            <div class="text-2xl fw-bold text-ink mt-1">$ {{ "%.2f"|format(total_budget|float) }}</div>
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Unidades disponibles</div>
+            <div class="text-2xl fw-bold text-ink mt-1">{{ "%.2f"|format(total_units_remaining|float) }}</div>
           </div>
         </div>
         <div class="col-md-6 col-xl-3">
           <div class="odoo-card h-100">
-            <div class="text-xs uppercase tracking-[0.2em] text-slate">Consumido</div>
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Valor entregado</div>
             <div class="text-2xl fw-bold text-ink mt-1">$ {{ "%.2f"|format(total_used|float) }}</div>
           </div>
         </div>
         <div class="col-md-6 col-xl-3">
           <div class="odoo-card h-100">
-            <div class="text-xs uppercase tracking-[0.2em] text-slate">Dinero disponible</div>
-            <div class="text-2xl fw-bold text-emerald-700 mt-1">$ {{ "%.2f"|format(total_remaining|float) }}</div>
+            <div class="text-xs uppercase tracking-[0.2em] text-slate">Vendedores activos</div>
+            <div class="text-2xl fw-bold text-emerald-700 mt-1">{{ rows|length }}</div>
           </div>
         </div>
         <div class="col-md-6 col-xl-3">
@@ -101,7 +101,6 @@
                 <th>Vendedor</th>
                 <th>Codigo</th>
                 <th>Producto regalo</th>
-                <th>Politica</th>
                 <th class="text-end">Cantidad</th>
                 <th class="text-end">Precio ref. USD</th>
                 <th class="text-end">Total USD</th>
@@ -115,14 +114,13 @@
                 <td>{{ row.vendedor.nombre if row.vendedor else "-" }}</td>
                 <td class="fw-semibold">{{ row.producto.cod_producto }}</td>
                 <td>{{ row.producto.descripcion }}</td>
-                <td>{{ row.policy }}</td>
                 <td class="text-end">{{ "%.2f"|format(row.cantidad|float) }}</td>
                 <td class="text-end">$ {{ "%.2f"|format(row.precio_ref_usd|float) }}</td>
                 <td class="text-end fw-semibold">$ {{ "%.2f"|format(row.total_ref_usd|float) }}</td>
               </tr>
               {% endfor %}
               {% if detail_rows|length == 0 %}
-              <tr><td colspan="9" class="text-center text-slate py-3">Sin regalos entregados en el filtro seleccionado.</td></tr>
+              <tr><td colspan="8" class="text-center text-slate py-3">Sin regalos entregados en el filtro seleccionado.</td></tr>
               {% endif %}
             </tbody>
           </table>
@@ -136,9 +134,7 @@
             <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
               <tr>
                 <th>Vendedor</th>
-                <th class="text-end">Presupuesto USD</th>
-                <th class="text-end">Usado USD</th>
-                <th class="text-end">Disponible USD</th>
+                <th class="text-end">Valor entregado USD</th>
                 <th class="text-end">Unidades disponibles</th>
                 <th class="text-end">Valor inventario USD</th>
               </tr>
@@ -147,14 +143,12 @@
               {% for row in rows %}
               <tr class="table-light">
                 <td class="fw-semibold">{{ row.vendedor.nombre }}</td>
-                <td class="text-end">$ {{ "%.2f"|format(row.budget_usd|float) }}</td>
                 <td class="text-end">$ {{ "%.2f"|format(row.used_usd|float) }}</td>
-                <td class="text-end fw-semibold">$ {{ "%.2f"|format(row.remaining_usd|float) }}</td>
                 <td class="text-end">{{ "%.2f"|format(row.unit_remaining|float) }}</td>
                 <td class="text-end">$ {{ "%.2f"|format(row.inventory_value_usd|float) }}</td>
               </tr>
               <tr>
-                <td colspan="6" class="p-0">
+                <td colspan="4" class="p-0">
                   <div class="table-responsive">
                     <table class="table table-sm mb-0">
                       <thead>
@@ -186,8 +180,6 @@
                             <span class="badge text-bg-secondary">Sin fisico</span>
                             {% elif not item.allowed_by_units %}
                             <span class="badge text-bg-warning">Sin unidades</span>
-                            {% elif not item.allowed_by_cash %}
-                            <span class="badge text-bg-warning">Sin dinero</span>
                             {% else %}
                             <span class="badge text-bg-secondary">Bloqueado</span>
                             {% endif %}
@@ -204,7 +196,7 @@
               </tr>
               {% endfor %}
               {% if rows|length == 0 %}
-              <tr><td colspan="6" class="text-center text-slate py-3">Sin vendedores activos.</td></tr>
+              <tr><td colspan="4" class="text-center text-slate py-3">Sin vendedores activos.</td></tr>
               {% endif %}
             </tbody>
           </table>
