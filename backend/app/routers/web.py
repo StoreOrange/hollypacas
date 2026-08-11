@@ -28297,32 +28297,32 @@ def sales_promotions_gifts(
             bodega = requested
     payload = _regalia_vendor_payload(db, vendedor.id, bodega)
     query = _ascii_lower(q or "")
-    items = payload["items"]
-    if query:
-        policy_active = bool(payload.get("policy") and payload["policy"].activo)
-        remaining_units_total = Decimal(str(payload.get("remaining_units_total") or 0))
-        product_query = db.query(Producto).filter(Producto.activo.is_(True))
-        tokens = [token for token in re.split(r"\s+", query) if token]
-        if tokens:
-            token_filters = []
-            for token in tokens:
-                like = f"%{token}%"
-                token_filters.append(
-                    or_(
-                        func.lower(func.coalesce(Producto.cod_producto, "")).like(like),
-                        func.lower(func.coalesce(Producto.descripcion, "")).like(like),
-                        func.lower(func.coalesce(Producto.marca, "")).like(like),
-                        func.lower(func.coalesce(Producto.referencia_producto, "")).like(like),
-                    )
+    policy_active = bool(payload.get("policy") and payload["policy"].activo)
+    remaining_units_total = Decimal(str(payload.get("remaining_units_total") or 0))
+    product_query = db.query(Producto).filter(Producto.activo.is_(True))
+    tokens = [token for token in re.split(r"\s+", query) if token]
+    if tokens:
+        token_filters = []
+        for token in tokens:
+            like = f"%{token}%"
+            token_filters.append(
+                or_(
+                    func.lower(func.coalesce(Producto.cod_producto, "")).like(like),
+                    func.lower(func.coalesce(Producto.descripcion, "")).like(like),
+                    func.lower(func.coalesce(Producto.marca, "")).like(like),
+                    func.lower(func.coalesce(Producto.referencia_producto, "")).like(like),
                 )
-            product_query = product_query.filter(and_(*token_filters))
-        candidates = product_query.order_by(Producto.descripcion.asc()).limit(120).all()
-        product_ids = [int(producto.id) for producto in candidates]
-        balances = _balances_by_bodega(db, [bodega.id], product_ids) if bodega and product_ids else {}
-        scored_items: list[tuple[dict[str, object], int]] = []
-        for producto in candidates:
-            if not _is_sellable_product(producto):
-                continue
+            )
+        product_query = product_query.filter(and_(*token_filters))
+    candidates = product_query.order_by(Producto.descripcion.asc()).limit(180).all()
+    product_ids = [int(producto.id) for producto in candidates]
+    balances = _balances_by_bodega(db, [bodega.id], product_ids) if bodega and product_ids else {}
+    scored_items: list[tuple[dict[str, object], int]] = []
+    for producto in candidates:
+        if not _is_sellable_product(producto):
+            continue
+        score = 0
+        if query:
             match = _smart_product_match(producto, query)
             score = int(match["score"] or 0)
             searchable = _ascii_lower(
@@ -28337,43 +28337,45 @@ def sales_promotions_gifts(
             )
             if score < 8 and not all(token in searchable for token in tokens):
                 continue
-            existencia = Decimal(str(balances.get((int(producto.id), bodega.id), Decimal("0")) or 0)) if bodega else Decimal("0")
-            price_usd = _regalia_price_usd(producto)
-            allowed_by_units = policy_active and remaining_units_total > 0
-            prices = _product_price_map(producto)
-            scored_items.append(
-                (
-                    {
-                        "id": int(producto.id),
-                        "cod_producto": producto.cod_producto,
-                        "descripcion": producto.descripcion,
-                        **prices,
-                        "precio_referencia_usd": float(price_usd),
-                        "existencia": float(existencia),
-                        "free_qty": float(existencia),
-                        "assigned_qty": float(payload.get("assigned_units_total") or 0),
-                        "assigned_value_usd": float(payload.get("assigned_value_usd_total") or 0),
-                        "used_qty": float(payload.get("used_units_total") or 0),
-                        "remaining_qty": float(remaining_units_total),
-                        "remaining_value_usd": 0.0,
-                        "cash_remaining_usd": 0.0,
-                        "money_available_usd": 0.0,
-                        "allowed": bool(allowed_by_units and existencia > 0),
-                        "allowed_by_cash": False,
-                        "allowed_by_units": bool(allowed_by_units),
-                        "default_policy": "UNIDADES" if allowed_by_units else "",
-                    },
-                    score,
-                )
-            )
-        scored_items.sort(
-            key=lambda row: (
-                -row[1],
-                _ascii_lower(str(row[0].get("descripcion") or "")),
-                _ascii_lower(str(row[0].get("cod_producto") or "")),
+        existencia = Decimal(str(balances.get((int(producto.id), bodega.id), Decimal("0")) or 0)) if bodega else Decimal("0")
+        if existencia <= 0:
+            continue
+        price_usd = _regalia_price_usd(producto)
+        allowed_by_units = policy_active and remaining_units_total > 0
+        prices = _product_price_map(producto)
+        scored_items.append(
+            (
+                {
+                    "id": int(producto.id),
+                    "cod_producto": producto.cod_producto,
+                    "descripcion": producto.descripcion,
+                    **prices,
+                    "precio_referencia_usd": float(price_usd),
+                    "existencia": float(existencia),
+                    "free_qty": float(existencia),
+                    "assigned_qty": float(payload.get("assigned_units_total") or 0),
+                    "assigned_value_usd": float(payload.get("assigned_value_usd_total") or 0),
+                    "used_qty": float(payload.get("used_units_total") or 0),
+                    "remaining_qty": float(remaining_units_total),
+                    "remaining_value_usd": 0.0,
+                    "cash_remaining_usd": 0.0,
+                    "money_available_usd": 0.0,
+                    "allowed": bool(allowed_by_units),
+                    "allowed_by_cash": False,
+                    "allowed_by_units": bool(allowed_by_units),
+                    "default_policy": "UNIDADES" if allowed_by_units else "",
+                },
+                score,
             )
         )
-        items = [item for item, _score in scored_items]
+    scored_items.sort(
+        key=lambda row: (
+            -row[1],
+            _ascii_lower(str(row[0].get("descripcion") or "")),
+            _ascii_lower(str(row[0].get("cod_producto") or "")),
+        )
+    )
+    items = [item for item, _score in scored_items]
     return JSONResponse(
         {
             "ok": True,

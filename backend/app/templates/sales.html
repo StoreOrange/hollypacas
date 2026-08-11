@@ -2060,6 +2060,7 @@
     }
     promotionGiftPayload = payload;
     renderGiftBalanceProjection();
+    renderComboGiftResults((payload.items || []).filter((item) => item.allowed));
   };
 
   const loadGiftAssignmentPanel = async () => {
@@ -2316,7 +2317,7 @@
       .map((item) => {
         const freeQty = Number(item.free_qty ?? item.existencia ?? 0);
         const disabled = freeQty <= 0 || !item.allowed_by_units;
-        const policyStatus = [`Cupo vendedor: ${Number(item.remaining_qty || 0).toFixed(2)}`, `Precio venta: ${Number(item.precio_referencia_usd || 0).toFixed(2)}`].join(" - ");
+        const policyStatus = [`Cupo vendedor: ${Number(item.remaining_qty || 0).toFixed(2)}`, `Precio venta: $${Number(item.precio_referencia_usd || 0).toFixed(2)}`].join(" - ");
         return `
           <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
             <div>
@@ -2324,25 +2325,28 @@
               <div class="text-xs text-slate">Libre: ${freeQty}${Number(item.reserved_qty || 0) > 0 ? ` · Reservado: ${item.reserved_qty}` : ""}</div>
               <div class="text-[11px] text-slate">${policyStatus}</div>
             </div>
-            <button
-              class="btn btn-outline-secondary btn-sm combo-gift-pick"
-              type="button"
-              data-id="${item.id}"
-              data-code="${item.cod_producto}"
-              data-desc="${item.descripcion}"
-              data-price-usd="${item.precio_venta1_usd}"
-              data-price-cs="${item.precio_venta1}"
-              data-existencia="${item.existencia}"
-              data-free-qty="${freeQty}"
-              data-allowed-units="${item.allowed_by_units ? "1" : "0"}"
-              data-remaining-qty="${item.remaining_qty || 0}"
-              data-price-ref-usd="${item.precio_referencia_usd || 0}"
-              data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
-              ${disabled ? "disabled" : ""}
-            >
-              <i class="bi bi-plus-circle"></i>
-              Agregar
-            </button>
+            <div class="d-flex align-items-center gap-2">
+              <input class="form-control form-control-sm text-end combo-gift-result-qty" type="number" min="1" step="1" value="1" style="width:72px;" data-product-id="${item.id}" ${disabled ? "disabled" : ""}>
+              <button
+                class="btn btn-outline-secondary btn-sm combo-gift-pick"
+                type="button"
+                data-id="${item.id}"
+                data-code="${item.cod_producto}"
+                data-desc="${item.descripcion}"
+                data-price-usd="${item.precio_venta1_usd}"
+                data-price-cs="${item.precio_venta1}"
+                data-existencia="${item.existencia}"
+                data-free-qty="${freeQty}"
+                data-allowed-units="${item.allowed_by_units ? "1" : "0"}"
+                data-remaining-qty="${item.remaining_qty || 0}"
+                data-price-ref-usd="${item.precio_referencia_usd || 0}"
+                data-reserved-details="${encodeURIComponent(JSON.stringify(item.reserved_details || []))}"
+                ${disabled ? "disabled" : ""}
+              >
+                <i class="bi bi-plus-circle"></i>
+                Agregar
+              </button>
+            </div>
           </div>
         `;
       })
@@ -2354,6 +2358,7 @@
     const existencia = Number(source.existencia || 0);
     const freeQty = Number(source.freeQty ?? source.free_qty ?? existencia);
     const allowedByUnits = Boolean(source.allowedByUnits ?? source.allowed_by_units);
+    const requestedQty = Math.max(1, Math.round(Number(source.cantidad || 1)));
     if (!id) return;
     if (freeQty <= 0) {
       pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Esta regalia no tiene saldo." });
@@ -2367,17 +2372,17 @@
     if (existing) {
       const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
       const available = Math.max(0, freeQty - getInvoiceQty(existing.id));
-      if ((existing.cantidad + 1) * comboQty > available) {
+      if ((existing.cantidad + requestedQty) * comboQty > available) {
         pauseNavForAlert({ icon: "warning", title: "Saldo insuficiente", text: `Disponible: ${available}` });
         return;
       }
-      existing.cantidad += 1;
+      existing.cantidad += requestedQty;
     } else {
       comboGifts.push({
         id,
         codigo: source.codigo || source.cod_producto || id,
         descripcion: source.descripcion || "",
-        cantidad: 1,
+        cantidad: requestedQty,
         precioUsd: Number(source.precioUsd ?? source.precio_venta1_usd ?? 0),
         precioCs: Number(source.precioCs ?? source.precio_venta1 ?? 0),
         existencia,
@@ -2541,8 +2546,7 @@
   if (comboGiftSearch) {
     comboGiftSearch.addEventListener("input", async (event) => {
       const value = event.target.value.trim();
-      if (value.length < 2) {
-        comboGiftResults.innerHTML = "";
+      if (value.length === 1) {
         return;
       }
       try {
@@ -2589,10 +2593,12 @@
     comboGiftResults.addEventListener("click", (event) => {
       const button = event.target.closest(".combo-gift-pick");
       if (!button) return;
+      const qtyInput = comboGiftResults?.querySelector(`.combo-gift-result-qty[data-product-id="${button.dataset.id}"]`);
       addPromotionGiftItem({
         id: button.dataset.id,
         codigo: button.dataset.code || "",
         descripcion: button.dataset.desc || "",
+        cantidad: parseFloat(qtyInput?.value || 1),
         precioUsd: parseFloat(button.dataset.priceUsd || 0),
         precioCs: parseFloat(button.dataset.priceCs || 0),
         existencia: parseFloat(button.dataset.existencia || 0),
