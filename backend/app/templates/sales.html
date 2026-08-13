@@ -583,7 +583,7 @@
                 <div class="sales-panel-title d-flex align-items-center gap-2">
                   <button id="open-combo-modal" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
                     <i class="bi bi-boxes"></i>
-                    Venta de promociones
+                    Armar combo
                   </button>
                   <div id="preventa-live-inline" class="preventa-live-inline">
                     <span id="preventa-live-text" class="preventa-live-text">Nueva preventa recibida</span>
@@ -1090,10 +1090,10 @@
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <div class="modal-header border-0">
         <div>
-          <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Venta de promociones</div>
+          <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Combos y ofertas</div>
           <div class="text-2xl font-semibold text-ink d-flex align-items-center gap-2">
             <i class="bi bi-boxes text-brand"></i>
-            Armar promocion
+            Armar combo
           </div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
@@ -1104,11 +1104,11 @@
             <div class="odoo-card">
               <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
                 <i class="bi bi-star text-brand"></i>
-                Producto a cobrar
+                Producto oferta (padre)
               </div>
               <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
                 <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
-                <input id="combo-parent-search" class="form-control border-0" type="text" placeholder="Buscar producto a cobrar" />
+                <input id="combo-parent-search" class="form-control border-0" type="text" placeholder="Buscar oferta" />
               </div>
               <div id="combo-parent-results" class="mt-3 space-y-2 text-sm"></div>
               <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -1123,7 +1123,7 @@
                   Saldo disponible: <strong id="combo-parent-available">0</strong>
                 </div>
                 <div class="mt-2 text-sm text-slate">
-                  Total cobrado: <strong id="combo-parent-price">C$ 0.00</strong>
+                  Precio combo: <strong id="combo-parent-price">C$ 0.00</strong>
                 </div>
               </div>
             </div>
@@ -1132,19 +1132,21 @@
             <div class="odoo-card">
               <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
                 <i class="bi bi-gift text-brand"></i>
-                Regalias autorizadas
+                {% if active_company == "bdtrend" %}Productos del combo{% else %}Regalias (hijas){% endif %}
               </div>
+              {% if active_company != "bdtrend" %}
               <div id="combo-gift-policy-summary" class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 mb-3 text-slate" style="font-size:.72rem;">
                 Selecciona un vendedor para ver sus regalias asignadas.
               </div>
               <div id="combo-gift-assigned-list" class="mb-3 space-y-1" style="font-size:.72rem;"></div>
+              {% endif %}
               <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
                 <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
-                <input id="combo-gift-search" class="form-control border-0" type="text" placeholder="Buscar regalia autorizada" />
+                <input id="combo-gift-search" class="form-control border-0" type="text" placeholder="{% if active_company == 'bdtrend' %}Buscar producto del combo{% else %}Buscar regalia{% endif %}" />
               </div>
               <div id="combo-gift-results" class="mt-3 space-y-2 text-sm"></div>
               <div class="mt-3">
-                <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold">Regalias seleccionadas</div>
+                <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold">{% if active_company == "bdtrend" %}Productos seleccionados{% else %}Regalias seleccionadas{% endif %}</div>
                 <div id="combo-gift-list" class="mt-2 space-y-2 text-sm"></div>
               </div>
             </div>
@@ -1158,7 +1160,7 @@
             <div class="d-flex justify-content-end mt-3 gap-2">
               <button id="combo-apply" class="btn btn-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
                 <i class="bi bi-check2-circle"></i>
-                Agregar promocion
+                Agregar combo
               </button>
             </div>
             <div class="text-sm text-slate mt-2" id="combo-status"></div>
@@ -2389,7 +2391,22 @@
 
   const loadComboFromCatalog = async () => {
     if (!comboParent) return;
-    comboGifts = [];
+    const items = await fetchComboItems(comboParent.id);
+    comboGifts = items.map((item) => ({
+      id: item.child_id,
+      codigo: item.cod_producto,
+      descripcion: item.descripcion,
+      cantidad: Math.max(1, Math.round(item.cantidad || 1)),
+      precioUsd: item.precio_venta1_usd || 0,
+      precioCs: item.precio_venta1 || 0,
+      existencia: item.existencia || 0,
+      freeQty: item.free_qty ?? item.existencia ?? 0,
+      allowedByUnits: true,
+      remainingQty: 0,
+      precioReferenciaUsd: item.precio_venta1_usd || 0,
+      promoPolicy: "UNIDADES",
+      reservedDetails: item.reserved_details || [],
+    }));
     renderComboGifts();
     renderComboPrice();
   };

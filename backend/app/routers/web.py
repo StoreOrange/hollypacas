@@ -11488,6 +11488,7 @@ def sales_page(
             "restaurant_tables": restaurant_tables,
             "workshop_services": workshop_services,
             "sales_interface_code": interface_code,
+            "active_company": (get_active_company_key() or "").strip().lower(),
             "sale_datetime_override_enabled": _is_global_company(),
             "pacasholl_libreado_enabled": _is_pacasholl_company(),
             "default_sales_currency": "CS" if _inventory_cs_only_mode(db) else "USD",
@@ -28281,8 +28282,6 @@ def sales_promotions_gifts(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.registrar")
-    if not _is_hollpacas_mode():
-        return JSONResponse({"ok": True, "items": [], "message": "Modulo no disponible"})
     if not vendedor_id:
         return JSONResponse({"ok": False, "message": "Selecciona vendedor"}, status_code=400)
     vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first()
