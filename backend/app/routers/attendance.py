@@ -752,3 +752,30 @@ async def attendance_websocket(websocket: WebSocket):
         pass
     finally:
         attendance_socket_hub.unsubscribe(subscriber_id)
+
+
+@web_router.get("/attendance/live-punches")
+def attendance_live_punches(request: Request, after_id: int = Query(0, ge=0), db: Session = Depends(get_db)):
+    _browser_admin(request, db)
+    punches = (
+        db.query(AttendancePunch)
+        .filter(AttendancePunch.id > after_id)
+        .order_by(AttendancePunch.id.asc())
+        .limit(100)
+        .all()
+    )
+    return {
+        "events": [
+            {
+                "id": punch.id,
+                "occurred_at": punch.occurred_at.isoformat(timespec="seconds"),
+                "date": punch.occurred_at.strftime("%d/%m/%Y"),
+                "time": punch.occurred_at.strftime("%I:%M:%S %p"),
+                "device_user_id": punch.device_user_id,
+                "employee": punch.employee.full_name if punch.employee else "Sin vincular",
+                "device": punch.device.name,
+                "punch_state": punch.punch_state,
+            }
+            for punch in punches
+        ]
+    }
