@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..core.deps import get_db
 from ..core.security import ALGORITHM, SECRET_KEY
 from ..database import get_session_local
@@ -96,12 +97,17 @@ class AttendanceBatchIn(BaseModel):
 
 def _require_sync_token(x_attendance_token: Optional[str] = Header(default=None)) -> None:
     expected = os.getenv("ATTENDANCE_SYNC_TOKEN", "").strip()
-    if not expected:
+    expected_hash = settings.ATTENDANCE_SYNC_TOKEN_SHA256.strip().lower()
+    if not expected and not expected_hash:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="ATTENDANCE_SYNC_TOKEN no configurado",
+            detail="Token de sincronizacion no configurado",
         )
-    if not x_attendance_token or not hmac.compare_digest(x_attendance_token, expected):
+    supplied = (x_attendance_token or "").strip()
+    valid_plain = bool(expected and supplied and hmac.compare_digest(supplied, expected))
+    supplied_hash = hashlib.sha256(supplied.encode("utf-8")).hexdigest() if supplied else ""
+    valid_hash = bool(expected_hash and supplied_hash and hmac.compare_digest(supplied_hash, expected_hash))
+    if not valid_plain and not valid_hash:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token de sincronizacion invalido")
 
 
