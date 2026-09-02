@@ -13,7 +13,7 @@ from .config import get_active_company_key
 from .core.init_db import init_db
 from .database import get_session_local
 from .models.sales import CompanyProfileSetting
-from .routers import auth, inventory, web
+from .routers import attendance, auth, inventory, payroll, web
 
 
 app = FastAPI(title="ERP System Backend")
@@ -28,6 +28,9 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(inventory.router)
+app.include_router(attendance.router)
+app.include_router(attendance.web_router)
+app.include_router(payroll.router)
 app.include_router(web.router)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

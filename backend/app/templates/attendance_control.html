@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+        <div>
+          <nav aria-label="breadcrumb"><ol class="breadcrumb mb-1"><li class="breadcrumb-item"><a href="/attendance">Control de marcadas</a></li><li class="breadcrumb-item active">Entradas y salidas</li></ol></nav>
+          <h1 class="h4 mb-1"><i class="bi bi-clock-history me-2"></i>Control de entradas y salidas</h1>
+          <p class="text-muted mb-0">Resumen diario agrupado por area y calculo preliminar de tiempo extra.</p>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+          <span id="control-live-status" class="badge text-bg-secondary fs-6"><i class="bi bi-circle-fill me-1"></i>Conectando</span>
+          <a href="/attendance" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Configuracion</a>
+        </div>
+      </div>
+
+      <form method="get" action="/attendance/control" class="card shadow-sm mb-4"><div class="card-body row g-2 align-items-end">
+        <div class="col-md-2"><label class="form-label">Desde</label><input class="form-control" type="date" name="date_from" value="{{ selected_date_from.isoformat() }}" required></div>
+        <div class="col-md-2"><label class="form-label">Hasta</label><input class="form-control" type="date" name="date_to" value="{{ selected_date_to.isoformat() }}" required></div>
+        <div class="col-md-3"><label class="form-label">Area</label><select class="form-select" name="area_id"><option value="">Todas las areas</option>{% for area in areas %}<option value="{{ area.id }}" {% if selected_area_id == area.id %}selected{% endif %}>{{ area.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-3"><label class="form-label">Empleado</label><input class="form-control" name="search" value="{{ search }}" placeholder="Codigo o nombre"></div>
+        <div class="col-md-2"><button class="btn btn-primary w-100"><i class="bi bi-funnel me-1"></i>Filtrar</button></div>
+      </div></form>
+
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-xl"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Empleados / dias</div><div class="h4 mb-0">{{ totals.employees }} / {{ range_days }}</div></div></div></div>
+        <div class="col-6 col-xl"><div class="card shadow-sm border-success"><div class="card-body"><div class="text-muted small">Con entrada y salida</div><div class="h4 mb-0 text-success">{{ totals.present }}</div></div></div></div>
+        <div class="col-6 col-xl"><div class="card shadow-sm border-warning"><div class="card-body"><div class="text-muted small">Salida pendiente</div><div class="h4 mb-0 text-warning">{{ totals.pending }}</div></div></div></div>
+        <div class="col-6 col-xl"><div class="card shadow-sm"><div class="card-body"><div class="text-muted small">Sin marcadas</div><div class="h4 mb-0">{{ totals.absent }}</div></div></div></div>
+        <div class="col-6 col-xl"><div class="card shadow-sm border-primary"><div class="card-body"><div class="text-muted small">Horas extra</div><div class="h4 mb-0 text-primary">{{ total_overtime_label }}</div></div></div></div>
+      </div>
+      {% if range_limited %}<div class="alert alert-warning py-2">El rango fue limitado automáticamente a 31 días.</div>{% endif %}
+
+      <div class="alert alert-info py-2 small">
+        <strong>Politica de horas extra:</strong> lunes a viernes después de <strong>{{ policy.weekday_overtime_start.strftime('%I:%M %p') }}</strong>; sábado después de <strong>{{ policy.saturday_overtime_start.strftime('%I:%M %p') }}</strong>; domingo <strong>todo el tiempo neto trabajado</strong>. Jornada esperada {{ expected_label }} y descanso de {{ break_minutes }} minutos cuando la permanencia alcanza {{ (break_after_minutes / 60)|int }} horas. <a href="/data">Editar en Datos</a>.
+      </div>
+      {% if unlinked_count %}<div class="alert alert-warning py-2"><strong>{{ unlinked_count }}</strong> marcada(s) del rango estan sin empleado vinculado y no entran en estos calculos. <a href="/attendance">Vincular ahora</a>.</div>{% endif %}
+
+      {% for group in groups %}
+      <section class="card shadow-sm mb-4 overflow-hidden">
+        <div class="card-header bg-primary text-white py-3"><strong class="fs-5"><i class="bi bi-people-fill me-2"></i>{{ group.name }}</strong><span class="badge bg-light text-primary ms-2">{{ group.rows|length }}</span></div>
+        <div class="table-responsive"><table class="table table-hover align-middle mb-0">
+          <thead class="table-light"><tr><th>Fecha</th><th>Codigo</th><th>Empleado</th><th>Cargo</th><th>Entrada</th><th>Salida</th><th>Marcadas</th><th>Tiempo total</th><th>Tiempo regular</th><th>Tiempo extra</th><th>Regla y calculo del extra</th><th>Estado</th></tr></thead>
+          <tbody>{% for row in group.rows %}<tr>
+            <td class="fw-semibold">{{ row.date.strftime('%d/%m/%Y') }}</td><td>{{ row.employee.employee_code }}</td><td class="fw-semibold">{{ row.employee.full_name }}</td><td>{{ row.employee.position.name if row.employee.position else '-' }}</td>
+            <td>{{ row.entry.strftime('%I:%M:%S %p') if row.entry else '--:--' }}</td><td>{{ row.exit.strftime('%I:%M:%S %p') if row.exit else '--:--' }}</td><td>{{ row.punch_count }}</td>
+            <td class="fw-semibold">{{ row.worked_label }}</td><td>{{ row.regular_label }}</td><td class="fw-bold {% if row.overtime_minutes %}text-success{% endif %}">{{ row.overtime_label }}</td><td><div class="fw-semibold small">{{ row.overtime_rule }}</div><div class="text-muted small">{{ row.overtime_detail }}</div></td><td><span class="badge text-bg-{{ row.status_class }}">{{ row.status_label }}</span></td>
+          </tr>{% endfor %}</tbody>
+        </table></div>
+      </section>
+      {% else %}<div class="card shadow-sm"><div class="card-body text-center text-muted py-5"><i class="bi bi-calendar-x fs-1 d-block mb-2"></i>No hay empleados para los filtros seleccionados.</div></div>{% endfor %}
+    </div>
+  </main>
+</div>
+<script>
+(() => {
+  const badge = document.getElementById("control-live-status");
+  let socket;
+  let retry;
+  const connect = () => {
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    socket = new WebSocket(`${protocol}//${location.host}/ws/attendance`);
+    socket.onopen = () => { badge.className = "badge text-bg-success fs-6"; badge.innerHTML = '<i class="bi bi-circle-fill me-1"></i>En vivo'; };
+    socket.onmessage = event => { const data = JSON.parse(event.data); if (data.type === "attendance.punches") { clearTimeout(retry); retry = setTimeout(() => location.reload(), 700); } };
+    socket.onclose = () => { badge.className = "badge text-bg-secondary fs-6"; badge.textContent = "Reconectando"; setTimeout(connect, 3000); };
+  };
+  connect();
+})();
+</script>
+{% endblock %}

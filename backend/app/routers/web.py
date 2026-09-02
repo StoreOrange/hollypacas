@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import defaultdict
 from difflib import SequenceMatcher
 from typing import Optional
@@ -136,6 +138,7 @@ from ..models.sales import (
     VentaPago,
 )
 from ..models.user import Branch, Permission, Role, User
+from ..models.attendance import AttendancePolicySetting
 
 try:
     from pywebpush import WebPushException, webpush
@@ -406,6 +409,8 @@ SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "inventory_traslados", "label": "Traslados Rapidos", "href": "/inventory/traslados-rapidos", "icon": "bi-arrow-left-right", "perm": "menu.inventory.egresos", "alt_perm": None},
     {"id": "finance", "label": "Finanzas", "href": "/finance", "icon": "bi-currency-dollar", "perm": "menu.finance", "alt_perm": None},
     {"id": "accounting", "label": "Contabilidad", "href": "/accounting", "icon": "bi-journal-check", "perm": "menu.accounting", "alt_perm": None},
+    {"id": "attendance", "label": "Control de marcadas", "href": "/attendance", "icon": "bi-fingerprint", "perm": "menu.attendance", "alt_perm": None},
+    {"id": "payroll", "label": "Gestion de planilla", "href": "/payroll", "icon": "bi-wallet2", "perm": "menu.payroll", "alt_perm": None},
     {"id": "data", "label": "Datos", "href": "/data", "icon": "bi-database", "perm": "menu.data", "alt_perm": None},
 ]
 
@@ -701,6 +706,8 @@ PERMISSION_GROUPS = [
             {"name": "menu.inventory.caliente", "label": "Inventario en caliente"},
             {"name": "menu.finance", "label": "Finanzas"},
             {"name": "menu.accounting", "label": "Contabilidad"},
+            {"name": "menu.attendance", "label": "Control de marcadas"},
+            {"name": "menu.payroll", "label": "Gestion de planilla"},
             {"name": "menu.reports", "label": "Informes"},
             {"name": "menu.data", "label": "Datos / catalogos"},
         ],
@@ -767,6 +774,11 @@ PERMISSION_GROUPS = [
             {"name": "access.accounting.financial_data", "label": "Datos financieros"},
             {"name": "access.accounting.entries", "label": "Comprobantes contables"},
             {"name": "access.accounting.voucher_types", "label": "Tipos de comprobantes"},
+            {"name": "access.attendance", "label": "Acceso a control de marcadas"},
+            {"name": "access.attendance.manage", "label": "Gestionar empleados y vinculaciones"},
+            {"name": "access.payroll", "label": "Acceso a gestion de planilla"},
+            {"name": "access.payroll.manage", "label": "Gestionar salarios, deducciones y periodos"},
+            {"name": "access.payroll.close", "label": "Cerrar planillas"},
             {"name": "access.reports", "label": "Acceso a informes"},
             {"name": "access.data", "label": "Acceso a datos"},
             {"name": "access.data.permissions", "label": "Gestion de permisos"},
@@ -25323,6 +25335,7 @@ def data_home(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.data")
+    attendance_policy = db.query(AttendancePolicySetting).order_by(AttendancePolicySetting.id).first()
     return request.app.state.templates.TemplateResponse(
         "data.html",
         {
@@ -25331,6 +25344,7 @@ def data_home(
             "menu_items": get_sidebar_menu_layout(db),
             "active_company": (get_active_company_key() or "").strip().lower(),
             "version": settings.UI_VERSION,
+            "attendance_policy": attendance_policy,
         },
     )
 
@@ -35945,4 +35959,3 @@ def inventory_activate_product(
         db.commit()
         return RedirectResponse("/inventory", status_code=303)
     return RedirectResponse("/inventory?error=Producto+no+encontrado", status_code=303)
-

@@ -109,6 +109,17 @@
                     </div>
                   </a>
                 </div>
+                <div class="col-md-6 col-xl-4" data-catalog-item>
+                  <button class="btn p-0 border-0 bg-transparent text-start w-100 h-100" type="button" data-bs-toggle="modal" data-bs-target="#attendancePolicyModal">
+                    <div class="border rounded-3 p-3 h-100">
+                      <div class="d-flex align-items-center justify-content-between">
+                        <div class="fw-semibold">Politica de marcadas y horas extra</div>
+                        <span class="badge text-bg-primary"><i class="bi bi-clock-history"></i> Laboral</span>
+                      </div>
+                      <p class="text-muted mt-2 mb-0">Horarios, descansos y reglas de tiempo extra por dia de la semana.</p>
+                    </div>
+                  </button>
+                </div>
               </div>
             </section>
 
@@ -412,6 +423,31 @@
       </div>
     </div>
   </main>
+</div>
+
+<div class="modal fade" id="attendancePolicyModal" tabindex="-1" aria-labelledby="attendancePolicyModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+    <form method="post" action="/data/attendance-policy">
+      <div class="modal-header"><h2 class="modal-title fs-5" id="attendancePolicyModalLabel"><i class="bi bi-clock-history me-2"></i>Politica de control de marcadas y horas extra</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+      <div class="modal-body">
+        {% if request.query_params.get('policy_ok') %}<div class="alert alert-success">{{ request.query_params.get('policy_ok') }}</div>{% endif %}
+        {% if request.query_params.get('policy_error') %}<div class="alert alert-danger">{{ request.query_params.get('policy_error') }}</div>{% endif %}
+        <div class="alert alert-info">
+          <strong>Reglas vigentes:</strong>
+          lunes a viernes el tiempo extra inicia a la hora indicada; el sábado utiliza su propia hora; el domingo todo el tiempo neto trabajado se considera extra.
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6"><label class="form-label">Inicio extra lunes a viernes</label><input class="form-control" type="time" name="weekday_overtime_start" value="{{ attendance_policy.weekday_overtime_start.strftime('%H:%M') if attendance_policy else '17:00' }}" required></div>
+          <div class="col-md-6"><label class="form-label">Inicio extra sábado</label><input class="form-control" type="time" name="saturday_overtime_start" value="{{ attendance_policy.saturday_overtime_start.strftime('%H:%M') if attendance_policy else '16:00' }}" required></div>
+          <div class="col-md-4"><label class="form-label">Jornada neta (minutos)</label><input class="form-control" type="number" min="1" max="1440" name="expected_daily_minutes" value="{{ attendance_policy.expected_daily_minutes if attendance_policy else 480 }}" required></div>
+          <div class="col-md-4"><label class="form-label">Descanso (minutos)</label><input class="form-control" type="number" min="0" max="480" name="break_minutes" value="{{ attendance_policy.break_minutes if attendance_policy else 60 }}" required></div>
+          <div class="col-md-4"><label class="form-label">Aplicar descanso después de</label><input class="form-control" type="number" min="0" max="1440" name="break_after_minutes" value="{{ attendance_policy.break_after_minutes if attendance_policy else 360 }}" required><div class="form-text">Minutos de permanencia.</div></div>
+          <div class="col-12"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" name="sunday_all_day_overtime" id="sundayAllDay" {% if not attendance_policy or attendance_policy.sunday_all_day_overtime %}checked{% endif %}><label class="form-check-label fw-semibold" for="sundayAllDay">Domingo: todo el tiempo trabajado cuenta como horas extra</label></div></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" type="submit">Guardar politica</button></div>
+    </form>
+  </div></div>
 </div>
 {% endblock %}
 

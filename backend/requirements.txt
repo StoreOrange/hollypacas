@@ -18,3 +18,4 @@ reportlab==4.2.2
 Pillow==10.4.0
 openpyxl==3.1.5
 pywebpush==2.0.3
+pyzk==0.9

@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+  <main class="p-4 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+        <div>
+          <h1 class="h4 mb-1"><i class="bi bi-fingerprint me-2"></i>Control de marcadas</h1>
+          <p class="text-muted mb-0">Empleados, estructura organizativa y sincronizacion de relojes biometricos.</p>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+          <a class="btn btn-outline-primary" href="/attendance/control">
+            <i class="bi bi-clock-history me-1"></i>Entradas y salidas
+          </a>
+          <span id="attendance-live-status" class="badge text-bg-secondary fs-6">
+            <i class="bi bi-circle-fill me-1"></i>Conectando en vivo
+          </span>
+          <span class="badge text-bg-primary fs-6">{{ devices|length }} reloj(es)</span>
+          <form method="post" action="/attendance/sync-now">
+            <button class="btn btn-success" type="submit">
+              <i class="bi bi-cloud-download me-1"></i>Descargar marcadas ahora
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {% if request.query_params.get('ok') %}<div class="alert alert-success">{{ request.query_params.get('ok') }}</div>{% endif %}
+      {% if request.query_params.get('error') %}<div class="alert alert-danger">{{ request.query_params.get('error') }}</div>{% endif %}
+
+      <div class="row g-3 mb-4">
+        <div class="col-lg-4">
+          <div class="card shadow-sm h-100"><div class="card-body">
+            <h2 class="h6">Nueva area</h2>
+            <form method="post" action="/attendance/areas" class="row g-2">
+              <div class="col-12"><input class="form-control" name="name" placeholder="Nombre del area" required></div>
+              <div class="col-12"><div class="form-text">El ID y el codigo interno se generan automaticamente.</div></div>
+              <div class="col-12"><button class="btn btn-primary w-100">Guardar area</button></div>
+            </form>
+          </div></div>
+        </div>
+        <div class="col-lg-4">
+          <div class="card shadow-sm h-100"><div class="card-body">
+            <h2 class="h6">Nuevo cargo</h2>
+            <form method="post" action="/attendance/positions" class="row g-2">
+              <div class="col-12"><input class="form-control" name="name" placeholder="Nombre del cargo" required></div>
+              <div class="col-12"><div class="form-text">El ID y el codigo interno se generan automaticamente.</div></div>
+              <div class="col-12"><button class="btn btn-primary w-100">Guardar cargo</button></div>
+            </form>
+          </div></div>
+        </div>
+        <div class="col-lg-4">
+          <div class="card shadow-sm h-100"><div class="card-body">
+            <h2 class="h6">Estado del conector</h2>
+            {% for device in devices %}
+              <div class="small"><strong>{{ device.name }}</strong><br>{{ device.local_ip }}:{{ device.local_port }}<br>Ultima sincronizacion: {{ device.last_sync_at or 'Pendiente' }}</div>
+            {% else %}<div class="text-muted small">Aun no se ha recibido la primera sincronizacion.</div>{% endfor %}
+          </div></div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mb-4"><div class="card-body">
+        <h2 class="h6">Registrar empleado</h2>
+        <form method="post" action="/attendance/employees" class="row g-2">
+          <div class="col-md-2"><input class="form-control" name="employee_code" placeholder="Codigo" required></div>
+          <div class="col-md-3"><input class="form-control" name="full_name" placeholder="Nombre completo" required></div>
+          <div class="col-md-2"><input class="form-control" name="identification" placeholder="Identificacion"></div>
+          <div class="col-md-2"><select class="form-select" name="area_id"><option value="">Area</option>{% for row in areas %}<option value="{{ row.id }}">{{ row.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-2"><select class="form-select" name="position_id"><option value="">Cargo</option>{% for row in positions %}<option value="{{ row.id }}">{{ row.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-1"><button class="btn btn-success w-100"><i class="bi bi-plus-lg"></i></button></div>
+        </form>
+      </div></div>
+
+      <div class="card shadow-sm mb-4"><div class="card-body">
+        <h2 class="h6">Usuarios encontrados en el reloj</h2>
+        <p class="text-muted small">Primero registra el usuario y su huella físicamente en el TA040. Luego pulsa <strong>Descargar marcadas ahora</strong>. Aquí aparecerá su ID para relacionarlo con el empleado de planilla.</p>
+        <div class="table-responsive"><table class="table table-sm align-middle">
+          <thead><tr><th>ID reloj</th><th>Nombre en reloj</th><th>Empleado vinculado</th><th>Accion</th></tr></thead>
+          <tbody>{% for link in device_users %}<tr>
+            <td>{{ link.device_user_id }}</td><td>{{ link.device_name or '-' }}</td><td>{{ link.employee.full_name if link.employee else 'Sin vincular' }}</td>
+            <td><form method="post" action="/attendance/device-users/{{ link.id }}/employee" class="d-flex gap-2"><select class="form-select form-select-sm" name="employee_id" required><option value="">Seleccionar</option>{% for employee in employees %}<option value="{{ employee.id }}" {% if link.employee_id == employee.id %}selected{% endif %}>{{ employee.employee_code }} · {{ employee.full_name }}</option>{% endfor %}</select><button class="btn btn-sm btn-primary">Vincular</button></form></td>
+          </tr>{% else %}<tr><td colspan="4" class="text-muted">Se llenara al sincronizar el TA040.</td></tr>{% endfor %}</tbody>
+        </table></div>
+      </div></div>
+
+      <div class="card shadow-sm"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+          <h2 class="h6 mb-0">Ultimas 100 marcadas descargadas</h2>
+          <span class="badge text-bg-light">{{ punches|length }} resultado(s)</span>
+        </div>
+        <form method="get" action="/attendance" class="row g-2 align-items-end mb-3 p-3 bg-light rounded-3">
+          <div class="col-md-4"><label class="form-label">Fecha de marcacion</label><input class="form-control" type="date" name="punch_date" value="{{ punch_date }}"></div>
+          <div class="col-md-6"><label class="form-label">Usuario o empleado</label><input class="form-control" name="punch_search" value="{{ punch_search }}" placeholder="ID, codigo, nombre del reloj o empleado"></div>
+          <div class="col-md-2"><button class="btn btn-primary w-100"><i class="bi bi-search me-1"></i>Filtrar</button></div>
+          {% if punch_date or punch_search %}<div class="col-12"><a class="small" href="/attendance#attendance-live-rows">Limpiar filtros</a></div>{% endif %}
+        </form>
+        <div class="table-responsive"><table class="table table-striped table-sm">
+          <thead><tr><th>Fecha</th><th>Hora</th><th>ID reloj</th><th>Empleado</th><th>Dispositivo</th><th>Estado</th></tr></thead>
+          <tbody id="attendance-live-rows">{% for punch in punches %}<tr><td>{{ punch.occurred_at.strftime('%d/%m/%Y') }}</td><td><strong>{{ punch.occurred_at.strftime('%I:%M:%S %p') }}</strong></td><td>{{ punch.device_user_id }}</td><td>{{ punch.employee.full_name if punch.employee else 'Sin vincular' }}</td><td>{{ punch.device.name }}</td><td>{{ punch.punch_state if punch.punch_state is not none else '-' }}</td></tr>{% else %}<tr data-empty-row><td colspan="6" class="text-muted">No hay marcadas recibidas. Usa el boton Descargar marcadas ahora.</td></tr>{% endfor %}</tbody>
+        </table></div>
+      </div></div>
+    </div>
+  </main>
+</div>
+<script>
+(() => {
+  const status = document.getElementById("attendance-live-status");
+  const rows = document.getElementById("attendance-live-rows");
+  if (!status || !rows) return;
+  let socket;
+  let retryTimer;
+
+  const setStatus = (online) => {
+    status.className = `badge fs-6 ${online ? "text-bg-success" : "text-bg-secondary"}`;
+    status.innerHTML = `<i class="bi bi-circle-fill me-1"></i>${online ? "En vivo" : "Reconectando"}`;
+  };
+
+  const addEvent = (event) => {
+    rows.querySelector("[data-empty-row]")?.remove();
+    const tr = document.createElement("tr");
+    const values = [
+      event.date,
+      event.time,
+      event.device_user_id,
+      event.employee,
+      event.device,
+      event.punch_state ?? "-",
+    ];
+    values.forEach((value, index) => {
+      const td = document.createElement("td");
+      if (index === 1) {
+        const strong = document.createElement("strong");
+        strong.textContent = value;
+        td.appendChild(strong);
+      } else {
+        td.textContent = value;
+      }
+      tr.appendChild(td);
+    });
+    tr.classList.add("table-success");
+    rows.prepend(tr);
+    setTimeout(() => tr.classList.remove("table-success"), 4000);
+    while (rows.children.length > 100) rows.lastElementChild.remove();
+  };
+
+  const connect = () => {
+    clearTimeout(retryTimer);
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    socket = new WebSocket(`${protocol}//${window.location.host}/ws/attendance`);
+    socket.onopen = () => setStatus(true);
+    socket.onmessage = (message) => {
+      const payload = JSON.parse(message.data);
+      if (payload.type === "attendance.punches") {
+        [...payload.events].reverse().forEach(addEvent);
+      }
+    };
+    socket.onerror = () => socket.close();
+    socket.onclose = () => {
+      setStatus(false);
+      retryTimer = setTimeout(connect, 3000);
+    };
+  };
+  connect();
+})();
+</script>
+{% endblock %}

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time as dt_time
 from decimal import Decimal
 
 from sqlalchemy import func, inspect, text
@@ -42,6 +42,8 @@ from ..models.sales import (
     SalesInterfaceSetting,
     Vendedor,
 )
+from ..models.attendance import AttendanceDevice, AttendancePolicySetting, HRArea, HREmployee, HRPosition
+from ..models.payroll import PayrollDeductionType
 from .security import hash_password
 
 
@@ -106,6 +108,8 @@ def _seed_permissions(db: Session) -> None:
         "menu.accounting",
         "menu.reports",
         "menu.data",
+        "menu.attendance",
+        "menu.payroll",
         "access.sales",
         "access.sales.caliente",
         "access.sales.registrar",
@@ -141,6 +145,11 @@ def _seed_permissions(db: Session) -> None:
         "access.data.users",
         "access.data.roles",
         "access.data.catalogs",
+        "access.attendance",
+        "access.attendance.manage",
+        "access.payroll",
+        "access.payroll.manage",
+        "access.payroll.close",
     ]
     existing = {perm.name for perm in db.query(Permission).all()}
     for name in permission_names:
@@ -626,6 +635,73 @@ def _seed_vendedores(db: Session) -> None:
     for nombre in nombres:
         if nombre not in existing:
             db.add(Vendedor(nombre=nombre, activo=True))
+    db.commit()
+
+
+def _seed_hr_catalogs(db: Session) -> None:
+    areas = [
+        ("gerencia", "Gerencia"),
+        ("produccion", "Produccion"),
+        ("clasificacion", "Clasificacion"),
+        ("ventas", "Ventas"),
+        ("seguridad", "Seguridad"),
+        ("motorizados", "Motorizados"),
+    ]
+    positions = [
+        ("gerente_general", "Gerente general"),
+        ("administrador", "Administrador"),
+        ("supervisor", "Supervisor"),
+        ("jefe_produccion", "Jefe de produccion"),
+        ("operario_produccion", "Operario de produccion"),
+        ("clasificador", "Clasificador"),
+        ("vendedor", "Vendedor"),
+        ("cajero", "Cajero"),
+        ("bodeguero", "Bodeguero"),
+        ("guarda_seguridad", "Guarda de seguridad"),
+        ("motorizado", "Motorizado"),
+        ("auxiliar_administrativo", "Auxiliar administrativo"),
+    ]
+    existing_areas = {row.code for row in db.query(HRArea).all()}
+    for code, name in areas:
+        if code not in existing_areas:
+            db.add(HRArea(code=code, name=name, active=True))
+    existing_positions = {row.code for row in db.query(HRPosition).all()}
+    for code, name in positions:
+        if code not in existing_positions:
+            db.add(HRPosition(code=code, name=name, active=True))
+    db.commit()
+
+
+def _seed_attendance_policy(db: Session) -> None:
+    if not db.query(AttendancePolicySetting).first():
+        db.add(
+            AttendancePolicySetting(
+                weekday_overtime_start=dt_time(17, 0),
+                saturday_overtime_start=dt_time(16, 0),
+                sunday_all_day_overtime=True,
+                expected_daily_minutes=480,
+                break_minutes=60,
+                break_after_minutes=360,
+                updated_by="system",
+            )
+        )
+        db.commit()
+
+
+def _seed_payroll_catalogs(db: Session) -> None:
+    defaults = [
+        ("prestamo", "Prestamo al empleado", "LOAN", True),
+        ("anticipo", "Anticipo salarial", "ADVANCE", False),
+        ("inss_laboral", "INSS laboral", "LEGAL", False),
+        ("ir", "Impuesto sobre la renta", "LEGAL", False),
+        ("pension_alimenticia", "Pension alimenticia", "LEGAL", False),
+        ("ausencia", "Ausencia no remunerada", "ABSENCE", False),
+        ("otro", "Otra deduccion autorizada", "OTHER", False),
+    ]
+    existing = {row.code for row in db.query(PayrollDeductionType).all()}
+    for code, name, category, is_loan in defaults:
+        if code not in existing:
+            db.add(PayrollDeductionType(code=code, name=name, category=category, is_loan=is_loan, active=True))
     db.commit()
 
 
@@ -1581,6 +1657,27 @@ def init_db() -> None:
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        if "payroll_periods" in table_names:
+            period_columns = {col["name"] for col in inspect(engine).get_columns("payroll_periods")}
+            if "branch_id" not in period_columns:
+                conn.execute(text("ALTER TABLE payroll_periods ADD COLUMN branch_id INTEGER REFERENCES branches(id)"))
+            constraints = {row.get("name") for row in inspect(engine).get_unique_constraints("payroll_periods")}
+            if "uq_payroll_period_range" in constraints:
+                conn.execute(text("ALTER TABLE payroll_periods DROP CONSTRAINT uq_payroll_period_range"))
+            if "uq_payroll_branch_period_range" not in constraints:
+                conn.execute(text("ALTER TABLE payroll_periods ADD CONSTRAINT uq_payroll_branch_period_range UNIQUE (branch_id, date_from, date_to)"))
+        if "payroll_calculations" in table_names:
+            calc_columns = {col["name"] for col in inspect(engine).get_columns("payroll_calculations")}
+            if "additions_pay" not in calc_columns:
+                conn.execute(text("ALTER TABLE payroll_calculations ADD COLUMN additions_pay NUMERIC(14,2) NOT NULL DEFAULT 0"))
+        if "payroll_employee_profiles" in table_names:
+            profile_columns = {col["name"] for col in inspect(engine).get_columns("payroll_employee_profiles")}
+            for column_name in ("vacation_paid_through", "bonus_paid_through", "seniority_paid_through"):
+                if column_name not in profile_columns:
+                    conn.execute(text(f"ALTER TABLE payroll_employee_profiles ADD COLUMN {column_name} DATE"))
+    inspector = inspect(engine)
     if "users" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("users")}
         if "default_branch_id" not in columns:
@@ -2093,6 +2190,9 @@ def init_db() -> None:
         _seed_bancos(db)
         _seed_cuentas_bancarias(db)
         _seed_vendedores(db)
+        _seed_hr_catalogs(db)
+        _seed_attendance_policy(db)
+        _seed_payroll_catalogs(db)
         _seed_cuentas_contables(db)
         _seed_accounting_voucher_types(db)
         _seed_accounting_policy_settings(db)
