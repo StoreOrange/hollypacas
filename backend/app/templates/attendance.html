@@ -111,7 +111,7 @@
   let retryTimer;
   let socketOnline = false;
   const seenIds = new Set({{ punches|map(attribute='id')|list|tojson }});
-  let lastPunchId = {{ punches[0].id if punches else 0 }};
+  let lastPunchId = {{ punches|map(attribute='id')|max if punches else 0 }};
 
   const setStatus = (online) => {
     socketOnline = online;
@@ -187,7 +187,7 @@
   };
   connect();
   pollNewPunches();
-  setInterval(pollNewPunches, 3000);
+  setInterval(pollNewPunches, 1500);
 })();
 </script>
 {% endblock %}

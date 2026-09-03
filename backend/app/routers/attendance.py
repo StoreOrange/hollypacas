@@ -69,6 +69,43 @@ class AttendanceSocketHub:
 attendance_socket_hub = AttendanceSocketHub()
 
 
+def _socket_punch_events(after_id: int):
+    """Read committed punches so WebSockets work across Gunicorn workers."""
+    db = get_session_local()()
+    try:
+        punches = (
+            db.query(AttendancePunch)
+            .filter(AttendancePunch.id > after_id)
+            .order_by(AttendancePunch.id.asc())
+            .limit(100)
+            .all()
+        )
+        return [
+            {
+                "id": punch.id,
+                "occurred_at": punch.occurred_at.isoformat(timespec="seconds"),
+                "date": punch.occurred_at.strftime("%d/%m/%Y"),
+                "time": punch.occurred_at.strftime("%I:%M:%S %p"),
+                "device_user_id": punch.device_user_id,
+                "employee": punch.employee.full_name if punch.employee else "Sin vincular",
+                "device": punch.device.name,
+                "punch_state": punch.punch_state,
+            }
+            for punch in punches
+        ]
+    finally:
+        db.close()
+
+
+def _latest_punch_id():
+    db = get_session_local()()
+    try:
+        latest = db.query(AttendancePunch.id).order_by(AttendancePunch.id.desc()).first()
+        return latest[0] if latest else 0
+    finally:
+        db.close()
+
+
 class DeviceUserIn(BaseModel):
     user_id: str = Field(min_length=1, max_length=40)
     uid: Optional[int] = None
@@ -738,16 +775,28 @@ async def attendance_websocket(websocket: WebSocket):
         await websocket.close(code=4401)
         return
 
+    # Start from the current point. New records are received immediately from the
+    # local hub or recovered from PostgreSQL when another worker inserted them.
+    last_punch_id = await asyncio.to_thread(_latest_punch_id)
     await websocket.accept()
     subscriber_id, queue = attendance_socket_hub.subscribe()
     try:
         await websocket.send_json({"type": "attendance.connected"})
         while True:
             try:
-                message = await asyncio.wait_for(queue.get(), timeout=25)
-                await websocket.send_json(message)
+                message = await asyncio.wait_for(queue.get(), timeout=1)
+                events = [
+                    event for event in message.get("events", [])
+                    if int(event.get("id") or 0) > last_punch_id
+                ]
+                if events:
+                    last_punch_id = max(last_punch_id, max(int(event["id"]) for event in events))
+                    await websocket.send_json({"type": "attendance.punches", "events": events})
             except asyncio.TimeoutError:
-                await websocket.send_json({"type": "attendance.ping"})
+                events = await asyncio.to_thread(_socket_punch_events, last_punch_id)
+                if events:
+                    last_punch_id = max(int(event["id"]) for event in events)
+                    await websocket.send_json({"type": "attendance.punches", "events": events})
     except Exception:
         pass
     finally:
