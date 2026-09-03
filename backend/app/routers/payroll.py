@@ -286,6 +286,26 @@ def save_employee_profile(
     return RedirectResponse("/payroll?ok=Perfil+laboral+actualizado", status_code=303)
 
 
+@router.post("/payroll/employees/{employee_id}/status")
+def toggle_employee_status(employee_id: int, request: Request, db: Session = Depends(get_db)):
+    _browser_admin(request, db)
+    employee = db.query(HREmployee).filter(HREmployee.id == employee_id).first()
+    if not employee:
+        raise HTTPException(404, "Empleado no encontrado")
+
+    activating = employee.status != "ACTIVE"
+    employee.status = "ACTIVE" if activating else "INACTIVE"
+    profile = db.query(PayrollEmployeeProfile).filter(
+        PayrollEmployeeProfile.employee_id == employee.id
+    ).first()
+    if profile:
+        profile.active = activating
+    db.commit()
+    action = "activado" if activating else "desactivado"
+    message = quote_plus(f"Empleado {employee.full_name} {action} correctamente")
+    return RedirectResponse(f"/payroll?ok={message}#profiles", status_code=303)
+
+
 @router.post("/payroll/employees/{employee_id}/deduction-settings")
 def save_employee_deduction_settings(
     employee_id: int,
