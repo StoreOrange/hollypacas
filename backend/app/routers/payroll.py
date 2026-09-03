@@ -18,6 +18,7 @@ from ..models.payroll import (
     PayrollCalculation,
     PayrollCalculationDeduction,
     PayrollDeductionType,
+    PayrollDeductionOverride,
     PayrollEmployeeDeduction,
     PayrollEmployeeDeductionSetting,
     PayrollEmployeeProfile,
@@ -140,6 +141,20 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
             .scalar()
             or 0
         )
+    deduction_overrides = {
+        row.employee_deduction_id: row
+        for row in db.query(PayrollDeductionOverride).filter(
+            PayrollDeductionOverride.period_id == selected_period.id
+        ).all()
+    } if selected_period else {}
+    period_deductions = {}
+    if selected_period:
+        for item in db.query(PayrollEmployeeDeduction).join(HREmployee).filter(
+            HREmployee.branch_id == selected_period.branch_id,
+            PayrollEmployeeDeduction.status == "ACTIVE",
+            PayrollEmployeeDeduction.start_date <= selected_period.date_to,
+        ).order_by(PayrollEmployeeDeduction.created_at).all():
+            period_deductions.setdefault(item.employee_id, []).append(item)
     period_summary = None
     if selected_period:
         period_days = (selected_period.date_to - selected_period.date_from).days + 1
@@ -178,6 +193,8 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
             "period_summary": period_summary,
             "eligible_profiles_count": eligible_profiles_count,
             "employees_without_profile": employees_without_profile,
+            "deduction_overrides": deduction_overrides,
+            "period_deductions": period_deductions,
             "holidays": db.query(PayrollHoliday).order_by(PayrollHoliday.holiday_date.desc()).limit(50).all(),
             "payments": db.query(PayrollPayment).order_by(PayrollPayment.created_at.desc()).limit(30).all(),
         },
@@ -430,7 +447,17 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
             ).all()
         }
         active_deductions = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.employee_id == profile.employee_id, PayrollEmployeeDeduction.deduction_type_id.in_(enabled_type_ids), PayrollEmployeeDeduction.status == "ACTIVE", PayrollEmployeeDeduction.start_date <= period.date_to).all() if enabled_type_ids else []
+        overrides = {
+            row.employee_deduction_id: row
+            for row in db.query(PayrollDeductionOverride).filter(
+                PayrollDeductionOverride.period_id == period.id,
+                PayrollDeductionOverride.employee_deduction_id.in_([row.id for row in active_deductions]),
+            ).all()
+        } if active_deductions else {}
         for deduction in active_deductions:
+            override = overrides.get(deduction.id)
+            if override and not override.apply_charge:
+                continue
             applied_count = (
                 db.query(func.count(PayrollCalculationDeduction.id))
                 .join(PayrollCalculation, PayrollCalculation.id == PayrollCalculationDeduction.calculation_id)
@@ -445,6 +472,8 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
             if applied_count >= deduction.installment_count:
                 continue
             amount = min(_money(deduction.installment_amount), _money(deduction.original_amount) - (_money(deduction.installment_amount) * applied_count))
+            if override and override.override_amount is not None:
+                amount = min(_money(override.override_amount), _money(deduction.original_amount) - (_money(deduction.installment_amount) * applied_count))
             calc.deduction_lines.append(PayrollCalculationDeduction(employee_deduction_id=deduction.id, amount=amount, installment_number=applied_count + 1))
             total_deductions += amount
         adjustments = db.query(PayrollAdjustment).filter(PayrollAdjustment.period_id == period.id, PayrollAdjustment.employee_id == profile.employee_id, PayrollAdjustment.active.is_(True)).all()
@@ -470,6 +499,80 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
     db.commit()
     message = quote_plus(f"Planilla acumulada al corte actual: {len(profiles)} empleado(s) recalculado(s)")
     return RedirectResponse(f"/payroll?period_id={period.id}&ok={message}", status_code=303)
+
+
+def _update_calculation_totals(db: Session, calculation: PayrollCalculation) -> None:
+    planned = sum((_money(line.amount) for line in calculation.deduction_lines), Decimal("0"))
+    adjustments = db.query(PayrollAdjustment).filter(
+        PayrollAdjustment.period_id == calculation.period_id,
+        PayrollAdjustment.employee_id == calculation.employee_id,
+        PayrollAdjustment.active.is_(True),
+    ).all()
+    manual_deductions = sum((_money(row.amount) for row in adjustments if row.adjustment_type == "DEDUCTION"), Decimal("0"))
+    additions = sum((_money(row.amount) for row in adjustments if row.adjustment_type == "ADDITION"), Decimal("0"))
+    calculation.additions_pay = _money(additions)
+    calculation.total_deductions = _money(planned + manual_deductions)
+    calculation.gross_pay = _money(_money(calculation.base_pay) + _money(calculation.overtime_pay) + _money(calculation.holiday_pay) + additions)
+    calculation.net_pay = _money(calculation.gross_pay - calculation.total_deductions)
+    calculation.calculated_at = datetime.utcnow()
+
+
+@router.post("/payroll/calculations/{calculation_id}/deductions/{deduction_id}")
+def update_period_deduction(calculation_id: int, deduction_id: int, request: Request, action: str = Form(...), amount: str = Form(""), reason: str = Form(..., min_length=2), db: Session = Depends(get_db)):
+    user = _browser_admin(request, db)
+    calculation = db.query(PayrollCalculation).filter(PayrollCalculation.id == calculation_id).first()
+    deduction = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.id == deduction_id).first()
+    if not calculation or calculation.status == "CLOSED" or not deduction or deduction.employee_id != calculation.employee_id:
+        return RedirectResponse("/payroll?error=Cambio+de+deduccion+no+permitido", status_code=303)
+    paid_amount = _money(
+        db.query(func.sum(PayrollCalculationDeduction.amount))
+        .join(PayrollCalculation, PayrollCalculation.id == PayrollCalculationDeduction.calculation_id)
+        .join(PayrollPeriod, PayrollPeriod.id == PayrollCalculation.period_id)
+        .filter(
+            PayrollCalculationDeduction.employee_deduction_id == deduction.id,
+            PayrollPeriod.status == "CLOSED",
+        )
+        .scalar()
+    )
+    remaining = max(Decimal("0"), _money(deduction.original_amount) - paid_amount)
+    row = db.query(PayrollDeductionOverride).filter(PayrollDeductionOverride.period_id == calculation.period_id, PayrollDeductionOverride.employee_deduction_id == deduction.id).first()
+    if not row:
+        row = PayrollDeductionOverride(period_id=calculation.period_id, employee_deduction_id=deduction.id, reason=reason.strip(), created_by=user.email)
+        db.add(row)
+    row.reason = reason.strip()
+    row.created_by = user.email
+    if action == "pause":
+        row.apply_charge, row.override_amount = False, None
+    elif action == "restore":
+        row.apply_charge, row.override_amount = True, None
+    elif action == "amount":
+        try:
+            temporary = _money(Decimal(amount))
+        except Exception:
+            return RedirectResponse(f"/payroll?period_id={calculation.period_id}&error=Monto+temporal+invalido", status_code=303)
+        if temporary < 0 or temporary > remaining:
+            return RedirectResponse(f"/payroll?period_id={calculation.period_id}&error=Monto+temporal+invalido", status_code=303)
+        row.apply_charge, row.override_amount = True, temporary
+    else:
+        return RedirectResponse(f"/payroll?period_id={calculation.period_id}&error=Accion+invalida", status_code=303)
+    line = next((item for item in calculation.deduction_lines if item.employee_deduction_id == deduction.id), None)
+    if action == "pause" and line:
+        line.amount = 0
+    elif action == "restore":
+        restored_amount = min(_money(deduction.installment_amount), remaining)
+        if line:
+            line.amount = restored_amount
+        else:
+            calculation.deduction_lines.append(PayrollCalculationDeduction(employee_deduction_id=deduction.id, amount=restored_amount, installment_number=1))
+    elif action == "amount":
+        if line:
+            line.amount = temporary
+        else:
+            calculation.deduction_lines.append(PayrollCalculationDeduction(employee_deduction_id=deduction.id, amount=temporary, installment_number=1))
+    db.flush()
+    _update_calculation_totals(db, calculation)
+    db.commit()
+    return RedirectResponse(f"/payroll?period_id={calculation.period_id}&ok=Deduccion+actualizada+sin+alterar+la+deuda", status_code=303)
 
 
 @router.post("/payroll/periods/{period_id}/close")
@@ -500,9 +603,14 @@ def create_adjustment(request: Request, period_id: int = Form(...), employee_id:
         return RedirectResponse("/payroll?error=Dias+trabajados+invalidos", status_code=303)
     if kind != "WORKED_DAYS" and _money(amount) <= 0:
         return RedirectResponse("/payroll?error=Monto+de+ajuste+invalido", status_code=303)
-    db.add(PayrollAdjustment(period_id=period.id, employee_id=employee.id, adjustment_type=kind, description=description.strip(), amount=_money(amount), worked_days=days, created_by=user.email))
+    adjustment = PayrollAdjustment(period_id=period.id, employee_id=employee.id, adjustment_type=kind, description=description.strip(), amount=_money(amount), worked_days=days, created_by=user.email)
+    db.add(adjustment)
+    db.flush()
+    calculation = db.query(PayrollCalculation).filter(PayrollCalculation.period_id == period.id, PayrollCalculation.employee_id == employee.id).first()
+    if calculation and kind in {"ADDITION", "DEDUCTION"}:
+        _update_calculation_totals(db, calculation)
     db.commit()
-    return RedirectResponse(f"/payroll?period_id={period.id}&ok=Ajuste+registrado", status_code=303)
+    return RedirectResponse(f"/payroll?period_id={period.id}&ok=Ajuste+registrado+y+neto+actualizado", status_code=303)
 
 
 @router.post("/payroll/adjustments/{adjustment_id}/void")

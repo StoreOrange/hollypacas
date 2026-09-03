@@ -217,3 +217,20 @@ class PayrollCalculationDeduction(Base):
 
     calculation = relationship("PayrollCalculation", back_populates="deduction_lines")
     employee_deduction = relationship("PayrollEmployeeDeduction")
+
+
+class PayrollDeductionOverride(Base):
+    __tablename__ = "payroll_deduction_overrides"
+    __table_args__ = (UniqueConstraint("period_id", "employee_deduction_id", name="uq_payroll_period_deduction_override"),)
+
+    id = Column(Integer, primary_key=True)
+    period_id = Column(Integer, ForeignKey("payroll_periods.id", ondelete="CASCADE"), nullable=False)
+    employee_deduction_id = Column(Integer, ForeignKey("payroll_employee_deductions.id", ondelete="CASCADE"), nullable=False)
+    apply_charge = Column(Boolean, nullable=False, default=True)
+    override_amount = Column(Numeric(14, 2), nullable=True)
+    reason = Column(String(240), nullable=False)
+    created_by = Column(String(160), nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    period = relationship("PayrollPeriod")
+    employee_deduction = relationship("PayrollEmployeeDeduction")

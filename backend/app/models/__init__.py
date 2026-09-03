@@ -14,6 +14,7 @@ from .payroll import (
     PayrollCalculationDeduction,
     PayrollAdjustment,
     PayrollDeductionType,
+    PayrollDeductionOverride,
     PayrollEmployeeDeduction,
     PayrollEmployeeDeductionSetting,
     PayrollEmployeeProfile,
