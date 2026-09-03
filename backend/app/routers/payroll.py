@@ -476,10 +476,14 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
                 amount = min(_money(override.override_amount), _money(deduction.original_amount) - (_money(deduction.installment_amount) * applied_count))
             calc.deduction_lines.append(PayrollCalculationDeduction(employee_deduction_id=deduction.id, amount=amount, installment_number=applied_count + 1))
             total_deductions += amount
-        adjustments = db.query(PayrollAdjustment).filter(PayrollAdjustment.period_id == period.id, PayrollAdjustment.employee_id == profile.employee_id, PayrollAdjustment.active.is_(True)).all()
+        adjustments = db.query(PayrollAdjustment).filter(PayrollAdjustment.period_id == period.id, PayrollAdjustment.employee_id == profile.employee_id, PayrollAdjustment.active.is_(True)).order_by(PayrollAdjustment.created_at, PayrollAdjustment.id).all()
         additions = _money(sum((row.amount for row in adjustments if row.adjustment_type == "ADDITION"), Decimal("0")))
         manual_deductions = _money(sum((row.amount for row in adjustments if row.adjustment_type == "DEDUCTION"), Decimal("0")))
         manual_days = next((row.worked_days for row in reversed(adjustments) if row.adjustment_type == "WORKED_DAYS" and row.worked_days is not None), None)
+        manual_overtime = next((row.worked_days for row in reversed(adjustments) if row.adjustment_type == "OVERTIME_MINUTES" and row.worked_days is not None), None)
+        if manual_overtime is not None:
+            overtime_minutes = max(0, manual_overtime)
+            overtime_pay = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
         target_days = (period.date_to - period.date_from).days + 1
         cutoff = min(date.today(), period.date_to)
         employment_start = period.date_from
@@ -589,25 +593,41 @@ def close_period(period_id: int, request: Request, db: Session = Depends(get_db)
 
 
 @router.post("/payroll/adjustments")
-def create_adjustment(request: Request, period_id: int = Form(...), employee_id: int = Form(...), adjustment_type: str = Form(...), description: str = Form(...), amount: Decimal = Form(0), worked_days: str = Form(""), db: Session = Depends(get_db)):
+def create_adjustment(request: Request, period_id: int = Form(...), employee_id: int = Form(...), adjustment_type: str = Form(...), description: str = Form(...), amount: Decimal = Form(0), worked_days: str = Form(""), overtime_hours: str = Form(""), db: Session = Depends(get_db)):
     user = _browser_admin(request, db)
     period = db.query(PayrollPeriod).filter(PayrollPeriod.id == period_id).first()
     employee = db.query(HREmployee).filter(HREmployee.id == employee_id).first()
     if not period or period.status == "CLOSED" or not employee or (period.branch_id and employee.branch_id != period.branch_id):
         return RedirectResponse("/payroll?error=Ajuste+no+permitido", status_code=303)
     kind = adjustment_type.upper()
-    if kind not in {"ADDITION", "DEDUCTION", "WORKED_DAYS"}:
+    if kind not in {"ADDITION", "DEDUCTION", "WORKED_DAYS", "OVERTIME_MINUTES"}:
         return RedirectResponse("/payroll?error=Tipo+de+ajuste+invalido", status_code=303)
     days = int(worked_days) if worked_days.isdigit() else None
     if kind == "WORKED_DAYS" and (days is None or days < 0 or days > 16):
         return RedirectResponse("/payroll?error=Dias+trabajados+invalidos", status_code=303)
-    if kind != "WORKED_DAYS" and _money(amount) <= 0:
+    if kind == "OVERTIME_MINUTES":
+        try:
+            overtime_minutes = int((Decimal(overtime_hours) * 60).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        except Exception:
+            return RedirectResponse(f"/payroll?period_id={period.id}&error=Horas+extra+invalidas", status_code=303)
+        if overtime_minutes < 0 or overtime_minutes > 240 * 60:
+            return RedirectResponse(f"/payroll?period_id={period.id}&error=Horas+extra+invalidas", status_code=303)
+        days = overtime_minutes
+    if kind not in {"WORKED_DAYS", "OVERTIME_MINUTES"} and _money(amount) <= 0:
         return RedirectResponse("/payroll?error=Monto+de+ajuste+invalido", status_code=303)
     adjustment = PayrollAdjustment(period_id=period.id, employee_id=employee.id, adjustment_type=kind, description=description.strip(), amount=_money(amount), worked_days=days, created_by=user.email)
     db.add(adjustment)
     db.flush()
     calculation = db.query(PayrollCalculation).filter(PayrollCalculation.period_id == period.id, PayrollCalculation.employee_id == employee.id).first()
-    if calculation and kind in {"ADDITION", "DEDUCTION"}:
+    if calculation and kind == "WORKED_DAYS":
+        calculation.days_worked = days
+        calculation.base_pay = _money((_money(calculation.monthly_salary) / Decimal("30")) * Decimal(days))
+        _update_calculation_totals(db, calculation)
+    elif calculation and kind == "OVERTIME_MINUTES":
+        calculation.overtime_minutes = days
+        calculation.overtime_pay = _money((Decimal(days) / Decimal("60")) * (_money(calculation.monthly_salary) / Decimal("240")) * 2)
+        _update_calculation_totals(db, calculation)
+    elif calculation and kind in {"ADDITION", "DEDUCTION"}:
         _update_calculation_totals(db, calculation)
     db.commit()
     return RedirectResponse(f"/payroll?period_id={period.id}&ok=Ajuste+registrado+y+neto+actualizado", status_code=303)
