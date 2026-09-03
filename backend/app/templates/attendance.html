@@ -1,5 +1,28 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  @keyframes attendance-online-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, .5); }
+    50% { box-shadow: 0 0 0 .4rem rgba(25, 135, 84, 0); }
+  }
+  .attendance-clock-status {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .6rem .85rem;
+    border-radius: .65rem;
+    font-weight: 700;
+  }
+  .attendance-clock-online {
+    color: #fff;
+    background: #198754;
+    animation: attendance-online-pulse 1.4s ease-in-out infinite;
+  }
+  .attendance-clock-offline {
+    color: #fff;
+    background: #6c757d;
+  }
+</style>
 <div class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
   <main class="p-4 p-lg-5">
@@ -13,8 +36,8 @@
           <a class="btn btn-outline-primary" href="/attendance/control">
             <i class="bi bi-clock-history me-1"></i>Entradas y salidas
           </a>
-          <span id="attendance-device-status" class="badge text-bg-secondary fs-6">
-            <i class="bi bi-fingerprint me-1"></i>Verificando reloj
+          <span id="attendance-device-status" class="attendance-clock-status attendance-clock-offline" role="status">
+            <i class="bi bi-clock-history fs-5"></i><span>Verificando reloj</span>
           </span>
           <span id="attendance-live-status" class="badge text-bg-secondary fs-6" title="Conexion entre esta pantalla y el servidor">
             <i class="bi bi-broadcast me-1"></i>Conectando pantalla
@@ -124,12 +147,12 @@
       const response = await fetch('/attendance/connector-status', {credentials: 'same-origin', cache: 'no-store'});
       if (!response.ok) return;
       const payload = await response.json();
-      deviceStatus.className = `badge fs-6 ${payload.online ? "text-bg-success" : "text-bg-danger"}`;
-      deviceStatus.innerHTML = `<i class="bi bi-fingerprint me-1"></i>${payload.online ? "Reloj conectado" : "Reloj sin comunicación"}`;
+      deviceStatus.className = `attendance-clock-status ${payload.online ? "attendance-clock-online" : "attendance-clock-offline"}`;
+      deviceStatus.innerHTML = `<i class="bi bi-clock-history fs-5"></i><span>${payload.online ? "Reloj online" : "Reloj offline"}</span>`;
       deviceStatus.title = payload.last_seen_at ? `Ultimo contacto: ${payload.last_seen_at}` : 'Sin sincronizaciones recibidas';
     } catch (_) {
-      deviceStatus.className = 'badge text-bg-danger fs-6';
-      deviceStatus.innerHTML = '<i class="bi bi-fingerprint me-1"></i>Estado no disponible';
+      deviceStatus.className = 'attendance-clock-status attendance-clock-offline';
+      deviceStatus.innerHTML = '<i class="bi bi-clock-history fs-5"></i><span>Reloj offline</span>';
     }
   };
 
