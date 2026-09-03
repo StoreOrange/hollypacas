@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from typing import List, Optional
+from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -108,12 +109,36 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
     if not selected_period and periods:
         selected_period = periods[0]
     calculations = []
+    eligible_profiles_count = 0
+    employees_without_profile = 0
     if selected_period:
         calculations = (
             db.query(PayrollCalculation)
             .filter(PayrollCalculation.period_id == selected_period.id)
             .order_by(PayrollCalculation.employee_id)
             .all()
+        )
+        eligible_profiles_count = (
+            db.query(func.count(PayrollEmployeeProfile.id))
+            .join(HREmployee)
+            .filter(
+                PayrollEmployeeProfile.active.is_(True),
+                HREmployee.status == "ACTIVE",
+                HREmployee.branch_id == selected_period.branch_id,
+            )
+            .scalar()
+            or 0
+        )
+        employees_without_profile = (
+            db.query(func.count(HREmployee.id))
+            .outerjoin(PayrollEmployeeProfile, PayrollEmployeeProfile.employee_id == HREmployee.id)
+            .filter(
+                HREmployee.status == "ACTIVE",
+                HREmployee.branch_id == selected_period.branch_id,
+                PayrollEmployeeProfile.id.is_(None),
+            )
+            .scalar()
+            or 0
         )
     period_summary = None
     if selected_period:
@@ -151,6 +176,8 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
             "selected_period": selected_period,
             "calculations": calculations,
             "period_summary": period_summary,
+            "eligible_profiles_count": eligible_profiles_count,
+            "employees_without_profile": employees_without_profile,
             "holidays": db.query(PayrollHoliday).order_by(PayrollHoliday.holiday_date.desc()).limit(50).all(),
             "payments": db.query(PayrollPayment).order_by(PayrollPayment.created_at.desc()).limit(30).all(),
         },
@@ -376,6 +403,10 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
     if period.branch_id:
         profiles_query = profiles_query.filter(HREmployee.branch_id == period.branch_id)
     profiles = profiles_query.all()
+    if not profiles:
+        branch_name = period.branch.name if period.branch else "seleccionada"
+        message = quote_plus(f"No hay empleados activos con salario y perfil asignados a la sucursal {branch_name}")
+        return RedirectResponse(f"/payroll?period_id={period.id}&error={message}", status_code=303)
     for profile in profiles:
         salary = _money(profile.monthly_salary)
         hourly = salary / Decimal("240")
@@ -437,7 +468,8 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
         calc.gross_pay, calc.total_deductions, calc.net_pay = gross, _money(total_deductions), _money(gross - total_deductions)
         calc.calculated_at = datetime.utcnow()
     db.commit()
-    return RedirectResponse(f"/payroll?period_id={period.id}&ok=Planilla+acumulada+al+corte+actual", status_code=303)
+    message = quote_plus(f"Planilla acumulada al corte actual: {len(profiles)} empleado(s) recalculado(s)")
+    return RedirectResponse(f"/payroll?period_id={period.id}&ok={message}", status_code=303)
 
 
 @router.post("/payroll/periods/{period_id}/close")
