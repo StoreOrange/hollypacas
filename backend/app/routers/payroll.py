@@ -115,7 +115,9 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
     if selected_period:
         calculations = (
             db.query(PayrollCalculation)
+            .join(HREmployee, HREmployee.id == PayrollCalculation.employee_id)
             .filter(PayrollCalculation.period_id == selected_period.id)
+            .filter(HREmployee.status == "ACTIVE")
             .order_by(PayrollCalculation.employee_id)
             .all()
         )
@@ -416,7 +418,10 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
     if not policy:
         return RedirectResponse("/payroll?error=Configure+primero+la+politica+de+marcadas", status_code=303)
     holidays = {row.holiday_date: row for row in db.query(PayrollHoliday).filter(PayrollHoliday.holiday_date >= period.date_from, PayrollHoliday.holiday_date <= period.date_to).all()}
-    profiles_query = db.query(PayrollEmployeeProfile).join(HREmployee).filter(PayrollEmployeeProfile.active.is_(True))
+    profiles_query = db.query(PayrollEmployeeProfile).join(HREmployee).filter(
+        PayrollEmployeeProfile.active.is_(True),
+        HREmployee.status == "ACTIVE",
+    )
     if period.branch_id:
         profiles_query = profiles_query.filter(HREmployee.branch_id == period.branch_id)
     profiles = profiles_query.all()
