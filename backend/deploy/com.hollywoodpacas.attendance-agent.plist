@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.hollywoodpacas.attendance-agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/macbookpro/Library/Application Support/HollywoodPacas/attendance-agent/.venv/bin/python</string>
+    <string>/Users/macbookpro/Library/Application Support/HollywoodPacas/attendance-agent/sync_attendance_ta040.py</string>
+    <string>--watch</string>
+    <string>--interval</string>
+    <string>2</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/macbookpro/Library/Application Support/HollywoodPacas/attendance-agent</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/tmp/hollywoodpacas-attendance-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/hollywoodpacas-attendance-agent.error.log</string>
+</dict>
+</plist>

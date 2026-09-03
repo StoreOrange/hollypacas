@@ -51,18 +51,23 @@ def _serialize_punch(item):
     }
 
 
-def _sync_once(args, zk_class) -> int:
-    zk = zk_class(
+def _new_connection(args, zk_class):
+    return zk_class(
         args.device_ip,
         port=args.device_port,
         timeout=args.timeout,
         password=args.comm_key,
         force_udp=args.force_udp,
         ommit_ping=False,
-    )
-    conn = None
+    ).connect()
+
+
+def _sync_once(args, zk_class, connection=None) -> int:
+    conn = connection
+    owns_connection = connection is None
     try:
-        conn = zk.connect()
+        if conn is None:
+            conn = _new_connection(args, zk_class)
         users = conn.get_users() or []
         punches = conn.get_attendance() or []
         serial_number = None
@@ -74,7 +79,7 @@ def _sync_once(args, zk_class) -> int:
         print(f"No fue posible leer el reloj {args.device_ip}:{args.device_port}: {exc}", file=sys.stderr)
         return 1
     finally:
-        if conn is not None:
+        if owns_connection and conn is not None:
             try:
                 conn.disconnect()
             except Exception:
@@ -128,13 +133,38 @@ def main() -> int:
         return _sync_once(args, ZK)
 
     print(f"Sincronizacion en caliente activa cada {args.interval} segundos. Ctrl+C para detener.")
+    conn = None
     try:
         while True:
-            _sync_once(args, ZK)
+            try:
+                if conn is None:
+                    conn = _new_connection(args, ZK)
+                    print(f"Conexion persistente establecida con {args.device_ip}:{args.device_port}.")
+                result = _sync_once(args, ZK, connection=conn)
+                if result:
+                    try:
+                        conn.disconnect()
+                    except Exception:
+                        pass
+                    conn = None
+            except Exception as exc:
+                print(f"Conexion con el reloj interrumpida: {exc}. Reintentando...", file=sys.stderr)
+                if conn is not None:
+                    try:
+                        conn.disconnect()
+                    except Exception:
+                        pass
+                conn = None
             time.sleep(args.interval)
     except KeyboardInterrupt:
         print("Sincronizacion detenida.")
         return 0
+    finally:
+        if conn is not None:
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
