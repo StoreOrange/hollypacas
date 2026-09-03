@@ -208,7 +208,13 @@
   const connect = () => {
     clearTimeout(retryTimer);
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    socket = new WebSocket(`${protocol}//${window.location.host}/ws/attendance`);
+    try {
+      socket = new WebSocket(`${protocol}//${window.location.host}/ws/attendance`);
+    } catch (_) {
+      setStatus(false);
+      retryTimer = setTimeout(connect, 3000);
+      return;
+    }
     socket.onopen = () => setStatus(true);
     socket.onmessage = (message) => {
       const payload = JSON.parse(message.data);
@@ -222,11 +228,13 @@
       retryTimer = setTimeout(connect, 3000);
     };
   };
-  connect();
+  // Clock status and database polling must keep working even when the proxy
+  // rejects WebSockets. Start them before attempting the socket connection.
   refreshDeviceStatus();
   pollNewPunches();
   setInterval(refreshDeviceStatus, 5000);
   setInterval(pollNewPunches, 1500);
+  connect();
 })();
 </script>
 {% endblock %}

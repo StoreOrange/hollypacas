@@ -840,7 +840,9 @@ def attendance_connector_status(request: Request, db: Session = Depends(get_db))
         .first()
     )
     last_seen_at = device.last_seen_at if device else None
-    online = bool(last_seen_at and last_seen_at >= datetime.utcnow() - timedelta(seconds=20))
+    # The local connector reports every two seconds. Keep the clock online during
+    # short application restarts or reverse-proxy interruptions on the VPS.
+    online = bool(last_seen_at and last_seen_at >= datetime.utcnow() - timedelta(seconds=90))
     return {
         "online": online,
         "device": device.name if device else None,
