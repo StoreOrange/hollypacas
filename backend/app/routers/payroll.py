@@ -115,6 +115,23 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
             .order_by(PayrollCalculation.employee_id)
             .all()
         )
+    period_summary = None
+    if selected_period:
+        period_days = (selected_period.date_to - selected_period.date_from).days + 1
+        cutoff = min(date.today(), selected_period.date_to)
+        elapsed_days = max(0, min(period_days, (cutoff - selected_period.date_from).days + 1))
+        period_summary = {
+            "target_days": period_days,
+            "elapsed_days": elapsed_days,
+            "cutoff": cutoff,
+            "base": sum((_money(row.base_pay) for row in calculations), Decimal("0")),
+            "overtime_minutes": sum((row.overtime_minutes or 0 for row in calculations), 0),
+            "overtime": sum((_money(row.overtime_pay) for row in calculations), Decimal("0")),
+            "additions": sum((_money(row.additions_pay) + _money(row.holiday_pay) for row in calculations), Decimal("0")),
+            "deductions": sum((_money(row.total_deductions) for row in calculations), Decimal("0")),
+            "net": sum((_money(row.net_pay) for row in calculations), Decimal("0")),
+            "projected_base": sum((_money(row.monthly_salary) / 2 for row in calculations), Decimal("0")),
+        }
     return request.app.state.templates.TemplateResponse(
         "payroll.html",
         {
@@ -133,6 +150,7 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
             "periods": periods,
             "selected_period": selected_period,
             "calculations": calculations,
+            "period_summary": period_summary,
             "holidays": db.query(PayrollHoliday).order_by(PayrollHoliday.holiday_date.desc()).limit(50).all(),
             "payments": db.query(PayrollPayment).order_by(PayrollPayment.created_at.desc()).limit(30).all(),
         },
@@ -360,14 +378,13 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
     profiles = profiles_query.all()
     for profile in profiles:
         salary = _money(profile.monthly_salary)
-        base = _money(salary / 2)
         hourly = salary / Decimal("240")
         days_worked, overtime_minutes, holiday_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
         overtime_pay = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
         holiday_pay = _money((Decimal(holiday_minutes) / 60) * hourly * 2)
         calc = db.query(PayrollCalculation).filter(PayrollCalculation.period_id == period.id, PayrollCalculation.employee_id == profile.employee_id).first()
         if not calc:
-            calc = PayrollCalculation(period_id=period.id, employee_id=profile.employee_id, monthly_salary=salary, base_pay=base, gross_pay=0, net_pay=0)
+            calc = PayrollCalculation(period_id=period.id, employee_id=profile.employee_id, monthly_salary=salary, base_pay=0, gross_pay=0, net_pay=0)
             db.add(calc)
             db.flush()
         else:
@@ -403,8 +420,11 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
         additions = _money(sum((row.amount for row in adjustments if row.adjustment_type == "ADDITION"), Decimal("0")))
         manual_deductions = _money(sum((row.amount for row in adjustments if row.adjustment_type == "DEDUCTION"), Decimal("0")))
         manual_days = next((row.worked_days for row in reversed(adjustments) if row.adjustment_type == "WORKED_DAYS" and row.worked_days is not None), None)
+        target_days = (period.date_to - period.date_from).days + 1
+        payable_days = max(0, min(target_days, manual_days if manual_days is not None else days_worked))
+        base = _money((salary / Decimal("30")) * Decimal(payable_days))
         gross = _money(base + overtime_pay + holiday_pay + additions)
-        calc.monthly_salary, calc.base_pay, calc.days_worked = salary, base, manual_days if manual_days is not None else days_worked
+        calc.monthly_salary, calc.base_pay, calc.days_worked = salary, base, payable_days
         calc.overtime_minutes, calc.overtime_pay, calc.holiday_pay = overtime_minutes, overtime_pay, holiday_pay
         calc.additions_pay = additions
         total_deductions += manual_deductions
@@ -533,7 +553,7 @@ def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(g
         return RedirectResponse(f"/payroll/reports?period_id={period.id}&error=Calcule+la+planilla+antes+de+imprimir", status_code=303)
 
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
     from reportlab.lib.pagesizes import landscape, letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
@@ -541,14 +561,28 @@ def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(g
 
     buffer = BytesIO()
     page_size = landscape(letter)
-    doc = SimpleDocTemplate(buffer, pagesize=page_size, leftMargin=10 * mm, rightMargin=10 * mm, topMargin=12 * mm, bottomMargin=13 * mm)
+    doc = SimpleDocTemplate(buffer, pagesize=page_size, leftMargin=10 * mm, rightMargin=10 * mm, topMargin=14 * mm, bottomMargin=14 * mm, title=f"Planilla {period.code}", author="Hollywood Pacas")
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="PayrollTitle", parent=styles["Title"], fontSize=16, leading=19, alignment=TA_CENTER, textColor=colors.HexColor("#172554")))
     styles.add(ParagraphStyle(name="PayrollSmall", parent=styles["Normal"], fontSize=7, leading=9))
     styles.add(ParagraphStyle(name="PayrollRight", parent=styles["Normal"], fontSize=7, leading=9, alignment=TA_RIGHT))
+    styles.add(ParagraphStyle(name="PayrollMeta", parent=styles["Normal"], fontSize=8, leading=11, textColor=colors.HexColor("#475569")))
     branch_name = period.branch.name if period.branch else "Sucursal sin asignar"
     company_title = f"HOLLYWOOD PACAS - {branch_name.upper()}"
-    story = [Paragraph(company_title, styles["PayrollTitle"]), Paragraph("REPORTE OFICIAL DE PLANILLA QUINCENAL", styles["Heading2"]), Paragraph(f"Periodo: {period.date_from:%d/%m/%Y} al {period.date_to:%d/%m/%Y} &nbsp;&nbsp; Fecha de pago: {period.pay_date:%d/%m/%Y} &nbsp;&nbsp; Estado: {period.status}", styles["Normal"]), Spacer(1, 5 * mm)]
+    target_days = (period.date_to - period.date_from).days + 1
+    calculated_at = max((row.calculated_at for row in calculations if row.calculated_at), default=datetime.now())
+    status_label = "CERRADA" if period.status == "CLOSED" else "BORRADOR / ACUMULADO"
+    header = Table(
+        [[Paragraph(company_title, styles["PayrollTitle"]), Paragraph(f"<b>{status_label}</b><br/><font size='8'>Planilla {period.code}</font>", styles["PayrollRight"])]],
+        colWidths=[190 * mm, 55 * mm],
+    )
+    header.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eff6ff")), ("BOX", (0, 0), (-1, -1), .8, colors.HexColor("#1d4ed8")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
+    period_meta = Table(
+        [["PERIODO", "FECHA DE PAGO", "CORTE DEL CALCULO", "COLABORADORES"], [f"{period.date_from:%d/%m/%Y} al {period.date_to:%d/%m/%Y}", f"{period.pay_date:%d/%m/%Y}", f"{calculated_at:%d/%m/%Y %I:%M %p}", str(len(calculations))]],
+        colWidths=[70 * mm, 55 * mm, 70 * mm, 50 * mm],
+    )
+    period_meta.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#172554")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8), ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#94a3b8")), ("INNERGRID", (0, 0), (-1, -1), .25, colors.HexColor("#cbd5e1")), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+    story = [header, Spacer(1, 3 * mm), period_meta, Spacer(1, 5 * mm)]
 
     groups = {}
     for calc in calculations:
@@ -556,12 +590,15 @@ def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(g
     grand = {"base": Decimal("0"), "add": Decimal("0"), "extra": Decimal("0"), "holiday": Decimal("0"), "ded": Decimal("0"), "net": Decimal("0")}
     widths = [38*mm, 13*mm, 24*mm, 23*mm, 19*mm, 24*mm, 22*mm, 24*mm, 26*mm]
     for area, rows in groups.items():
-        story.append(Paragraph(f"AREA: {area.upper()}", styles["Heading3"]))
-        data = [["Empleado", "Dias", "Base", "Adiciones", "H. extra", "Pago extra", "Feriados", "Deducciones", "Neto a recibir"]]
+        area_header = Table([[f"AREA: {area.upper()}", f"{len(rows)} empleado(s)"]], colWidths=[195 * mm, 50 * mm])
+        area_header.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#dbeafe")), ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#172554")), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"), ("ALIGN", (1, 0), (1, 0), "RIGHT"), ("BOTTOMPADDING", (0, 0), (-1, -1), 5), ("TOPPADDING", (0, 0), (-1, -1), 5)]))
+        story.append(area_header)
+        data = [["Empleado / codigo", "Dias", "Base acumulada", "Adiciones", "H. extra", "Pago extra", "Feriados", "Deducciones", "Neto a recibir"]]
         area_total = {key: Decimal("0") for key in grand}
         for row in rows:
             overtime_hours = Decimal(row.overtime_minutes or 0) / Decimal("60")
-            data.append([Paragraph(row.employee.full_name, styles["PayrollSmall"]), str(row.days_worked), f"C$ {_money(row.base_pay):,.2f}", f"C$ {_money(row.additions_pay):,.2f}", f"{overtime_hours:.2f}", f"C$ {_money(row.overtime_pay):,.2f}", f"C$ {_money(row.holiday_pay):,.2f}", f"C$ {_money(row.total_deductions):,.2f}", f"C$ {_money(row.net_pay):,.2f}"])
+            employee_label = f"<b>{row.employee.full_name}</b><br/><font color='#64748b'>{row.employee.employee_code}</font>"
+            data.append([Paragraph(employee_label, styles["PayrollSmall"]), f"{row.days_worked}/{target_days}", f"C$ {_money(row.base_pay):,.2f}", f"C$ {_money(row.additions_pay):,.2f}", f"{overtime_hours:.2f} h", f"C$ {_money(row.overtime_pay):,.2f}", f"C$ {_money(row.holiday_pay):,.2f}", f"C$ {_money(row.total_deductions):,.2f}", f"C$ {_money(row.net_pay):,.2f}"])
             for key, value in (("base", row.base_pay), ("add", row.additions_pay), ("extra", row.overtime_pay), ("holiday", row.holiday_pay), ("ded", row.total_deductions), ("net", row.net_pay)):
                 area_total[key] += _money(value)
                 grand[key] += _money(value)
@@ -570,15 +607,18 @@ def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(g
         table.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#172554")), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"), ("BACKGROUND", (0,-1), (-1,-1), colors.HexColor("#e2e8f0")), ("FONTNAME", (0,-1), (-1,-1), "Helvetica-Bold"), ("GRID", (0,0), (-1,-1), .35, colors.HexColor("#94a3b8")), ("FONTSIZE", (0,0), (-1,-1), 6.7), ("ALIGN", (1,1), (-1,-1), "RIGHT"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ROWBACKGROUNDS", (0,1), (-1,-2), [colors.white, colors.HexColor("#f8fafc")]), ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4)]))
         story.extend([table, Spacer(1, 4 * mm)])
 
-    summary = Table([["RESUMEN GENERAL", "Base", "Adiciones", "Horas extra", "Feriados", "Deducciones", "NETO TOTAL"], [branch_name, f"C$ {grand['base']:,.2f}", f"C$ {grand['add']:,.2f}", f"C$ {grand['extra']:,.2f}", f"C$ {grand['holiday']:,.2f}", f"C$ {grand['ded']:,.2f}", f"C$ {grand['net']:,.2f}"]], colWidths=[47*mm, 28*mm, 28*mm, 28*mm, 28*mm, 28*mm, 32*mm])
+    total_extra_hours = Decimal(sum((row.overtime_minutes or 0 for row in calculations), 0)) / Decimal("60")
+    summary = Table([["RESUMEN GENERAL", "Base acumulada", "Adiciones", "Horas extra", "Feriados", "Deducciones", "NETO TOTAL"], [branch_name, f"C$ {grand['base']:,.2f}", f"C$ {grand['add']:,.2f}", f"{total_extra_hours:.2f} h / C$ {grand['extra']:,.2f}", f"C$ {grand['holiday']:,.2f}", f"C$ {grand['ded']:,.2f}", f"C$ {grand['net']:,.2f}"]], colWidths=[47*mm, 31*mm, 28*mm, 42*mm, 28*mm, 31*mm, 38*mm])
     summary.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#166534")), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("FONTNAME", (0,0), (-1,-1), "Helvetica-Bold"), ("GRID", (0,0), (-1,-1), .5, colors.HexColor("#64748b")), ("FONTSIZE", (0,0), (-1,-1), 8), ("ALIGN", (1,1), (-1,-1), "RIGHT"), ("TOPPADDING", (0,0), (-1,-1), 6), ("BOTTOMPADDING", (0,0), (-1,-1), 6)]))
     story.extend([summary, Spacer(1, 13 * mm), Table([["______________________________", "______________________________", "______________________________"], ["Elaborado por", "Revisado por", "Autorizado por"]], colWidths=[80*mm, 80*mm, 80*mm], style=TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("FONTSIZE", (0,0), (-1,-1), 8)]))])
 
     def footer(canvas, document):
         canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
+        canvas.line(10 * mm, 10 * mm, page_size[0] - 10 * mm, 10 * mm)
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#475569"))
-        canvas.drawString(10 * mm, 7 * mm, f"Generado: {datetime.now():%d/%m/%Y %I:%M %p}")
+        canvas.drawString(10 * mm, 6 * mm, "Hollywood Pacas · Documento de control interno de planilla")
         canvas.drawRightString(page_size[0] - 10 * mm, 7 * mm, f"Pagina {document.page}")
         canvas.restoreState()
 
