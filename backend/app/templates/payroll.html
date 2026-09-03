@@ -5,7 +5,12 @@
   <main class="p-4 p-lg-5"><div class="container-fluid">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
       <div><h1 class="h4 mb-1"><i class="bi bi-wallet2 me-2"></i>Gestion de planilla</h1><p class="text-muted mb-0">Perfiles salariales, periodos quincenales, horas extra, feriados, prestamos y deducciones.</p></div>
-      <div class="d-flex gap-2 flex-wrap"><a class="btn btn-outline-danger" href="/payroll/settlements"><i class="bi bi-person-x me-1"></i>Liquidaciones</a><a class="btn btn-outline-primary" href="/payroll/reports"><i class="bi bi-file-earmark-bar-graph me-1"></i>Reportes de planilla</a><span class="badge text-bg-primary fs-6 align-self-center">Moneda: Cordoba (NIO)</span></div>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-success fw-semibold" type="button" data-bs-toggle="modal" data-bs-target="#newPayrollEmployee"><i class="bi bi-person-plus-fill me-1"></i>Nuevo empleado</button>
+        <a class="btn btn-outline-danger" href="/payroll/settlements"><i class="bi bi-person-x me-1"></i>Liquidaciones</a>
+        <a class="btn btn-outline-primary" href="/payroll/reports"><i class="bi bi-file-earmark-bar-graph me-1"></i>Reportes de planilla</a>
+        <span class="badge text-bg-primary fs-6 align-self-center">Moneda: Cordoba (NIO)</span>
+      </div>
     </div>
     {% if request.query_params.get('ok') %}<div class="alert alert-success">{{ request.query_params.get('ok') }}</div>{% endif %}
     {% if request.query_params.get('error') %}<div class="alert alert-danger">{{ request.query_params.get('error') }}</div>{% endif %}
@@ -90,4 +95,11 @@
   </div></div>
 </div>
 {% for employee in employees %}<div class="modal fade" id="employeeDeductions{{ employee.id }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><form method="post" action="/payroll/employees/{{ employee.id }}/deduction-settings"><div class="modal-header"><div><h2 class="modal-title fs-5">Deducciones aplicables</h2><div class="small text-muted">{{ employee.full_name }}</div></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p class="small">Marque solamente los conceptos que pueden aplicarse a este empleado. Esto no crea un cobro: prestamos, anticipos y otras deducciones necesitan además su monto y cuotas.</p>{% for deduction_type in deduction_types %}<div class="form-check border rounded p-3 ps-5 mb-2"><input class="form-check-input" type="checkbox" name="enabled_type_ids" value="{{ deduction_type.id }}" id="emp{{ employee.id }}type{{ deduction_type.id }}" {% if (employee.id, deduction_type.id) in enabled_deductions %}checked{% endif %}><label class="form-check-label w-100" for="emp{{ employee.id }}type{{ deduction_type.id }}"><strong>{{ deduction_type.name }}</strong><br><small class="text-muted">{{ deduction_type.category }}{% if deduction_type.is_loan %} · Control por cuotas{% endif %}</small></label></div>{% endfor %}</div><div class="modal-footer"><button class="btn btn-primary">Guardar aplicabilidad</button></div></form></div></div></div>{% endfor %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  if (!window.location.hash || !window.bootstrap) return;
+  const tabButton = document.querySelector('[data-bs-target="' + window.location.hash + '"]');
+  if (tabButton) bootstrap.Tab.getOrCreateInstance(tabButton).show();
+});
+</script>
 {% endblock %}
