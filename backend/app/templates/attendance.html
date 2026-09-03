@@ -13,15 +13,14 @@
           <a class="btn btn-outline-primary" href="/attendance/control">
             <i class="bi bi-clock-history me-1"></i>Entradas y salidas
           </a>
-          <span id="attendance-live-status" class="badge text-bg-secondary fs-6">
-            <i class="bi bi-circle-fill me-1"></i>Conectando en vivo
+          <span id="attendance-device-status" class="badge text-bg-secondary fs-6">
+            <i class="bi bi-fingerprint me-1"></i>Verificando reloj
+          </span>
+          <span id="attendance-live-status" class="badge text-bg-secondary fs-6" title="Conexion entre esta pantalla y el servidor">
+            <i class="bi bi-broadcast me-1"></i>Conectando pantalla
           </span>
           <span class="badge text-bg-primary fs-6">{{ devices|length }} reloj(es)</span>
-          <form method="post" action="/attendance/sync-now">
-            <button class="btn btn-success" type="submit">
-              <i class="bi bi-cloud-download me-1"></i>Descargar marcadas ahora
-            </button>
-          </form>
+          <span class="btn btn-success disabled" aria-disabled="true"><i class="bi bi-cloud-check me-1"></i>Descarga automática</span>
         </div>
       </div>
 
@@ -73,7 +72,7 @@
 
       <div class="card shadow-sm mb-4"><div class="card-body">
         <h2 class="h6">Usuarios encontrados en el reloj</h2>
-        <p class="text-muted small">Primero registra el usuario y su huella físicamente en el TA040. Luego pulsa <strong>Descargar marcadas ahora</strong>. Aquí aparecerá su ID para relacionarlo con el empleado de planilla.</p>
+        <p class="text-muted small">Primero registra el usuario y su huella físicamente en el TA040. El conector local descarga automáticamente sus usuarios y marcadas; aquí aparecerá su ID para relacionarlo con el empleado de planilla.</p>
         <div class="table-responsive"><table class="table table-sm align-middle">
           <thead><tr><th>ID reloj</th><th>Nombre en reloj</th><th>Empleado vinculado</th><th>Accion</th></tr></thead>
           <tbody>{% for link in device_users %}<tr>
@@ -105,6 +104,7 @@
 <script>
 (() => {
   const status = document.getElementById("attendance-live-status");
+  const deviceStatus = document.getElementById("attendance-device-status");
   const rows = document.getElementById("attendance-live-rows");
   if (!status || !rows) return;
   let socket;
@@ -116,7 +116,21 @@
   const setStatus = (online) => {
     socketOnline = online;
     status.className = `badge fs-6 ${online ? "text-bg-success" : "text-bg-secondary"}`;
-    status.innerHTML = `<i class="bi bi-circle-fill me-1"></i>${online ? "En vivo" : "Actualizacion automatica"}`;
+    status.innerHTML = `<i class="bi bi-broadcast me-1"></i>${online ? "Pantalla en vivo" : "Pantalla automática"}`;
+  };
+
+  const refreshDeviceStatus = async () => {
+    try {
+      const response = await fetch('/attendance/connector-status', {credentials: 'same-origin', cache: 'no-store'});
+      if (!response.ok) return;
+      const payload = await response.json();
+      deviceStatus.className = `badge fs-6 ${payload.online ? "text-bg-success" : "text-bg-danger"}`;
+      deviceStatus.innerHTML = `<i class="bi bi-fingerprint me-1"></i>${payload.online ? "Reloj conectado" : "Reloj sin comunicación"}`;
+      deviceStatus.title = payload.last_seen_at ? `Ultimo contacto: ${payload.last_seen_at}` : 'Sin sincronizaciones recibidas';
+    } catch (_) {
+      deviceStatus.className = 'badge text-bg-danger fs-6';
+      deviceStatus.innerHTML = '<i class="bi bi-fingerprint me-1"></i>Estado no disponible';
+    }
   };
 
   const addEvent = (event) => {
@@ -186,7 +200,9 @@
     };
   };
   connect();
+  refreshDeviceStatus();
   pollNewPunches();
+  setInterval(refreshDeviceStatus, 5000);
   setInterval(pollNewPunches, 1500);
 })();
 </script>

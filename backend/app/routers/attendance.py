@@ -828,3 +828,21 @@ def attendance_live_punches(request: Request, after_id: int = Query(0, ge=0), db
             for punch in punches
         ]
     }
+
+
+@web_router.get("/attendance/connector-status")
+def attendance_connector_status(request: Request, db: Session = Depends(get_db)):
+    _browser_admin(request, db)
+    device = (
+        db.query(AttendanceDevice)
+        .filter(AttendanceDevice.active.is_(True))
+        .order_by(AttendanceDevice.last_seen_at.desc())
+        .first()
+    )
+    last_seen_at = device.last_seen_at if device else None
+    online = bool(last_seen_at and last_seen_at >= datetime.utcnow() - timedelta(seconds=20))
+    return {
+        "online": online,
+        "device": device.name if device else None,
+        "last_seen_at": last_seen_at.isoformat(timespec="seconds") if last_seen_at else None,
+    }

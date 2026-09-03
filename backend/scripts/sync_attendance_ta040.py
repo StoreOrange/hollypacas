@@ -1,7 +1,6 @@
 """Agente local: descarga usuarios/marcadas TA040 y los envia al ERP por HTTPS."""
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -92,9 +91,6 @@ def _sync_once(args, zk_class) -> int:
         "punches": [_serialize_punch(item) for item in punches],
     }
     body = json.dumps(payload).encode("utf-8")
-    payload_digest = hashlib.sha256(body).hexdigest()
-    if args.watch and getattr(_sync_once, "last_payload_digest", None) == payload_digest:
-        return 0
     endpoint = args.api_url.rstrip("/") + "/api/attendance/ingest"
     req = request.Request(
         endpoint,
@@ -105,7 +101,6 @@ def _sync_once(args, zk_class) -> int:
     try:
         with request.urlopen(req, timeout=30) as response:
             print(response.read().decode("utf-8"))
-            _sync_once.last_payload_digest = payload_digest
     except error.HTTPError as exc:
         print(f"ERP rechazo el lote ({exc.code}): {exc.read().decode('utf-8', 'replace')}", file=sys.stderr)
         return 1
