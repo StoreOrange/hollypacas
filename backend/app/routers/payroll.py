@@ -379,7 +379,7 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
     for profile in profiles:
         salary = _money(profile.monthly_salary)
         hourly = salary / Decimal("240")
-        days_worked, overtime_minutes, holiday_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
+        _attendance_days, overtime_minutes, holiday_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
         overtime_pay = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
         holiday_pay = _money((Decimal(holiday_minutes) / 60) * hourly * 2)
         calc = db.query(PayrollCalculation).filter(PayrollCalculation.period_id == period.id, PayrollCalculation.employee_id == profile.employee_id).first()
@@ -421,7 +421,13 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
         manual_deductions = _money(sum((row.amount for row in adjustments if row.adjustment_type == "DEDUCTION"), Decimal("0")))
         manual_days = next((row.worked_days for row in reversed(adjustments) if row.adjustment_type == "WORKED_DAYS" and row.worked_days is not None), None)
         target_days = (period.date_to - period.date_from).days + 1
-        payable_days = max(0, min(target_days, manual_days if manual_days is not None else days_worked))
+        cutoff = min(date.today(), period.date_to)
+        employment_start = period.date_from
+        employee_start = profile.contract_start or profile.employee.hire_date
+        if employee_start:
+            employment_start = max(employment_start, employee_start)
+        accrued_calendar_days = max(0, (cutoff - employment_start).days + 1)
+        payable_days = max(0, min(target_days, manual_days if manual_days is not None else accrued_calendar_days))
         base = _money((salary / Decimal("30")) * Decimal(payable_days))
         gross = _money(base + overtime_pay + holiday_pay + additions)
         calc.monthly_salary, calc.base_pay, calc.days_worked = salary, base, payable_days
@@ -431,7 +437,7 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
         calc.gross_pay, calc.total_deductions, calc.net_pay = gross, _money(total_deductions), _money(gross - total_deductions)
         calc.calculated_at = datetime.utcnow()
     db.commit()
-    return RedirectResponse(f"/payroll?period_id={period.id}&ok=Planilla+calculada", status_code=303)
+    return RedirectResponse(f"/payroll?period_id={period.id}&ok=Planilla+acumulada+al+corte+actual", status_code=303)
 
 
 @router.post("/payroll/periods/{period_id}/close")
