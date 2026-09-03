@@ -1,5 +1,42 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  .payroll-period-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+    gap: .65rem;
+  }
+  .payroll-period-grid .list-group-item {
+    border: 1px solid var(--bs-border-color);
+    border-radius: .65rem;
+    padding: .65rem .8rem;
+  }
+  .payroll-detail-table {
+    font-size: .78rem;
+    min-width: 980px;
+  }
+  .payroll-detail-table > :not(caption) > * > * {
+    padding: .45rem .4rem;
+    white-space: nowrap;
+  }
+  .payroll-detail-table th {
+    font-size: .7rem;
+    letter-spacing: .015em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+  }
+  .payroll-detail-table .employee-cell {
+    min-width: 170px;
+    white-space: normal;
+  }
+  .payroll-detail-table .btn {
+    font-size: .72rem;
+    padding: .25rem .45rem;
+  }
+  .payroll-detail-table .badge {
+    font-size: .72rem !important;
+  }
+</style>
 <div class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
   <main class="p-4 p-lg-5"><div class="container-fluid">
@@ -34,11 +71,11 @@
             <div class="col-md-3"><button class="btn btn-primary w-100">Crear periodo</button></div>
           </form>
         </div></div>
-        <div class="row g-3">
-          <div class="col-xl-4"><div class="card shadow-sm h-100"><div class="card-body"><h2 class="h6">Periodos</h2><div class="list-group list-group-flush">
+        <div class="d-grid gap-3">
+          <div class="card shadow-sm"><div class="card-body"><div class="d-flex justify-content-between align-items-center mb-2"><h2 class="h6 mb-0">Periodos</h2><small class="text-muted">Seleccione un periodo para ver su detalle</small></div><div class="list-group payroll-period-grid">
             {% for row in periods %}<a class="list-group-item list-group-item-action {% if selected_period and row.id == selected_period.id %}active{% endif %}" href="/payroll?period_id={{ row.id }}"><div class="d-flex justify-content-between"><strong>{{ row.date_from.strftime('%d/%m/%Y') }} - {{ row.date_to.strftime('%d/%m/%Y') }}</strong><span class="badge {% if row.status == 'CLOSED' %}text-bg-dark{% else %}text-bg-warning{% endif %}">{{ 'Cerrada' if row.status == 'CLOSED' else 'Borrador' }}</span></div><small>{{ row.branch.name if row.branch else 'Sin sucursal' }} · Pago: {{ row.pay_date.strftime('%d/%m/%Y') }}</small></a>{% else %}<div class="text-muted small">No hay periodos creados.</div>{% endfor %}
-          </div></div></div></div>
-          <div class="col-xl-8"><div class="card shadow-sm h-100"><div class="card-body">
+          </div></div></div>
+          <div class="card shadow-sm"><div class="card-body">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><h2 class="h6 mb-0">{% if selected_period %}Detalle {{ selected_period.code }}{% else %}Detalle de planilla{% endif %}</h2>{% if selected_period %}<small class="text-muted">{{ eligible_profiles_count }} empleado(s) habilitado(s) en {{ selected_period.branch.name if selected_period.branch else 'esta sucursal' }}</small>{% endif %}{% if calculations and selected_period.status != 'CLOSED' %}<div><span class="badge text-bg-primary mt-1"><i class="bi bi-pencil-square me-1"></i>Edición individual habilitada</span></div>{% endif %}</div>{% if selected_period and selected_period.status != 'CLOSED' %}<div class="d-flex gap-2"><form method="post" action="/payroll/periods/{{ selected_period.id }}/calculate"><button class="btn btn-success"><i class="bi bi-arrow-repeat me-1"></i>Calcular / recalcular ahora</button></form>{% if calculations %}<form method="post" action="/payroll/periods/{{ selected_period.id }}/close" onsubmit="return confirm('Al cerrar, las cuotas quedaran aplicadas. ¿Continuar?')"><button class="btn btn-dark btn-sm"><i class="bi bi-lock me-1"></i>Cerrar planilla</button></form>{% endif %}</div>{% endif %}</div>
             {% if selected_period and not calculations %}<div class="alert alert-warning py-2"><strong>No hay calculos visibles.</strong> Pulse <em>Calcular / recalcular ahora</em>.{% if eligible_profiles_count == 0 %} Esta sucursal no tiene empleados activos con perfil salarial; abra <a href="#profiles" data-bs-toggle="tab" data-bs-target="#profiles">Perfiles de empleados</a>, asigne sucursal y salario.{% endif %}{% if employees_without_profile %} Hay {{ employees_without_profile }} empleado(s) sin perfil salarial.{% endif %}</div>{% endif %}
             {% if period_summary and calculations %}<div class="row g-2 mb-3">
@@ -48,11 +85,11 @@
               <div class="col-6 col-lg"><div class="rounded-3 bg-danger-subtle border border-danger-subtle p-2 h-100"><div class="small text-muted">Deducciones</div><strong>C$ {{ '%.2f'|format(period_summary.deductions) }}</strong></div></div>
               <div class="col-12 col-lg"><div class="rounded-3 bg-dark text-white p-2 h-100"><div class="small text-white-50">Total neto acumulado</div><strong class="fs-5">C$ {{ '%.2f'|format(period_summary.net) }}</strong></div></div>
             </div>{% endif %}
-            <div class="table-responsive"><table class="table table-sm align-middle"><thead class="table-light"><tr><th>Empleado</th><th>Dias acumulados</th><th>Salario</th><th>Base acumulada</th><th>Horas extra</th><th>Otros ingresos</th><th>Deducciones</th><th>Neto actual</th><th>Gestion</th></tr></thead><tbody>
-              {% for row in calculations %}<tr><td><strong>{{ row.employee.full_name }}</strong><br><small class="text-muted">{{ row.employee.employee_code }}</small>{% if selected_period.status != 'CLOSED' %}<div class="mt-2"><button class="btn btn-primary btn-sm text-nowrap" type="button" data-bs-toggle="modal" data-bs-target="#manageDeductions{{ row.id }}"><i class="bi bi-pencil-square me-1"></i>Editar planilla</button></div>{% endif %}</td><td><span class="badge text-bg-primary fs-6">{{ row.days_worked }}/{{ period_summary.target_days }} dias</span><div class="progress mt-1" style="height:5px"><div class="progress-bar" style="width:{{ [100, (row.days_worked * 100 / period_summary.target_days)]|min }}%"></div></div></td><td>C$ {{ '%.2f'|format(row.monthly_salary) }}</td><td><strong>C$ {{ '%.2f'|format(row.base_pay) }}</strong></td><td>{{ '%.2f'|format(row.overtime_minutes / 60) }} h<br><strong class="text-success">C$ {{ '%.2f'|format(row.overtime_pay) }}</strong></td><td>C$ {{ '%.2f'|format(row.additions_pay + row.holiday_pay) }}</td><td class="text-danger"><strong>C$ {{ '%.2f'|format(row.total_deductions) }}</strong></td><td><strong class="text-primary">C$ {{ '%.2f'|format(row.net_pay) }}</strong></td><td>{% if selected_period.status == 'CLOSED' %}<span class="badge text-bg-secondary">Cerrada</span>{% else %}<i class="bi bi-check-circle-fill text-success" title="Edición disponible junto al nombre"></i>{% endif %}</td></tr>{% else %}<tr><td colspan="9" class="text-muted">Cree o seleccione un periodo y pulse Calcular.</td></tr>{% endfor %}
+            <div class="table-responsive"><table class="table table-sm table-hover align-middle payroll-detail-table"><thead class="table-light"><tr><th>Empleado</th><th>Dias acumulados</th><th>Salario</th><th>Base acumulada</th><th>Horas extra</th><th>Otros ingresos</th><th>Deducciones</th><th>Neto actual</th><th>Gestion</th></tr></thead><tbody>
+              {% for row in calculations %}<tr><td class="employee-cell"><strong>{{ row.employee.full_name }}</strong><br><small class="text-muted">{{ row.employee.employee_code }}</small>{% if selected_period.status != 'CLOSED' %}<div class="mt-1"><button class="btn btn-primary btn-sm text-nowrap" type="button" data-bs-toggle="modal" data-bs-target="#manageDeductions{{ row.id }}"><i class="bi bi-pencil-square me-1"></i>Editar planilla</button></div>{% endif %}</td><td><span class="badge text-bg-primary">{{ row.days_worked }}/{{ period_summary.target_days }} dias</span><div class="progress mt-1" style="height:4px"><div class="progress-bar" style="width:{{ [100, (row.days_worked * 100 / period_summary.target_days)]|min }}%"></div></div></td><td>C$ {{ '%.2f'|format(row.monthly_salary) }}</td><td><strong>C$ {{ '%.2f'|format(row.base_pay) }}</strong></td><td>{{ '%.2f'|format(row.overtime_minutes / 60) }} h<br><strong class="text-success">C$ {{ '%.2f'|format(row.overtime_pay) }}</strong></td><td>C$ {{ '%.2f'|format(row.additions_pay + row.holiday_pay) }}</td><td class="text-danger"><strong>C$ {{ '%.2f'|format(row.total_deductions) }}</strong></td><td><strong class="text-primary">C$ {{ '%.2f'|format(row.net_pay) }}</strong></td><td>{% if selected_period.status == 'CLOSED' %}<span class="badge text-bg-secondary">Cerrada</span>{% else %}<i class="bi bi-check-circle-fill text-success" title="Edición disponible junto al nombre"></i>{% endif %}</td></tr>{% else %}<tr><td colspan="9" class="text-muted">Cree o seleccione un periodo y pulse Calcular.</td></tr>{% endfor %}
             </tbody></table></div>
             {% if calculations %}<div class="small text-muted border-top pt-2"><i class="bi bi-info-circle me-1"></i>Base acumulada = salario mensual / 30 × dias calendario transcurridos desde el inicio del periodo (respetando la fecha de ingreso). Las marcadas determinan entradas, salidas y horas extra; las ausencias se aplican como deduccion o ajuste. Las horas extra se pagan al doble y se actualizan al recalcular.</div>{% endif %}
-          </div></div></div>
+          </div></div>
         </div>
         <div class="card shadow-sm mt-3"><div class="card-body"><h2 class="h6">Pagos ejecutados de planilla</h2>{% if selected_period and selected_period.status == 'CLOSED' %}<form method="post" action="/payroll/payments" class="row g-2 align-items-end mb-3"><input type="hidden" name="period_id" value="{{ selected_period.id }}"><div class="col-md-3"><label class="form-label">Fecha de pago</label><input class="form-control" type="date" name="payment_date" required></div><div class="col-md-3"><label class="form-label">Metodo</label><select class="form-select" name="payment_method"><option>EFECTIVO</option><option>TRANSFERENCIA</option><option>CHEQUE</option></select></div><div class="col-md-4"><label class="form-label">Referencia</label><input class="form-control" name="reference"></div><div class="col-md-2"><button class="btn btn-success w-100">Registrar pago</button></div></form>{% endif %}<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Periodo</th><th>Sucursal</th><th>Fecha</th><th>Monto</th><th>Metodo / referencia</th><th>Estado / correccion</th></tr></thead><tbody>{% for payment in payments %}<tr><td>{{ payment.period.code }}</td><td>{{ payment.branch.name }}</td><td>{{ payment.payment_date.strftime('%d/%m/%Y') }}</td><td>C$ {{ '%.2f'|format(payment.amount) }}</td><td>{{ payment.payment_method }}<br><small>{{ payment.reference or '-' }}</small></td><td>{% if payment.status == 'PAID' %}<form method="post" action="/payroll/payments/{{ payment.id }}/void" class="d-flex gap-1"><input class="form-control form-control-sm" name="reason" placeholder="Motivo obligatorio" required><button class="btn btn-outline-danger btn-sm">Anular</button></form>{% else %}<span class="badge text-bg-secondary">Anulado</span><br><small>{{ payment.void_reason }}</small>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="text-muted">No hay pagos de planilla registrados.</td></tr>{% endfor %}</tbody></table></div></div></div>
       </section>
