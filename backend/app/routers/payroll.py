@@ -993,7 +993,15 @@ def payroll_reports(request: Request, period_id: str = "", branch_id: str = "", 
         periods_query = periods_query.filter(PayrollPeriod.branch_id == int(branch_id))
     periods = periods_query.all()
     selected = db.query(PayrollPeriod).filter(PayrollPeriod.id == int(period_id)).first() if period_id.isdigit() else (periods[0] if periods else None)
-    calculations = db.query(PayrollCalculation).filter(PayrollCalculation.period_id == selected.id).all() if selected else []
+    calculations = (
+        db.query(PayrollCalculation)
+        .join(HREmployee, HREmployee.id == PayrollCalculation.employee_id)
+        .outerjoin(HRArea, HRArea.id == HREmployee.area_id)
+        .filter(PayrollCalculation.period_id == selected.id, HREmployee.status == "ACTIVE")
+        .order_by(HRArea.name, HREmployee.full_name)
+        .all()
+        if selected else []
+    )
     area_groups = {}
     for calc in calculations:
         area_name = calc.employee.area.name if calc.employee.area else "Sin area"
@@ -1004,15 +1012,28 @@ def payroll_reports(request: Request, period_id: str = "", branch_id: str = "", 
         .filter(PayrollCalculation.period_id == selected.id, PayrollCalculationDeduction.amount > 0).all()
         if selected else []
     )
-    adjustments = db.query(PayrollAdjustment).filter(PayrollAdjustment.period_id == selected.id).order_by(PayrollAdjustment.created_at.desc()).all() if selected else []
-    debts = db.query(PayrollEmployeeDeduction).join(HREmployee)
+    adjustments = (
+        db.query(PayrollAdjustment)
+        .join(HREmployee, HREmployee.id == PayrollAdjustment.employee_id)
+        .filter(PayrollAdjustment.period_id == selected.id, HREmployee.status == "ACTIVE")
+        .order_by(PayrollAdjustment.created_at.desc()).all()
+        if selected else []
+    )
+    debts = db.query(PayrollEmployeeDeduction).join(HREmployee).filter(HREmployee.status == "ACTIVE")
     if branch_id.isdigit():
         debts = debts.filter(HREmployee.branch_id == int(branch_id))
     debt_rows = []
     for debt in debts.order_by(HREmployee.full_name).all():
         paid_lines = db.query(PayrollCalculationDeduction).join(PayrollCalculation).join(PayrollPeriod).filter(PayrollCalculationDeduction.employee_deduction_id == debt.id, PayrollCalculationDeduction.amount > 0, PayrollPeriod.status == "CLOSED").order_by(PayrollPeriod.date_from).all()
         debt_rows.append({"debt": debt, "lines": paid_lines, **_debt_schedule(db, debt)})
-    return request.app.state.templates.TemplateResponse("payroll_reports.html", {"request": request, "user": user, "branches": branches, "periods": periods, "selected_period": selected, "area_groups": area_groups, "calculations": calculations, "deduction_lines": deduction_lines, "adjustments": adjustments, "debt_rows": debt_rows})
+    report_summary = {
+        "employees": len(calculations),
+        "gross": _money(sum((_money(row.gross_pay) for row in calculations), Decimal("0"))),
+        "deductions": _money(sum((_money(row.total_deductions) for row in calculations), Decimal("0"))),
+        "net": _money(sum((_money(row.net_pay) for row in calculations), Decimal("0"))),
+        "overtime_minutes": sum((row.overtime_minutes or 0 for row in calculations), 0),
+    }
+    return request.app.state.templates.TemplateResponse("payroll_reports.html", {"request": request, "user": user, "branches": branches, "periods": periods, "selected_period": selected, "area_groups": area_groups, "calculations": calculations, "deduction_lines": deduction_lines, "adjustments": adjustments, "debt_rows": debt_rows, "report_summary": report_summary})
 
 
 @router.get("/payroll/periods/{period_id}/report.pdf")
@@ -1024,7 +1045,7 @@ def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(g
     calculations = (
         db.query(PayrollCalculation)
         .join(HREmployee, HREmployee.id == PayrollCalculation.employee_id)
-        .filter(PayrollCalculation.period_id == period.id)
+        .filter(PayrollCalculation.period_id == period.id, HREmployee.status == "ACTIVE")
         .order_by(HREmployee.area_id, HREmployee.full_name)
         .all()
     )
