@@ -2029,6 +2029,8 @@
   let comboParent = null;
   let comboGifts = [];
   let promotionGiftPayload = null;
+  let comboParentSearchSequence = 0;
+  let comboGiftSearchSequence = 0;
 
   const normalizeGiftPolicy = () => "UNIDADES";
 
@@ -2079,8 +2081,7 @@
     }
     promotionGiftPayload = payload;
     renderGiftBalanceProjection();
-    const items = (payload.items || []).filter((item) => item.allowed);
-    renderComboGiftResults(items);
+    if (comboGiftResults) comboGiftResults.innerHTML = "";
   };
 
   const loadGiftAssignmentPanel = async () => {
@@ -2100,6 +2101,8 @@
     comboParent = null;
     comboGifts = [];
     promotionGiftPayload = null;
+    comboParentSearchSequence += 1;
+    comboGiftSearchSequence += 1;
     if (comboParentSearch) comboParentSearch.value = "";
     if (comboParentResults) comboParentResults.innerHTML = "";
     if (comboParentSelected) comboParentSelected.textContent = "Sin seleccionar";
@@ -2147,7 +2150,11 @@
     if (!comboParentPrice) return;
     const currency = monedaField?.value || "CS";
     const parentPrice = comboParent ? (currency === "USD" ? comboParent.precioUsd : comboParent.precioCs) : 0;
-    comboParentPrice.textContent = formatMoney(parentPrice, currency);
+    const giftTotal = comboGifts.reduce((total, gift) => {
+      const giftPrice = currency === "USD" ? gift.precioUsd : gift.precioCs;
+      return total + Number(giftPrice || 0) * Number(gift.cantidad || 0);
+    }, 0);
+    comboParentPrice.textContent = formatMoney(parentPrice + giftTotal, currency);
     renderComboPreview();
   };
 
@@ -2163,7 +2170,11 @@
       comboParentAvailable.textContent = getAvailableQty(comboParent.id, comboParent.freeQty ?? comboParent.existencia).toFixed(0);
     }
     const parentUnit = currency === "USD" ? comboParent.precioUsd : comboParent.precioCs;
-    const comboUnit = parentUnit;
+    const giftsTotal = comboGifts.reduce((total, gift) => {
+      const giftPrice = currency === "USD" ? gift.precioUsd : gift.precioCs;
+      return total + Number(giftPrice || 0) * Number(gift.cantidad || 0);
+    }, 0);
+    const comboUnit = parentUnit + giftsTotal;
     const comboTotal = comboUnit * comboQty;
     const giftsHtml = comboGifts.length
       ? comboGifts
@@ -2175,7 +2186,7 @@
                   <span class="font-semibold text-ink">${gift.codigo} - ${gift.descripcion}</span>
                 </div>
                 <div class="text-end">
-                  <div class="text-slate">x${gift.cantidad}</div>
+                  <div class="text-slate">x${gift.cantidad * comboQty}</div>
                   <div class="text-emerald-700 text-[11px] fw-semibold">No cobra</div>
                 </div>
               </div>
@@ -2192,7 +2203,8 @@
           </div>
           <span class="text-slate">x${comboQty}</span>
         </div>
-        <div class="text-[11px] text-slate mt-2" style="opacity:0.55;">Precio cobrado: ${formatMoney(parentUnit, currency)}</div>
+        <div class="text-[11px] text-slate mt-2" style="opacity:0.55;">Padre: ${formatMoney(parentUnit, currency)} · Hijas: ${formatMoney(giftsTotal, currency)}</div>
+        <div class="text-sm text-slate mt-2">Precio unitario del combo: <strong class="text-ink">${formatMoney(comboUnit, currency)}</strong></div>
         <div class="text-sm text-slate mt-2">Total a facturar: <strong class="text-ink">${formatMoney(comboTotal, currency)}</strong></div>
       </div>
       <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold mb-2">Regalias</div>
@@ -2226,7 +2238,7 @@
     });
     for (const item of required) {
       const available = getAvailableQty(item.id, item.existencia);
-      const requestedQty = item.id === comboParent.id ? item.perUnit * comboQty : item.perUnit;
+      const requestedQty = item.perUnit * comboQty;
       if (available < requestedQty) {
         pauseNavForAlert({
           icon: "warning",
@@ -2525,6 +2537,7 @@
   if (comboParentSearch) {
     comboParentSearch.addEventListener("input", async (event) => {
       const value = event.target.value.trim();
+      const searchSequence = ++comboParentSearchSequence;
       if (value.length < 2) {
         comboParentResults.innerHTML = "";
         return;
@@ -2532,6 +2545,7 @@
       try {
         const response = await fetch(buildProductSearchUrl(value));
         const payload = await response.json().catch(() => null);
+        if (searchSequence !== comboParentSearchSequence || comboParentSearch.value.trim() !== value) return;
         renderComboParentResults(payload?.items || []);
       } catch (error) {
         if (comboParentResults) {
@@ -2557,9 +2571,15 @@
   if (comboGiftSearch) {
     comboGiftSearch.addEventListener("input", async (event) => {
       const value = event.target.value.trim();
+      const searchSequence = ++comboGiftSearchSequence;
+      if (value.length < 2) {
+        comboGiftResults.innerHTML = "";
+        return;
+      }
       try {
         const response = await fetch(`/sales/promotions/gifts?${buildPromotionGiftParams(value).toString()}`);
         const payload = await response.json().catch(() => null);
+        if (searchSequence !== comboGiftSearchSequence || comboGiftSearch.value.trim() !== value) return;
         const items = (payload?.items || []).filter((item) => item.allowed);
         renderComboGiftResults(items);
       } catch (error) {
@@ -2588,6 +2608,9 @@
         freeQty: parseFloat(button.dataset.freeQty || button.dataset.existencia || 0),
         reservedDetails: parseReservedDetails(button.dataset.reservedDetails || ""),
       };
+      comboParentSearchSequence += 1;
+      if (comboParentSearch) comboParentSearch.value = "";
+      comboParentResults.innerHTML = "";
       if (comboParentSelected) {
         comboParentSelected.textContent = `${comboParent.codigo} - ${comboParent.descripcion}`;
       }
@@ -2616,6 +2639,12 @@
         precioReferenciaUsd: parseFloat(button.dataset.priceRefUsd || 0),
         reservedDetails: parseReservedDetails(button.dataset.reservedDetails || ""),
       });
+      comboGiftSearchSequence += 1;
+      if (comboGiftSearch) {
+        comboGiftSearch.value = "";
+        comboGiftSearch.focus();
+      }
+      comboGiftResults.innerHTML = "";
     });
   }
 
@@ -2692,7 +2721,7 @@
       };
       addRequired(comboParent.id, comboQty);
       comboGifts.forEach((gift) => {
-        addRequired(gift.id, gift.cantidad);
+        addRequired(gift.id, gift.cantidad * comboQty);
       });
       for (const [id, qty] of requiredMap.entries()) {
         const producto = id === comboParent.id ? comboParent : comboGifts.find((g) => String(g.id) === String(id));
@@ -2727,7 +2756,11 @@
       }
       const currency = monedaField?.value || "CS";
       const parentUnitPrice = currency === "USD" ? comboParent.precioUsd : comboParent.precioCs;
-      const comboPrice = parentUnitPrice;
+      const giftTotal = comboGifts.reduce((total, gift) => {
+        const giftPrice = currency === "USD" ? gift.precioUsd : gift.precioCs;
+        return total + Number(giftPrice || 0) * Number(gift.cantidad || 0);
+      }, 0);
+      const comboPrice = parentUnitPrice + giftTotal;
       const subtotal = comboPrice * comboQty;
       const subtotalUsd = currency === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
       const subtotalCs = currency === "USD" ? subtotal * rateToday : subtotal;
@@ -2745,10 +2778,11 @@
         subtotalUsd,
         subtotalCs,
         role: "parent",
+        lockPrice: true,
         comboGroup: comboGroupId,
       });
       comboGifts.forEach((gift) => {
-        const giftQty = gift.cantidad;
+        const giftQty = gift.cantidad * comboQty;
         const giftSubtotal = 0;
         const giftSubtotalUsd = currency === "USD" ? 0 : 0;
         const giftSubtotalCs = currency === "USD" ? 0 : 0;

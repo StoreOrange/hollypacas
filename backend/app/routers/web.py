@@ -33530,14 +33530,56 @@ async def sales_create_invoice(
         if combo_role == "gift":
             combo_gift_qty[combo_group] += qty_dec
     for combo_group in combo_gift_qty:
-        has_parent = any(
-            str(src.get("combo_group") or "").strip() == combo_group
-            and str(src.get("role") or "").strip().lower() == "parent"
+        parents = [
+            src
             for src in source_items
-        )
-        if not has_parent:
+            if str(src.get("combo_group") or "").strip() == combo_group
+            and str(src.get("role") or "").strip().lower() == "parent"
+        ]
+        if len(parents) != 1:
             db.rollback()
-            return RedirectResponse("/sales?error=Regalia+debe+estar+pegada+a+un+producto+cobrado", status_code=303)
+            return RedirectResponse("/sales?error=El+combo+debe+tener+un+solo+producto+padre+cobrado", status_code=303)
+
+    # El valor comercial del combo se reconstruye en el servidor. La factura
+    # cobra una sola linea padre y presenta las hijas como regalias a C$ 0.00,
+    # sin perder el valor ni el costo interno de ninguno de sus componentes.
+    combo_parent_prices: dict[str, tuple[float, float]] = {}
+    combo_groups = {
+        str(src.get("combo_group") or "").strip()
+        for src in source_items
+        if str(src.get("combo_group") or "").strip()
+    }
+    for combo_group in combo_groups:
+        grouped = [src for src in source_items if str(src.get("combo_group") or "").strip() == combo_group]
+        parents = [src for src in grouped if str(src.get("role") or "").strip().lower() == "parent"]
+        if len(parents) != 1:
+            db.rollback()
+            return RedirectResponse("/sales?error=Combo+invalido:+se+requiere+un+solo+producto+padre", status_code=303)
+        parent_qty = Decimal(str(parents[0].get("qty") or 0))
+        if parent_qty <= 0:
+            db.rollback()
+            return RedirectResponse("/sales?error=La+cantidad+del+combo+debe+ser+mayor+a+cero", status_code=303)
+        total_group_usd = Decimal("0")
+        total_group_cs = Decimal("0")
+        for grouped_src in grouped:
+            grouped_product = db.query(Producto).filter(Producto.id == int(grouped_src["product_id"])).first()
+            if not grouped_product:
+                db.rollback()
+                return RedirectResponse("/sales?error=Producto+de+combo+no+encontrado", status_code=303)
+            grouped_qty = Decimal(str(grouped_src.get("qty") or 0))
+            prices = _product_price_map(grouped_product)
+            unit_usd = Decimal(str(prices.get("precio_venta1_usd", 0) or 0))
+            unit_cs = Decimal(str(prices.get("precio_venta1", 0) or 0))
+            if unit_usd <= 0 and unit_cs > 0 and tasa:
+                unit_usd = unit_cs / Decimal(str(tasa))
+            if unit_cs <= 0 and unit_usd > 0 and tasa:
+                unit_cs = unit_usd * Decimal(str(tasa))
+            total_group_usd += unit_usd * grouped_qty
+            total_group_cs += unit_cs * grouped_qty
+        combo_parent_prices[combo_group] = (
+            float((total_group_usd / parent_qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            float((total_group_cs / parent_qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        )
 
     discount_payload = _discount_authorization_payload_from_form(form)
     discount_token_row = None
@@ -33670,6 +33712,9 @@ async def sales_create_invoice(
             else:
                 precio_cs = price
                 precio_usd = price / tasa if tasa else 0
+        combo_group_key = str(src.get("combo_group") or "").strip()
+        if combo_role_raw == "parent" and combo_group_key in combo_parent_prices:
+            precio_usd, precio_cs = combo_parent_prices[combo_group_key]
         if is_gift_item:
             precio_usd = 0.0
             precio_cs = 0.0
@@ -33698,7 +33743,7 @@ async def sales_create_invoice(
         total_cs += subtotal_cs
         if not is_gift_item:
             total_items += stock_qty
-        if not is_gift_item and not bool(getattr(producto, "servicio_producto", False)):
+        if not bool(getattr(producto, "servicio_producto", False)):
             total_cost_cs += (Decimal(str(producto.costo_producto or 0)) * Decimal(str(stock_qty))).quantize(Decimal("0.01"))
 
         combo_role = src.get("role")

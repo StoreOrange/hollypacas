@@ -1542,10 +1542,14 @@
 
   let comboParent = null;
   let comboGifts = [];
+  let comboParentSearchSequence = 0;
+  let comboGiftSearchSequence = 0;
 
   const resetComboModal = () => {
     comboParent = null;
     comboGifts = [];
+    comboParentSearchSequence += 1;
+    comboGiftSearchSequence += 1;
     if (comboParentSearch) comboParentSearch.value = "";
     if (comboParentResults) comboParentResults.innerHTML = "";
     if (comboParentSelected) comboParentSelected.textContent = "Sin seleccionar";
@@ -1844,6 +1848,7 @@
   if (comboParentSearch) {
     comboParentSearch.addEventListener("input", async (event) => {
       const value = event.target.value.trim();
+      const searchSequence = ++comboParentSearchSequence;
       if (value.length < 2) {
         comboParentResults.innerHTML = "";
         return;
@@ -1851,6 +1856,7 @@
       try {
         const response = await fetch(buildProductSearchUrl(value));
         const payload = await response.json().catch(() => null);
+        if (searchSequence !== comboParentSearchSequence || comboParentSearch.value.trim() !== value) return;
         renderComboParentResults(payload?.items || []);
       } catch (error) {
         if (comboParentResults) {
@@ -1876,6 +1882,7 @@
   if (comboGiftSearch) {
     comboGiftSearch.addEventListener("input", async (event) => {
       const value = event.target.value.trim();
+      const searchSequence = ++comboGiftSearchSequence;
       if (value.length < 2) {
         comboGiftResults.innerHTML = "";
         return;
@@ -1883,6 +1890,7 @@
       try {
         const response = await fetch(buildProductSearchUrl(value));
         const payload = await response.json().catch(() => null);
+        if (searchSequence !== comboGiftSearchSequence || comboGiftSearch.value.trim() !== value) return;
         const items = payload?.items || [];
         renderComboGiftResults(items);
       } catch (error) {
@@ -1911,6 +1919,9 @@
         freeQty: parseFloat(button.dataset.freeQty || button.dataset.existencia || 0),
         reservedDetails: parseReservedDetails(button.dataset.reservedDetails || ""),
       };
+      comboParentSearchSequence += 1;
+      if (comboParentSearch) comboParentSearch.value = "";
+      comboParentResults.innerHTML = "";
       if (comboParentSelected) {
         comboParentSelected.textContent = `${comboParent.codigo} - ${comboParent.descripcion}`;
       }
@@ -1957,6 +1968,12 @@
           reservedDetails: parseReservedDetails(button.dataset.reservedDetails || ""),
         });
       }
+      comboGiftSearchSequence += 1;
+      if (comboGiftSearch) {
+        comboGiftSearch.value = "";
+        comboGiftSearch.focus();
+      }
+      comboGiftResults.innerHTML = "";
       clampComboQty();
       renderComboGifts();
       renderComboPreview();
@@ -2085,6 +2102,7 @@
         subtotalUsd,
         subtotalCs,
         role: "parent",
+        lockPrice: true,
         comboGroup: comboGroupId,
       });
       comboGifts.forEach((gift) => {
