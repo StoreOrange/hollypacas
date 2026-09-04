@@ -76,6 +76,9 @@ def _debt_schedule(db: Session, debt: PayrollEmployeeDeduction, visited=None) ->
     dependency_waiting = False
     dependency_end = None
     dependency = None
+    has_dependents = db.query(PayrollEmployeeDeduction.id).filter(
+        PayrollEmployeeDeduction.depends_on_id == debt.id
+    ).first() is not None
     if debt.depends_on_id and debt.depends_on_id not in visited:
         dependency = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.id == debt.depends_on_id).first()
         if dependency:
@@ -113,6 +116,7 @@ def _debt_schedule(db: Session, debt: PayrollEmployeeDeduction, visited=None) ->
         "dependency_waiting": dependency_waiting,
         "dependency": dependency,
         "next_available_date": _advance_pay_date(projected_end) if projected_end else None,
+        "has_dependents": has_dependents,
     }
 
 
@@ -614,6 +618,42 @@ def update_employee_deduction_status(
     _refresh_debt_tree(db, debt)
     db.commit()
     return RedirectResponse("/payroll?ok=Calendario+de+cobro+actualizado#deductions", status_code=303)
+
+
+@router.post("/payroll/deductions/{deduction_id}/delete")
+def delete_employee_deduction(
+    deduction_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    _browser_admin(request, db)
+    debt = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.id == deduction_id).first()
+    if not debt:
+        return RedirectResponse("/payroll?error=Deuda+no+encontrada#deductions", status_code=303)
+    paid_amount, paid_installments = _debt_paid(db, debt.id)
+    if paid_amount > 0 or paid_installments > 0:
+        return RedirectResponse("/payroll?error=No+se+puede+eliminar+una+deuda+con+pagos+aplicados#deductions", status_code=303)
+    if db.query(PayrollEmployeeDeduction.id).filter(PayrollEmployeeDeduction.depends_on_id == debt.id).first():
+        return RedirectResponse("/payroll?error=Quite+primero+las+deudas+que+dependen+de+este+registro#deductions", status_code=303)
+
+    calculation_ids = [
+        row[0]
+        for row in db.query(PayrollCalculationDeduction.calculation_id).filter(
+            PayrollCalculationDeduction.employee_deduction_id == debt.id
+        ).distinct().all()
+    ]
+    db.query(PayrollDeductionOverride).filter(
+        PayrollDeductionOverride.employee_deduction_id == debt.id
+    ).delete(synchronize_session=False)
+    db.query(PayrollCalculationDeduction).filter(
+        PayrollCalculationDeduction.employee_deduction_id == debt.id
+    ).delete(synchronize_session=False)
+    db.delete(debt)
+    db.flush()
+    for calculation in db.query(PayrollCalculation).filter(PayrollCalculation.id.in_(calculation_ids)).all() if calculation_ids else []:
+        _update_calculation_totals(db, calculation)
+    db.commit()
+    return RedirectResponse("/payroll?ok=Deuda+eliminada+sin+afectar+pagos#deductions", status_code=303)
 
 
 @router.post("/payroll/periods")
