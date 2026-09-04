@@ -1036,6 +1036,46 @@ def payroll_reports(request: Request, period_id: str = "", branch_id: str = "", 
     return request.app.state.templates.TemplateResponse("payroll_reports.html", {"request": request, "user": user, "branches": branches, "periods": periods, "selected_period": selected, "area_groups": area_groups, "calculations": calculations, "deduction_lines": deduction_lines, "adjustments": adjustments, "debt_rows": debt_rows, "report_summary": report_summary})
 
 
+@router.get("/payroll/periods/{period_id}/report.html")
+def payroll_period_html(period_id: int, request: Request, db: Session = Depends(get_db)):
+    _browser_admin(request, db)
+    period = db.query(PayrollPeriod).filter(PayrollPeriod.id == period_id).first()
+    if not period:
+        raise HTTPException(404, "Periodo de planilla no encontrado")
+    calculations = (
+        db.query(PayrollCalculation)
+        .join(HREmployee, HREmployee.id == PayrollCalculation.employee_id)
+        .outerjoin(HRArea, HRArea.id == HREmployee.area_id)
+        .filter(PayrollCalculation.period_id == period.id, HREmployee.status == "ACTIVE")
+        .order_by(HRArea.name, HREmployee.full_name)
+        .all()
+    )
+    if not calculations:
+        return RedirectResponse(f"/payroll/reports?period_id={period.id}&error=Calcule+la+planilla+antes+de+abrir+el+reporte", status_code=303)
+    area_groups = {}
+    for calculation in calculations:
+        area_name = calculation.employee.area.name if calculation.employee.area else "Sin área"
+        area_groups.setdefault(area_name, []).append(calculation)
+    summary = {
+        "employees": len(calculations),
+        "base": _money(sum((_money(row.base_pay) for row in calculations), Decimal("0"))),
+        "additions": _money(sum((_money(row.additions_pay) + _money(row.overtime_pay) + _money(row.holiday_pay) for row in calculations), Decimal("0"))),
+        "deductions": _money(sum((_money(row.total_deductions) for row in calculations), Decimal("0"))),
+        "net": _money(sum((_money(row.net_pay) for row in calculations), Decimal("0"))),
+    }
+    return request.app.state.templates.TemplateResponse(
+        "payroll_period_report.html",
+        {
+            "request": request,
+            "period": period,
+            "area_groups": area_groups,
+            "summary": summary,
+            "generated_at": datetime.now(),
+            "branding": getattr(request.state, "branding", {}) or {},
+        },
+    )
+
+
 @router.get("/payroll/periods/{period_id}/report.pdf")
 def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(get_db)):
     _browser_admin(request, db)

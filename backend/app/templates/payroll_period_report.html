@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planilla {{ period.code }}</title>
+  <style>
+    :root { --navy:#10233f; --blue:#1d4ed8; --ink:#172033; --muted:#64748b; --line:#d9e1ea; --soft:#f4f7fb; --green:#087f5b; --red:#b42318; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#e9eef5; color:var(--ink); font-family:Inter,Arial,sans-serif; font-size:12px; }
+    .toolbar { position:sticky; top:0; z-index:10; display:flex; justify-content:flex-end; gap:8px; padding:10px max(16px,calc((100% - 1380px)/2)); background:rgba(233,238,245,.94); backdrop-filter:blur(10px); }
+    .btn { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 15px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:var(--ink); font-weight:700; text-decoration:none; cursor:pointer; }
+    .btn-primary { border-color:var(--navy); background:var(--navy); color:#fff; }
+    .sheet { width:min(1380px,calc(100% - 32px)); margin:0 auto 28px; padding:30px; background:#fff; border-radius:12px; box-shadow:0 18px 50px rgba(15,23,42,.12); }
+    .document-head { display:grid; grid-template-columns:1fr auto; gap:24px; align-items:start; padding-bottom:18px; border-bottom:3px solid var(--navy); }
+    .brand { display:flex; gap:14px; align-items:center; }
+    .logo { width:62px; height:62px; object-fit:contain; border:1px solid var(--line); border-radius:10px; padding:5px; }
+    .eyebrow { margin-bottom:4px; color:var(--blue); font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+    h1 { margin:0; color:var(--navy); font-size:24px; line-height:1.1; }
+    .subtitle { margin-top:5px; color:var(--muted); }
+    .document-meta { min-width:275px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+    .meta-row { display:flex; justify-content:space-between; gap:16px; padding:7px 10px; border-bottom:1px solid var(--line); }
+    .meta-row:last-child { border-bottom:0; }
+    .meta-row span { color:var(--muted); }
+    .meta-row strong { text-align:right; }
+    .summary { display:grid; grid-template-columns:repeat(5,1fr); gap:9px; margin:18px 0; }
+    .summary-card { padding:11px 12px; border:1px solid var(--line); border-radius:9px; background:var(--soft); }
+    .summary-card span { display:block; margin-bottom:4px; color:var(--muted); font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+    .summary-card strong { color:var(--navy); font-size:15px; white-space:nowrap; }
+    .summary-card.net { border-color:#bcd0ff; background:#eef4ff; }
+    .area { margin-top:16px; border:1px solid var(--line); border-radius:9px; overflow:hidden; page-break-inside:avoid; }
+    .area-head { display:flex; justify-content:space-between; align-items:center; padding:9px 11px; background:var(--navy); color:#fff; }
+    .area-head h2 { margin:0; font-size:13px; }
+    .area-head span { color:#cbd5e1; font-size:10px; }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; min-width:1120px; border-collapse:collapse; table-layout:fixed; }
+    th { padding:7px 6px; border-bottom:1px solid var(--line); background:#edf2f7; color:#526075; font-size:9px; letter-spacing:.035em; text-align:left; text-transform:uppercase; white-space:nowrap; }
+    td { padding:8px 6px; border-bottom:1px solid #e8edf3; vertical-align:middle; }
+    tbody tr:nth-child(even) { background:#fafbfd; }
+    .employee { overflow:hidden; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+    .employee small { display:block; margin-top:2px; color:var(--muted); font-weight:400; }
+    .num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .center { text-align:center; }
+    .positive { color:var(--green); }
+    .negative { color:var(--red); }
+    .net-value { color:#075985; font-weight:800; }
+    tfoot td { border-top:2px solid #aebaca; border-bottom:0; background:#edf2f7; font-weight:800; }
+    .grand-total { display:flex; justify-content:flex-end; align-items:center; gap:30px; margin-top:16px; padding:14px 16px; border-radius:9px; background:var(--navy); color:#fff; }
+    .grand-total span { color:#cbd5e1; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .grand-total strong { font-size:20px; }
+    .signatures { display:grid; grid-template-columns:repeat(3,1fr); gap:60px; margin-top:70px; }
+    .signature { padding-top:8px; border-top:1px solid #64748b; text-align:center; }
+    .signature strong { display:block; }
+    .signature span { color:var(--muted); font-size:10px; }
+    .footnote { margin-top:28px; padding-top:10px; border-top:1px solid var(--line); color:var(--muted); font-size:9px; text-align:center; }
+    @media(max-width:900px) { .summary{grid-template-columns:repeat(2,1fr)} .document-head{grid-template-columns:1fr} .document-meta{width:100%} .sheet{padding:18px} }
+    @media print {
+      @page { size:landscape; margin:9mm; }
+      body { background:#fff; font-size:9px; }
+      .no-print { display:none!important; }
+      .sheet { width:100%; margin:0; padding:0; border-radius:0; box-shadow:none; }
+      .document-head { padding-bottom:10px; }
+      .logo { width:48px; height:48px; }
+      h1 { font-size:19px; }
+      .summary { margin:10px 0; }
+      .summary-card { padding:7px 8px; }
+      .summary-card strong { font-size:11px; }
+      .area { margin-top:9px; break-inside:avoid; }
+      table { min-width:0; }
+      th { padding:5px 4px; font-size:7px; }
+      td { padding:5px 4px; font-size:8px; }
+      .signatures { margin-top:38px; }
+      .footnote { margin-top:16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar no-print"><a class="btn" href="/payroll/reports?period_id={{ period.id }}">Volver</a><button class="btn btn-primary" onclick="window.print()">Imprimir reporte</button></div>
+  <main class="sheet">
+    <header class="document-head">
+      <div class="brand"><img class="logo" src="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="Logo"><div><div class="eyebrow">Documento de recursos humanos</div><h1>Planilla quincenal</h1><div class="subtitle">{{ branding.get('legal_name') or branding.get('trade_name') or 'Empresa' }}</div></div></div>
+      <div class="document-meta"><div class="meta-row"><span>Período</span><strong>{{ period.date_from.strftime('%d/%m/%Y') }} — {{ period.date_to.strftime('%d/%m/%Y') }}</strong></div><div class="meta-row"><span>Sucursal</span><strong>{{ period.branch.name if period.branch else 'Sin sucursal' }}</strong></div><div class="meta-row"><span>Fecha de pago</span><strong>{{ period.pay_date.strftime('%d/%m/%Y') }}</strong></div><div class="meta-row"><span>Estado</span><strong>{{ 'CERRADA' if period.status == 'CLOSED' else 'BORRADOR' }}</strong></div></div>
+    </header>
+    <section class="summary"><div class="summary-card"><span>Empleados activos</span><strong>{{ summary.employees }}</strong></div><div class="summary-card"><span>Pago base</span><strong>C$ {{ '%.2f'|format(summary.base) }}</strong></div><div class="summary-card"><span>Adiciones y extras</span><strong class="positive">C$ {{ '%.2f'|format(summary.additions) }}</strong></div><div class="summary-card"><span>Deducciones</span><strong class="negative">C$ {{ '%.2f'|format(summary.deductions) }}</strong></div><div class="summary-card net"><span>Neto a pagar</span><strong>C$ {{ '%.2f'|format(summary.net) }}</strong></div></section>
+    {% for area, rows in area_groups.items() %}<section class="area"><div class="area-head"><h2>{{ area }}</h2><span>{{ rows|length }} empleado(s) · Neto C$ {{ '%.2f'|format(rows|sum(attribute='net_pay')) }}</span></div><div class="table-wrap"><table><colgroup><col style="width:20%"><col style="width:6%"><col style="width:11%"><col style="width:11%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:11%"><col style="width:12%"></colgroup><thead><tr><th>Empleado</th><th class="center">Días</th><th class="num">Salario mensual</th><th class="num">Base acumulada</th><th class="num">Adiciones</th><th class="num">Horas extra</th><th class="num">Feriados</th><th class="num">Deducciones</th><th class="num">Neto a recibir</th></tr></thead><tbody>{% for row in rows %}<tr><td class="employee">{{ row.employee.full_name }}<small>{{ row.employee.employee_code }}{% if row.employee.position %} · {{ row.employee.position.name }}{% endif %}</small></td><td class="center">{{ row.days_worked }}</td><td class="num">C$ {{ '%.2f'|format(row.monthly_salary) }}</td><td class="num">C$ {{ '%.2f'|format(row.base_pay) }}</td><td class="num positive">C$ {{ '%.2f'|format(row.additions_pay) }}</td><td class="num positive">{{ '%.2f'|format(row.overtime_minutes / 60) }} h / C$ {{ '%.2f'|format(row.overtime_pay) }}</td><td class="num">C$ {{ '%.2f'|format(row.holiday_pay) }}</td><td class="num negative">− C$ {{ '%.2f'|format(row.total_deductions) }}</td><td class="num net-value">C$ {{ '%.2f'|format(row.net_pay) }}</td></tr>{% endfor %}</tbody><tfoot><tr><td colspan="3">TOTAL {{ area|upper }}</td><td class="num">C$ {{ '%.2f'|format(rows|sum(attribute='base_pay')) }}</td><td class="num positive">C$ {{ '%.2f'|format(rows|sum(attribute='additions_pay')) }}</td><td class="num positive">C$ {{ '%.2f'|format(rows|sum(attribute='overtime_pay')) }}</td><td class="num">C$ {{ '%.2f'|format(rows|sum(attribute='holiday_pay')) }}</td><td class="num negative">− C$ {{ '%.2f'|format(rows|sum(attribute='total_deductions')) }}</td><td class="num net-value">C$ {{ '%.2f'|format(rows|sum(attribute='net_pay')) }}</td></tr></tfoot></table></div></section>{% endfor %}
+    <div class="grand-total"><span>Total general neto a desembolsar</span><strong>C$ {{ '%.2f'|format(summary.net) }}</strong></div>
+    <section class="signatures"><div class="signature"><strong>Elaborado por</strong><span>Recursos Humanos</span></div><div class="signature"><strong>Revisado por</strong><span>Administración</span></div><div class="signature"><strong>Autorizado por</strong><span>Gerencia General</span></div></section>
+    <footer class="footnote">Generado el {{ generated_at.strftime('%d/%m/%Y %H:%M') }} · Documento de control interno · Solo incluye empleados activos.</footer>
+  </main>
+</body>
+</html>
