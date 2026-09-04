@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">{% include "partials/sidebar.html" %}<main class="p-4 p-lg-5"><div class="container-fluid">
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">{% include "partials/sidebar.html" %}<main class="p-4 p-lg-5"><div class="container-fluid">
   <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4"><div><h1 class="h4 mb-1"><i class="bi bi-file-earmark-bar-graph me-2"></i>Reportes de planilla</h1><p class="text-muted mb-0">Planilla por area, horas extra, ajustes y estado de deudas.</p></div><a class="btn btn-outline-secondary" href="/payroll"><i class="bi bi-arrow-left me-1"></i>Gestion de planilla</a></div>
   {% if request.query_params.get('ok') %}<div class="alert alert-success">{{ request.query_params.get('ok') }}</div>{% endif %}{% if request.query_params.get('error') %}<div class="alert alert-danger">{{ request.query_params.get('error') }}</div>{% endif %}
   <div class="alert alert-info"><strong>Formula de hora extra:</strong> salario mensual ÷ 30 dias ÷ 8 horas × 2. Ejemplo: C$9,000 ÷ 30 = C$300 diarios; ÷ 8 = C$37.50 por hora; × 2 = <strong>C$75.00 por hora extra</strong>.</div>
