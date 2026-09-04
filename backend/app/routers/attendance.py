@@ -11,7 +11,7 @@ from typing import List, Optional
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Request, WebSocket, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_
@@ -562,6 +562,96 @@ def attendance_control_page(
             "policy": policy,
         },
     )
+
+
+@web_router.get("/attendance/control/pdf")
+def attendance_control_pdf(
+    request: Request,
+    date_from: str = Query(""),
+    date_to: str = Query(""),
+    area_id: str = Query(""),
+    search: str = Query(""),
+    db: Session = Depends(get_db),
+):
+    from io import BytesIO
+    from xml.sax.saxutils import escape
+
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import landscape, legal
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    # Reutiliza el mismo calculo de la vista web para que filtros, horas y
+    # estados coincidan exactamente con lo mostrado en pantalla.
+    page_response = attendance_control_page(request, date_from, date_to, area_id, search, db)
+    data = page_response.context
+    buffer = BytesIO()
+    start = data["selected_date_from"]
+    end = data["selected_date_to"]
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(legal),
+        leftMargin=9 * mm,
+        rightMargin=9 * mm,
+        topMargin=10 * mm,
+        bottomMargin=10 * mm,
+        title=f"Control de entradas y salidas {start:%d-%m-%Y} al {end:%d-%m-%Y}",
+        author="Hollywood Pacas",
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("AttendanceTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=15, leading=18, textColor=colors.HexColor("#172554"), alignment=TA_CENTER)
+    small_style = ParagraphStyle("AttendanceSmall", parent=styles["BodyText"], fontSize=6.5, leading=8)
+    selected_area = next((area.name for area in data["areas"] if area.id == data["selected_area_id"]), "Todas las areas")
+    employee_filter = data["search"] or "Todos los empleados"
+    story = [
+        Paragraph("HOLLYWOOD PACAS", title_style),
+        Paragraph("Control de entradas y salidas", ParagraphStyle("AttendanceSubtitle", parent=title_style, fontSize=11, leading=14)),
+        Paragraph(f"Periodo: {start:%d/%m/%Y} al {end:%d/%m/%Y} · Generado: {datetime.now():%d/%m/%Y %I:%M %p}", ParagraphStyle("AttendanceMeta", parent=small_style, alignment=TA_CENTER, fontSize=7.5)),
+        Paragraph(f"Filtros: {escape(selected_area)} · {escape(employee_filter)}", ParagraphStyle("AttendanceFilters", parent=small_style, alignment=TA_CENTER, fontSize=7)),
+        Spacer(1, 4 * mm),
+    ]
+    totals = data["totals"]
+    summary = Table(
+        [["Empleados", "Dias", "Completas", "Pendientes", "Sin marcadas", "Horas extra"], [str(totals["employees"]), str(data["range_days"]), str(totals["present"]), str(totals["pending"]), str(totals["absent"]), data["total_overtime_label"]]],
+        colWidths=[52 * mm] * 6,
+    )
+    summary.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#172554")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"), ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#94a3b8")), ("FONTSIZE", (0, 0), (-1, -1), 7), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+    story.extend([summary, Spacer(1, 4 * mm)])
+    policy = data["policy"]
+    story.extend([
+        Paragraph(f"Politica: lunes a viernes despues de {policy.weekday_overtime_start:%I:%M %p}; sabado despues de {policy.saturday_overtime_start:%I:%M %p}; domingo, toda la jornada neta.", small_style),
+        Spacer(1, 3 * mm),
+    ])
+    headers = ["Fecha", "Codigo", "Empleado", "Cargo", "Entrada", "Salida", "Marc.", "Total", "Regular", "Extra", "Estado"]
+    widths = [20, 22, 48, 37, 28, 28, 14, 22, 22, 22, 31]
+    for group in data["groups"]:
+        story.append(Paragraph(f"Area: {group['name']} ({len(group['rows'])})", ParagraphStyle("AttendanceArea", parent=styles["Heading3"], fontSize=9, leading=11, textColor=colors.HexColor("#1d4ed8"), spaceBefore=5, spaceAfter=3)))
+        rows = [headers]
+        for row in group["rows"]:
+            rows.append([
+                row["date"].strftime("%d/%m/%Y"),
+                row["employee"].employee_code,
+                Paragraph(escape(row["employee"].full_name), small_style),
+                Paragraph(escape(row["employee"].position.name) if row["employee"].position else "-", small_style),
+                row["entry"].strftime("%I:%M:%S %p") if row["entry"] else "--:--",
+                row["exit"].strftime("%I:%M:%S %p") if row["exit"] else "--:--",
+                str(row["punch_count"]),
+                row["worked_label"],
+                row["regular_label"],
+                row["overtime_label"],
+                Paragraph(escape(row["status_label"]), small_style),
+            ])
+        table = Table(rows, colWidths=[value * mm for value in widths], repeatRows=1)
+        table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 6.3), ("GRID", (0, 0), (-1, -1), .25, colors.HexColor("#cbd5e1")), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (0, 0), (1, -1), "CENTER"), ("ALIGN", (4, 1), (-1, -1), "CENTER"), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+        story.extend([table, Spacer(1, 3 * mm)])
+    if not data["groups"]:
+        story.append(Paragraph("No hay empleados para los filtros seleccionados.", styles["BodyText"]))
+    doc.build(story)
+    buffer.seek(0)
+    filename = f"control_entradas_salidas_{start:%Y%m%d}_{end:%Y%m%d}.pdf"
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
 @web_router.post("/attendance/areas")

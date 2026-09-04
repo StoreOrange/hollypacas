@@ -1,5 +1,34 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  .attendance-control-table {
+    min-width: 1180px;
+    font-size: .72rem;
+    line-height: 1.15;
+  }
+  .attendance-control-table > :not(caption) > * > * {
+    padding: .36rem .32rem;
+    white-space: nowrap;
+  }
+  .attendance-control-table thead th {
+    font-size: .64rem;
+    letter-spacing: .015em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+  }
+  .attendance-control-table .employee-name {
+    min-width: 155px;
+    white-space: normal;
+  }
+  .attendance-control-table .overtime-rule {
+    min-width: 180px;
+    max-width: 240px;
+    white-space: normal;
+  }
+  .attendance-control-table .badge {
+    font-size: .65rem;
+  }
+</style>
 <div class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
   <main class="p-4 p-lg-5">
@@ -21,7 +50,7 @@
         <div class="col-md-2"><label class="form-label">Hasta</label><input class="form-control" type="date" name="date_to" value="{{ selected_date_to.isoformat() }}" required></div>
         <div class="col-md-3"><label class="form-label">Area</label><select class="form-select" name="area_id"><option value="">Todas las areas</option>{% for area in areas %}<option value="{{ area.id }}" {% if selected_area_id == area.id %}selected{% endif %}>{{ area.name }}</option>{% endfor %}</select></div>
         <div class="col-md-3"><label class="form-label">Empleado</label><input class="form-control" name="search" value="{{ search }}" placeholder="Codigo o nombre"></div>
-        <div class="col-md-2"><button class="btn btn-primary w-100"><i class="bi bi-funnel me-1"></i>Filtrar</button></div>
+        <div class="col-md-2"><div class="d-grid gap-1"><button class="btn btn-primary" type="submit"><i class="bi bi-funnel me-1"></i>Filtrar</button><button class="btn btn-outline-danger btn-sm" type="submit" formaction="/attendance/control/pdf" formtarget="_blank"><i class="bi bi-file-earmark-pdf me-1"></i>Exportar PDF</button></div></div>
       </div></form>
 
       <div class="row g-3 mb-4">
@@ -40,13 +69,13 @@
 
       {% for group in groups %}
       <section class="card shadow-sm mb-4 overflow-hidden">
-        <div class="card-header bg-primary text-white py-3"><strong class="fs-5"><i class="bi bi-people-fill me-2"></i>{{ group.name }}</strong><span class="badge bg-light text-primary ms-2">{{ group.rows|length }}</span></div>
-        <div class="table-responsive"><table class="table table-hover align-middle mb-0">
+        <div class="card-header bg-primary text-white py-2"><strong><i class="bi bi-people-fill me-2"></i>{{ group.name }}</strong><span class="badge bg-light text-primary ms-2">{{ group.rows|length }}</span></div>
+        <div class="table-responsive"><table class="table table-hover align-middle mb-0 attendance-control-table">
           <thead class="table-light"><tr><th>Fecha</th><th>Codigo</th><th>Empleado</th><th>Cargo</th><th>Entrada</th><th>Salida</th><th>Marcadas</th><th>Tiempo total</th><th>Tiempo regular</th><th>Tiempo extra</th><th>Regla y calculo del extra</th><th>Estado</th></tr></thead>
           <tbody>{% for row in group.rows %}<tr>
-            <td class="fw-semibold">{{ row.date.strftime('%d/%m/%Y') }}</td><td>{{ row.employee.employee_code }}</td><td class="fw-semibold">{{ row.employee.full_name }}</td><td>{{ row.employee.position.name if row.employee.position else '-' }}</td>
+            <td class="fw-semibold">{{ row.date.strftime('%d/%m/%Y') }}</td><td>{{ row.employee.employee_code }}</td><td class="fw-semibold employee-name">{{ row.employee.full_name }}</td><td>{{ row.employee.position.name if row.employee.position else '-' }}</td>
             <td>{{ row.entry.strftime('%I:%M:%S %p') if row.entry else '--:--' }}</td><td>{{ row.exit.strftime('%I:%M:%S %p') if row.exit else '--:--' }}</td><td>{{ row.punch_count }}</td>
-            <td class="fw-semibold">{{ row.worked_label }}</td><td>{{ row.regular_label }}</td><td class="fw-bold {% if row.overtime_minutes %}text-success{% endif %}">{{ row.overtime_label }}</td><td><div class="fw-semibold small">{{ row.overtime_rule }}</div><div class="text-muted small">{{ row.overtime_detail }}</div></td><td><span class="badge text-bg-{{ row.status_class }}">{{ row.status_label }}</span></td>
+            <td class="fw-semibold">{{ row.worked_label }}</td><td>{{ row.regular_label }}</td><td class="fw-bold {% if row.overtime_minutes %}text-success{% endif %}">{{ row.overtime_label }}</td><td class="overtime-rule"><div class="fw-semibold">{{ row.overtime_rule }}</div><div class="text-muted">{{ row.overtime_detail }}</div></td><td><span class="badge text-bg-{{ row.status_class }}">{{ row.status_label }}</span></td>
           </tr>{% endfor %}</tbody>
         </table></div>
       </section>
