@@ -48,6 +48,19 @@
     font-weight: 700;
   }
   {% if pacasholl_libreado_enabled %}
+  .pacasholl-sales-banner {
+    display: block;
+    width: min(100%, 520px);
+    height: 170px;
+    object-fit: contain;
+    object-position: left center;
+  }
+  @media (max-width: 767px) {
+    .pacasholl-sales-banner {
+      width: 100%;
+      height: 130px;
+    }
+  }
   #layout main section.sticky {
     padding: .35rem .9rem !important;
     border-radius: 18px !important;
@@ -466,8 +479,12 @@
                 </ol>
               </nav>
             </div>
+            {% if pacasholl_libreado_enabled %}
+            <img class="pacasholl-sales-banner" src="/static/pacasholl-sales-banner.png" alt="Felices fiestas patrias te desea Pacas Hollywood">
+            {% else %}
             <div class="text-xl font-semibold text-ink leading-tight">Terminal de Venta Empresarial</div>
             <p class="text-xs text-slate max-w-xl">Gestiona ventas, inventario y pagos con un flujo rapido para atencion al cliente.</p>
+            {% endif %}
           </div>
           <div class="grid grid-cols-3 gap-2 lg:grid-cols-3">
             <div class="rounded-2xl border border-[#e9dbe8] bg-white/95 px-2 py-1 shadow-sm">
