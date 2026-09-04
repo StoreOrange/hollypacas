@@ -1,5 +1,6 @@
+from calendar import monthrange
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 from io import BytesIO
 from typing import List, Optional
 from urllib.parse import quote_plus
@@ -35,6 +36,83 @@ MONEY = Decimal("0.01")
 
 def _money(value) -> Decimal:
     return Decimal(str(value or 0)).quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def _debt_paid(db: Session, debt_id: int) -> tuple[Decimal, int]:
+    paid, installments = (
+        db.query(func.sum(PayrollCalculationDeduction.amount), func.count(PayrollCalculationDeduction.id))
+        .join(PayrollCalculation, PayrollCalculation.id == PayrollCalculationDeduction.calculation_id)
+        .join(PayrollPeriod, PayrollPeriod.id == PayrollCalculation.period_id)
+        .filter(
+            PayrollCalculationDeduction.employee_deduction_id == debt_id,
+            PayrollCalculationDeduction.amount > 0,
+            PayrollPeriod.status == "CLOSED",
+        )
+        .one()
+    )
+    return _money(paid), int(installments or 0)
+
+
+def _next_pay_date(value: date) -> date:
+    if value.day <= 15:
+        return value.replace(day=15)
+    return value.replace(day=monthrange(value.year, value.month)[1])
+
+
+def _advance_pay_date(value: date) -> date:
+    if value.day <= 15:
+        return value.replace(day=monthrange(value.year, value.month)[1])
+    year = value.year + (1 if value.month == 12 else 0)
+    month = 1 if value.month == 12 else value.month + 1
+    return date(year, month, 15)
+
+
+def _debt_schedule(db: Session, debt: PayrollEmployeeDeduction, visited=None) -> dict:
+    visited = set(visited or ())
+    paid, paid_installments = _debt_paid(db, debt.id)
+    balance = max(Decimal("0"), _money(debt.original_amount) - paid)
+    installment = max(MONEY, _money(debt.installment_amount))
+    remaining_installments = int((balance / installment).to_integral_value(rounding=ROUND_CEILING)) if balance else 0
+    dependency_waiting = False
+    dependency_end = None
+    dependency = None
+    if debt.depends_on_id and debt.depends_on_id not in visited:
+        dependency = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.id == debt.depends_on_id).first()
+        if dependency:
+            dependency_data = _debt_schedule(db, dependency, visited | {debt.id})
+            dependency_waiting = dependency_data["balance"] > 0
+            dependency_end = dependency_data["projected_end"]
+    if balance <= 0:
+        display_status = "PAGADA"
+    elif debt.status == "PAUSED" and (not debt.paused_until or debt.paused_until > date.today()):
+        display_status = "EN PAUSA"
+    elif dependency_waiting:
+        display_status = "ESPERANDO"
+    else:
+        display_status = "ACTIVA"
+    projected_end = None
+    if remaining_installments and not (debt.status == "PAUSED" and not debt.paused_until):
+        projected_start = max(date.today(), debt.start_date, debt.paused_until or debt.start_date)
+        if dependency_waiting:
+            if dependency_end:
+                projected_start = _advance_pay_date(dependency_end)
+            else:
+                projected_start = None
+        if projected_start:
+            projected_end = _next_pay_date(projected_start)
+            for _ in range(remaining_installments - 1):
+                projected_end = _advance_pay_date(projected_end)
+    return {
+        "paid": paid,
+        "paid_installments": paid_installments,
+        "balance": balance,
+        "remaining_amount": balance,
+        "remaining_installments": remaining_installments,
+        "display_status": display_status,
+        "projected_end": projected_end,
+        "dependency_waiting": dependency_waiting,
+        "dependency": dependency,
+    }
 
 
 def _next_employee_code(db: Session) -> str:
@@ -79,29 +157,10 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
     }
     device_links = db.query(AttendanceDeviceUser).order_by(AttendanceDeviceUser.device_name).all()
     deductions = db.query(PayrollEmployeeDeduction).order_by(PayrollEmployeeDeduction.created_at.desc()).all()
-    applied = dict(
-        db.query(
-            PayrollCalculationDeduction.employee_deduction_id,
-            func.count(PayrollCalculationDeduction.id),
-        )
-        .join(PayrollCalculation, PayrollCalculation.id == PayrollCalculationDeduction.calculation_id)
-        .join(PayrollPeriod, PayrollPeriod.id == PayrollCalculation.period_id)
-        .filter(PayrollPeriod.status == "CLOSED")
-        .group_by(PayrollCalculationDeduction.employee_deduction_id)
-        .all()
-    )
     deduction_rows = []
     for item in deductions:
-        paid_installments = int(applied.get(item.id, 0))
-        paid_amount = min(_money(item.original_amount), _money(item.installment_amount) * paid_installments)
-        deduction_rows.append(
-            {
-                "item": item,
-                "paid_installments": paid_installments,
-                "remaining_installments": max(0, item.installment_count - paid_installments),
-                "remaining_amount": max(Decimal("0"), _money(item.original_amount) - paid_amount),
-            }
-        )
+        schedule = _debt_schedule(db, item)
+        deduction_rows.append({"item": item, **schedule})
     periods = db.query(PayrollPeriod).order_by(PayrollPeriod.date_from.desc()).all()
     selected_period_id = request.query_params.get("period_id")
     selected_period = None
@@ -153,7 +212,7 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
     if selected_period:
         for item in db.query(PayrollEmployeeDeduction).join(HREmployee).filter(
             HREmployee.branch_id == selected_period.branch_id,
-            PayrollEmployeeDeduction.status == "ACTIVE",
+            PayrollEmployeeDeduction.status.in_(["ACTIVE", "PAUSED"]),
             PayrollEmployeeDeduction.start_date <= selected_period.date_to,
         ).order_by(PayrollEmployeeDeduction.created_at).all():
             period_deductions.setdefault(item.employee_id, []).append(item)
@@ -361,13 +420,190 @@ def create_deduction_type(request: Request, name: str = Form(...), category: str
 
 
 @router.post("/payroll/deductions")
-def create_employee_deduction(request: Request, employee_id: int = Form(...), deduction_type_id: int = Form(...), description: str = Form(...), original_amount: Decimal = Form(..., gt=0), installment_count: int = Form(..., ge=1, le=240), start_date: date = Form(...), notes: str = Form(""), db: Session = Depends(get_db)):
-    _browser_admin(request, db)
+def create_employee_deduction(request: Request, employee_id: int = Form(...), deduction_type_id: int = Form(...), description: str = Form(...), original_amount: Decimal = Form(..., gt=0), installment_count: int = Form(..., ge=1, le=240), start_date: date = Form(...), depends_on_id: str = Form(""), notes: str = Form(""), db: Session = Depends(get_db)):
+    user = _browser_admin(request, db)
+    dependency = None
+    if depends_on_id.isdigit():
+        dependency = db.query(PayrollEmployeeDeduction).filter(
+            PayrollEmployeeDeduction.id == int(depends_on_id),
+            PayrollEmployeeDeduction.employee_id == employee_id,
+        ).first()
+        if not dependency:
+            return RedirectResponse("/payroll?error=La+deuda+dependiente+debe+pertenecer+al+mismo+empleado#deductions", status_code=303)
     amount = _money(original_amount)
     installment = (amount / installment_count).quantize(MONEY, rounding=ROUND_HALF_UP)
-    db.add(PayrollEmployeeDeduction(employee_id=employee_id, deduction_type_id=deduction_type_id, description=description.strip(), original_amount=amount, installment_count=installment_count, installment_amount=installment, start_date=start_date, notes=notes.strip() or None))
+    debt = PayrollEmployeeDeduction(employee_id=employee_id, deduction_type_id=deduction_type_id, description=description.strip(), original_amount=amount, installment_count=installment_count, installment_amount=installment, start_date=start_date, depends_on_id=dependency.id if dependency else None, notes=notes.strip() or None, updated_by=user.email)
+    db.add(debt)
+    db.flush()
+    setting = db.query(PayrollEmployeeDeductionSetting).filter(
+        PayrollEmployeeDeductionSetting.employee_id == employee_id,
+        PayrollEmployeeDeductionSetting.deduction_type_id == deduction_type_id,
+    ).first()
+    if not setting:
+        setting = PayrollEmployeeDeductionSetting(employee_id=employee_id, deduction_type_id=deduction_type_id)
+        db.add(setting)
+    setting.enabled = True
+    _refresh_debt_in_draft_calculations(db, debt)
     db.commit()
-    return RedirectResponse("/payroll?ok=Deduccion+planificada", status_code=303)
+    return RedirectResponse("/payroll?ok=Deuda+registrada+y+planificada#deductions", status_code=303)
+
+
+def _valid_debt_dependency(db: Session, debt: PayrollEmployeeDeduction, dependency_id: Optional[int]) -> bool:
+    if not dependency_id:
+        return True
+    current_id = dependency_id
+    visited = {debt.id}
+    while current_id:
+        if current_id in visited:
+            return False
+        visited.add(current_id)
+        row = db.query(PayrollEmployeeDeduction).filter(
+            PayrollEmployeeDeduction.id == current_id,
+            PayrollEmployeeDeduction.employee_id == debt.employee_id,
+        ).first()
+        if not row:
+            return False
+        current_id = row.depends_on_id
+    return True
+
+
+def _refresh_debt_in_draft_calculations(db: Session, debt: PayrollEmployeeDeduction) -> None:
+    paid, paid_installments = _debt_paid(db, debt.id)
+    balance = max(Decimal("0"), _money(debt.original_amount) - paid)
+    calculations = (
+        db.query(PayrollCalculation)
+        .join(PayrollPeriod, PayrollPeriod.id == PayrollCalculation.period_id)
+        .filter(
+            PayrollCalculation.employee_id == debt.employee_id,
+            PayrollPeriod.status == "DRAFT",
+        )
+        .all()
+    )
+    dependency_ready = True
+    if debt.depends_on_id:
+        dependency = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.id == debt.depends_on_id).first()
+        if dependency:
+            dependency_paid, _ = _debt_paid(db, dependency.id)
+            dependency_ready = _money(dependency.original_amount) - dependency_paid <= 0
+    for calculation in calculations:
+        line = next((row for row in calculation.deduction_lines if row.employee_deduction_id == debt.id), None)
+        period = calculation.period
+        paused = debt.status == "PAUSED" and (not debt.paused_until or debt.paused_until > period.date_to)
+        should_charge = balance > 0 and debt.status != "COMPLETED" and debt.start_date <= period.date_to and not paused and dependency_ready
+        amount = min(_money(debt.installment_amount), balance) if should_charge else Decimal("0")
+        if line:
+            line.amount = amount
+            line.installment_number = paid_installments + 1
+        elif should_charge:
+            calculation.deduction_lines.append(PayrollCalculationDeduction(employee_deduction_id=debt.id, amount=amount, installment_number=paid_installments + 1))
+        _update_calculation_totals(db, calculation)
+
+
+def _refresh_debt_tree(db: Session, debt: PayrollEmployeeDeduction, visited: Optional[set[int]] = None) -> None:
+    """Recalculate a debt and every debt whose schedule depends on it."""
+    visited = visited or set()
+    if debt.id in visited:
+        return
+    visited.add(debt.id)
+    _refresh_debt_in_draft_calculations(db, debt)
+    children = db.query(PayrollEmployeeDeduction).filter(
+        PayrollEmployeeDeduction.depends_on_id == debt.id
+    ).all()
+    for child in children:
+        _refresh_debt_tree(db, child, visited)
+
+
+@router.post("/payroll/deductions/{deduction_id}/edit")
+def edit_employee_deduction(
+    deduction_id: int,
+    request: Request,
+    deduction_type_id: int = Form(...),
+    description: str = Form(...),
+    remaining_amount: Decimal = Form(..., ge=0),
+    future_installments: int = Form(..., ge=1, le=240),
+    start_date: date = Form(...),
+    depends_on_id: str = Form(""),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = _browser_admin(request, db)
+    debt = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.id == deduction_id).first()
+    if not debt:
+        raise HTTPException(404, "Deuda no encontrada")
+    deduction_type = db.query(PayrollDeductionType).filter(PayrollDeductionType.id == deduction_type_id).first()
+    if not deduction_type:
+        return RedirectResponse("/payroll?error=Tipo+de+deduccion+invalido#deductions", status_code=303)
+    dependency_id = int(depends_on_id) if depends_on_id.isdigit() else None
+    if not _valid_debt_dependency(db, debt, dependency_id):
+        return RedirectResponse("/payroll?error=Dependencia+invalida+o+circular#deductions", status_code=303)
+    paid, paid_installments = _debt_paid(db, debt.id)
+    balance = _money(remaining_amount)
+    debt.deduction_type_id = deduction_type.id
+    setting = db.query(PayrollEmployeeDeductionSetting).filter(
+        PayrollEmployeeDeductionSetting.employee_id == debt.employee_id,
+        PayrollEmployeeDeductionSetting.deduction_type_id == deduction_type.id,
+    ).first()
+    if not setting:
+        setting = PayrollEmployeeDeductionSetting(
+            employee_id=debt.employee_id,
+            deduction_type_id=deduction_type.id,
+        )
+        db.add(setting)
+    setting.enabled = True
+    debt.description = description.strip()
+    debt.original_amount = _money(paid + balance)
+    debt.installment_count = paid_installments + future_installments
+    debt.installment_amount = _money(balance / future_installments) if balance else MONEY
+    debt.start_date = start_date
+    debt.depends_on_id = dependency_id
+    debt.notes = notes.strip() or None
+    debt.updated_by = user.email
+    debt.updated_at = datetime.utcnow()
+    if balance <= 0:
+        debt.status = "COMPLETED"
+    elif debt.status == "COMPLETED":
+        debt.status = "ACTIVE"
+    _refresh_debt_tree(db, debt)
+    db.commit()
+    return RedirectResponse("/payroll?ok=Deuda+actualizada+conservando+los+pagos+aplicados#deductions", status_code=303)
+
+
+@router.post("/payroll/deductions/{deduction_id}/status")
+def update_employee_deduction_status(
+    deduction_id: int,
+    request: Request,
+    action: str = Form(...),
+    pause_reason: str = Form(""),
+    paused_until: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = _browser_admin(request, db)
+    debt = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.id == deduction_id).first()
+    if not debt:
+        raise HTTPException(404, "Deuda no encontrada")
+    if action == "pause":
+        if len(pause_reason.strip()) < 2:
+            return RedirectResponse("/payroll?error=Indique+el+motivo+de+la+pausa#deductions", status_code=303)
+        try:
+            resume_date = date.fromisoformat(paused_until) if paused_until.strip() else None
+        except ValueError:
+            return RedirectResponse("/payroll?error=Fecha+de+reanudacion+invalida#deductions", status_code=303)
+        debt.status = "PAUSED"
+        debt.paused_until = resume_date
+        debt.pause_reason = pause_reason.strip()
+        debt.paused_at = datetime.utcnow()
+    elif action == "resume":
+        debt.status = "ACTIVE"
+        debt.paused_until = None
+        debt.pause_reason = None
+        debt.paused_at = None
+    else:
+        return RedirectResponse("/payroll?error=Accion+de+deuda+invalida#deductions", status_code=303)
+    debt.updated_by = user.email
+    debt.updated_at = datetime.utcnow()
+    _refresh_debt_tree(db, debt)
+    db.commit()
+    return RedirectResponse("/payroll?ok=Calendario+de+cobro+actualizado#deductions", status_code=303)
 
 
 @router.post("/payroll/periods")
@@ -471,7 +707,12 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
                 PayrollEmployeeDeductionSetting.enabled.is_(True),
             ).all()
         }
-        active_deductions = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.employee_id == profile.employee_id, PayrollEmployeeDeduction.deduction_type_id.in_(enabled_type_ids), PayrollEmployeeDeduction.status == "ACTIVE", PayrollEmployeeDeduction.start_date <= period.date_to).all() if enabled_type_ids else []
+        active_deductions = db.query(PayrollEmployeeDeduction).filter(
+            PayrollEmployeeDeduction.employee_id == profile.employee_id,
+            PayrollEmployeeDeduction.deduction_type_id.in_(enabled_type_ids),
+            PayrollEmployeeDeduction.status.in_(["ACTIVE", "PAUSED"]),
+            PayrollEmployeeDeduction.start_date <= period.date_to,
+        ).all() if enabled_type_ids else []
         overrides = {
             row.employee_deduction_id: row
             for row in db.query(PayrollDeductionOverride).filter(
@@ -480,25 +721,32 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
             ).all()
         } if active_deductions else {}
         for deduction in active_deductions:
+            paid_amount, applied_count = _debt_paid(db, deduction.id)
+            remaining = max(Decimal("0"), _money(deduction.original_amount) - paid_amount)
+            if remaining <= 0:
+                deduction.status = "COMPLETED"
+                continue
+            if deduction.status == "PAUSED":
+                if not deduction.paused_until or deduction.paused_until > period.date_to:
+                    continue
+                deduction.status = "ACTIVE"
+                deduction.paused_until = None
+                deduction.pause_reason = None
+                deduction.paused_at = None
+            if deduction.depends_on_id:
+                dependency = db.query(PayrollEmployeeDeduction).filter(
+                    PayrollEmployeeDeduction.id == deduction.depends_on_id
+                ).first()
+                if dependency:
+                    dependency_paid, _ = _debt_paid(db, dependency.id)
+                    if max(Decimal("0"), _money(dependency.original_amount) - dependency_paid) > 0:
+                        continue
             override = overrides.get(deduction.id)
             if override and not override.apply_charge:
                 continue
-            applied_count = (
-                db.query(func.count(PayrollCalculationDeduction.id))
-                .join(PayrollCalculation, PayrollCalculation.id == PayrollCalculationDeduction.calculation_id)
-                .join(PayrollPeriod, PayrollPeriod.id == PayrollCalculation.period_id)
-                .filter(
-                    PayrollCalculationDeduction.employee_deduction_id == deduction.id,
-                    PayrollPeriod.status == "CLOSED",
-                )
-                .scalar()
-                or 0
-            )
-            if applied_count >= deduction.installment_count:
-                continue
-            amount = min(_money(deduction.installment_amount), _money(deduction.original_amount) - (_money(deduction.installment_amount) * applied_count))
+            amount = min(_money(deduction.installment_amount), remaining)
             if override and override.override_amount is not None:
-                amount = min(_money(override.override_amount), _money(deduction.original_amount) - (_money(deduction.installment_amount) * applied_count))
+                amount = min(_money(override.override_amount), remaining)
             calc.deduction_lines.append(PayrollCalculationDeduction(employee_deduction_id=deduction.id, amount=amount, installment_number=applied_count + 1))
             total_deductions += amount
         adjustments = db.query(PayrollAdjustment).filter(PayrollAdjustment.period_id == period.id, PayrollAdjustment.employee_id == profile.employee_id, PayrollAdjustment.active.is_(True)).order_by(PayrollAdjustment.created_at, PayrollAdjustment.id).all()
@@ -553,16 +801,7 @@ def update_period_deduction(calculation_id: int, deduction_id: int, request: Req
     deduction = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.id == deduction_id).first()
     if not calculation or calculation.status == "CLOSED" or not deduction or deduction.employee_id != calculation.employee_id:
         return RedirectResponse("/payroll?error=Cambio+de+deduccion+no+permitido", status_code=303)
-    paid_amount = _money(
-        db.query(func.sum(PayrollCalculationDeduction.amount))
-        .join(PayrollCalculation, PayrollCalculation.id == PayrollCalculationDeduction.calculation_id)
-        .join(PayrollPeriod, PayrollPeriod.id == PayrollCalculation.period_id)
-        .filter(
-            PayrollCalculationDeduction.employee_deduction_id == deduction.id,
-            PayrollPeriod.status == "CLOSED",
-        )
-        .scalar()
-    )
+    paid_amount, paid_installments = _debt_paid(db, deduction.id)
     remaining = max(Decimal("0"), _money(deduction.original_amount) - paid_amount)
     row = db.query(PayrollDeductionOverride).filter(PayrollDeductionOverride.period_id == calculation.period_id, PayrollDeductionOverride.employee_deduction_id == deduction.id).first()
     if not row:
@@ -592,12 +831,12 @@ def update_period_deduction(calculation_id: int, deduction_id: int, request: Req
         if line:
             line.amount = restored_amount
         else:
-            calculation.deduction_lines.append(PayrollCalculationDeduction(employee_deduction_id=deduction.id, amount=restored_amount, installment_number=1))
+            calculation.deduction_lines.append(PayrollCalculationDeduction(employee_deduction_id=deduction.id, amount=restored_amount, installment_number=paid_installments + 1))
     elif action == "amount":
         if line:
             line.amount = temporary
         else:
-            calculation.deduction_lines.append(PayrollCalculationDeduction(employee_deduction_id=deduction.id, amount=temporary, installment_number=1))
+            calculation.deduction_lines.append(PayrollCalculationDeduction(employee_deduction_id=deduction.id, amount=temporary, installment_number=paid_installments + 1))
     db.flush()
     _update_calculation_totals(db, calculation)
     db.commit()
@@ -712,7 +951,7 @@ def payroll_reports(request: Request, period_id: str = "", branch_id: str = "", 
     deduction_lines = (
         db.query(PayrollCalculationDeduction)
         .join(PayrollCalculation)
-        .filter(PayrollCalculation.period_id == selected.id).all()
+        .filter(PayrollCalculation.period_id == selected.id, PayrollCalculationDeduction.amount > 0).all()
         if selected else []
     )
     adjustments = db.query(PayrollAdjustment).filter(PayrollAdjustment.period_id == selected.id).order_by(PayrollAdjustment.created_at.desc()).all() if selected else []
@@ -721,9 +960,8 @@ def payroll_reports(request: Request, period_id: str = "", branch_id: str = "", 
         debts = debts.filter(HREmployee.branch_id == int(branch_id))
     debt_rows = []
     for debt in debts.order_by(HREmployee.full_name).all():
-        paid_lines = db.query(PayrollCalculationDeduction).join(PayrollCalculation).join(PayrollPeriod).filter(PayrollCalculationDeduction.employee_deduction_id == debt.id, PayrollPeriod.status == "CLOSED").order_by(PayrollPeriod.date_from).all()
-        paid = _money(sum((line.amount for line in paid_lines), Decimal("0")))
-        debt_rows.append({"debt": debt, "lines": paid_lines, "paid": paid, "balance": max(Decimal("0"), _money(debt.original_amount) - paid)})
+        paid_lines = db.query(PayrollCalculationDeduction).join(PayrollCalculation).join(PayrollPeriod).filter(PayrollCalculationDeduction.employee_deduction_id == debt.id, PayrollCalculationDeduction.amount > 0, PayrollPeriod.status == "CLOSED").order_by(PayrollPeriod.date_from).all()
+        debt_rows.append({"debt": debt, "lines": paid_lines, **_debt_schedule(db, debt)})
     return request.app.state.templates.TemplateResponse("payroll_reports.html", {"request": request, "user": user, "branches": branches, "periods": periods, "selected_period": selected, "area_groups": area_groups, "calculations": calculations, "deduction_lines": deduction_lines, "adjustments": adjustments, "debt_rows": debt_rows})
 
 

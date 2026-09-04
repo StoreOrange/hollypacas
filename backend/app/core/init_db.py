@@ -1709,6 +1709,20 @@ def init_db() -> None:
         if "identificacion" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE clientes ADD COLUMN identificacion VARCHAR(40)"))
+    if "payroll_employee_deductions" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("payroll_employee_deductions")}
+        payroll_deduction_columns = {
+            "depends_on_id": "INTEGER REFERENCES payroll_employee_deductions(id)",
+            "paused_until": "DATE",
+            "pause_reason": "VARCHAR(240)",
+            "paused_at": "TIMESTAMP",
+            "updated_by": "VARCHAR(160)",
+            "updated_at": "TIMESTAMP DEFAULT NOW()",
+        }
+        for column_name, column_sql in payroll_deduction_columns.items():
+            if column_name not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE payroll_employee_deductions ADD COLUMN {column_name} {column_sql}"))
     if "ventas_facturas" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("ventas_facturas")}
         if "operation_key" not in columns:

@@ -95,12 +95,19 @@ class PayrollEmployeeDeduction(Base):
     installment_count = Column(Integer, nullable=False, default=1)
     installment_amount = Column(Numeric(14, 2), nullable=False)
     start_date = Column(Date, nullable=False, default=date.today)
+    depends_on_id = Column(Integer, ForeignKey("payroll_employee_deductions.id"), nullable=True)
     status = Column(String(20), nullable=False, default="ACTIVE")
+    paused_until = Column(Date, nullable=True)
+    pause_reason = Column(String(240), nullable=True)
+    paused_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
+    updated_by = Column(String(160), nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     employee = relationship("HREmployee")
     deduction_type = relationship("PayrollDeductionType")
+    depends_on = relationship("PayrollEmployeeDeduction", remote_side=[id], foreign_keys=[depends_on_id])
 
 
 class PayrollCalculation(Base):
