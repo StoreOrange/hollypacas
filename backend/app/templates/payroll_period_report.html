@@ -55,21 +55,30 @@
     .footnote { margin-top:28px; padding-top:10px; border-top:1px solid var(--line); color:var(--muted); font-size:9px; text-align:center; }
     @media(max-width:900px) { .summary{grid-template-columns:repeat(2,1fr)} .document-head{grid-template-columns:1fr} .document-meta{width:100%} .sheet{padding:18px} }
     @media print {
-      @page { size:landscape; margin:9mm; }
-      body { background:#fff; font-size:9px; }
+      @page { size:A4 landscape; margin:6mm; }
+      html, body { margin:0; padding:0; background:#fff; font-size:8px; }
       .no-print { display:none!important; }
-      .sheet { width:100%; margin:0; padding:0; border-radius:0; box-shadow:none; }
+      .sheet { width:auto; max-width:none; margin:0; padding:0; border-radius:0; box-shadow:none; }
       .document-head { padding-bottom:10px; }
       .logo { width:48px; height:48px; }
       h1 { font-size:19px; }
       .summary { margin:10px 0; }
       .summary-card { padding:7px 8px; }
       .summary-card strong { font-size:11px; }
-      .area { margin-top:9px; break-inside:avoid; }
-      table { min-width:0; }
-      th { padding:5px 4px; font-size:7px; }
-      td { padding:5px 4px; font-size:8px; }
-      .signatures { margin-top:38px; }
+      .area { margin-top:9px; overflow:visible; break-inside:auto; page-break-inside:auto; }
+      .area-head { break-after:avoid; page-break-after:avoid; }
+      .table-wrap { width:100%; overflow:visible; }
+      table { width:100%; min-width:0; table-layout:fixed; break-inside:auto; page-break-inside:auto; }
+      thead { display:table-header-group; }
+      tfoot { display:table-row-group; }
+      tr { break-inside:avoid; page-break-inside:avoid; }
+      th { padding:4px 3px; font-size:6.3px; line-height:1.1; white-space:normal; }
+      td { padding:4px 3px; font-size:7px; line-height:1.15; }
+      .employee { white-space:normal; overflow:visible; text-overflow:clip; }
+      .employee small { font-size:6px; }
+      .num { white-space:nowrap; font-size:6.7px; }
+      .grand-total { break-inside:avoid; page-break-inside:avoid; }
+      .signatures { margin-top:34px; break-inside:avoid; page-break-inside:avoid; }
       .footnote { margin-top:16px; }
     }
   </style>
