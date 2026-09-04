@@ -10,7 +10,7 @@
     <string>/Users/macbookpro/Library/Application Support/HollywoodPacas/attendance-agent/sync_attendance_ta040.py</string>
     <string>--watch</string>
     <string>--interval</string>
-    <string>2</string>
+    <string>3</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/macbookpro/Library/Application Support/HollywoodPacas/attendance-agent</string>
@@ -20,6 +20,11 @@
   <true/>
   <key>ProcessType</key>
   <string>Background</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+  </dict>
   <key>StandardOutPath</key>
   <string>/tmp/hollywoodpacas-attendance-agent.log</string>
   <key>StandardErrorPath</key>
