@@ -35,6 +35,83 @@
   .payroll-detail-table .badge {
     font-size: .72rem !important;
   }
+  .debt-form-card .form-label {
+    margin-bottom: .25rem;
+    font-size: .76rem;
+    font-weight: 700;
+    color: var(--bs-secondary-color);
+  }
+  .debt-form-card .form-control,
+  .debt-form-card .form-select {
+    min-height: 38px;
+    font-size: .82rem;
+  }
+  .debt-grid-wrap {
+    border: 1px solid var(--bs-border-color);
+    border-radius: .75rem;
+    overflow-x: auto;
+  }
+  .debt-grid {
+    min-width: 1080px;
+    margin-bottom: 0;
+    table-layout: fixed;
+    font-size: .78rem;
+  }
+  .debt-grid > :not(caption) > * > * {
+    padding: .65rem .6rem;
+    vertical-align: middle;
+  }
+  .debt-grid thead th {
+    border-bottom-width: 1px;
+    background: var(--bs-tertiary-bg);
+    color: var(--bs-secondary-color);
+    font-size: .67rem;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .debt-grid tbody tr:hover > * {
+    background: color-mix(in srgb, var(--bs-primary) 4%, white);
+  }
+  .debt-employee-name,
+  .debt-concept,
+  .debt-dependency-name,
+  .debt-pause-reason {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .debt-employee-name { font-size: .84rem; }
+  .debt-concept { max-width: 250px; color: var(--bs-secondary-color); }
+  .debt-money-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(72px, 1fr));
+    gap: .35rem;
+  }
+  .debt-money-item {
+    min-width: 0;
+    padding: .38rem .45rem;
+    border-radius: .55rem;
+    background: var(--bs-tertiary-bg);
+    white-space: nowrap;
+  }
+  .debt-money-item small {
+    display: block;
+    margin-bottom: .08rem;
+    color: var(--bs-secondary-color);
+    font-size: .61rem;
+    font-weight: 800;
+    letter-spacing: .035em;
+    text-transform: uppercase;
+  }
+  .debt-money-item strong { font-size: .76rem; }
+  .debt-grid .debt-action { white-space: nowrap; text-align: right; }
+  @media (min-width: 992px) {
+    #newDebtForm > .col-12 { width: 33.333333%; }
+    #newDebtForm > .col-6 { width: 16.666667%; }
+  }
 </style>
 <div class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -102,10 +179,10 @@
       </div></div></section>
 
       <section class="tab-pane fade" id="deductions"><div class="row g-3">
-        <div class="col-lg-4"><div class="card shadow-sm"><div class="card-body"><div class="d-flex justify-content-between"><h2 class="h6">Registrar deuda o préstamo</h2><button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#deductionTypeModal" type="button">Tipos</button></div>
+        <div class="col-12"><div class="card shadow-sm debt-form-card"><div class="card-body"><div class="d-flex justify-content-between align-items-center mb-2"><div><h2 class="h6 mb-0">Registrar deuda o préstamo</h2><small class="text-muted">Cree el compromiso y programe sus cuotas quincenales.</small></div><button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#deductionTypeModal" type="button"><i class="bi bi-tags me-1"></i>Tipos</button></div>
           <form method="post" action="/payroll/deductions" class="row g-2" id="newDebtForm"><div class="col-12"><label class="form-label">Empleado</label><select class="form-select" name="employee_id" id="newDebtEmployee" required><option value="">Seleccione</option>{% for e in employees if e.status == 'ACTIVE' %}<option value="{{ e.id }}">{{ e.full_name }}</option>{% endfor %}</select></div><div class="col-12"><label class="form-label">Tipo</label><select class="form-select" name="deduction_type_id" required>{% for t in deduction_types %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></div><div class="col-12"><label class="form-label">Descripción</label><input class="form-control" name="description" required></div><div class="col-6"><label class="form-label">Monto total</label><input class="form-control" type="number" min="0.01" step="0.01" name="original_amount" required></div><div class="col-6"><label class="form-label">Cuotas quincenales</label><input class="form-control" type="number" min="1" max="240" name="installment_count" value="1" required></div><div class="col-12"><label class="form-label">Iniciar desde</label><input class="form-control" type="date" name="start_date" required></div><div class="col-12"><label class="form-label">Cobrar después de otra deuda (opcional)</label><select class="form-select" name="depends_on_id" id="newDebtDependency"><option value="">Sin dependencia</option>{% for debt_row in deduction_rows if debt_row.balance > 0 %}<option value="{{ debt_row.item.id }}" data-employee-id="{{ debt_row.item.employee_id }}" hidden>{{ debt_row.item.description }} · saldo C$ {{ '%.2f'|format(debt_row.balance) }}</option>{% endfor %}</select><div class="form-text">Se muestran únicamente las deudas pendientes del empleado seleccionado.</div></div><div class="col-12"><label class="form-label">Notas</label><textarea class="form-control" name="notes" rows="2"></textarea></div><div class="col-12"><button class="btn btn-primary w-100"><i class="bi bi-journal-plus me-1"></i>Registrar deuda</button></div></form>
         </div></div></div>
-        <div class="col-lg-8"><div class="card shadow-sm"><div class="card-body"><h2 class="h6">Control rígido por empleado</h2><div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Empleado / concepto</th><th>Cuota</th><th>Pagado</th><th>Saldo</th><th>Dependencia</th><th>Proyección</th><th>Estado</th><th></th></tr></thead><tbody>{% for row in deduction_rows %}<tr><td><strong>{{ row.item.employee.full_name }}</strong><br><small>{{ row.item.deduction_type.name }} · {{ row.item.description }}</small></td><td>C$ {{ '%.2f'|format(row.item.installment_amount) }}</td><td>C$ {{ '%.2f'|format(row.paid) }}<br><small>{{ row.paid_installments }} aplicada(s)</small></td><td><strong>C$ {{ '%.2f'|format(row.balance) }}</strong><br><small>{{ row.remaining_installments }} cuota(s)</small></td><td>{% if row.item.depends_on %}<span class="badge text-bg-warning">Después de</span><div class="small">{{ row.item.depends_on.description }}</div>{% else %}<span class="text-muted">Sin dependencia</span>{% endif %}</td><td>{% if row.projected_end %}{{ row.projected_end.strftime('%d/%m/%Y') }}{% elif row.balance <= 0 %}Finalizada{% else %}<span class="text-muted">Sin fecha por pausa</span>{% endif %}</td><td><span class="badge {% if row.display_status == 'ACTIVA' %}text-bg-success{% elif row.display_status == 'ESPERANDO' %}text-bg-warning{% elif row.display_status == 'EN PAUSA' %}text-bg-secondary{% else %}text-bg-primary{% endif %}">{{ row.display_status }}</span>{% if row.item.pause_reason %}<div class="small text-muted">{{ row.item.pause_reason }}{% if row.item.paused_until %} · hasta {{ row.item.paused_until.strftime('%d/%m/%Y') }}{% endif %}</div>{% endif %}</td><td><button class="btn btn-outline-primary btn-sm text-nowrap" type="button" data-bs-toggle="modal" data-bs-target="#editDebt{{ row.item.id }}"><i class="bi bi-pencil-square me-1"></i>Gestionar</button></td></tr>{% else %}<tr><td colspan="8" class="text-muted">No hay deudas registradas.</td></tr>{% endfor %}</tbody></table></div></div></div></div>
+        <div class="col-12"><div class="card shadow-sm"><div class="card-body"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><h2 class="h6 mb-0">Control de préstamos por empleado</h2><small class="text-muted">Saldos, cuotas, dependencias y pausas en una sola vista.</small></div><span class="badge rounded-pill text-bg-light border text-secondary">{{ deduction_rows|length }} registro(s)</span></div><div class="debt-grid-wrap"><table class="table table-hover align-middle debt-grid"><colgroup><col style="width:24%"><col style="width:31%"><col style="width:11%"><col style="width:14%"><col style="width:12%"><col style="width:8%"></colgroup><thead><tr><th>Empleado y concepto</th><th>Resumen financiero</th><th>Plan de cobro</th><th>Dependencia</th><th>Estado y fecha</th><th class="text-end">Acción</th></tr></thead><tbody>{% for row in deduction_rows %}<tr><td><strong class="debt-employee-name" title="{{ row.item.employee.full_name }}">{{ row.item.employee.full_name }}</strong><span class="badge rounded-pill text-bg-light border text-secondary mt-1">{{ row.item.deduction_type.name }}</span><span class="debt-concept mt-1" title="{{ row.item.description }}">{{ row.item.description }}</span></td><td><div class="debt-money-grid"><div class="debt-money-item"><small>Original</small><strong>C$ {{ '%.2f'|format(row.item.original_amount) }}</strong></div><div class="debt-money-item"><small>Pagado</small><strong class="text-success">C$ {{ '%.2f'|format(row.paid) }}</strong></div><div class="debt-money-item"><small>Saldo</small><strong class="text-primary">C$ {{ '%.2f'|format(row.balance) }}</strong></div></div></td><td class="text-nowrap"><strong>C$ {{ '%.2f'|format(row.item.installment_amount) }}</strong><div class="text-muted small">{{ row.remaining_installments }} pendiente(s)</div><div class="text-muted small">{{ row.paid_installments }} aplicada(s)</div></td><td>{% if row.item.depends_on %}<span class="badge text-bg-warning mb-1">Después de</span><span class="debt-dependency-name" title="{{ row.item.depends_on.description }}">{{ row.item.depends_on.description }}</span>{% else %}<span class="badge text-bg-light border text-secondary">Independiente</span>{% endif %}</td><td><span class="badge rounded-pill {% if row.display_status == 'ACTIVA' %}text-bg-success{% elif row.display_status == 'ESPERANDO' %}text-bg-warning{% elif row.display_status == 'EN PAUSA' %}text-bg-secondary{% else %}text-bg-primary{% endif %}">{{ row.display_status }}</span><div class="small text-nowrap mt-1">{% if row.projected_end %}<i class="bi bi-calendar3 me-1"></i>{{ row.projected_end.strftime('%d/%m/%Y') }}{% elif row.balance <= 0 %}Finalizada{% else %}Sin fecha estimada{% endif %}</div>{% if row.item.pause_reason %}<span class="debt-pause-reason small text-muted" title="{{ row.item.pause_reason }}">{{ row.item.pause_reason }}</span>{% endif %}</td><td class="debt-action"><button class="btn btn-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#editDebt{{ row.item.id }}" title="Editar, pausar o reprogramar"><i class="bi bi-pencil-square"></i><span class="visually-hidden">Gestionar</span></button></td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted py-4"><i class="bi bi-inbox fs-4 d-block mb-1"></i>No hay deudas registradas.</td></tr>{% endfor %}</tbody></table></div></div></div></div>
       </div></section>
 
       <section class="tab-pane fade" id="holidays"><div class="row g-3"><div class="col-lg-5"><div class="card shadow-sm"><div class="card-body"><h2 class="h6">Registrar dia feriado</h2><form method="post" action="/payroll/holidays" class="row g-2"><div class="col-12"><label class="form-label">Fecha</label><input class="form-control" type="date" name="holiday_date" required></div><div class="col-12"><label class="form-label">Descripcion</label><input class="form-control" name="name" required></div><div class="col-12"><label class="form-label">Periodo donde se pagara</label><select class="form-select" name="period_id"><option value="">Asignar luego</option>{% for p in periods %}<option value="{{ p.id }}">{{ p.code }}</option>{% endfor %}</select></div><div class="col-12"><button class="btn btn-primary w-100">Guardar feriado</button></div></form></div></div></div><div class="col-lg-7"><div class="card shadow-sm"><div class="card-body"><h2 class="h6">Feriados registrados</h2><table class="table table-sm"><thead><tr><th>Fecha</th><th>Descripcion</th><th>Periodo</th><th>Trabajo extra</th></tr></thead><tbody>{% for h in holidays %}<tr><td>{{ h.holiday_date.strftime('%d/%m/%Y') }}</td><td>{{ h.name }}</td><td>{{ h.period.code if h.period else 'Pendiente' }}</td><td>{{ 'Si' if h.worked_as_overtime else 'No' }}</td></tr>{% else %}<tr><td colspan="4" class="text-muted">No hay feriados registrados.</td></tr>{% endfor %}</tbody></table></div></div></div></div></section>
