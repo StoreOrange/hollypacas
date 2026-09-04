@@ -38,6 +38,10 @@ def _money(value) -> Decimal:
     return Decimal(str(value or 0)).quantize(MONEY, rounding=ROUND_HALF_UP)
 
 
+def _format_money(value) -> str:
+    return f"{_money(value):,.2f}"
+
+
 def _debt_paid(db: Session, debt_id: int) -> tuple[Decimal, int]:
     paid, installments = (
         db.query(func.sum(PayrollCalculationDeduction.amount), func.count(PayrollCalculationDeduction.id))
@@ -1072,6 +1076,7 @@ def payroll_period_html(period_id: int, request: Request, db: Session = Depends(
             "summary": summary,
             "generated_at": datetime.now(),
             "branding": getattr(request.state, "branding", {}) or {},
+            "format_money": _format_money,
         },
     )
 
@@ -1094,14 +1099,14 @@ def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(g
 
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
     from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     buffer = BytesIO()
-    page_size = landscape(letter)
-    doc = SimpleDocTemplate(buffer, pagesize=page_size, leftMargin=10 * mm, rightMargin=10 * mm, topMargin=14 * mm, bottomMargin=14 * mm, title=f"Planilla {period.code}", author="Hollywood Pacas")
+    page_size = landscape(A4)
+    doc = SimpleDocTemplate(buffer, pagesize=page_size, leftMargin=10 * mm, rightMargin=10 * mm, topMargin=10 * mm, bottomMargin=12 * mm, title=f"Planilla {period.code}", author="Hollywood Pacas")
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="PayrollTitle", parent=styles["Title"], fontSize=16, leading=19, alignment=TA_CENTER, textColor=colors.HexColor("#172554")))
     styles.add(ParagraphStyle(name="PayrollSmall", parent=styles["Normal"], fontSize=7, leading=9))
@@ -1114,12 +1119,12 @@ def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(g
     status_label = "CERRADA" if period.status == "CLOSED" else "BORRADOR / ACUMULADO"
     header = Table(
         [[Paragraph(company_title, styles["PayrollTitle"]), Paragraph(f"<b>{status_label}</b><br/><font size='8'>Planilla {period.code}</font>", styles["PayrollRight"])]],
-        colWidths=[190 * mm, 55 * mm],
+        colWidths=[215 * mm, 62 * mm],
     )
     header.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eff6ff")), ("BOX", (0, 0), (-1, -1), .8, colors.HexColor("#1d4ed8")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
     period_meta = Table(
         [["PERIODO", "FECHA DE PAGO", "CORTE DEL CALCULO", "COLABORADORES"], [f"{period.date_from:%d/%m/%Y} al {period.date_to:%d/%m/%Y}", f"{period.pay_date:%d/%m/%Y}", f"{calculated_at:%d/%m/%Y %I:%M %p}", str(len(calculations))]],
-        colWidths=[70 * mm, 55 * mm, 70 * mm, 50 * mm],
+        colWidths=[78 * mm, 61 * mm, 78 * mm, 60 * mm],
     )
     period_meta.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#172554")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8), ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#94a3b8")), ("INNERGRID", (0, 0), (-1, -1), .25, colors.HexColor("#cbd5e1")), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
     story = [header, Spacer(1, 3 * mm), period_meta, Spacer(1, 5 * mm)]
@@ -1128,9 +1133,9 @@ def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(g
     for calc in calculations:
         groups.setdefault(calc.employee.area.name if calc.employee.area else "Sin area", []).append(calc)
     grand = {"base": Decimal("0"), "add": Decimal("0"), "extra": Decimal("0"), "holiday": Decimal("0"), "ded": Decimal("0"), "net": Decimal("0")}
-    widths = [38*mm, 13*mm, 24*mm, 23*mm, 19*mm, 24*mm, 22*mm, 24*mm, 26*mm]
+    widths = [50*mm, 14*mm, 31*mm, 28*mm, 22*mm, 30*mm, 28*mm, 32*mm, 42*mm]
     for area, rows in groups.items():
-        area_header = Table([[f"AREA: {area.upper()}", f"{len(rows)} empleado(s)"]], colWidths=[195 * mm, 50 * mm])
+        area_header = Table([[f"AREA: {area.upper()}", f"{len(rows)} empleado(s)"]], colWidths=[220 * mm, 57 * mm])
         area_header.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#dbeafe")), ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#172554")), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"), ("ALIGN", (1, 0), (1, 0), "RIGHT"), ("BOTTOMPADDING", (0, 0), (-1, -1), 5), ("TOPPADDING", (0, 0), (-1, -1), 5)]))
         story.append(area_header)
         data = [["Empleado / codigo", "Dias", "Base acumulada", "Adiciones", "H. extra", "Pago extra", "Feriados", "Deducciones", "Neto a recibir"]]
@@ -1148,12 +1153,14 @@ def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(g
         story.extend([table, Spacer(1, 4 * mm)])
 
     total_extra_hours = Decimal(sum((row.overtime_minutes or 0 for row in calculations), 0)) / Decimal("60")
-    summary = Table([["RESUMEN GENERAL", "Base acumulada", "Adiciones", "Horas extra", "Feriados", "Deducciones", "NETO TOTAL"], [branch_name, f"C$ {grand['base']:,.2f}", f"C$ {grand['add']:,.2f}", f"{total_extra_hours:.2f} h / C$ {grand['extra']:,.2f}", f"C$ {grand['holiday']:,.2f}", f"C$ {grand['ded']:,.2f}", f"C$ {grand['net']:,.2f}"]], colWidths=[47*mm, 31*mm, 28*mm, 42*mm, 28*mm, 31*mm, 38*mm])
-    summary.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#166534")), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("FONTNAME", (0,0), (-1,-1), "Helvetica-Bold"), ("GRID", (0,0), (-1,-1), .5, colors.HexColor("#64748b")), ("FONTSIZE", (0,0), (-1,-1), 8), ("ALIGN", (1,1), (-1,-1), "RIGHT"), ("TOPPADDING", (0,0), (-1,-1), 6), ("BOTTOMPADDING", (0,0), (-1,-1), 6)]))
-    story.extend([summary, Spacer(1, 13 * mm), Table([["______________________________", "______________________________", "______________________________"], ["Elaborado por", "Revisado por", "Autorizado por"]], colWidths=[80*mm, 80*mm, 80*mm], style=TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("FONTSIZE", (0,0), (-1,-1), 8)]))])
+    summary = Table([["RESUMEN GENERAL", "Base acumulada", "Adiciones", "Horas extra", "Feriados", "Deducciones", "NETO TOTAL"], [branch_name, f"C$ {grand['base']:,.2f}", f"C$ {grand['add']:,.2f}", f"{total_extra_hours:.2f} h / C$ {grand['extra']:,.2f}", f"C$ {grand['holiday']:,.2f}", f"C$ {grand['ded']:,.2f}", f"C$ {grand['net']:,.2f}"]], colWidths=[53*mm, 35*mm, 32*mm, 47*mm, 31*mm, 35*mm, 44*mm])
+    summary.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.HexColor("#10233f")), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("BACKGROUND", (0,1), (-1,1), colors.HexColor("#eef4ff")), ("FONTNAME", (0,0), (-1,-1), "Helvetica-Bold"), ("GRID", (0,0), (-1,-1), .5, colors.HexColor("#94a3b8")), ("FONTSIZE", (0,0), (-1,-1), 8), ("ALIGN", (1,1), (-1,-1), "RIGHT"), ("TOPPADDING", (0,0), (-1,-1), 6), ("BOTTOMPADDING", (0,0), (-1,-1), 6)]))
+    story.extend([summary, Spacer(1, 13 * mm), Table([["______________________________", "______________________________", "______________________________"], ["Elaborado por", "Revisado por", "Autorizado por"]], colWidths=[92.33*mm, 92.33*mm, 92.34*mm], style=TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("FONTSIZE", (0,0), (-1,-1), 8)]))])
 
     def footer(canvas, document):
         canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor("#d9e1ea"))
+        canvas.roundRect(6 * mm, 6 * mm, page_size[0] - 12 * mm, page_size[1] - 12 * mm, 2 * mm, stroke=1, fill=0)
         canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
         canvas.line(10 * mm, 10 * mm, page_size[0] - 10 * mm, 10 * mm)
         canvas.setFont("Helvetica", 7)
