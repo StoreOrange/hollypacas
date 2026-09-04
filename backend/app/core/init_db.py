@@ -1711,6 +1711,10 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE clientes ADD COLUMN identificacion VARCHAR(40)"))
     if "ventas_facturas" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("ventas_facturas")}
+        if "operation_key" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN operation_key VARCHAR(32)"))
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_ventas_facturas_operation_key ON ventas_facturas (operation_key)"))
         if "bodega_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_facturas ADD COLUMN bodega_id INTEGER"))

@@ -279,6 +279,7 @@
 
   <main class="p-4 p-lg-5">
     <form id="repuestos-sales-form" method="post" action="/sales">
+      <input type="hidden" name="operation_key" value="{{ sale_operation_key }}" />
       <input type="hidden" name="cliente_id" id="cliente-id-hidden" value="" />
       <input type="hidden" name="fecha" id="venta-fecha" />
       <input type="hidden" name="moneda" id="venta-moneda" value="CS" />
@@ -1974,6 +1975,7 @@
     form?.requestSubmit();
   });
 
+  let saleSubmissionInProgress = false;
   form?.addEventListener("submit", (event) => {
     window.clearTimeout(salesDraftTimer);
     const total = Array.from(invoiceItems.values()).reduce((acc, item) => acc + item.qty * item.price, 0);
@@ -1997,8 +1999,22 @@
       }
       return;
     }
+    if (saleSubmissionInProgress) {
+      event.preventDefault();
+      return;
+    }
+    saleSubmissionInProgress = true;
+    if (confirmPayment) {
+      confirmPayment.disabled = true;
+      confirmPayment.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Procesando venta…';
+    }
     if (fechaInput) fechaInput.value = todayIso();
     syncHiddenInputs(total);
+  });
+
+  window.addEventListener("pageshow", (event) => {
+    const navigation = performance.getEntriesByType?.("navigation")?.[0];
+    if (event.persisted || navigation?.type === "back_forward") window.location.replace("/sales");
   });
 
   window.addEventListener("load", async () => {

@@ -298,6 +298,7 @@ class VentaFactura(Base):
     id = Column(Integer, primary_key=True, index=True)
     secuencia = Column(Integer, nullable=False, default=1)
     numero = Column(String(20), nullable=False, unique=True)
+    operation_key = Column(String(32), nullable=True, unique=True, index=True)
     bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
     vendedor_id = Column(Integer, ForeignKey("vendedores.id"), nullable=True)

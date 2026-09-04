@@ -229,6 +229,7 @@
       {% endif %}
 
       <form id="sales-form" class="rounded-[30px] border border-slate-200 bg-white/90 shadow-2xl p-7 space-y-6 backdrop-blur -mt-4" method="post" action="/sales">
+        <input type="hidden" name="operation_key" value="{{ sale_operation_key }}" />
         <div class="grid xl:grid-cols-[1.1fr_0.9fr] gap-6">
           <div class="space-y-5">
             <div class="rounded-[28px] border border-[#e8d7e6] bg-white shadow-lg p-5">
@@ -2663,7 +2664,7 @@
         return;
       }
       syncPaymentHidden();
-      document.getElementById("sales-form").submit();
+      document.getElementById("sales-form").requestSubmit();
     });
   }
 
@@ -2732,13 +2733,30 @@
   }
 
   const salesForm = document.getElementById("sales-form");
+  let saleSubmissionInProgress = false;
   if (salesForm) {
     salesForm.addEventListener("submit", (event) => {
       if (itemsTable.querySelectorAll("tr[data-item-row]").length === 0) {
         event.preventDefault();
+        return;
       }
+      if (saleSubmissionInProgress) {
+        event.preventDefault();
+        return;
+      }
+      saleSubmissionInProgress = true;
+      if (confirmSale) {
+        confirmSale.disabled = true;
+        confirmSale.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Procesando venta…';
+      }
+      if (registerSale) registerSale.disabled = true;
     });
   }
+
+  window.addEventListener("pageshow", (event) => {
+    const navigation = performance.getEntriesByType?.("navigation")?.[0];
+    if (event.persisted || navigation?.type === "back_forward") window.location.replace("/sales");
+  });
 
   const clearSale = document.getElementById("clear-sale");
   if (clearSale) {

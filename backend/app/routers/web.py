@@ -17,6 +17,7 @@ import smtplib
 import subprocess
 import tempfile
 import unicodedata
+import uuid
 from email.message import EmailMessage
 from email.utils import make_msgid
 
@@ -11505,6 +11506,7 @@ def sales_page(
             "pacasholl_libreado_enabled": _is_pacasholl_company(),
             "default_sales_currency": "CS" if _inventory_cs_only_mode(db) else "USD",
             "weighted_sales_enabled": _weighted_sales_enabled_mode(db),
+            "sale_operation_key": uuid.uuid4().hex,
             "version": settings.UI_VERSION,
         },
     )
@@ -33097,7 +33099,12 @@ async def restaurant_order_invoice(
         except ValueError:
             return 0.0
 
-    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id, RestaurantOrder.estado == "ABIERTA").first()
+    order = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.id == order_id, RestaurantOrder.estado == "ABIERTA")
+        .with_for_update()
+        .first()
+    )
     if not order:
         return RedirectResponse("/sales?error=Orden+no+disponible", status_code=303)
     if not order.items:
@@ -33107,6 +33114,7 @@ async def restaurant_order_invoice(
         return RedirectResponse("/sales?error=Orden+fuera+de+tu+bodega", status_code=303)
     if not _bodega_permite_facturacion(bodega):
         return RedirectResponse("/sales?error=La+bodega+operativa+no+esta+habilitada+para+facturacion", status_code=303)
+    bodega = db.query(Bodega).filter(Bodega.id == bodega.id).with_for_update().one()
     if not forma_pago_id.isdigit():
         forma_pago = db.query(FormaPago).order_by(FormaPago.id.asc()).first()
         forma_pago_id = str(forma_pago.id) if forma_pago else ""
@@ -33285,6 +33293,12 @@ async def sales_create_invoice(
 ):
     _enforce_permission(request, user, "access.sales.registrar")
     form = await request.form()
+    operation_key = str(form.get("operation_key") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{32}", operation_key):
+        return RedirectResponse(
+            "/sales?error=La+sesion+de+venta+vencio.+Recarga+y+confirma+nuevamente",
+            status_code=303,
+        )
     cliente_id = form.get("cliente_id") or None
     vendedor_id = form.get("vendedor_id") or None
     fecha = form.get("fecha")
@@ -33365,6 +33379,17 @@ async def sales_create_invoice(
         return RedirectResponse("/sales?error=Bodega+no+configurada+para+la+sucursal", status_code=303)
     if not _bodega_permite_facturacion(bodega):
         return RedirectResponse("/sales?error=La+bodega+operativa+no+esta+habilitada+para+facturacion", status_code=303)
+    # Serializa la facturacion por bodega: protege el consecutivo y hace que
+    # dos confirmaciones simultaneas compartan la misma operacion.
+    bodega = db.query(Bodega).filter(Bodega.id == bodega.id).with_for_update().one()
+    existing_invoice = db.query(VentaFactura).filter(
+        VentaFactura.operation_key == operation_key
+    ).first()
+    if existing_invoice:
+        return RedirectResponse(
+            f"/sales?success=Venta+ya+registrada&print_id={existing_invoice.id}",
+            status_code=303,
+        )
     last_factura = (
         db.query(VentaFactura)
         .filter(VentaFactura.bodega_id == bodega.id)
@@ -33410,6 +33435,7 @@ async def sales_create_invoice(
         condicion_venta=condicion_venta,
         tasa_cambio=tasa if moneda == "USD" else None,
         usuario_registro=user.full_name,
+        operation_key=operation_key,
         created_at=local_now_naive(),
     )
     db.add(factura)

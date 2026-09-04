@@ -4679,17 +4679,30 @@
   }
 
   if (restaurantPaymentModalForm) {
+    let restaurantInvoiceSubmitting = false;
     restaurantPaymentModalForm.addEventListener('submit', async (event) => {
-      if (restaurantPaymentItems.length) return;
-      event.preventDefault();
-      if (typeof Swal !== 'undefined') {
-        await Swal.fire({
-          icon: 'warning',
-          title: 'Agrega pagos',
-          text: 'Debes aplicar al menos una forma de pago antes de facturar.',
-          confirmButtonColor: '#7ea7d8',
-          background: '#ffffff',
-        });
+      if (!restaurantPaymentItems.length) {
+        event.preventDefault();
+        if (typeof Swal !== 'undefined') {
+          await Swal.fire({
+            icon: 'warning',
+            title: 'Agrega pagos',
+            text: 'Debes aplicar al menos una forma de pago antes de facturar.',
+            confirmButtonColor: '#7ea7d8',
+            background: '#ffffff',
+          });
+        }
+        return;
+      }
+      if (restaurantInvoiceSubmitting) {
+        event.preventDefault();
+        return;
+      }
+      restaurantInvoiceSubmitting = true;
+      const submitButton = restaurantPaymentModalForm.querySelector('[type="submit"]');
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Procesando venta…';
       }
     });
   }
