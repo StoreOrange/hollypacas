@@ -112,6 +112,7 @@ def _debt_schedule(db: Session, debt: PayrollEmployeeDeduction, visited=None) ->
         "projected_end": projected_end,
         "dependency_waiting": dependency_waiting,
         "dependency": dependency,
+        "next_available_date": _advance_pay_date(projected_end) if projected_end else None,
     }
 
 
@@ -432,6 +433,10 @@ def create_employee_deduction(request: Request, employee_id: int = Form(...), de
             return RedirectResponse("/payroll?error=La+deuda+dependiente+debe+pertenecer+al+mismo+empleado#deductions", status_code=303)
     amount = _money(original_amount)
     installment = (amount / installment_count).quantize(MONEY, rounding=ROUND_HALF_UP)
+    if dependency:
+        dependency_end = _debt_schedule(db, dependency)["projected_end"]
+        if dependency_end:
+            start_date = _advance_pay_date(dependency_end)
     debt = PayrollEmployeeDeduction(employee_id=employee_id, deduction_type_id=deduction_type_id, description=description.strip(), original_amount=amount, installment_count=installment_count, installment_amount=installment, start_date=start_date, depends_on_id=dependency.id if dependency else None, notes=notes.strip() or None, updated_by=user.email)
     db.add(debt)
     db.flush()
@@ -536,6 +541,11 @@ def edit_employee_deduction(
     dependency_id = int(depends_on_id) if depends_on_id.isdigit() else None
     if not _valid_debt_dependency(db, debt, dependency_id):
         return RedirectResponse("/payroll?error=Dependencia+invalida+o+circular#deductions", status_code=303)
+    dependency = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.id == dependency_id).first() if dependency_id else None
+    if dependency:
+        dependency_end = _debt_schedule(db, dependency)["projected_end"]
+        if dependency_end:
+            start_date = _advance_pay_date(dependency_end)
     paid, paid_installments = _debt_paid(db, debt.id)
     balance = _money(remaining_amount)
     debt.deduction_type_id = deduction_type.id
