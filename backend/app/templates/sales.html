@@ -603,6 +603,12 @@
                     <i class="bi bi-boxes"></i>
                     Armar combo
                   </button>
+                  {% if pacasholl_libreado_enabled %}
+                  <button id="open-promotion-modal" class="btn btn-outline-success btn-sm d-inline-flex align-items-center gap-2" type="button">
+                    <i class="bi bi-gift"></i>
+                    Promoción 2x1
+                  </button>
+                  {% endif %}
                   <div id="preventa-live-inline" class="preventa-live-inline">
                     <span id="preventa-live-text" class="preventa-live-text">Nueva preventa recibida</span>
                     <a id="preventa-live-btn" class="preventa-live-btn text-decoration-none" href="/sales/preventas">
@@ -1108,11 +1114,12 @@
     <div class="modal-content rounded-4 border-0 shadow-lg">
       <div class="modal-header border-0">
         <div>
-          <div class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Combos y ofertas</div>
-          <div class="text-2xl font-semibold text-ink d-flex align-items-center gap-2">
+          <div id="combo-modal-eyebrow" class="text-xs uppercase tracking-[0.22em] text-slate font-semibold">Combos y ofertas</div>
+          <div id="combo-modal-title" class="text-2xl font-semibold text-ink d-flex align-items-center gap-2">
             <i class="bi bi-boxes text-brand"></i>
             Armar combo
           </div>
+          <div id="combo-modal-help" class="small text-slate mt-1">El padre concentra la suma del precio de todos los productos del combo.</div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
@@ -1141,7 +1148,7 @@
                   Saldo disponible: <strong id="combo-parent-available">0</strong>
                 </div>
                 <div class="mt-2 text-sm text-slate">
-                  Precio combo: <strong id="combo-parent-price">C$ 0.00</strong>
+                  <span id="combo-price-label">Precio combo:</span> <strong id="combo-parent-price">C$ 0.00</strong>
                 </div>
               </div>
             </div>
@@ -1171,14 +1178,25 @@
             <div class="odoo-card mt-3">
               <div class="odoo-section-title mb-3 d-flex align-items-center gap-2">
                 <i class="bi bi-eye text-brand"></i>
-                Vista previa del combo
+                <span id="combo-preview-title">Vista previa del combo</span>
               </div>
               <div id="combo-preview" class="text-sm text-slate">Sin datos para mostrar.</div>
             </div>
+            {% if pacasholl_libreado_enabled %}
+            <div id="promotion-authorization-panel" class="odoo-card mt-3 d-none">
+              <div class="odoo-section-title mb-2"><i class="bi bi-shield-lock text-success"></i> Autorización requerida</div>
+              <div class="small text-slate mb-2">Antes de agregar el 2x1 se enviará un código de 6 dígitos a los destinatarios autorizados. Vigencia: 10 minutos y un solo uso.</div>
+              <div class="input-group input-group-sm">
+                <button id="promotion-request-code" class="btn btn-outline-success" type="button"><i class="bi bi-envelope"></i> Enviar código</button>
+                <input id="promotion-code" class="form-control text-center fw-bold" inputmode="numeric" maxlength="6" placeholder="Código de 6 dígitos">
+              </div>
+              <div id="promotion-code-status" class="small text-slate mt-2"></div>
+            </div>
+            {% endif %}
             <div class="d-flex justify-content-end mt-3 gap-2">
               <button id="combo-apply" class="btn btn-primary btn-sm d-inline-flex align-items-center gap-2" type="button">
                 <i class="bi bi-check2-circle"></i>
-                Agregar combo
+                <span id="combo-apply-label">Agregar combo</span>
               </button>
             </div>
             <div class="text-sm text-slate mt-2" id="combo-status"></div>
@@ -1291,7 +1309,18 @@
   const addPayment = document.getElementById("add-payment");
   const productListPanel = document.getElementById("product-list-panel");
   const openComboModal = document.getElementById("open-combo-modal");
+  const openPromotionModal = document.getElementById("open-promotion-modal");
   const comboModal = document.getElementById("combo-modal");
+  const comboModalEyebrow = document.getElementById("combo-modal-eyebrow");
+  const comboModalTitle = document.getElementById("combo-modal-title");
+  const comboModalHelp = document.getElementById("combo-modal-help");
+  const comboPriceLabel = document.getElementById("combo-price-label");
+  const comboPreviewTitle = document.getElementById("combo-preview-title");
+  const comboApplyLabel = document.getElementById("combo-apply-label");
+  const promotionAuthorizationPanel = document.getElementById("promotion-authorization-panel");
+  const promotionRequestCode = document.getElementById("promotion-request-code");
+  const promotionCode = document.getElementById("promotion-code");
+  const promotionCodeStatus = document.getElementById("promotion-code-status");
   const comboParentSearch = document.getElementById("combo-parent-search");
   const comboParentResults = document.getElementById("combo-parent-results");
   const comboParentSelected = document.getElementById("combo-parent-selected");
@@ -1694,7 +1723,12 @@
     if (payload.comboGroup) {
       row.dataset.comboGroup = payload.comboGroup;
     }
-    const badgeLabel = payload.role === "parent" ? "Oferta" : payload.role === "gift" ? "Regalia" : "";
+    const isTwoForOne = String(payload.comboGroup || "").startsWith("promotion-");
+    const badgeLabel = payload.role === "parent"
+      ? (isTwoForOne ? "Promoción 2x1" : "Oferta")
+      : payload.role === "gift"
+        ? (isTwoForOne ? "Regalía 2x1" : "Regalia")
+        : "";
     const badgeClass = payload.role === "parent" ? "combo-parent-badge" : payload.role === "gift" ? "combo-gift-badge" : "";
     const badgeIcon = payload.role === "parent" ? "bi-boxes" : payload.role === "gift" ? "bi-gift" : "";
     const badgeHtml = badgeLabel
@@ -1712,6 +1746,7 @@
         <input type="hidden" name="item_role" value="${payload.role || ""}" />
         <input type="hidden" name="item_combo_group" value="${payload.comboGroup || ""}" />
         <input type="hidden" name="item_promo_policy" value="${payload.promoPolicy || ""}" />
+        <input type="hidden" name="item_promotion_token" value="${payload.promotionToken || ""}" />
       </td>
       <td>
         <div class="sales-line-name">${payload.name}</div>
@@ -2029,10 +2064,27 @@
   let comboParent = null;
   let comboGifts = [];
   let promotionGiftPayload = null;
+  let comboMode = "combo";
+  let promotionAuthorizationToken = "";
   let comboParentSearchSequence = 0;
   let comboGiftSearchSequence = 0;
 
   const normalizeGiftPolicy = () => "UNIDADES";
+
+  const applyComboModeLabels = () => {
+    const isPromotion = comboMode === "promotion";
+    if (comboModalEyebrow) comboModalEyebrow.textContent = isPromotion ? "Promoción exclusiva Pacas Hollywood" : "Combos y ofertas";
+    if (comboModalTitle) comboModalTitle.innerHTML = isPromotion
+      ? '<i class="bi bi-gift text-success"></i> Armar promoción 2x1'
+      : '<i class="bi bi-boxes text-brand"></i> Armar combo';
+    if (comboModalHelp) comboModalHelp.textContent = isPromotion
+      ? "2x1 real: se cobra únicamente el producto padre y se entrega una sola regalía. El precio de la hija no se suma."
+      : "El padre concentra la suma del precio de todos los productos del combo.";
+    if (comboPriceLabel) comboPriceLabel.textContent = isPromotion ? "Precio a cobrar:" : "Precio combo:";
+    if (comboPreviewTitle) comboPreviewTitle.textContent = isPromotion ? "Vista previa de la promoción 2x1" : "Vista previa del combo";
+    if (comboApplyLabel) comboApplyLabel.textContent = isPromotion ? "Agregar promoción" : "Agregar combo";
+    if (promotionAuthorizationPanel) promotionAuthorizationPanel.classList.toggle("d-none", !isPromotion);
+  };
 
   const buildPromotionGiftParams = (query = "") => {
     const params = new URLSearchParams();
@@ -2101,6 +2153,7 @@
     comboParent = null;
     comboGifts = [];
     promotionGiftPayload = null;
+    promotionAuthorizationToken = "";
     comboParentSearchSequence += 1;
     comboGiftSearchSequence += 1;
     if (comboParentSearch) comboParentSearch.value = "";
@@ -2116,6 +2169,9 @@
     if (comboGiftAssignedList) comboGiftAssignedList.innerHTML = "";
     if (comboPreview) comboPreview.innerHTML = "Sin datos para mostrar.";
     if (comboStatus) comboStatus.textContent = "";
+    if (promotionCode) promotionCode.value = "";
+    if (promotionCodeStatus) promotionCodeStatus.textContent = "";
+    applyComboModeLabels();
   };
 
   const renderComboGifts = () => {
@@ -2134,7 +2190,7 @@
               <div class="text-xs text-slate">Existencia: ${gift.existencia} · Valor ref. $${Number(gift.precioReferenciaUsd || 0).toFixed(2)}</div>
             </div>
             <div class="d-flex align-items-center gap-2">
-              <input class="form-control form-control-sm w-20 gift-qty" type="number" min="1" step="1" value="${gift.cantidad}" data-index="${index}" />
+              <input class="form-control form-control-sm w-20 gift-qty" type="number" min="1" step="1" value="${gift.cantidad}" data-index="${index}" ${comboMode === "promotion" ? "readonly" : ""} />
               <button class="btn btn-outline-danger btn-sm gift-remove" type="button" data-index="${index}">
                 <i class="bi bi-trash"></i>
               </button>
@@ -2154,7 +2210,7 @@
       const giftPrice = currency === "USD" ? gift.precioUsd : gift.precioCs;
       return total + Number(giftPrice || 0) * Number(gift.cantidad || 0);
     }, 0);
-    comboParentPrice.textContent = formatMoney(parentPrice + giftTotal, currency);
+    comboParentPrice.textContent = formatMoney(comboMode === "promotion" ? parentPrice : parentPrice + giftTotal, currency);
     renderComboPreview();
   };
 
@@ -2174,7 +2230,7 @@
       const giftPrice = currency === "USD" ? gift.precioUsd : gift.precioCs;
       return total + Number(giftPrice || 0) * Number(gift.cantidad || 0);
     }, 0);
-    const comboUnit = parentUnit + giftsTotal;
+    const comboUnit = comboMode === "promotion" ? parentUnit : parentUnit + giftsTotal;
     const comboTotal = comboUnit * comboQty;
     const giftsHtml = comboGifts.length
       ? comboGifts
@@ -2203,8 +2259,8 @@
           </div>
           <span class="text-slate">x${comboQty}</span>
         </div>
-        <div class="text-[11px] text-slate mt-2" style="opacity:0.55;">Padre: ${formatMoney(parentUnit, currency)} · Hijas: ${formatMoney(giftsTotal, currency)}</div>
-        <div class="text-sm text-slate mt-2">Precio unitario del combo: <strong class="text-ink">${formatMoney(comboUnit, currency)}</strong></div>
+        <div class="text-[11px] text-slate mt-2" style="opacity:0.55;">${comboMode === "promotion" ? `Se cobra el padre: ${formatMoney(parentUnit, currency)} · La única hija va gratis` : `Padre: ${formatMoney(parentUnit, currency)} · Hijas: ${formatMoney(giftsTotal, currency)}`}</div>
+        <div class="text-sm text-slate mt-2">${comboMode === "promotion" ? "Precio unitario de la promoción" : "Precio unitario del combo"}: <strong class="text-ink">${formatMoney(comboUnit, currency)}</strong></div>
         <div class="text-sm text-slate mt-2">Total a facturar: <strong class="text-ink">${formatMoney(comboTotal, currency)}</strong></div>
       </div>
       <div class="text-xs uppercase tracking-[0.2em] text-slate font-semibold mb-2">Regalias</div>
@@ -2220,6 +2276,10 @@
 
   const validateComboStock = () => {
     if (!comboParent) return true;
+    if (comboMode === "promotion" && comboGifts.length !== 1) {
+      pauseNavForAlert({ icon: "warning", title: "Promoción 2x1", text: "Selecciona exactamente una regalía para la promoción." });
+      return false;
+    }
     const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
     const required = [];
     required.push({
@@ -2372,6 +2432,14 @@
     const allowedByUnits = true;
     const requestedQty = Math.max(1, Math.round(Number(source.cantidad || 1)));
     if (!id) return;
+    if (comboParent && String(comboParent.id) === id) {
+      pauseNavForAlert({ icon: "warning", title: comboMode === "promotion" ? "Promoción 2x1" : "Combo", text: "El producto padre no puede ser también la regalía." });
+      return;
+    }
+    if (comboMode === "promotion" && comboGifts.length && !comboGifts.some((gift) => String(gift.id) === id)) {
+      pauseNavForAlert({ icon: "warning", title: "Promoción 2x1", text: "Solo se permite una regalía por promoción." });
+      return;
+    }
     if (freeQty <= 0) {
       pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "Esta regalia no tiene saldo." });
       return;
@@ -2384,13 +2452,17 @@
         pauseNavForAlert({ icon: "warning", title: "Saldo insuficiente", text: `Disponible: ${available}` });
         return;
       }
+      if (comboMode === "promotion") {
+        pauseNavForAlert({ icon: "info", title: "Promoción 2x1", text: "La promoción ya tiene su única regalía seleccionada." });
+        return;
+      }
       existing.cantidad += requestedQty;
     } else {
       comboGifts.push({
         id,
         codigo: source.codigo || source.cod_producto || id,
         descripcion: source.descripcion || "",
-        cantidad: requestedQty,
+        cantidad: comboMode === "promotion" ? 1 : requestedQty,
         precioUsd: Number(source.precioUsd ?? source.precio_venta1_usd ?? 0),
         precioCs: Number(source.precioCs ?? source.precio_venta1 ?? 0),
         existencia,
@@ -2526,10 +2598,63 @@
 
   if (openComboModal) {
     openComboModal.addEventListener("click", () => {
+      comboMode = "combo";
       resetComboModal();
       if (window.bootstrap) {
         const modal = new bootstrap.Modal(comboModal);
         modal.show();
+      }
+    });
+  }
+
+  if (openPromotionModal) {
+    openPromotionModal.addEventListener("click", () => {
+      comboMode = "promotion";
+      resetComboModal();
+      if (window.bootstrap) {
+        const modal = new bootstrap.Modal(comboModal);
+        modal.show();
+      }
+    });
+  }
+
+  const promotionAuthorizationForm = (includeToken = false) => {
+    const data = new FormData();
+    data.set("parent_id", String(comboParent?.id || ""));
+    data.set("gift_id", String(comboGifts[0]?.id || ""));
+    data.set("cantidad", String(Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1))));
+    data.set("moneda", monedaField?.value || "CS");
+    const vendedorSelectEl = document.getElementById("vendedor-select");
+    data.set("vendedor_id", vendedorSelectEl?.value || "");
+    if (includeToken) data.set("token", (promotionCode?.value || "").trim());
+    return data;
+  };
+
+  if (promotionCode) {
+    promotionCode.addEventListener("input", () => {
+      promotionCode.value = promotionCode.value.replace(/\D/g, "").slice(0, 6);
+      promotionAuthorizationToken = "";
+    });
+  }
+
+  if (promotionRequestCode) {
+    promotionRequestCode.addEventListener("click", async () => {
+      if (!comboParent || comboGifts.length !== 1) {
+        if (promotionCodeStatus) promotionCodeStatus.textContent = "Selecciona primero el padre y una única regalía.";
+        return;
+      }
+      promotionRequestCode.disabled = true;
+      if (promotionCodeStatus) promotionCodeStatus.textContent = "Enviando código...";
+      try {
+        const response = await fetch("/sales/promotion/request", { method: "POST", body: promotionAuthorizationForm(false) });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.ok) throw new Error(payload?.message || "No fue posible enviar el código");
+        if (promotionCodeStatus) promotionCodeStatus.textContent = payload.message || "Código enviado a los destinatarios autorizados.";
+        promotionCode?.focus();
+      } catch (error) {
+        if (promotionCodeStatus) promotionCodeStatus.textContent = error.message || "No fue posible enviar el código.";
+      } finally {
+        promotionRequestCode.disabled = false;
       }
     });
   }
@@ -2614,7 +2739,12 @@
       if (comboParentSelected) {
         comboParentSelected.textContent = `${comboParent.codigo} - ${comboParent.descripcion}`;
       }
-      await loadComboFromCatalog();
+      if (comboMode === "combo") {
+        await loadComboFromCatalog();
+      } else {
+        comboGifts = [];
+        renderComboGifts();
+      }
       clampComboQty();
       renderComboPrice();
     });
@@ -2713,6 +2843,30 @@
       if (!validateComboStock()) {
         return;
       }
+      if (comboMode === "promotion") {
+        const enteredCode = (promotionCode?.value || "").trim();
+        if (!/^\d{6}$/.test(enteredCode)) {
+          if (promotionCodeStatus) promotionCodeStatus.textContent = "Ingresa el código de autorización de 6 dígitos.";
+          promotionCode?.focus();
+          return;
+        }
+        comboApply.disabled = true;
+        if (promotionCodeStatus) promotionCodeStatus.textContent = "Validando autorización...";
+        try {
+          const response = await fetch("/sales/promotion/confirm", { method: "POST", body: promotionAuthorizationForm(true) });
+          const payload = await response.json().catch(() => null);
+          if (!response.ok || !payload?.ok) throw new Error(payload?.message || "Código no autorizado");
+          promotionAuthorizationToken = enteredCode;
+          if (promotionCodeStatus) promotionCodeStatus.textContent = "Promoción autorizada. Agregando a la venta...";
+        } catch (error) {
+          promotionAuthorizationToken = "";
+          if (promotionCodeStatus) promotionCodeStatus.textContent = error.message || "Código no autorizado.";
+          promotionCode?.focus();
+          comboApply.disabled = false;
+          return;
+        }
+        comboApply.disabled = false;
+      }
       const comboQty = Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)));
       const requiredMap = new Map();
       const addRequired = (id, qty) => {
@@ -2760,11 +2914,11 @@
         const giftPrice = currency === "USD" ? gift.precioUsd : gift.precioCs;
         return total + Number(giftPrice || 0) * Number(gift.cantidad || 0);
       }, 0);
-      const comboPrice = parentUnitPrice + giftTotal;
+      const comboPrice = comboMode === "promotion" ? parentUnitPrice : parentUnitPrice + giftTotal;
       const subtotal = comboPrice * comboQty;
       const subtotalUsd = currency === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
       const subtotalCs = currency === "USD" ? subtotal * rateToday : subtotal;
-      const comboGroupId = `combo-${Date.now()}-${comboParent.id}`;
+      const comboGroupId = `${comboMode === "promotion" ? "promotion" : "combo"}-${Date.now()}-${comboParent.id}`;
       addItemRow({
         productId: comboParent.id,
         code: comboParent.codigo,
@@ -2780,6 +2934,7 @@
         role: "parent",
         lockPrice: true,
         comboGroup: comboGroupId,
+        promotionToken: promotionAuthorizationToken,
       });
       comboGifts.forEach((gift) => {
         const giftQty = gift.cantidad * comboQty;
@@ -2802,6 +2957,7 @@
           lockPrice: true,
           comboGroup: comboGroupId,
           promoPolicy: gift.promoPolicy,
+          promotionToken: promotionAuthorizationToken,
         });
       });
       resetComboModal();

@@ -18385,8 +18385,6 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
         product_id = int(report_row["product_id"])
         quantities = {vendor_key: vendor_sales_qty[(product_id, vendor_key)] for vendor_key in pivot_vendor_ids}
         total_qty = sum(quantities.values(), Decimal("0"))
-        if total_qty <= 0:
-            continue
         for vendor_key, qty in quantities.items():
             pivot_vendor_totals[vendor_key] += qty
         pivot_rows.append(
@@ -33470,6 +33468,134 @@ async def restaurant_order_invoice(
     return RedirectResponse(f"/sales?success=Cuenta+facturada&print_id={factura.id}", status_code=303)
 
 
+def _promotion_authorization_payload(parent_id: int, gift_id: int, cantidad: int, moneda: str) -> dict[str, object]:
+    return {
+        "action": "PACASHOLL_PROMOTION_2X1",
+        "parent_id": int(parent_id),
+        "gift_id": int(gift_id),
+        "cantidad": int(cantidad),
+        "moneda": (moneda or "CS").strip().upper(),
+    }
+
+
+@router.post("/sales/promotion/request")
+async def sales_promotion_request(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    if not _is_pacasholl_company():
+        return JSONResponse({"ok": False, "message": "Promoción disponible únicamente para Pacas Hollywood"}, status_code=403)
+    form = await request.form()
+    try:
+        parent_id = int(str(form.get("parent_id") or ""))
+        gift_id = int(str(form.get("gift_id") or ""))
+        cantidad = int(str(form.get("cantidad") or "1"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "message": "Selecciona correctamente el padre, la regalía y la cantidad"}, status_code=400)
+    if parent_id <= 0 or gift_id <= 0 or parent_id == gift_id or cantidad <= 0:
+        return JSONResponse({"ok": False, "message": "Datos de promoción inválidos"}, status_code=400)
+    parent = db.query(Producto).filter(Producto.id == parent_id, Producto.activo.is_(True)).first()
+    gift = db.query(Producto).filter(Producto.id == gift_id, Producto.activo.is_(True)).first()
+    if not parent or not gift:
+        return JSONResponse({"ok": False, "message": "Producto padre o regalía no disponible"}, status_code=404)
+    config = db.query(EmailConfig).first()
+    if not config or not config.active:
+        return JSONResponse({"ok": False, "message": "Configura el correo emisor"}, status_code=400)
+    recipients = db.query(NotificationRecipient).filter(NotificationRecipient.active.is_(True)).all()
+    recipient_emails = [recipient.email for recipient in recipients if (recipient.email or "").strip()]
+    if not recipient_emails:
+        return JSONResponse({"ok": False, "message": "No hay destinatarios autorizados activos"}, status_code=400)
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega:
+        return JSONResponse({"ok": False, "message": "Usuario sin sucursal o bodega asignada"}, status_code=400)
+
+    payload = _promotion_authorization_payload(parent_id, gift_id, cantidad, str(form.get("moneda") or "CS"))
+    token = _generate_token(6)
+    token_row = DiscountAuthorizationToken(
+        token=token,
+        payload_hash=_discount_payload_hash(payload),
+        payload_json=json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        motivo="Autorización promoción 2x1 Pacas Hollywood",
+        solicitado_por=user.full_name,
+        expires_at=datetime.utcnow() + timedelta(minutes=10),
+    )
+    db.add(token_row)
+    db.commit()
+    vendedor = db.query(Vendedor).filter(Vendedor.id == int(form.get("vendedor_id"))).first() if str(form.get("vendedor_id") or "").isdigit() else None
+    html_body = f"""
+    <div style="font-family:Arial,sans-serif;background:#f0fdf4;padding:24px;">
+      <div style="max-width:760px;margin:auto;background:#fff;border:1px solid #bbf7d0;border-radius:18px;padding:28px;">
+        <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#166534;">Solicitud promoción 2x1 · Pacas Hollywood</div>
+        <h2 style="color:#14532d;margin:8px 0;">Código de autorización</h2>
+        <div style="background:#dcfce7;border:1px solid #86efac;border-radius:14px;text-align:center;padding:16px;margin:18px 0;">
+          <div style="font-size:30px;font-weight:800;letter-spacing:6px;color:#166534;">{token}</div>
+          <div style="font-size:12px;color:#166534;margin-top:6px;">Válido por 10 minutos y para un solo uso.</div>
+        </div>
+        <table style="width:100%;font-size:14px;border-collapse:collapse;">
+          <tr><td style="padding:6px;">Sucursal / Bodega</td><td><strong>{html_lib.escape(branch.name)} / {html_lib.escape(bodega.name)}</strong></td></tr>
+          <tr><td style="padding:6px;">Producto cobrado</td><td><strong>{html_lib.escape(parent.cod_producto)} · {html_lib.escape(parent.descripcion)}</strong></td></tr>
+          <tr><td style="padding:6px;">Regalía</td><td><strong>{html_lib.escape(gift.cod_producto)} · {html_lib.escape(gift.descripcion)}</strong></td></tr>
+          <tr><td style="padding:6px;">Cantidad 2x1</td><td>{cantidad}</td></tr>
+          <tr><td style="padding:6px;">Vendedor</td><td>{html_lib.escape(vendedor.nombre if vendedor else '-')}</td></tr>
+          <tr><td style="padding:6px;">Solicitado por</td><td>{html_lib.escape(user.full_name or user.email or '-')}</td></tr>
+        </table>
+      </div>
+    </div>
+    """
+    send_error = _send_reversion_email(
+        subject=f"Autorización promoción 2x1 · {parent.cod_producto} + {gift.cod_producto}",
+        html_body=html_body,
+        recipients=recipient_emails,
+        sender_email=config.sender_email,
+        sender_name=config.sender_name,
+    )
+    if send_error:
+        db.delete(token_row)
+        db.commit()
+        return JSONResponse({"ok": False, "message": send_error}, status_code=500)
+    return JSONResponse({"ok": True, "message": "Código enviado a los destinatarios autorizados"})
+
+
+@router.post("/sales/promotion/confirm")
+async def sales_promotion_confirm(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales.registrar")
+    if not _is_pacasholl_company():
+        return JSONResponse({"ok": False, "message": "Promoción no disponible"}, status_code=403)
+    form = await request.form()
+    token = str(form.get("token") or "").strip()
+    try:
+        payload = _promotion_authorization_payload(
+            int(str(form.get("parent_id") or "")),
+            int(str(form.get("gift_id") or "")),
+            int(str(form.get("cantidad") or "1")),
+            str(form.get("moneda") or "CS"),
+        )
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "message": "Datos de promoción inválidos"}, status_code=400)
+    token_row = (
+        db.query(DiscountAuthorizationToken)
+        .filter(
+            DiscountAuthorizationToken.token == token,
+            DiscountAuthorizationToken.payload_hash == _discount_payload_hash(payload),
+            DiscountAuthorizationToken.motivo == "Autorización promoción 2x1 Pacas Hollywood",
+            DiscountAuthorizationToken.used_at.is_(None),
+        )
+        .order_by(DiscountAuthorizationToken.created_at.desc())
+        .first()
+    )
+    if not token_row:
+        return JSONResponse({"ok": False, "message": "Código inválido o no corresponde a esta promoción"}, status_code=400)
+    if token_row.expires_at < datetime.utcnow():
+        return JSONResponse({"ok": False, "message": "Código expirado; solicita uno nuevo"}, status_code=400)
+    return JSONResponse({"ok": True, "message": "Promoción autorizada"})
+
+
 @router.post("/sales")
 async def sales_create_invoice(
     request: Request,
@@ -33506,6 +33632,7 @@ async def sales_create_invoice(
     item_roles = form.getlist("item_role")
     item_combo_groups = form.getlist("item_combo_group")
     item_promo_policies = form.getlist("item_promo_policy")
+    item_promotion_tokens = form.getlist("item_promotion_token")
     draft_interface_code = (form.get("sales_draft_interface") or "").strip()[:40]
     descuento_global_pct = _discount_percent_value(form.get("descuento_global_pct"))
     descuento_token = (form.get("descuento_token") or "").strip()
@@ -33648,6 +33775,7 @@ async def sales_create_invoice(
                     "role": item_roles[index] if index < len(item_roles) else None,
                     "combo_group": item_combo_groups[index] if index < len(item_combo_groups) else None,
                     "promo_policy": item_promo_policies[index] if index < len(item_promo_policies) else None,
+                    "promotion_token": item_promotion_tokens[index] if index < len(item_promotion_tokens) else None,
                 }
             )
 
@@ -33698,6 +33826,7 @@ async def sales_create_invoice(
                         "role": p_item.combo_role or None,
                         "combo_group": p_item.combo_group or None,
                         "promo_policy": getattr(p_item, "promo_policy", None) or None,
+                        "promotion_token": None,
                     }
                 )
     else:
@@ -33729,6 +33858,8 @@ async def sales_create_invoice(
     # cobra una sola linea padre y presenta las hijas como regalias a C$ 0.00,
     # sin perder el valor ni el costo interno de ninguno de sus componentes.
     combo_parent_prices: dict[str, tuple[float, float]] = {}
+    promotion_token_rows: list[DiscountAuthorizationToken] = []
+    promotion_token_ids: set[int] = set()
     combo_groups = {
         str(src.get("combo_group") or "").strip()
         for src in source_items
@@ -33737,13 +33868,53 @@ async def sales_create_invoice(
     for combo_group in combo_groups:
         grouped = [src for src in source_items if str(src.get("combo_group") or "").strip() == combo_group]
         parents = [src for src in grouped if str(src.get("role") or "").strip().lower() == "parent"]
+        gifts = [src for src in grouped if str(src.get("role") or "").strip().lower() == "gift"]
+        is_two_for_one = combo_group.startswith("promotion-")
+        if is_two_for_one and not _is_pacasholl_company():
+            db.rollback()
+            return RedirectResponse("/sales?error=La+promocion+2x1+es+exclusiva+de+Pacas+Hollywood", status_code=303)
         if len(parents) != 1:
             db.rollback()
             return RedirectResponse("/sales?error=Combo+invalido:+se+requiere+un+solo+producto+padre", status_code=303)
         parent_qty = Decimal(str(parents[0].get("qty") or 0))
-        if parent_qty <= 0:
+        if parent_qty <= 0 or parent_qty != parent_qty.to_integral_value():
             db.rollback()
-            return RedirectResponse("/sales?error=La+cantidad+del+combo+debe+ser+mayor+a+cero", status_code=303)
+            return RedirectResponse("/sales?error=La+cantidad+del+combo+debe+ser+un+entero+mayor+a+cero", status_code=303)
+        if is_two_for_one:
+            gift_qty = Decimal(str(gifts[0].get("qty") or 0)) if len(gifts) == 1 else Decimal("0")
+            if len(gifts) != 1 or gift_qty != parent_qty:
+                db.rollback()
+                return RedirectResponse("/sales?error=Promocion+2x1+invalida:+debe+llevar+una+sola+regalia+por+producto+cobrado", status_code=303)
+            submitted_tokens = {str(src.get("promotion_token") or "").strip() for src in grouped}
+            submitted_tokens.discard("")
+            if len(submitted_tokens) != 1:
+                db.rollback()
+                return RedirectResponse("/sales?error=Promocion+2x1+requiere+codigo+de+autorizacion", status_code=303)
+            auth_payload = _promotion_authorization_payload(
+                int(parents[0]["product_id"]),
+                int(gifts[0]["product_id"]),
+                int(parent_qty),
+                moneda,
+            )
+            promotion_token_row = (
+                db.query(DiscountAuthorizationToken)
+                .filter(
+                    DiscountAuthorizationToken.token == next(iter(submitted_tokens)),
+                    DiscountAuthorizationToken.payload_hash == _discount_payload_hash(auth_payload),
+                    DiscountAuthorizationToken.motivo == "Autorización promoción 2x1 Pacas Hollywood",
+                    DiscountAuthorizationToken.used_at.is_(None),
+                )
+                .order_by(DiscountAuthorizationToken.created_at.desc())
+                .first()
+            )
+            if not promotion_token_row or promotion_token_row.expires_at < datetime.utcnow():
+                db.rollback()
+                return RedirectResponse("/sales?error=Codigo+de+promocion+invalido+o+expirado", status_code=303)
+            if int(promotion_token_row.id) in promotion_token_ids:
+                db.rollback()
+                return RedirectResponse("/sales?error=Cada+promocion+2x1+requiere+su+propio+codigo", status_code=303)
+            promotion_token_ids.add(int(promotion_token_row.id))
+            promotion_token_rows.append(promotion_token_row)
         total_group_usd = Decimal("0")
         total_group_cs = Decimal("0")
         for grouped_src in grouped:
@@ -33759,8 +33930,9 @@ async def sales_create_invoice(
                 unit_usd = unit_cs / Decimal(str(tasa))
             if unit_cs <= 0 and unit_usd > 0 and tasa:
                 unit_cs = unit_usd * Decimal(str(tasa))
-            total_group_usd += unit_usd * grouped_qty
-            total_group_cs += unit_cs * grouped_qty
+            if not is_two_for_one or str(grouped_src.get("role") or "").strip().lower() == "parent":
+                total_group_usd += unit_usd * grouped_qty
+                total_group_cs += unit_cs * grouped_qty
         combo_parent_prices[combo_group] = (
             float((total_group_usd / parent_qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
             float((total_group_cs / parent_qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
@@ -34054,6 +34226,9 @@ async def sales_create_invoice(
     if discount_token_row:
         discount_token_row.used_at = local_now_naive()
         discount_token_row.factura_id = factura.id
+    for promotion_token_row in promotion_token_rows:
+        promotion_token_row.used_at = local_now_naive()
+        promotion_token_row.factura_id = factura.id
     for pago in pagos:
         db.add(pago)
 

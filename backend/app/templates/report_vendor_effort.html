@@ -589,7 +589,7 @@
                 <td class="pivot-item"><strong>{{ row.codigo }}</strong> · {{ row.producto }}</td>
                 {% for vendor in pivot_vendors %}
                 {% set qty = row.quantities.get(vendor.id, 0) %}
-                <td class="pivot-qty">{% if qty %}{{ "{:,.2f}".format(qty) }}{% else %}—{% endif %}</td>
+                <td class="pivot-qty">{{ "{:,.2f}".format(qty or 0) }}</td>
                 {% endfor %}
                 <td class="pivot-qty pivot-total">{{ "{:,.2f}".format(row.total_qty or 0) }}</td>
               </tr>
