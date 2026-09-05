@@ -33494,7 +33494,7 @@ async def sales_promotion_request(
         cantidad = int(str(form.get("cantidad") or "1"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "message": "Selecciona correctamente el padre, la regalía y la cantidad"}, status_code=400)
-    if parent_id <= 0 or gift_id <= 0 or parent_id == gift_id or cantidad <= 0:
+    if parent_id <= 0 or gift_id <= 0 or cantidad <= 0:
         return JSONResponse({"ok": False, "message": "Datos de promoción inválidos"}, status_code=400)
     parent = db.query(Producto).filter(Producto.id == parent_id, Producto.activo.is_(True)).first()
     gift = db.query(Producto).filter(Producto.id == gift_id, Producto.activo.is_(True)).first()

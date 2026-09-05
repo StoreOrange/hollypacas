@@ -2432,8 +2432,8 @@
     const allowedByUnits = true;
     const requestedQty = Math.max(1, Math.round(Number(source.cantidad || 1)));
     if (!id) return;
-    if (comboParent && String(comboParent.id) === id) {
-      pauseNavForAlert({ icon: "warning", title: comboMode === "promotion" ? "Promoción 2x1" : "Combo", text: "El producto padre no puede ser también la regalía." });
+    if (comboMode !== "promotion" && comboParent && String(comboParent.id) === id) {
+      pauseNavForAlert({ icon: "warning", title: "Combo", text: "El producto padre no puede ser también la regalía." });
       return;
     }
     if (comboMode === "promotion" && comboGifts.length && !comboGifts.some((gift) => String(gift.id) === id)) {
