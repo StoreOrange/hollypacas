@@ -135,6 +135,78 @@
     background: #fff;
     -webkit-overflow-scrolling: touch;
   }
+  .effort-pivot-wrap {
+    overflow: auto;
+    max-height: 58vh;
+    border: 1px solid #dbe3ef;
+    border-radius: 10px;
+    background: #fff;
+  }
+  .effort-pivot {
+    width: 100%;
+    min-width: max-content;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: .76rem;
+  }
+  .effort-pivot th,
+  .effort-pivot td {
+    padding: .48rem .62rem;
+    border-right: 1px solid #e8eef8;
+    border-bottom: 1px solid #e8eef8;
+    white-space: nowrap;
+  }
+  .effort-pivot thead th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: #17375e;
+    color: #fff;
+    text-align: center;
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .045em;
+  }
+  .effort-pivot .pivot-item {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    min-width: 280px;
+    max-width: 360px;
+    white-space: normal;
+    background: #fff;
+  }
+  .effort-pivot thead .pivot-item {
+    z-index: 5;
+    background: #17375e;
+    text-align: left;
+  }
+  .effort-pivot tbody tr:nth-child(even) td,
+  .effort-pivot tbody tr:nth-child(even) .pivot-item {
+    background: #f8fbff;
+  }
+  .effort-pivot .pivot-qty {
+    min-width: 112px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .effort-pivot .pivot-total {
+    background: #eaf3fb !important;
+    color: #17375e;
+    font-weight: 800;
+  }
+  .effort-pivot tfoot td {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    background: #dceafa;
+    color: #17375e;
+    font-weight: 800;
+  }
+  .effort-pivot tfoot .pivot-item {
+    z-index: 4;
+    background: #dceafa;
+  }
   .effort-grid {
     min-width: 1120px;
     width: 100%;
@@ -396,6 +468,7 @@
             <div class="col-12 col-md-auto">
               <div class="effort-actions">
               <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i> Analizar</button>
+              <button class="btn btn-primary btn-sm" type="submit" name="view" value="matrix"><i class="bi bi-grid-3x3-gap"></i> Matriz por vendedor</button>
               <a class="btn btn-outline-danger btn-sm" href="/reports/esfuerzo-vendedor/export.pdf?{{ export_query }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
               <a class="btn btn-outline-success btn-sm" href="/reports/esfuerzo-vendedor/export.xlsx?{{ export_query }}"><i class="bi bi-file-earmark-excel"></i> Excel</a>
               <a class="btn btn-outline-secondary btn-sm" href="/reports/esfuerzo-vendedor"><i class="bi bi-eraser"></i> Limpiar</a>
@@ -486,6 +559,50 @@
             <div class="text-xs uppercase tracking-[0.2em] text-slate">Lentos</div>
             <div class="odoo-title text-xl mt-1">{{ kpis.lentos }}</div>
           </div>
+        </div>
+      </div>
+
+      <div class="odoo-card mt-3 text-sm" id="vendor-matrix" tabindex="-1">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <div>
+            <div class="odoo-section-title text-base">Pivote de productos vendidos por vendedor</div>
+            <div class="text-slate text-xs mt-1">Cantidades vendidas del {{ start_date }} al {{ end_date }}, conforme a los filtros aplicados.</div>
+          </div>
+          <span class="odoo-pill primary"><i class="bi bi-grid-3x3-gap"></i> Total: {{ "{:,.2f}".format(pivot_grand_total or 0) }}</span>
+        </div>
+        <div class="effort-pivot-wrap">
+          <table class="effort-pivot">
+            <thead>
+              <tr>
+                <th class="pivot-item">Ítem</th>
+                {% for vendor in pivot_vendors %}<th>{{ vendor.nombre }}</th>{% endfor %}
+                <th>Total vendido</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in pivot_rows %}
+              <tr>
+                <td class="pivot-item"><strong>{{ row.codigo }}</strong> · {{ row.producto }}</td>
+                {% for vendor in pivot_vendors %}
+                {% set qty = row.quantities.get(vendor.id, 0) %}
+                <td class="pivot-qty">{% if qty %}{{ "{:,.2f}".format(qty) }}{% else %}—{% endif %}</td>
+                {% endfor %}
+                <td class="pivot-qty pivot-total">{{ "{:,.2f}".format(row.total_qty or 0) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="{{ pivot_vendors|length + 2 }}" class="text-center text-slate py-4">No hay ventas de los productos filtrados en este rango.</td></tr>
+              {% endfor %}
+            </tbody>
+            {% if pivot_rows %}
+            <tfoot>
+              <tr>
+                <td class="pivot-item">TOTAL POR VENDEDOR</td>
+                {% for vendor in pivot_vendors %}<td class="pivot-qty">{{ "{:,.2f}".format(pivot_vendor_totals.get(vendor.id, 0)) }}</td>{% endfor %}
+                <td class="pivot-qty">{{ "{:,.2f}".format(pivot_grand_total or 0) }}</td>
+              </tr>
+            </tfoot>
+            {% endif %}
+          </table>
         </div>
       </div>
 
@@ -581,6 +698,13 @@
 {% block extra_scripts %}
 <script>
   document.addEventListener("DOMContentLoaded", () => {
+    {% if show_vendor_matrix %}
+    const vendorMatrix = document.getElementById("vendor-matrix");
+    if (vendorMatrix) {
+      vendorMatrix.scrollIntoView({ behavior: "smooth", block: "start" });
+      vendorMatrix.focus({ preventScroll: true });
+    }
+    {% endif %}
     const normalizeEffortText = (value) => String(value || "")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")

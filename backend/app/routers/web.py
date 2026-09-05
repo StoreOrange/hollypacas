@@ -18167,6 +18167,8 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
     inbound_map: dict[int, dict[str, object]] = {}
     transfer_map: dict[int, dict[str, object]] = {}
     sales_map: dict[int, dict[str, object]] = {}
+    vendor_sales_qty: dict[tuple[int, int], Decimal] = defaultdict(lambda: Decimal("0"))
+    pivot_vendor_names: dict[int, str] = {}
     if bodega_ids and product_ids:
         inbound_rows = (
             db.query(IngresoInventario, IngresoItem, IngresoTipo, Bodega, Branch)
@@ -18256,6 +18258,9 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
         for factura, item, vendedor, bodega, branch in sales_query.order_by(VentaFactura.fecha.asc()).all():
             product_id = int(item.producto_id)
             qty = Decimal(str(item.cantidad or 0))
+            pivot_vendor_id = int(vendedor.id) if vendedor else 0
+            pivot_vendor_names[pivot_vendor_id] = vendedor.nombre if vendedor else "Sin vendedor"
+            vendor_sales_qty[(product_id, pivot_vendor_id)] += qty
             row = sales_map.setdefault(
                 product_id,
                 {
@@ -18339,6 +18344,7 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
         total_cs += Decimal(str(sale.get("venta_cs") or 0))
         report_rows.append(
             {
+                "product_id": product_id,
                 "codigo": product.cod_producto or "-",
                 "producto": product.descripcion or "-",
                 "estancado": product_id in stagnant_ids,
@@ -18371,6 +18377,26 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
             }
         )
     report_rows.sort(key=lambda row: (float(row["eficacia_pct"]), -float(row["saldo_qty"]), str(row["producto"])))
+    pivot_vendor_ids = sorted(pivot_vendor_names, key=lambda vendor_key: pivot_vendor_names[vendor_key].lower())
+    pivot_vendors = [{"id": vendor_key, "nombre": pivot_vendor_names[vendor_key]} for vendor_key in pivot_vendor_ids]
+    pivot_rows: list[dict[str, object]] = []
+    pivot_vendor_totals = {vendor_key: Decimal("0") for vendor_key in pivot_vendor_ids}
+    for report_row in report_rows:
+        product_id = int(report_row["product_id"])
+        quantities = {vendor_key: vendor_sales_qty[(product_id, vendor_key)] for vendor_key in pivot_vendor_ids}
+        total_qty = sum(quantities.values(), Decimal("0"))
+        if total_qty <= 0:
+            continue
+        for vendor_key, qty in quantities.items():
+            pivot_vendor_totals[vendor_key] += qty
+        pivot_rows.append(
+            {
+                "codigo": report_row["codigo"],
+                "producto": report_row["producto"],
+                "quantities": quantities,
+                "total_qty": total_qty,
+            }
+        )
     eficacia_total = float((total_vendido / total_enviado * Decimal("100")) if total_enviado > 0 else Decimal("0"))
     return {
         "branches": branches,
@@ -18379,6 +18405,10 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
         "productos": productos_catalog,
         "stagnant_products": [{"marked": marked, "producto": producto} for marked, producto in stagnant_rows],
         "rows": report_rows,
+        "pivot_vendors": pivot_vendors,
+        "pivot_rows": pivot_rows,
+        "pivot_vendor_totals": pivot_vendor_totals,
+        "pivot_grand_total": sum(pivot_vendor_totals.values(), Decimal("0")),
         "kpis": {
             "items": len(report_rows),
             "enviado_qty": float(total_enviado),
@@ -22697,6 +22727,7 @@ def report_vendor_effort(
             "stagnant_scope": filters["stagnant_scope"],
             "status_filter": filters["status_filter"],
             "q": filters["q"],
+            "show_vendor_matrix": (request.query_params.get("view") or "").strip().lower() == "matrix",
             "export_query": query_string,
             "version": settings.UI_VERSION,
             **payload,
