@@ -2622,7 +2622,7 @@
     const data = new FormData();
     data.set("parent_id", String(comboParent?.id || ""));
     data.set("gift_id", String(comboGifts[0]?.id || ""));
-    data.set("cantidad", String(Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1))));
+    data.set("cantidad", String(Math.max(1, Math.round(parseFloat(comboParentQty?.value || 1)))));
     data.set("moneda", monedaField?.value || "CS");
     const vendedorSelectEl = document.getElementById("vendedor-select");
     data.set("vendedor_id", vendedorSelectEl?.value || "");
