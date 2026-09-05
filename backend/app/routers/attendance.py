@@ -28,6 +28,7 @@ from ..models.attendance import (
     AttendanceDeviceUser,
     AttendancePunch,
     AttendancePolicySetting,
+    AttendanceSyncCommand,
     AttendanceSyncRun,
     HRArea,
     HREmployee,
@@ -171,6 +172,20 @@ def attendance_health(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/sync-command/{device_code}", dependencies=[Depends(_require_sync_token)])
+def pending_sync_command(device_code: str, db: Session = Depends(get_db)):
+    command = (
+        db.query(AttendanceSyncCommand)
+        .filter(
+            AttendanceSyncCommand.device_code == device_code.strip().lower(),
+            AttendanceSyncCommand.status == "PENDING",
+        )
+        .order_by(AttendanceSyncCommand.requested_at.asc())
+        .first()
+    )
+    return {"requested": bool(command), "command_id": command.id if command else None}
+
+
 @router.post("/ingest", dependencies=[Depends(_require_sync_token)])
 def ingest_attendance_batch(payload: AttendanceBatchIn, db: Session = Depends(get_db)):
     now = datetime.utcnow()
@@ -264,6 +279,13 @@ def ingest_attendance_batch(payload: AttendanceBatchIn, db: Session = Depends(ge
 
     try:
         device.last_sync_at = now
+        db.query(AttendanceSyncCommand).filter(
+            AttendanceSyncCommand.device_code == device_code,
+            AttendanceSyncCommand.status == "PENDING",
+        ).update(
+            {"status": "COMPLETED", "completed_at": now},
+            synchronize_session=False,
+        )
         sync_run.finished_at = now
         sync_run.status = "OK"
         sync_run.inserted_count = inserted
@@ -775,71 +797,26 @@ def link_device_user(
 @web_router.post("/attendance/sync-now")
 def sync_attendance_now(request: Request, db: Session = Depends(get_db)):
     _browser_admin(request, db)
-    device_ip = os.getenv("ATTENDANCE_DEVICE_IP", "192.168.1.132").strip()
-    device_port = int(os.getenv("ATTENDANCE_DEVICE_PORT", "4370"))
-    comm_key = int(os.getenv("ATTENDANCE_DEVICE_COMM_KEY", "0"))
     device_code = os.getenv("ATTENDANCE_DEVICE_CODE", "ta040-central").strip()
-    conn = None
-    try:
-        from zk import ZK
-
-        conn = ZK(
-            device_ip,
-            port=device_port,
-            timeout=10,
-            password=comm_key,
-            force_udp=False,
-            ommit_ping=False,
-        ).connect()
-        raw_users = conn.get_users() or []
-        raw_punches = conn.get_attendance() or []
-        try:
-            serial_number = conn.get_serialnumber()
-        except Exception:
-            serial_number = None
-    except Exception as exc:
-        message = quote_plus(f"No fue posible leer el reloj: {exc}")
-        return RedirectResponse(f"/attendance?error={message}", status_code=303)
-    finally:
-        if conn is not None:
-            try:
-                conn.disconnect()
-            except Exception:
-                pass
-
-    payload = AttendanceBatchIn(
-        device_code=device_code,
-        device_name="Reloj TA040 Central",
-        model="3nStar TA040",
-        serial_number=serial_number,
-        local_ip=device_ip,
-        local_port=device_port,
-        users=[
-            DeviceUserIn(
-                user_id=str(user.user_id),
-                uid=user.uid,
-                name=user.name or None,
-                card_number=str(user.card) if getattr(user, "card", None) else None,
-            )
-            for user in raw_users
-        ],
-        punches=[
-            PunchIn(
-                user_id=str(item.user_id),
-                occurred_at=item.timestamp,
-                punch_state=getattr(item, "punch", None),
-                verify_mode=getattr(item, "status", None),
-                work_code=str(item.workcode) if getattr(item, "workcode", None) else None,
-            )
-            for item in raw_punches
-        ],
+    device_code = device_code.lower()
+    pending = db.query(AttendanceSyncCommand).filter(
+        AttendanceSyncCommand.device_code == device_code,
+        AttendanceSyncCommand.status == "PENDING",
+    ).first()
+    if not pending:
+        db.add(AttendanceSyncCommand(device_code=device_code))
+        db.commit()
+    device = db.query(AttendanceDevice).filter(AttendanceDevice.code == device_code).first()
+    connector_online = bool(
+        device and device.last_seen_at and device.last_seen_at >= datetime.utcnow() - timedelta(seconds=90)
     )
-    result = ingest_attendance_batch(payload, db)
+    if connector_online:
+        message = quote_plus("Actualizacion solicitada. El agente local la procesara en pocos segundos.")
+        return RedirectResponse(f"/attendance?ok={message}", status_code=303)
     message = quote_plus(
-        f"Sincronizacion completa: {result['device_users']} usuarios, "
-        f"{result['inserted']} marcadas nuevas y {result['duplicates']} repetidas"
+        "Solicitud guardada, pero el agente local esta offline. Se ejecutara cuando el servicio vuelva a conectarse."
     )
-    return RedirectResponse(f"/attendance?ok={message}", status_code=303)
+    return RedirectResponse(f"/attendance?error={message}", status_code=303)
 
 
 @web_router.websocket("/ws/attendance")

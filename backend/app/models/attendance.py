@@ -147,6 +147,18 @@ class AttendanceSyncRun(Base):
     device = relationship("AttendanceDevice")
 
 
+class AttendanceSyncCommand(Base):
+    """Persistent request sent by the web UI to the connector on the local network."""
+
+    __tablename__ = "attendance_sync_commands"
+
+    id = Column(Integer, primary_key=True)
+    device_code = Column(String(50), nullable=False, index=True)
+    requested_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    status = Column(String(20), nullable=False, default="PENDING", index=True)
+
+
 class AttendancePolicySetting(Base):
     __tablename__ = "attendance_policy_settings"
 

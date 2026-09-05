@@ -123,6 +123,17 @@ def _sync_once(args, zk_class, connection=None, include_users=True) -> int:
     return 0
 
 
+def _has_forced_sync(args) -> bool:
+    endpoint = args.api_url.rstrip("/") + "/api/attendance/sync-command/" + args.device_code
+    req = request.Request(endpoint, headers={"X-Attendance-Token": args.token})
+    try:
+        with request.urlopen(req, timeout=15) as response:
+            return bool(json.loads(response.read().decode("utf-8")).get("requested"))
+    except Exception as exc:
+        print(f"No fue posible consultar solicitudes manuales: {exc}", file=sys.stderr, flush=True)
+        return False
+
+
 def _sync_with_watchdog(args, zk_class, connection, include_users) -> int:
     """Termina el proceso si una libreria deja una operacion de red colgada."""
     outcome = {}
@@ -190,6 +201,9 @@ def main() -> int:
                     last_users_sync = 0.0
                     print(f"Conexion establecida con {args.device_ip}:{args.device_port}.", flush=True)
                 include_users = time.monotonic() - last_users_sync >= max(60, args.users_interval)
+                if _has_forced_sync(args):
+                    include_users = True
+                    print("Actualizacion manual solicitada desde el sistema.", flush=True)
                 result = _sync_with_watchdog(args, ZK, conn, include_users)
                 if not result and include_users:
                     last_users_sync = time.monotonic()
