@@ -568,7 +568,11 @@
             <div class="odoo-section-title text-base">Pivote de productos vendidos por vendedor</div>
             <div class="text-slate text-xs mt-1">Cantidades vendidas del {{ start_date }} al {{ end_date }}, conforme a los filtros aplicados.</div>
           </div>
-          <span class="odoo-pill primary"><i class="bi bi-grid-3x3-gap"></i> Total: {{ "{:,.2f}".format(pivot_grand_total or 0) }}</span>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="odoo-pill primary"><i class="bi bi-grid-3x3-gap"></i> Total: {{ "{:,.2f}".format(pivot_grand_total or 0) }}</span>
+            <a class="btn btn-outline-success btn-sm" href="/reports/esfuerzo-vendedor/matriz.xlsx?{{ export_query }}"><i class="bi bi-file-earmark-excel"></i> Matriz Excel</a>
+            <a class="btn btn-outline-danger btn-sm" href="/reports/esfuerzo-vendedor/matriz.pdf?{{ export_query }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Matriz PDF</a>
+          </div>
         </div>
         <div class="effort-pivot-wrap">
           <table class="effort-pivot">

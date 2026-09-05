@@ -27,7 +27,7 @@ from urllib import request as urlrequest
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 from dotenv import dotenv_values
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Alignment, Font
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
 from PIL import Image, ImageDraw, ImageFont
@@ -22834,6 +22834,160 @@ def report_vendor_effort_export_xlsx(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@router.get("/reports/esfuerzo-vendedor/matriz.xlsx")
+def report_vendor_effort_matrix_xlsx(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    filters = _vendor_effort_report_filters(request)
+    payload = _build_vendor_effort_report(db, user, filters)
+    pivot_vendors = payload["pivot_vendors"]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Matriz por vendedor"
+    ws.append(["Matriz de productos vendidos por vendedor"])
+    ws.append(["Desde", filters["start_date"].isoformat(), "Hasta", filters["end_date"].isoformat()])
+    ws.append([])
+    ws.append(["Codigo", "Producto", *[vendor["nombre"] for vendor in pivot_vendors], "Total vendido"])
+    for cell in ws[4]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.alignment = Alignment(horizontal="center")
+        cell.fill = PatternFill("solid", fgColor="17375E")
+    for row in payload["pivot_rows"]:
+        ws.append(
+            [
+                row["codigo"],
+                row["producto"],
+                *[float(row["quantities"].get(vendor["id"], 0)) for vendor in pivot_vendors],
+                float(row["total_qty"]),
+            ]
+        )
+    ws.append(
+        [
+            "",
+            "TOTAL POR VENDEDOR",
+            *[float(payload["pivot_vendor_totals"].get(vendor["id"], 0)) for vendor in pivot_vendors],
+            float(payload["pivot_grand_total"]),
+        ]
+    )
+    total_row = ws.max_row
+    for cell in ws[total_row]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="DCEAFB")
+    ws.column_dimensions["A"].width = 18
+    ws.column_dimensions["B"].width = 48
+    for column_idx in range(3, ws.max_column + 1):
+        ws.column_dimensions[get_column_letter(column_idx)].width = 18
+        for row_idx in range(5, ws.max_row + 1):
+            ws.cell(row=row_idx, column=column_idx).number_format = "#,##0.00"
+    ws.freeze_panes = "C5"
+    ws.auto_filter.ref = f"A4:{get_column_letter(ws.max_column)}{max(ws.max_row - 1, 4)}"
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"matriz_vendedores_{filters['start_date'].isoformat()}_{filters['end_date'].isoformat()}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/reports/esfuerzo-vendedor/matriz.pdf")
+def report_vendor_effort_matrix_pdf(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.reports")
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.pdfgen import canvas
+
+    filters = _vendor_effort_report_filters(request)
+    payload = _build_vendor_effort_report(db, user, filters)
+    vendors = payload["pivot_vendors"]
+    vendor_blocks = [vendors[index:index + 6] for index in range(0, len(vendors), 6)] or [[]]
+    buffer = io.BytesIO()
+    page_size = landscape(A4)
+    width, height = page_size
+    pdf = canvas.Canvas(buffer, pagesize=page_size)
+    margin = 28
+    item_width = 250
+    numeric_width = (width - (margin * 2) - item_width) / 7
+    navy = colors.HexColor("#17375E")
+    light = colors.HexColor("#EAF3FB")
+
+    for block_index, vendor_block in enumerate(vendor_blocks, start=1):
+        y = height - 32
+        pdf.setFillColor(navy)
+        pdf.setFont("Helvetica-Bold", 14)
+        pdf.drawString(margin, y, "Matriz de productos vendidos por vendedor")
+        pdf.setFont("Helvetica", 8)
+        pdf.drawRightString(width - margin, y, f"Bloque {block_index} de {len(vendor_blocks)}")
+        y -= 15
+        pdf.drawString(margin, y, f"Periodo: {filters['start_date'].isoformat()} al {filters['end_date'].isoformat()}")
+        y -= 22
+
+        def draw_matrix_header(current_y: float) -> float:
+            pdf.setFillColor(navy)
+            pdf.rect(margin, current_y - 15, width - (margin * 2), 20, fill=1, stroke=0)
+            pdf.setFillColor(colors.white)
+            pdf.setFont("Helvetica-Bold", 7)
+            pdf.drawString(margin + 4, current_y - 9, "ITEM")
+            for vendor_index, vendor in enumerate(vendor_block):
+                x_right = margin + item_width + numeric_width * (vendor_index + 1)
+                pdf.drawRightString(x_right - 4, current_y - 9, str(vendor["nombre"])[:16])
+            pdf.drawRightString(width - margin - 4, current_y - 9, "TOTAL")
+            return current_y - 25
+
+        y = draw_matrix_header(y)
+        pdf.setFont("Helvetica", 7)
+        for row_index, row in enumerate(payload["pivot_rows"]):
+            if y < 48:
+                pdf.showPage()
+                y = height - 32
+                pdf.setFillColor(navy)
+                pdf.setFont("Helvetica-Bold", 11)
+                pdf.drawString(margin, y, "Matriz por vendedor (continuacion)")
+                y -= 22
+                y = draw_matrix_header(y)
+                pdf.setFont("Helvetica", 7)
+            if row_index % 2:
+                pdf.setFillColor(light)
+                pdf.rect(margin, y - 5, width - (margin * 2), 13, fill=1, stroke=0)
+            pdf.setFillColor(colors.black)
+            label = f"{row['codigo']} - {row['producto']}"
+            pdf.drawString(margin + 4, y, label[:55])
+            for vendor_index, vendor in enumerate(vendor_block):
+                qty = row["quantities"].get(vendor["id"], 0)
+                x_right = margin + item_width + numeric_width * (vendor_index + 1)
+                pdf.drawRightString(x_right - 4, y, f"{qty:,.2f}" if qty else "-")
+            pdf.setFont("Helvetica-Bold", 7)
+            pdf.drawRightString(width - margin - 4, y, f"{row['total_qty']:,.2f}")
+            pdf.setFont("Helvetica", 7)
+            y -= 14
+
+        pdf.setFillColor(light)
+        pdf.rect(margin, y - 6, width - (margin * 2), 15, fill=1, stroke=0)
+        pdf.setFillColor(navy)
+        pdf.setFont("Helvetica-Bold", 7)
+        pdf.drawString(margin + 4, y, "TOTAL POR VENDEDOR")
+        for vendor_index, vendor in enumerate(vendor_block):
+            x_right = margin + item_width + numeric_width * (vendor_index + 1)
+            pdf.drawRightString(x_right - 4, y, f"{payload['pivot_vendor_totals'].get(vendor['id'], 0):,.2f}")
+        pdf.drawRightString(width - margin - 4, y, f"{payload['pivot_grand_total']:,.2f}")
+        pdf.showPage()
+
+    pdf.save()
+    buffer.seek(0)
+    filename = f"matriz_vendedores_{filters['start_date'].isoformat()}_{filters['end_date'].isoformat()}.pdf"
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename={filename}"})
 
 
 @router.get("/reports/esfuerzo-vendedor/export.pdf")
