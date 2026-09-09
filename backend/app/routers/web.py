@@ -25808,6 +25808,8 @@ def data_regalias(
         .all()
     )
     marked_ids = {int(producto.id) for _marked, producto in marked_rows}
+    branch, bodega = _resolve_branch_bodega(db, user)
+    marked_balances = _balances_by_bodega(db, [bodega.id], list(marked_ids)) if bodega and marked_ids else {}
     global_gift_used = _regalia_consumption_by_product(db, list(marked_ids))
     gift_product_stats = {}
     for marker, producto in marked_rows:
@@ -25817,6 +25819,7 @@ def data_regalias(
             "total": total,
             "used": used,
             "pending": max(Decimal("0"), total - used),
+            "stock": Decimal(str(marked_balances.get((int(producto.id), bodega.id), Decimal("0")) or 0)) if bodega else Decimal("0"),
         }
     product_query = _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
     if marked_ids:
@@ -25876,7 +25879,12 @@ def data_regalias(
     else:
         available_products = []
 
-    branch, bodega = _resolve_branch_bodega(db, user)
+    available_ids = [int(row["producto"].id) for row in available_products]
+    available_balances = _balances_by_bodega(db, [bodega.id], available_ids) if bodega and available_ids else {}
+    for row in available_products:
+        producto = row["producto"]
+        row["existencia"] = float(available_balances.get((int(producto.id), bodega.id), Decimal("0")) or 0) if bodega else 0.0
+
     vendor_payload = _regalia_vendor_payload(db, selected_vendedor_id, bodega) if selected_vendedor_id else {
         "policy": None,
         "budget_usd": Decimal("0"),
@@ -25934,6 +25942,7 @@ def data_regalias(
             "marked_rows": marked_rows,
             "marked_active_count": sum(1 for marked, _producto in marked_rows if marked.activo),
             "gift_product_stats": gift_product_stats,
+            "bodega": bodega,
             "available_products": available_products,
             "q": q,
             "policy": vendor_payload["policy"],
@@ -25989,6 +25998,10 @@ def data_regalias_product_search(
         scored.append((int(match["score"] or 0), producto))
     if query_text:
         scored.sort(key=lambda row: (-row[0], _ascii_lower(row[1].descripcion), _ascii_lower(row[1].cod_producto)))
+    selected = scored[:80]
+    _, bodega = _resolve_branch_bodega(db, user)
+    selected_ids = [int(producto.id) for _score, producto in selected]
+    balances = _balances_by_bodega(db, [bodega.id], selected_ids) if bodega and selected_ids else {}
     return JSONResponse(
         {
             "ok": True,
@@ -25998,8 +26011,9 @@ def data_regalias_product_search(
                     "codigo": producto.cod_producto or "",
                     "descripcion": producto.descripcion or "",
                     "referencia": getattr(producto, "referencia_producto", None) or "",
+                    "existencia": float(balances.get((int(producto.id), bodega.id), Decimal("0")) or 0) if bodega else 0,
                 }
-                for _score, producto in scored[:80]
+                for _score, producto in selected
             ],
         }
     )
