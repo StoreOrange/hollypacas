@@ -2089,6 +2089,7 @@
   const buildPromotionGiftParams = (query = "") => {
     const params = new URLSearchParams();
     if (query) params.set("q", query);
+    if (comboMode === "promotion") params.set("promotion_only", "true");
     const vendedorSelectEl = document.getElementById("vendedor-select");
     if (vendedorSelectEl?.value) params.set("vendedor_id", vendedorSelectEl.value);
     if (activeBodegaId > 0) params.set("bodega_id", String(activeBodegaId));
@@ -2115,12 +2116,23 @@
     const remainingUnits = Math.max(0, baseUnits - usage.unitsQty);
     comboGiftPolicySummary.innerHTML = `
       <div class="d-flex flex-wrap gap-1 align-items-center">
-        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Valor ref.: $ ${usage.referenceUsd.toFixed(2)}</span>
-        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Cupo und.: ${remainingUnits.toFixed(2)}</span>
+        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Valor seleccionado: $ ${usage.referenceUsd.toFixed(2)}</span>
+        <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Saldo promocional: ${remainingUnits.toFixed(2)}</span>
+        <span class="odoo-pill primary" style="font-size:.66rem;padding:.15rem .45rem;">Entregables hoy: ${Number(promotionGiftPayload.deliverable_units_total || 0).toFixed(2)}</span>
         <span class="odoo-pill" style="font-size:.66rem;padding:.15rem .45rem;">Usadas aqui: ${usage.unitsQty.toFixed(2)}</span>
       </div>
     `;
-    comboGiftAssignedList.innerHTML = `<div class="text-slate">Busca cualquier producto con existencia para pegarlo como regalo.</div>`;
+    const configuredItems = promotionGiftPayload.items || [];
+    comboGiftAssignedList.innerHTML = configuredItems.length
+      ? configuredItems.map((item) => `
+          <div class="d-flex justify-content-between align-items-center gap-2 border rounded-2 px-2 py-1 ${item.allowed ? "bg-white" : "bg-light"}">
+            <div class="min-w-0"><span class="fw-semibold">${item.cod_producto}</span> · ${item.descripcion}</div>
+            <div class="text-end text-nowrap">
+              <span class="badge ${item.allowed ? "text-bg-success" : "text-bg-secondary"}">Saldo ${Number(item.remaining_qty || 0).toFixed(0)}</span>
+              <small class="d-block text-muted">Existencia ${Number(item.free_qty || 0).toFixed(0)}${item.unavailable_reason ? ` · ${item.unavailable_reason}` : ""}</small>
+            </div>
+          </div>`).join("")
+      : `<div class="text-slate">No hay productos autorizados en Datos &gt; Promociones 2x1.</div>`;
   };
 
   const renderGiftAssignmentPanel = (payload) => {
@@ -2350,6 +2362,8 @@
     comboParentResults.innerHTML = items
       .map((item) => {
         const freeQty = Number(item.free_qty ?? item.existencia ?? 0);
+        // El padre se cobra normalmente: solo depende de su existencia libre.
+        // El cupo promocional aplica exclusivamente a la linea de regalo.
         const disabled = freeQty <= 0;
         return `
           <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
@@ -2388,8 +2402,9 @@
     comboGiftResults.innerHTML = items
       .map((item) => {
         const freeQty = Number(item.free_qty ?? item.existencia ?? 0);
-        const disabled = freeQty <= 0;
-        const policyStatus = [`Cupo vendedor: ${Number(item.remaining_qty || 0).toFixed(2)}`, `Precio venta: $${Number(item.precio_referencia_usd || 0).toFixed(2)}`].join(" - ");
+        const disabled = freeQty <= 0 || !item.allowed;
+        const quotaLabel = item.assignment_mode === "VENDEDOR" ? "Saldo asignado" : "Saldo libre";
+        const policyStatus = [`${quotaLabel}: ${Number(item.remaining_qty || 0).toFixed(2)}`, `Precio venta: $${Number(item.precio_referencia_usd || 0).toFixed(2)}`, item.unavailable_reason || "Disponible"].join(" - ");
         return `
           <div class="d-flex align-items-center justify-content-between border border-slate-200 rounded-2xl px-3 py-2 bg-white">
             <div>
@@ -2705,8 +2720,7 @@
         const response = await fetch(`/sales/promotions/gifts?${buildPromotionGiftParams(value).toString()}`);
         const payload = await response.json().catch(() => null);
         if (searchSequence !== comboGiftSearchSequence || comboGiftSearch.value.trim() !== value) return;
-        const items = (payload?.items || []).filter((item) => item.allowed);
-        renderComboGiftResults(items);
+        renderComboGiftResults(payload?.items || []);
       } catch (error) {
         if (comboGiftResults) {
           comboGiftResults.innerHTML = `<div class="text-danger text-sm">Error al buscar productos.</div>`;

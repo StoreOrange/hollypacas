@@ -1844,6 +1844,14 @@ def init_db() -> None:
         if "cupo_unidades_total" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE regalias_vendedores_politicas ADD COLUMN cupo_unidades_total NUMERIC(14, 2) DEFAULT 0"))
+    if "regalias_productos" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("regalias_productos")}
+        if "cantidad_total" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE regalias_productos ADD COLUMN cantidad_total NUMERIC(14, 2) NOT NULL DEFAULT 0"))
+        if "modo_asignacion" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE regalias_productos ADD COLUMN modo_asignacion VARCHAR(20) NOT NULL DEFAULT 'LIBRE'"))
     if "email_recipients" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("email_recipients")}
         if "discount_active" not in columns:

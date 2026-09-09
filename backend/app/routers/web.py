@@ -2547,6 +2547,7 @@ def _regalia_consumption_by_vendor(
         .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
         .filter(VentaFactura.estado != "ANULADA")
         .filter(VentaItem.combo_role == "gift")
+        .filter(VentaItem.combo_group.like("promotion-%"))
         .filter(VentaFactura.vendedor_id.in_(clean_vendor_ids))
     )
     if product_ids:
@@ -2573,6 +2574,25 @@ def _regalia_consumption_by_vendor(
     return dict(vendor_money), dict(vendor_items), dict(vendor_units)
 
 
+def _regalia_consumption_by_product(db: Session, product_ids: list[int]) -> dict[int, Decimal]:
+    clean_ids = [int(product_id) for product_id in product_ids if int(product_id or 0) > 0]
+    if not clean_ids:
+        return {}
+    rows = (
+        db.query(VentaItem.producto_id, func.sum(VentaItem.cantidad))
+        .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+        .filter(
+            VentaFactura.estado != "ANULADA",
+            VentaItem.combo_role == "gift",
+            VentaItem.combo_group.like("promotion-%"),
+            VentaItem.producto_id.in_(clean_ids),
+        )
+        .group_by(VentaItem.producto_id)
+        .all()
+    )
+    return {int(product_id): Decimal(str(qty or 0)) for product_id, qty in rows}
+
+
 def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bodega]) -> dict[str, object]:
     policy = (
         db.query(RegaliaVendedorPolitica)
@@ -2587,6 +2607,7 @@ def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bode
         .all()
     )
     product_ids = [int(producto.id) for _, producto in marked_rows]
+    global_product_used = _regalia_consumption_by_product(db, product_ids)
     balances = _balances_by_bodega(db, [bodega.id], product_ids) if bodega and product_ids else {}
     vendor_money_used, vendor_item_used, vendor_units_used = _regalia_consumption_by_vendor(db, [vendedor_id])
     budget_usd = Decimal("0")
@@ -2611,9 +2632,14 @@ def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bode
     for marker, producto in marked_rows:
         product_id = int(producto.id)
         existencia = Decimal(str(balances.get((product_id, bodega.id), Decimal("0")) or 0)) if bodega else Decimal("0")
-        assigned_qty = item_limits.get(product_id, Decimal("0"))
+        master_qty = Decimal(str(getattr(marker, "cantidad_total", None) or 0))
+        assignment_mode = str(getattr(marker, "modo_asignacion", None) or "LIBRE").strip().upper()
+        global_used_qty = Decimal(str(global_product_used.get(product_id, Decimal("0")) or 0))
+        global_remaining_qty = max(Decimal("0"), master_qty - global_used_qty)
+        assigned_qty = item_limits.get(product_id, Decimal("0")) if assignment_mode == "VENDEDOR" else master_qty
         used_qty = Decimal(str(vendor_item_used.get((int(vendedor_id), product_id), Decimal("0")) or 0))
-        remaining_qty = max(Decimal("0"), assigned_qty - used_qty)
+        vendor_remaining_qty = max(Decimal("0"), assigned_qty - used_qty)
+        remaining_qty = min(global_remaining_qty, vendor_remaining_qty) if assignment_mode == "VENDEDOR" else global_remaining_qty
         price_usd = _regalia_price_usd(producto)
         assigned_value_usd = (assigned_qty * price_usd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         remaining_value_usd = (remaining_qty * price_usd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -2624,9 +2650,9 @@ def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bode
         remaining_units_total += remaining_qty
         remaining_value_usd_total += remaining_value_usd
         cash_can_cover = False
-        unit_can_cover = total_unit_limit > used_units_total
+        unit_can_cover = remaining_qty > 0
         policy_active = bool(policy and policy.activo)
-        allowed = bool(policy_active and unit_can_cover)
+        allowed = bool(unit_can_cover and (assignment_mode == "LIBRE" or policy_active))
         prices = _product_price_map(producto)
         items.append(
             {
@@ -2639,6 +2665,10 @@ def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bode
                 "existencia": float(existencia),
                 "free_qty": float(existencia),
                 "assigned_qty": float(assigned_qty),
+                "master_qty": float(master_qty),
+                "global_used_qty": float(global_used_qty),
+                "global_remaining_qty": float(global_remaining_qty),
+                "assignment_mode": assignment_mode,
                 "assigned_value_usd": float(assigned_value_usd),
                 "used_qty": float(used_qty),
                 "remaining_qty": float(remaining_qty),
@@ -2658,10 +2688,10 @@ def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bode
         "remaining_usd": remaining_usd,
         "money_available_usd": Decimal("0.00"),
         "assigned_products_count": assigned_products_count,
-        "assigned_units_total": total_unit_limit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        "assigned_units_total": assigned_units_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
         "assigned_value_usd_total": assigned_value_usd_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
         "used_units_total": used_units_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-        "remaining_units_total": max(Decimal("0"), total_unit_limit - used_units_total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        "remaining_units_total": remaining_units_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
         "remaining_value_usd_total": remaining_value_usd_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
         "items": items,
     }
@@ -25641,7 +25671,6 @@ def data_stagnant_products(
         .all()
     )
     marked_ids = {int(producto.id) for _marked, producto in marked_rows}
-
     product_query = db.query(Producto).filter(Producto.activo.is_(True))
     if marked_ids:
         product_query = product_query.filter(~Producto.id.in_(marked_ids))
@@ -25779,6 +25808,16 @@ def data_regalias(
         .all()
     )
     marked_ids = {int(producto.id) for _marked, producto in marked_rows}
+    global_gift_used = _regalia_consumption_by_product(db, list(marked_ids))
+    gift_product_stats = {}
+    for marker, producto in marked_rows:
+        total = Decimal(str(getattr(marker, "cantidad_total", None) or 0))
+        used = Decimal(str(global_gift_used.get(int(producto.id), Decimal("0")) or 0))
+        gift_product_stats[int(marker.id)] = {
+            "total": total,
+            "used": used,
+            "pending": max(Decimal("0"), total - used),
+        }
     product_query = _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
     if marked_ids:
         product_query = product_query.filter(~Producto.id.in_(marked_ids))
@@ -25799,6 +25838,14 @@ def data_regalias(
             if token_filters
             else []
         )
+        # Si la escritura no coincide literalmente (acento, guion o error
+        # pequeño), evaluar el catalogo disponible con el buscador inteligente.
+        if len(candidate_products) < 25:
+            fallback_products = product_query.order_by(Producto.descripcion.asc()).limit(2500).all()
+            seen_candidate_ids = {int(producto.id) for producto in candidate_products}
+            candidate_products.extend(
+                producto for producto in fallback_products if int(producto.id) not in seen_candidate_ids
+            )
         scored_products = []
         for producto in candidate_products:
             match = _smart_product_match(producto, q)
@@ -25814,7 +25861,7 @@ def data_regalias(
             compact_searchable = re.sub(r"[^a-z0-9]+", "", searchable)
             compact_query = re.sub(r"[^a-z0-9]+", "", _ascii_lower(q))
             direct_match = all(token in searchable for token in tokens) or (compact_query and compact_query in compact_searchable)
-            if not direct_match:
+            if not direct_match and int(match["score"] or 0) < 30:
                 continue
             scored_products.append(
                 {
@@ -25827,8 +25874,7 @@ def data_regalias(
         available_products.sort(key=lambda row: (-int(row["score"] or 0), _ascii_lower(row["producto"].descripcion)))
         available_products = available_products[:80]
     else:
-        candidate_products = product_query.order_by(Producto.descripcion.asc()).limit(80).all()
-        available_products = [{"producto": producto, "score": 0, "reason": "Disponible"} for producto in candidate_products[:80]]
+        available_products = []
 
     branch, bodega = _resolve_branch_bodega(db, user)
     vendor_payload = _regalia_vendor_payload(db, selected_vendedor_id, bodega) if selected_vendedor_id else {
@@ -25886,6 +25932,8 @@ def data_regalias(
             "vendedores": vendedores,
             "selected_vendedor_id": selected_vendedor_id,
             "marked_rows": marked_rows,
+            "marked_active_count": sum(1 for marked, _producto in marked_rows if marked.activo),
+            "gift_product_stats": gift_product_stats,
             "available_products": available_products,
             "q": q,
             "policy": vendor_payload["policy"],
@@ -25915,11 +25963,55 @@ def data_regalias(
     )
 
 
+@router.get("/data/regalias/productos/search")
+def data_regalias_product_search(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if not _is_hollpacas_mode():
+        return JSONResponse({"ok": False, "items": []}, status_code=403)
+    marked_ids = {int(row[0]) for row in db.query(RegaliaProducto.producto_id).all()}
+    product_query = _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
+    if marked_ids:
+        product_query = product_query.filter(~Producto.id.in_(marked_ids))
+    query_text = (q or "").strip()
+    if len(query_text) < 2:
+        return JSONResponse({"ok": True, "items": []})
+    candidates = product_query.order_by(Producto.descripcion.asc()).limit(2500).all()
+    scored = []
+    for producto in candidates:
+        match = _smart_product_match(producto, query_text)
+        if query_text and int(match["score"] or 0) < 30:
+            continue
+        scored.append((int(match["score"] or 0), producto))
+    if query_text:
+        scored.sort(key=lambda row: (-row[0], _ascii_lower(row[1].descripcion), _ascii_lower(row[1].cod_producto)))
+    return JSONResponse(
+        {
+            "ok": True,
+            "items": [
+                {
+                    "id": int(producto.id),
+                    "codigo": producto.cod_producto or "",
+                    "descripcion": producto.descripcion or "",
+                    "referencia": getattr(producto, "referencia_producto", None) or "",
+                }
+                for _score, producto in scored[:80]
+            ],
+        }
+    )
+
+
 @router.post("/data/regalias/productos")
 def data_regalias_product_add(
     request: Request,
     producto_id: int = Form(...),
     nota: Optional[str] = Form(None),
+    cantidad_total: float = Form(0),
+    modo_asignacion: str = Form("LIBRE"),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -25930,14 +26022,20 @@ def data_regalias_product_add(
     if not producto:
         return RedirectResponse("/data/regalias?error=Producto+no+encontrado", status_code=303)
     existing = db.query(RegaliaProducto).filter(RegaliaProducto.producto_id == producto.id).first()
+    quantity = Decimal(str(max(0, cantidad_total or 0))).quantize(Decimal("0.01"))
+    assignment_mode = "VENDEDOR" if modo_asignacion.strip().upper() == "VENDEDOR" else "LIBRE"
     if existing:
         existing.activo = True
         existing.nota = (nota or existing.nota or "").strip()[:240] or None
+        existing.cantidad_total = quantity
+        existing.modo_asignacion = assignment_mode
     else:
         db.add(
             RegaliaProducto(
                 producto_id=producto.id,
                 nota=(nota or "").strip()[:240] or None,
+                cantidad_total=quantity,
+                modo_asignacion=assignment_mode,
                 activo=True,
                 usuario_registro=(user.full_name or user.email or "").strip()[:120] or None,
             )
@@ -25951,6 +26049,8 @@ def data_regalias_product_update(
     request: Request,
     item_id: int,
     nota: Optional[str] = Form(None),
+    cantidad_total: float = Form(0),
+    modo_asignacion: str = Form("LIBRE"),
     activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
@@ -25962,9 +26062,106 @@ def data_regalias_product_update(
     if not item:
         return RedirectResponse("/data/regalias?error=Registro+no+encontrado", status_code=303)
     item.nota = (nota or "").strip()[:240] or None
+    used_qty = _regalia_consumption_by_product(db, [int(item.producto_id)]).get(int(item.producto_id), Decimal("0"))
+    requested_qty = Decimal(str(max(0, cantidad_total or 0))).quantize(Decimal("0.01"))
+    if requested_qty < used_qty:
+        return RedirectResponse(
+            f"/data/regalias?error=El+cupo+no+puede+ser+menor+a+las+{used_qty}+unidades+ya+entregadas",
+            status_code=303,
+        )
+    assignment_mode = "VENDEDOR" if modo_asignacion.strip().upper() == "VENDEDOR" else "LIBRE"
+    if assignment_mode == "VENDEDOR":
+        allocated_qty = (
+            db.query(func.coalesce(func.sum(RegaliaVendedorItem.cantidad_disponible), 0))
+            .filter(
+                RegaliaVendedorItem.producto_id == item.producto_id,
+                RegaliaVendedorItem.activo.is_(True),
+            )
+            .scalar()
+        )
+        if Decimal(str(allocated_qty or 0)) > requested_qty:
+            return RedirectResponse(
+                "/data/regalias?error=El+cupo+global+no+puede+ser+menor+a+lo+ya+asignado+a+vendedores",
+                status_code=303,
+            )
+    item.cantidad_total = requested_qty
+    item.modo_asignacion = assignment_mode
     item.activo = activo == "on"
     db.commit()
     return RedirectResponse("/data/regalias?success=Producto+actualizado", status_code=303)
+
+
+@router.post("/data/regalias/vendedores/items")
+def data_regalias_vendor_item_save(
+    request: Request,
+    vendedor_id: int = Form(...),
+    producto_id: int = Form(...),
+    cantidad_asignada: float = Form(0),
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.data.catalogs")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/data", status_code=303)
+    vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first()
+    marker = db.query(RegaliaProducto).filter(
+        RegaliaProducto.producto_id == producto_id,
+        RegaliaProducto.activo.is_(True),
+        RegaliaProducto.modo_asignacion == "VENDEDOR",
+    ).first()
+    if not vendedor or not marker:
+        return RedirectResponse("/data/regalias?error=Vendedor+o+producto+no+disponible", status_code=303)
+    quantity = Decimal(str(max(0, cantidad_asignada or 0))).quantize(Decimal("0.01"))
+    _money_used, seller_product_used, _seller_units_used = _regalia_consumption_by_vendor(
+        db,
+        [vendedor_id],
+        [producto_id],
+    )
+    already_delivered = Decimal(str(seller_product_used.get((vendedor_id, producto_id), Decimal("0")) or 0))
+    if quantity < already_delivered:
+        return RedirectResponse(
+            f"/data/regalias?vendedor_id={vendedor_id}&error=La+asignacion+no+puede+ser+menor+a+lo+ya+entregado",
+            status_code=303,
+        )
+    other_assigned = (
+        db.query(func.coalesce(func.sum(RegaliaVendedorItem.cantidad_disponible), 0))
+        .join(RegaliaVendedorPolitica, RegaliaVendedorPolitica.id == RegaliaVendedorItem.politica_id)
+        .filter(
+            RegaliaVendedorItem.producto_id == producto_id,
+            RegaliaVendedorItem.activo.is_(True),
+            RegaliaVendedorPolitica.vendedor_id != vendedor_id,
+        )
+        .scalar()
+    )
+    if Decimal(str(other_assigned or 0)) + quantity > Decimal(str(marker.cantidad_total or 0)):
+        return RedirectResponse(
+            f"/data/regalias?vendedor_id={vendedor_id}&error=La+asignacion+supera+el+cupo+global+del+producto",
+            status_code=303,
+        )
+    policy = db.query(RegaliaVendedorPolitica).filter(RegaliaVendedorPolitica.vendedor_id == vendedor_id).first()
+    if not policy:
+        policy = RegaliaVendedorPolitica(
+            vendedor_id=vendedor_id,
+            activo=True,
+            usuario_registro=(user.full_name or user.email or "").strip()[:120] or None,
+        )
+        db.add(policy)
+        db.flush()
+    item = db.query(RegaliaVendedorItem).filter(
+        RegaliaVendedorItem.politica_id == policy.id,
+        RegaliaVendedorItem.producto_id == producto_id,
+    ).first()
+    if not item:
+        item = RegaliaVendedorItem(politica_id=policy.id, producto_id=producto_id)
+        db.add(item)
+    item.cantidad_disponible = quantity
+    item.activo = quantity > 0
+    policy.activo = True
+    db.commit()
+    return RedirectResponse(
+        f"/data/regalias?vendedor_id={vendedor_id}&success=Asignacion+por+vendedor+actualizada#regalia-vendor-products",
+        status_code=303,
+    )
 
 
 @router.post("/data/regalias/vendedores")
@@ -28477,14 +28674,17 @@ def sales_promotions_gifts(
     q: str = "",
     bodega_id: Optional[int] = None,
     vendedor_id: Optional[int] = None,
+    promotion_only: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.registrar")
-    if not vendedor_id:
-        return JSONResponse({"ok": False, "message": "Selecciona vendedor"}, status_code=400)
-    vendedor = db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first()
-    if not vendedor:
+    vendedor = (
+        db.query(Vendedor).filter(Vendedor.id == vendedor_id, Vendedor.activo.is_(True)).first()
+        if vendedor_id
+        else None
+    )
+    if vendedor_id and not vendedor:
         return JSONResponse({"ok": False, "message": "Vendedor no encontrado"}, status_code=404)
     _, resolved_bodega = _resolve_branch_bodega(db, user)
     bodega = resolved_bodega
@@ -28493,10 +28693,18 @@ def sales_promotions_gifts(
         requested = db.query(Bodega).filter(Bodega.id == bodega_id, Bodega.activo.is_(True)).first()
         if requested and (not allowed_branch_ids or requested.branch_id in allowed_branch_ids):
             bodega = requested
-    payload = _regalia_vendor_payload(db, vendedor.id, bodega)
+    payload = _regalia_vendor_payload(db, int(vendedor.id) if vendedor else 0, bodega)
+    promotion_limits = {int(item["id"]): item for item in payload.get("items", [])}
     query = _ascii_lower(q or "")
     remaining_units_total = Decimal(str(payload.get("remaining_units_total") or 0))
     base_product_query = db.query(Producto).filter(Producto.activo.is_(True))
+    if promotion_only:
+        # El catalogo administrado en Datos es la autorizacion del articulo que
+        # puede salir gratis. La existencia por si sola nunca habilita un 2x1.
+        base_product_query = base_product_query.join(
+            RegaliaProducto,
+            RegaliaProducto.producto_id == Producto.id,
+        ).filter(RegaliaProducto.activo.is_(True))
     product_query = base_product_query
     tokens = [token for token in re.split(r"\s+", query) if token]
     if tokens:
@@ -28541,11 +28749,21 @@ def sales_promotions_gifts(
             if score < 8 and not all(token in searchable for token in tokens):
                 continue
         existencia = Decimal(str(balances.get((int(producto.id), bodega.id), Decimal("0")) or 0)) if bodega else Decimal("0")
-        if existencia <= 0:
+        if existencia <= 0 and not promotion_only:
             continue
         price_usd = _regalia_price_usd(producto)
-        allowed_by_units = True
+        limit_info = promotion_limits.get(int(producto.id), {}) if promotion_only else {}
+        allowed_by_units = bool(limit_info.get("allowed_by_units", True))
         prices = _product_price_map(producto)
+        promotion_remaining = Decimal(str(limit_info.get("remaining_qty", remaining_units_total) or 0))
+        can_deliver = bool(limit_info.get("allowed")) and existencia > 0 if promotion_only else existencia > 0
+        unavailable_reason = ""
+        if promotion_only and promotion_remaining <= 0:
+            unavailable_reason = "Sin saldo promocional"
+        elif promotion_only and not bool(limit_info.get("allowed")):
+            unavailable_reason = "Sin asignación para este vendedor"
+        elif existencia <= 0:
+            unavailable_reason = "Sin existencia en esta bodega"
         scored_items.append(
             (
                 {
@@ -28556,14 +28774,19 @@ def sales_promotions_gifts(
                     "precio_referencia_usd": float(price_usd),
                     "existencia": float(existencia),
                     "free_qty": float(existencia),
-                    "assigned_qty": float(payload.get("assigned_units_total") or 0),
+                    "assigned_qty": float(limit_info.get("assigned_qty", payload.get("assigned_units_total") or 0)),
                     "assigned_value_usd": float(payload.get("assigned_value_usd_total") or 0),
-                    "used_qty": float(payload.get("used_units_total") or 0),
-                    "remaining_qty": float(remaining_units_total),
+                    "used_qty": float(limit_info.get("used_qty", payload.get("used_units_total") or 0)),
+                    "remaining_qty": float(promotion_remaining),
+                    "master_qty": float(limit_info.get("master_qty", 0)),
+                    "global_used_qty": float(limit_info.get("global_used_qty", 0)),
+                    "global_remaining_qty": float(limit_info.get("global_remaining_qty", promotion_remaining)),
+                    "assignment_mode": str(limit_info.get("assignment_mode", "LIBRE")),
                     "remaining_value_usd": 0.0,
                     "cash_remaining_usd": 0.0,
                     "money_available_usd": 0.0,
-                    "allowed": True,
+                    "allowed": can_deliver,
+                    "unavailable_reason": unavailable_reason,
                     "allowed_by_cash": False,
                     "allowed_by_units": bool(allowed_by_units),
                     "default_policy": "UNIDADES",
@@ -28579,6 +28802,11 @@ def sales_promotions_gifts(
         )
     )
     items = [item for item, _score in scored_items]
+    deliverable_units_total = sum(
+        min(Decimal(str(item.get("remaining_qty") or 0)), Decimal(str(item.get("free_qty") or 0)))
+        for item in items
+        if item.get("allowed")
+    )
     return JSONResponse(
         {
             "ok": True,
@@ -28592,6 +28820,7 @@ def sales_promotions_gifts(
             "used_units_total": float(payload["used_units_total"]),
             "remaining_units_total": float(payload["remaining_units_total"]),
             "remaining_value_usd_total": float(payload["remaining_value_usd_total"]),
+            "deliverable_units_total": float(deliverable_units_total),
             "items": items[:100],
         }
     )
@@ -33500,6 +33729,15 @@ async def sales_promotion_request(
     gift = db.query(Producto).filter(Producto.id == gift_id, Producto.activo.is_(True)).first()
     if not parent or not gift:
         return JSONResponse({"ok": False, "message": "Producto padre o regalía no disponible"}, status_code=404)
+    gift_authorized = db.query(RegaliaProducto.id).filter(
+        RegaliaProducto.producto_id == gift_id,
+        RegaliaProducto.activo.is_(True),
+    ).first()
+    if not gift_authorized:
+        return JSONResponse(
+            {"ok": False, "message": "Este producto no está autorizado como regalo en Datos > Promociones 2x1"},
+            status_code=400,
+        )
     config = db.query(EmailConfig).first()
     if not config or not config.active:
         return JSONResponse({"ok": False, "message": "Configura el correo emisor"}, status_code=400)
@@ -33510,6 +33748,23 @@ async def sales_promotion_request(
     branch, bodega = _resolve_branch_bodega(db, user)
     if not branch or not bodega:
         return JSONResponse({"ok": False, "message": "Usuario sin sucursal o bodega asignada"}, status_code=400)
+    vendedor_id_raw = str(form.get("vendedor_id") or "")
+    vendedor = (
+        db.query(Vendedor).filter(Vendedor.id == int(vendedor_id_raw), Vendedor.activo.is_(True)).first()
+        if vendedor_id_raw.isdigit()
+        else None
+    )
+    if not vendedor:
+        return JSONResponse({"ok": False, "message": "Selecciona un vendedor activo"}, status_code=400)
+    gift_limit = next(
+        (item for item in _regalia_vendor_payload(db, vendedor.id, bodega)["items"] if int(item["id"]) == gift_id),
+        None,
+    )
+    if not gift_limit or not gift_limit.get("allowed") or Decimal(str(gift_limit.get("remaining_qty") or 0)) < Decimal(cantidad):
+        return JSONResponse(
+            {"ok": False, "message": "El regalo no tiene cupo promocional suficiente para este vendedor"},
+            status_code=400,
+        )
 
     payload = _promotion_authorization_payload(parent_id, gift_id, cantidad, str(form.get("moneda") or "CS"))
     token = _generate_token(6)
@@ -33523,7 +33778,6 @@ async def sales_promotion_request(
     )
     db.add(token_row)
     db.commit()
-    vendedor = db.query(Vendedor).filter(Vendedor.id == int(form.get("vendedor_id"))).first() if str(form.get("vendedor_id") or "").isdigit() else None
     html_body = f"""
     <div style="font-family:Arial,sans-serif;background:#f0fdf4;padding:24px;">
       <div style="max-width:760px;margin:auto;background:#fff;border:1px solid #bbf7d0;border-radius:18px;padding:28px;">
@@ -33860,6 +34114,27 @@ async def sales_create_invoice(
     combo_parent_prices: dict[str, tuple[float, float]] = {}
     promotion_token_rows: list[DiscountAuthorizationToken] = []
     promotion_token_ids: set[int] = set()
+    promotion_requested_qty: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    promotion_limits: dict[int, dict[str, object]] = {}
+    if any(str(src.get("combo_group") or "").startswith("promotion-") for src in source_items):
+        if not str(vendedor_id or "").isdigit():
+            db.rollback()
+            return RedirectResponse("/sales?error=La+promocion+2x1+requiere+un+vendedor", status_code=303)
+        promotion_product_ids = {
+            int(src["product_id"])
+            for src in source_items
+            if str(src.get("combo_group") or "").startswith("promotion-")
+            and str(src.get("role") or "").strip().lower() == "gift"
+        }
+        # Bloquea los cupos maestros durante la factura para que dos sucursales
+        # no consuman simultaneamente el mismo ultimo regalo disponible.
+        db.query(RegaliaProducto).filter(
+            RegaliaProducto.producto_id.in_(promotion_product_ids)
+        ).with_for_update().all()
+        promotion_limits = {
+            int(item["id"]): item
+            for item in _regalia_vendor_payload(db, int(vendedor_id), bodega)["items"]
+        }
     combo_groups = {
         str(src.get("combo_group") or "").strip()
         for src in source_items
@@ -33885,6 +34160,29 @@ async def sales_create_invoice(
             if len(gifts) != 1 or gift_qty != parent_qty:
                 db.rollback()
                 return RedirectResponse("/sales?error=Promocion+2x1+invalida:+debe+llevar+una+sola+regalia+por+producto+cobrado", status_code=303)
+            gift_product_id = int(gifts[0]["product_id"])
+            promotion_requested_qty[gift_product_id] += gift_qty
+            gift_limit = promotion_limits.get(gift_product_id)
+            if (
+                not gift_limit
+                or not gift_limit.get("allowed")
+                or promotion_requested_qty[gift_product_id] > Decimal(str(gift_limit.get("remaining_qty") or 0))
+            ):
+                db.rollback()
+                return RedirectResponse(
+                    "/sales?error=La+cantidad+de+regalos+supera+el+saldo+promocional+autorizado",
+                    status_code=303,
+                )
+            gift_authorized = db.query(RegaliaProducto.id).filter(
+                RegaliaProducto.producto_id == gift_product_id,
+                RegaliaProducto.activo.is_(True),
+            ).first()
+            if not gift_authorized:
+                db.rollback()
+                return RedirectResponse(
+                    "/sales?error=El+producto+regalado+no+esta+autorizado+para+promociones+2x1",
+                    status_code=303,
+                )
             submitted_tokens = {str(src.get("promotion_token") or "").strip() for src in grouped}
             submitted_tokens.discard("")
             if len(submitted_tokens) != 1:

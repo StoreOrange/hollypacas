@@ -251,6 +251,8 @@ class RegaliaProducto(Base):
     id = Column(Integer, primary_key=True, index=True)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
     nota = Column(String(240), nullable=True)
+    cantidad_total = Column(Numeric(14, 2), nullable=False, default=0)
+    modo_asignacion = Column(String(20), nullable=False, default="LIBRE")
     activo = Column(Boolean, default=True)
     usuario_registro = Column(String(120), nullable=True)
     created_at = Column(DateTime, server_default=func.now())

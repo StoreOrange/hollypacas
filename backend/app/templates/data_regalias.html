@@ -11,11 +11,11 @@
             <nav aria-label="breadcrumb">
               <ol class="breadcrumb mb-1">
                 <li class="breadcrumb-item">Datos</li>
-                <li class="breadcrumb-item active" aria-current="page">Regalias</li>
+                <li class="breadcrumb-item active" aria-current="page">Promociones 2x1</li>
               </ol>
             </nav>
-            <div class="odoo-title mt-2 text-xl">Cupos de regalias</div>
-            <div class="odoo-subtitle mt-1 text-sm">Autoriza unidades por vendedor. En ventas el regalo se elige libremente desde el catalogo con existencia.</div>
+            <div class="odoo-title mt-2 text-xl">Productos autorizados para promociones 2x1</div>
+            <div class="odoo-subtitle mt-1 text-sm">Define qué artículos pueden entregarse gratis. El modal de ventas mostrará únicamente productos activos de este catálogo y con existencia.</div>
           </div>
           <a class="btn btn-outline-secondary btn-sm" href="/reports/regalias">
             <i class="bi bi-bar-chart"></i>
@@ -27,11 +27,80 @@
       {% if success %}<div class="alert alert-success py-2 mt-3">{{ success }}</div>{% endif %}
       {% if error %}<div class="alert alert-danger py-2 mt-3">{{ error }}</div>{% endif %}
 
+      <div class="odoo-card mt-3">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+          <div>
+            <div class="odoo-section-title" style="font-size:.9rem;"><i class="bi bi-gift text-success"></i> Catálogo de regalos autorizados</div>
+            <div class="text-muted small mt-1">El cupo autorizado se consume únicamente al facturar el regalo 2x1. “Libre” permite vender el saldo desde cualquier vendedor; “Por vendedor” exige una asignación individual.</div>
+          </div>
+          <span class="badge text-bg-success">{{ marked_active_count }} activos</span>
+        </div>
+
+        <form id="promotion-product-search-form" method="get" action="/data/regalias" class="row g-2 align-items-end mb-3">
+          <input type="hidden" name="vendedor_id" value="{{ selected_vendedor_id }}">
+          <div class="col-md-9">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Buscar producto para autorizar</label>
+            <input id="promotion-product-search" class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="Escribe código, descripción o referencia" autocomplete="off">
+          </div>
+          <div class="col-md-3"><button class="btn btn-outline-primary btn-sm w-100" type="submit"><i class="bi bi-search"></i> Buscar</button></div>
+        </form>
+
+        <div class="border rounded-3 p-2 mb-3 bg-light">
+          <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+            <div class="small fw-semibold">{% if q %}Resultados para “{{ q }}”{% else %}Escribe al menos dos caracteres para buscar{% endif %}</div>
+            <span id="promotion-product-result-count" class="badge text-bg-light">{% if q %}{{ available_products|length }} mostrados{% else %}Esperando búsqueda{% endif %}</span>
+          </div>
+          <div class="table-responsive" style="max-height:260px;">
+            <table class="table table-sm align-middle mb-0" style="font-size:.76rem;">
+              <thead><tr><th>Código</th><th>Descripción</th><th style="width:110px;">Cantidad</th><th style="width:155px;">Control</th><th class="text-end">Acción</th></tr></thead>
+              <tbody id="promotion-product-results">
+                {% for row in available_products %}
+                <tr>
+                  <td class="fw-semibold">{{ row.producto.cod_producto }}</td>
+                  <td>{{ row.producto.descripcion }}</td>
+                  <td colspan="3">
+                    <form method="post" action="/data/regalias/productos" class="row g-2 align-items-center">
+                      <input type="hidden" name="producto_id" value="{{ row.producto.id }}">
+                      <div class="col-4"><input class="form-control form-control-sm text-end" type="number" min="1" step="1" name="cantidad_total" value="1" required></div>
+                      <div class="col-5"><select class="form-select form-select-sm" name="modo_asignacion"><option value="LIBRE">Libre</option><option value="VENDEDOR">Por vendedor</option></select></div>
+                      <div class="col-3 text-end"><button class="btn btn-success btn-sm py-0 px-2 text-nowrap" type="submit"><i class="bi bi-plus-circle"></i> Autorizar</button></div>
+                    </form>
+                  </td>
+                </tr>
+                {% else %}<tr><td colspan="5" class="text-center text-muted py-3">Escribe al menos dos caracteres para mostrar productos.</td></tr>{% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table align-middle mb-0" style="font-size:.76rem;">
+            <thead class="odoo-table-head text-xs uppercase"><tr><th>Código / Producto</th><th class="text-end">Autorizados</th><th class="text-end">Entregados</th><th class="text-end">Pendientes</th><th style="min-width:145px;">Control</th><th style="min-width:180px;">Nota</th><th>Estado</th><th class="text-end">Acción</th></tr></thead>
+            <tbody>
+              {% for marked, producto in marked_rows %}
+              <tr>
+                <td><form id="promo-product-form-{{ marked.id }}" method="post" action="/data/regalias/productos/{{ marked.id }}/update"></form><div class="fw-semibold text-nowrap">{{ producto.cod_producto }}</div><div class="text-muted">{{ producto.descripcion }}</div></td>
+                  <td><input form="promo-product-form-{{ marked.id }}" class="form-control form-control-sm text-end" style="width:90px;" type="number" min="{{ gift_product_stats[marked.id].used }}" step="1" name="cantidad_total" value="{{ '%.0f'|format(gift_product_stats[marked.id].total|float) }}" required></td>
+                  <td class="text-end fw-semibold">{{ "%.0f"|format(gift_product_stats[marked.id].used|float) }}</td>
+                  <td class="text-end fw-bold text-success">{{ "%.0f"|format(gift_product_stats[marked.id].pending|float) }}</td>
+                  <td><select form="promo-product-form-{{ marked.id }}" class="form-select form-select-sm" name="modo_asignacion"><option value="LIBRE" {% if marked.modo_asignacion == 'LIBRE' %}selected{% endif %}>Libre</option><option value="VENDEDOR" {% if marked.modo_asignacion == 'VENDEDOR' %}selected{% endif %}>Por vendedor</option></select></td>
+                  <td><input form="promo-product-form-{{ marked.id }}" class="form-control form-control-sm" name="nota" value="{{ marked.nota or '' }}" placeholder="Nota opcional"></td>
+                  <td><div class="form-check form-switch"><input form="promo-product-form-{{ marked.id }}" class="form-check-input" type="checkbox" name="activo" id="promo-product-{{ marked.id }}" {% if marked.activo %}checked{% endif %}><label class="form-check-label" for="promo-product-{{ marked.id }}">{% if marked.activo %}Activo{% else %}Inactivo{% endif %}</label></div></td>
+                  <td class="text-end"><button form="promo-product-form-{{ marked.id }}" class="btn btn-outline-primary btn-sm py-0 px-2 text-nowrap" type="submit"><i class="bi bi-save"></i> Guardar</button></td>
+              </tr>
+              {% else %}<tr><td colspan="8" class="text-center text-muted py-3">Todavía no hay productos autorizados para regalar.</td></tr>{% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="row g-3 mt-1">
-        <div class="col-12 col-xl-4">
-          <div id="regalia-vendor-policy" class="odoo-card h-100">
-            <div class="odoo-section-title mb-3" style="font-size:.86rem;">Editar vendedor</div>
+        <div class="col-12 col-xl-6">
+          <div id="regalia-vendor-products" class="odoo-card h-100">
+            <div class="odoo-section-title mb-1" style="font-size:.86rem;">Asignación por vendedor</div>
+            <div class="text-muted small mb-3">Solo aplica a productos cuyo control sea “Por vendedor”. En modo libre no se necesita asignación.</div>
             <form class="row g-2 mb-3" method="get" action="/data/regalias">
+              <input type="hidden" name="q" value="{{ q }}">
               <div class="col-12">
                 <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor</label>
                 <select name="vendedor_id" class="form-select form-select-sm" onchange="this.form.submit()">
@@ -41,31 +110,34 @@
                 </select>
               </div>
             </form>
-            <form method="post" action="/data/regalias/vendedores">
-              <input type="hidden" name="vendedor_id" value="{{ selected_vendedor_id }}">
-              <div class="mb-3">
-                <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Unidades autorizadas</label>
-                <input name="cupo_unidades_total" type="number" min="0" step="1" class="form-control form-control-sm text-end" value="{{ '%.2f'|format(assigned_units_total|float) }}">
-                <div class="form-text">Este es el cupo total que el vendedor puede entregar como regalo.</div>
-              </div>
-              <div class="d-flex flex-wrap gap-2 mb-3" style="font-size:.72rem;">
-                <span class="odoo-pill primary">Cupo: {{ "%.2f"|format(assigned_units_total|float) }}</span>
-                <span class="odoo-pill">Usado: {{ "%.2f"|format(used_units_total|float) }}</span>
-                <span class="odoo-pill primary">Saldo: {{ "%.2f"|format(remaining_units_total|float) }}</span>
-              </div>
-              <div class="form-check form-switch mb-3">
-                <input class="form-check-input" type="checkbox" name="activo" {% if policy is none or policy.activo %}checked{% endif %}>
-                <label class="form-check-label">Cupo activo</label>
-              </div>
-              <button class="btn btn-primary btn-sm w-100" type="submit">
-                <i class="bi bi-save"></i>
-                Guardar cupo
-              </button>
-            </form>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0" style="font-size:.74rem;">
+                <thead><tr><th>Producto</th><th class="text-end">Usado</th><th style="width:105px;">Asignar</th><th></th></tr></thead>
+                <tbody>
+                  {% set vendor_product_count = namespace(value=0) %}
+                  {% for item in vendor_items %}{% if item.assignment_mode == 'VENDEDOR' %}
+                  {% set vendor_product_count.value = vendor_product_count.value + 1 %}
+                  <tr>
+                    <td><div class="fw-semibold">{{ item.cod_producto }}</div><div class="text-muted">{{ item.descripcion }}</div></td>
+                    <td class="text-end">{{ "%.0f"|format(item.used_qty|float) }}</td>
+                    <td colspan="2">
+                      <form method="post" action="/data/regalias/vendedores/items" class="d-flex gap-1">
+                        <input type="hidden" name="vendedor_id" value="{{ selected_vendedor_id }}">
+                        <input type="hidden" name="producto_id" value="{{ item.id }}">
+                        <input class="form-control form-control-sm text-end" name="cantidad_asignada" type="number" min="{{ item.used_qty }}" max="{{ item.master_qty }}" step="1" value="{{ '%.0f'|format(item.assigned_qty|float) }}">
+                        <button class="btn btn-outline-primary btn-sm" type="submit" title="Guardar asignación"><i class="bi bi-save"></i></button>
+                      </form>
+                    </td>
+                  </tr>
+                  {% endif %}{% endfor %}
+                  {% if vendor_product_count.value == 0 %}<tr><td colspan="4" class="text-center text-muted py-3">No hay productos configurados por vendedor.</td></tr>{% endif %}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        <div class="col-12 col-xl-8">
+        <div class="col-12 col-xl-6">
           <div class="odoo-card">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
               <div class="odoo-section-title" style="font-size:.86rem;">Resumen por vendedor</div>
@@ -115,4 +187,73 @@
     </div>
   </main>
 </div>
+<script>
+(() => {
+  const form = document.getElementById("promotion-product-search-form");
+  const input = document.getElementById("promotion-product-search");
+  const tbody = document.getElementById("promotion-product-results");
+  const count = document.getElementById("promotion-product-result-count");
+  if (!form || !input || !tbody || !count) return;
+  let timer = null;
+  let controller = null;
+  let sequence = 0;
+  const escapeHtml = (value) => String(value ?? "")
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  const render = (items) => {
+    count.textContent = `${items.length} mostrados`;
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No hay productos disponibles para esta búsqueda.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map((item) => `
+      <tr>
+        <td class="fw-semibold">${escapeHtml(item.codigo)}</td>
+        <td><div>${escapeHtml(item.descripcion)}</div>${item.referencia ? `<small class="text-muted">Ref. ${escapeHtml(item.referencia)}</small>` : ""}</td>
+        <td colspan="3">
+          <form method="post" action="/data/regalias/productos" class="row g-2 align-items-center">
+            <input type="hidden" name="producto_id" value="${Number(item.id)}">
+            <div class="col-4"><input class="form-control form-control-sm text-end" type="number" min="1" step="1" name="cantidad_total" value="1" required></div>
+            <div class="col-5"><select class="form-select form-select-sm" name="modo_asignacion"><option value="LIBRE">Libre</option><option value="VENDEDOR">Por vendedor</option></select></div>
+            <div class="col-3 text-end"><button class="btn btn-success btn-sm py-0 px-2 text-nowrap" type="submit"><i class="bi bi-plus-circle"></i> Autorizar</button></div>
+          </form>
+        </td>
+      </tr>`).join("");
+  };
+  const search = async () => {
+    const term = input.value.trim();
+    if (term.length < 2) {
+      controller?.abort();
+      count.textContent = "Esperando búsqueda";
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Escribe al menos dos caracteres para mostrar productos.</td></tr>';
+      return;
+    }
+    const current = ++sequence;
+    controller?.abort();
+    controller = new AbortController();
+    count.textContent = "Buscando…";
+    try {
+      const response = await fetch(`/data/regalias/productos/search?q=${encodeURIComponent(term)}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const payload = await response.json();
+      if (current !== sequence) return;
+      render(payload?.items || []);
+    } catch (error) {
+      if (error.name !== "AbortError") count.textContent = "Error al buscar";
+    }
+  };
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(search, 220);
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearTimeout(timer);
+    search();
+  });
+})();
+</script>
 {% endblock %}
