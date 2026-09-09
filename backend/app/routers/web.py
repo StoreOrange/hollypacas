@@ -26063,7 +26063,7 @@ def data_regalias_product_update(
     request: Request,
     item_id: int,
     nota: Optional[str] = Form(None),
-    cantidad_total: float = Form(0),
+    cantidad_pendiente: float = Form(0),
     modo_asignacion: str = Form("LIBRE"),
     activo: Optional[str] = Form(None),
     db: Session = Depends(get_db),
@@ -26077,12 +26077,10 @@ def data_regalias_product_update(
         return RedirectResponse("/data/regalias?error=Registro+no+encontrado", status_code=303)
     item.nota = (nota or "").strip()[:240] or None
     used_qty = _regalia_consumption_by_product(db, [int(item.producto_id)]).get(int(item.producto_id), Decimal("0"))
-    requested_qty = Decimal(str(max(0, cantidad_total or 0))).quantize(Decimal("0.01"))
-    if requested_qty < used_qty:
-        return RedirectResponse(
-            f"/data/regalias?error=El+cupo+no+puede+ser+menor+a+las+{used_qty}+unidades+ya+entregadas",
-            status_code=303,
-        )
+    requested_pending = Decimal(str(max(0, cantidad_pendiente or 0))).quantize(Decimal("0.01"))
+    # El usuario define cuanto desea dejar disponible ahora. Las unidades ya
+    # facturadas son historicas y nunca limitan esta nueva disponibilidad.
+    requested_qty = used_qty + requested_pending
     assignment_mode = "VENDEDOR" if modo_asignacion.strip().upper() == "VENDEDOR" else "LIBRE"
     if assignment_mode == "VENDEDOR":
         allocated_qty = (
@@ -26110,7 +26108,7 @@ def data_regalias_vendor_item_save(
     request: Request,
     vendedor_id: int = Form(...),
     producto_id: int = Form(...),
-    cantidad_asignada: float = Form(0),
+    cantidad_pendiente: float = Form(0),
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -26125,18 +26123,14 @@ def data_regalias_vendor_item_save(
     ).first()
     if not vendedor or not marker:
         return RedirectResponse("/data/regalias?error=Vendedor+o+producto+no+disponible", status_code=303)
-    quantity = Decimal(str(max(0, cantidad_asignada or 0))).quantize(Decimal("0.01"))
+    requested_pending = Decimal(str(max(0, cantidad_pendiente or 0))).quantize(Decimal("0.01"))
     _money_used, seller_product_used, _seller_units_used = _regalia_consumption_by_vendor(
         db,
         [vendedor_id],
         [producto_id],
     )
     already_delivered = Decimal(str(seller_product_used.get((vendedor_id, producto_id), Decimal("0")) or 0))
-    if quantity < already_delivered:
-        return RedirectResponse(
-            f"/data/regalias?vendedor_id={vendedor_id}&error=La+asignacion+no+puede+ser+menor+a+lo+ya+entregado",
-            status_code=303,
-        )
+    quantity = already_delivered + requested_pending
     other_assigned = (
         db.query(func.coalesce(func.sum(RegaliaVendedorItem.cantidad_disponible), 0))
         .join(RegaliaVendedorPolitica, RegaliaVendedorPolitica.id == RegaliaVendedorItem.politica_id)
