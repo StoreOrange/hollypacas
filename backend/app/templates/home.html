@@ -1,6 +1,34 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
+  .home-workspace {
+    background: radial-gradient(circle at 92% 0%, rgba(37,99,235,.08), transparent 28%), linear-gradient(180deg,#f8fafc,#f3f6fb);
+  }
+  .home-workspace > main { min-width: 0; }
+  .home-workspace .odoo-page > .odoo-header {
+    border: 1px solid rgba(226,232,240,.9);
+    border-radius: 22px;
+    background: rgba(255,255,255,.9);
+    box-shadow: 0 12px 32px rgba(15,23,42,.07);
+    backdrop-filter: blur(10px);
+  }
+  .home-workspace .odoo-page > .odoo-card {
+    border: 1px solid #e5eaf2;
+    border-radius: 22px;
+    background: rgba(255,255,255,.94);
+    box-shadow: 0 12px 30px rgba(15,23,42,.065);
+  }
+  .home-workspace .home-quick-card {
+    border-radius: 20px !important;
+    border-color: #e5eaf2 !important;
+    box-shadow: 0 9px 24px rgba(15,23,42,.055) !important;
+    transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+  }
+  .home-workspace .home-quick-card:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb,var(--hp-primary) 28%,#e2e8f0) !important;
+    box-shadow: 0 16px 34px rgba(15,23,42,.1) !important;
+  }
   .home-comestibles {
     background:
       radial-gradient(circle at 6% -4%, rgba(37, 99, 235, 0.16) 0%, rgba(255, 255, 255, 0) 42%),
@@ -143,6 +171,82 @@
     box-shadow: 0 18px 30px rgba(79, 70, 229, 0.14);
     color: #4338ca;
   }
+  .home-lab-alerts {
+    margin-bottom: .85rem;
+    overflow: hidden;
+    border: 1px solid #bfdbfe;
+    border-radius: 20px;
+    background: linear-gradient(155deg, #ffffff, #f8fbff);
+    box-shadow: 0 12px 28px rgba(30, 64, 175, .09);
+  }
+  .home-lab-alerts-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .7rem;
+    padding: .78rem .85rem;
+    background: linear-gradient(110deg, #eff6ff, #eef2ff);
+    border-bottom: 1px solid #dbeafe;
+  }
+  .home-lab-alerts-icon {
+    position: relative;
+    display: inline-grid;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 13px;
+    background: linear-gradient(145deg, #1d4ed8, #2563eb);
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, .25);
+  }
+  .home-lab-alerts-icon::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 10px;
+    height: 10px;
+    border: 2px solid #eff6ff;
+    border-radius: 50%;
+    background: #22c55e;
+  }
+  .home-lab-alerts-title { color: #0f172a; font-size: .84rem; font-weight: 900; }
+  .home-lab-alerts-subtitle { margin-top: .08rem; color: #64748b; font-size: .68rem; }
+  .home-lab-notification {
+    display: block;
+    padding: .78rem .85rem;
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px solid #edf2f7;
+    transition: background .18s ease, transform .18s ease;
+  }
+  .home-lab-notification:last-child { border-bottom: 0; }
+  .home-lab-notification:active { background: #eff6ff; transform: scale(.992); }
+  .home-lab-notification .number { color: #1d4ed8; font-size: .76rem; font-weight: 900; letter-spacing: .04em; }
+  .home-lab-notification .time { color: #64748b; font-size: .65rem; font-weight: 700; }
+  .home-lab-notification .message { margin-top: .24rem; color: #334155; font-size: .74rem; line-height: 1.35; }
+  .home-lab-notification .route { margin-top: .2rem; color: #64748b; font-size: .67rem; }
+  .home-lab-result-products { margin-top: .45rem; color: #334155; font-size: .68rem; line-height: 1.4; }
+  .home-lab-totals {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .35rem;
+    margin-top: .5rem;
+  }
+  .home-lab-total {
+    padding: .4rem .35rem;
+    border-radius: 10px;
+    background: #f8fafc;
+    text-align: center;
+  }
+  .home-lab-total span { display: block; color: #64748b; font-size: .58rem; font-weight: 800; text-transform: uppercase; }
+  .home-lab-total strong { display: block; margin-top: .08rem; color: #0f172a; font-size: .7rem; }
+  .home-lab-total.positive { background: #f0fdf4; }
+  .home-lab-total.positive strong { color: #15803d; }
+  .home-lab-total.negative { background: #fef2f2; }
+  .home-lab-total.negative strong { color: #b91c1c; }
+  .home-lab-total.neutral { background: #f8fafc; }
   .home-comestibles .nav-tabs .nav-link.active {
     color: #1d4ed8;
     border-color: #bfdbfe #bfdbfe #fff;
@@ -400,7 +504,7 @@
     }
   }
 </style>
-<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface {% if comestibles_theme_enabled %}home-comestibles{% endif %}">
+<div id="layout" class="home-workspace min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface {% if comestibles_theme_enabled %}home-comestibles{% endif %}">
   {% include "partials/sidebar.html" %}
 
   <main class="p-4 sm:p-6 lg:p-8 text-[18px]">
@@ -501,6 +605,47 @@
           </ul>
         </div>
       </div>
+
+      {% if home_laboratory_notifications %}
+      <section class="home-lab-alerts" aria-labelledby="labAlertsTitle">
+        <div class="home-lab-alerts-head">
+          <div class="d-flex align-items-center gap-2 min-w-0">
+            <span class="home-lab-alerts-icon"><i class="bi bi-building-gear"></i></span>
+            <div class="min-w-0">
+              <div class="home-lab-alerts-title" id="labAlertsTitle">Actividad de producción</div>
+              <div class="home-lab-alerts-subtitle">Últimos laboratorios terminados y sus resultados</div>
+            </div>
+          </div>
+          <span class="badge rounded-pill text-bg-primary">{{ home_laboratory_notifications|length }} recientes</span>
+        </div>
+        <div>
+          {% for notification in home_laboratory_notifications %}
+          <a class="home-lab-notification" href="/inventory/laboratorios-produccion?start_date={{ notification.fecha_iso }}&amp;end_date={{ notification.fecha_iso }}">
+            <div class="d-flex align-items-center justify-content-between gap-2">
+              <span class="number"><i class="bi bi-bell-fill me-1"></i>{{ notification.numero }}</span>
+              <span class="time">{{ notification.fecha_label }}</span>
+            </div>
+            <div class="message">
+              <strong>Nuevo laboratorio {{ notification.estado|lower }}.</strong>
+              Registrado por {{ notification.usuario }}.
+            </div>
+            <div class="route"><i class="bi bi-arrow-right me-1"></i>{{ notification.origen }} → {{ notification.destino }}</div>
+            {% if notification.resultados %}
+            <div class="home-lab-result-products">
+              <i class="bi bi-box-seam me-1 text-success"></i>
+              Resultado: {{ notification.resultados|join(' · ') }}{% if notification.resultados_extra %} · +{{ notification.resultados_extra }} productos{% endif %}
+            </div>
+            {% endif %}
+            <div class="home-lab-totals">
+              <div class="home-lab-total negative"><span>Bajas</span><strong>C$ {{ "{:,.2f}".format(notification.bajas_cs or 0) }}</strong></div>
+              <div class="home-lab-total positive"><span>Altas</span><strong>C$ {{ "{:,.2f}".format(notification.altas_cs or 0) }}</strong></div>
+              <div class="home-lab-total {{ notification.balance_class }}"><span>{{ notification.balance_estado }}</span><strong>C$ {{ "{:,.2f}".format(notification.balance_cs or 0) }}</strong></div>
+            </div>
+          </a>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
 
       <div class="odoo-card">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">

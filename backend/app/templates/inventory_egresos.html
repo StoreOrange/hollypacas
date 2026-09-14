@@ -307,6 +307,96 @@
     background: #ffecec !important;
     box-shadow: inset 3px 0 0 #ef7f84;
   }
+  /* Experiencia especializada para Produccion de Abierta. */
+  .open-production-guide {
+    display: none;
+    border: 0;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #eff6ff, #f0fdf4);
+    box-shadow: inset 0 0 0 1px #bfdbfe;
+  }
+  .open-production-mode .open-production-guide { display: block; }
+  .open-production-guide .step-number {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 34px;
+    border-radius: 50%;
+    background: #fff;
+    color: #1d4ed8;
+    font-weight: 900;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, .14);
+  }
+  .open-production-mode .movement-meta-grid .form-control,
+  .open-production-mode .movement-meta-grid .form-select,
+  .open-production-mode .movement-meta-grid .select2-container--default .select2-selection--single {
+    min-height: 42px !important;
+    border-radius: 12px !important;
+    background: #fff !important;
+    font-size: 1rem !important;
+  }
+  .open-production-mode .movement-meta-grid .select2-selection__rendered {
+    line-height: 40px !important;
+    font-size: 1rem !important;
+  }
+  .open-production-mode #source-products-wrap {
+    border: 2px solid #fecaca !important;
+    background: linear-gradient(180deg, #fffafa, #fff) !important;
+  }
+  .open-production-mode #abierta-result-wrap {
+    border: 2px solid #bbf7d0 !important;
+    background: linear-gradient(180deg, #f7fff9, #fff) !important;
+  }
+  .open-production-mode #source-products-wrap .odoo-modal-title { color: #b91c1c; }
+  .open-production-mode #abierta-result-wrap .odoo-modal-title { color: #15803d; }
+  .open-production-mode .search-panel > .d-flex .input-group {
+    min-height: 44px;
+    max-width: 600px !important;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, .08) !important;
+  }
+  .open-production-mode .search-panel > .d-flex .form-control {
+    font-size: 1rem;
+    font-weight: 700;
+  }
+  .open-production-mode .egreso-pro-grid input[type="number"] {
+    width: 88px !important;
+    height: 36px !important;
+    font-size: 1rem !important;
+    background: #fff !important;
+  }
+  .open-production-mode .add-item,
+  .open-production-mode .add-result-item {
+    width: 36px !important;
+    height: 36px !important;
+  }
+  .open-production-mode #submit-egreso {
+    min-height: 44px;
+    padding-inline: 1.25rem;
+    background: #166534;
+    border-color: #166534;
+  }
+  .open-production-mode .odoo-modal-title { font-size: 1.08rem !important; }
+  .open-production-mode .odoo-help,
+  .open-production-mode .form-label,
+  .open-production-mode .open-production-guide .small { font-size: .9rem !important; }
+  .open-production-mode .egreso-pro-grid { font-size: .9rem !important; }
+  .open-production-mode .egreso-pro-grid thead th { font-size: .76rem !important; }
+  .open-production-mode .egreso-pro-grid tbody td { font-size: .9rem !important; }
+  .lab-adjustment-card { cursor:pointer;border:1px solid #d8e2ee;border-radius:14px;background:#fff;padding:.9rem;min-height:94px;transition:.16s ease;display:flex;gap:.7rem;align-items:flex-start; }
+  .lab-adjustment-card:hover { transform:translateY(-1px);box-shadow:0 8px 18px rgba(15,23,42,.08); }
+  .lab-adjustment-card.is-active { border-width:2px;box-shadow:0 0 0 3px rgba(37,99,235,.09); }
+  .lab-adjustment-card[data-mode="INGRESO"].is-active { border-color:#22c55e;background:#f0fdf4; }
+  .lab-adjustment-card[data-mode="EGRESO"].is-active { border-color:#ef4444;background:#fff7f7; }
+  .lab-adjustment-card[data-mode="AMBOS"].is-active { border-color:#3b82f6;background:#eff6ff; }
+  .lab-adjustment-icon { width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border-radius:11px;font-size:1.1rem;background:#f1f5f9; }
+  @media (max-width: 767.98px) {
+    .open-production-guide .row > div + div { margin-top: .65rem; }
+    .open-production-mode .search-panel { padding: .85rem !important; }
+    .open-production-mode .search-panel > .d-flex .input-group { max-width: 100% !important; }
+  }
   {% if pacasholl_egresos_ui %}
   .egresos-pro-shell {
     --egreso-border: #d8e2ef;
@@ -814,9 +904,38 @@
           <div class="px-6 pb-4 pt-2 space-y-4 overflow-y-auto max-h-[70vh] odoo-modal-body">
             <div id="tab-ingreso" class="ingreso-panel">
               <form id="ingreso-form" method="post" action="/inventory/egresos" class="space-y-4 text-sm" novalidate>
+                {% if selected_laboratory %}
+                <input type="hidden" name="laboratorio_id" value="{{ selected_laboratory.id }}" />
+                <input type="hidden" name="redirect_to" value="/inventory/laboratorios-produccion" />
+                <div class="alert alert-primary py-2 px-3 mb-2 d-flex align-items-center gap-2" role="status">
+                  <i class="bi bi-building-gear"></i>
+                  <span><strong>Ajuste de {{ selected_laboratory.numero }}</strong>: este ingreso y egreso quedarán unidos al laboratorio original.</span>
+                </div>
+                <div class="card border-primary-subtle bg-primary-subtle bg-opacity-25 mb-3">
+                  <div class="card-body p-3">
+                    <div class="fw-bold mb-2"><i class="bi bi-sliders me-2 text-primary"></i>¿Qué deseas corregir en este laboratorio?</div>
+                    <div class="row g-2">
+                      <div class="col-md-4"><label class="lab-adjustment-card" data-mode="INGRESO"><input class="form-check-input lab-adjustment-mode mt-2" type="radio" name="laboratory_adjustment_mode" value="INGRESO" checked><span class="lab-adjustment-icon text-success"><i class="bi bi-box-arrow-in-down"></i></span><span><strong>Solo ingreso resultante</strong><span class="d-block small text-muted mt-1">Apareció mercancía adicional producida.</span></span></label></div>
+                      <div class="col-md-4"><label class="lab-adjustment-card" data-mode="EGRESO"><input class="form-check-input lab-adjustment-mode mt-2" type="radio" name="laboratory_adjustment_mode" value="EGRESO"><span class="lab-adjustment-icon text-danger"><i class="bi bi-box-arrow-up"></i></span><span><strong>Solo baja adicional</strong><span class="d-block small text-muted mt-1">Faltó registrar material consumido.</span></span></label></div>
+                      <div class="col-md-4"><label class="lab-adjustment-card" data-mode="AMBOS"><input class="form-check-input lab-adjustment-mode mt-2" type="radio" name="laboratory_adjustment_mode" value="AMBOS"><span class="lab-adjustment-icon text-primary"><i class="bi bi-arrow-left-right"></i></span><span><strong>Baja e ingreso</strong><span class="d-block small text-muted mt-1">Corregir ambos lados del proceso.</span></span></label></div>
+                    </div>
+                  </div>
+                </div>
+                {% endif %}
                 <div id="bodega-banner" class="alert alert-warning py-2 px-3 mb-2 d-flex align-items-center gap-2" role="status">
                   <i class="bi bi-box-arrow-up"></i>
                   <span class="fw-semibold">Egreso de mercaderia en Bodega Central</span>
+                </div>
+                <div class="open-production-guide p-3 mb-3">
+                  <div class="d-flex align-items-center gap-2 mb-3">
+                    <i class="bi bi-boxes fs-4 text-primary"></i>
+                    <div><strong>Flujo de producción de abierta</strong><div class="small text-muted">Registra ambos lados del proceso en un solo documento y laboratorio.</div></div>
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-md-4 d-flex gap-2"><span class="step-number">1</span><div><strong>Datos y bodegas</strong><div class="small text-muted">Define origen y destino del resultado.</div></div></div>
+                    <div class="col-md-4 d-flex gap-2"><span class="step-number">2</span><div><strong>Pacas consumidas</strong><div class="small text-muted">Carga lo que sale del inventario.</div></div></div>
+                    <div class="col-md-4 d-flex gap-2"><span class="step-number">3</span><div><strong>Producción obtenida</strong><div class="small text-muted">Carga todo lo producido e ingresado.</div></div></div>
+                  </div>
                 </div>
                 <div id="egreso-client-error" class="alert alert-warning py-2 px-3 mb-2 d-none" role="alert"></div>
                 <div class="odoo-modal-section">
@@ -903,28 +1022,28 @@
                 </div>
                 <div class="row g-4">
                   <div class="col-12">
-                    <div class="search-panel p-3 border rounded-3 bg-light">
+                    <div id="source-products-wrap" class="search-panel p-3 border rounded-3 bg-light">
                       <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                         <div>
-                          <div class="odoo-modal-title odoo-accent">Productos a egresar</div>
-                          <div class="odoo-help odoo-accent">Buscador de productos - filtro principal.</div>
+                          <div id="source-products-title" class="odoo-modal-title odoo-accent"><i class="bi bi-box-arrow-up-right me-2"></i>Productos a egresar</div>
+                          <div id="source-products-help" class="odoo-help odoo-accent">Buscador de productos - filtro principal.</div>
                         </div>
                         <div class="input-group input-group-sm shadow-sm rounded-pill overflow-hidden bg-white w-100 max-w-[520px]">
                           <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
-                        <input id="product-search" class="form-control border-0 text-uppercase" type="text" placeholder="BUSCAR PRODUCTO" />
+                        <input id="product-search" class="form-control border-0 text-uppercase" type="text" placeholder="ESCRIBA CODIGO O NOMBRE DEL PRODUCTO" autocomplete="off" />
                         </div>
                       </div>
                       <div class="odoo-table-wrap max-h-52 overflow-y-auto egreso-grid-shell">
                         <table class="table table-sm align-middle mb-0 odoo-table text-sm w-100 egreso-pro-grid">
                           <thead class="odoo-table-head text-xs uppercase tracking-[0.2em]">
                             <tr>
-                              <th class="text-left px-3 py-2">Codigo</th>
-                              <th class="text-left px-3 py-2">Descripcion</th>
-                              <th class="text-right px-3 py-2">Costo {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
-                              <th class="text-right px-3 py-2">Precio {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
-                              <th class="text-right px-3 py-2">Saldo</th>
-                              <th class="text-right px-3 py-2">Cantidad</th>
-                              <th class="text-center px-3 py-2">Agregar</th>
+                              <th class="text-left px-3 py-2"><i class="bi bi-upc-scan me-1"></i>Codigo</th>
+                              <th class="text-left px-3 py-2"><i class="bi bi-box-seam me-1"></i>Descripcion</th>
+                              <th class="text-right px-3 py-2"><i class="bi bi-cash-stack me-1"></i>Costo {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
+                              <th class="text-right px-3 py-2"><i class="bi bi-tag me-1"></i>Precio {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
+                              <th class="text-right px-3 py-2"><i class="bi bi-boxes me-1"></i>Saldo</th>
+                              <th class="text-right px-3 py-2"><i class="bi bi-123 me-1"></i>Cantidad</th>
+                              <th class="text-center px-3 py-2"><i class="bi bi-plus-circle me-1"></i>Agregar</th>
                             </tr>
                           </thead>
                           <tbody id="product-list" class="odoo-muted">
@@ -966,7 +1085,7 @@
                         </table>
                       </div>
                       <div class="mt-3 mb-2 d-flex align-items-center justify-content-between">
-                        <div class="odoo-modal-title odoo-accent">Productos cargados a la vista de egreso</div>
+                        <div class="odoo-modal-title odoo-accent"><i class="bi bi-cart-check me-2"></i>Productos cargados a la salida</div>
                         <span class="odoo-pill">Items en lista</span>
                       </div>
                       <div class="odoo-table-wrap overflow-x-auto max-h-44 overflow-y-auto egreso-grid-shell">
@@ -989,32 +1108,32 @@
                         </table>
                       </div>
                       <div class="mt-2 d-flex flex-wrap gap-3 justify-content-end fw-bold text-dark">
-                        <span>Bultos cargados: <span id="items-bultos-live">0.00</span></span>
-                        <span>Items cargados: <span id="items-count-live">0</span></span>
+                        <span><i class="bi bi-box2 me-1 text-danger"></i>Bultos cargados: <span id="items-bultos-live">0.00</span></span>
+                        <span><i class="bi bi-list-check me-1 text-danger"></i>Items cargados: <span id="items-count-live">0</span></span>
                       </div>
                     </div>
                 </div>
                 <div id="abierta-result-wrap" class="search-panel p-3 border rounded-3 bg-light d-none">
                   <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                     <div>
-                      <div class="odoo-modal-title odoo-accent">Resultado de abierta (productos producidos)</div>
+                      <div class="odoo-modal-title odoo-accent"><i class="bi bi-box-arrow-in-down me-2"></i>Resultado de abierta (productos producidos)</div>
                       <div class="odoo-help odoo-accent">Agrega los productos resultantes del proceso de abierta. Este bloque es obligatorio para este tipo de egreso.</div>
                     </div>
                     <div class="input-group input-group-sm shadow-sm rounded-pill overflow-hidden bg-white w-100 max-w-[520px]">
                       <span class="input-group-text bg-white border-0"><i class="bi bi-search text-brand"></i></span>
-                      <input id="result-product-search" class="form-control border-0 text-uppercase" type="text" placeholder="BUSCAR PRODUCTO RESULTADO" />
+                      <input id="result-product-search" class="form-control border-0 text-uppercase" type="text" placeholder="ESCRIBA EL PRODUCTO OBTENIDO" autocomplete="off" />
                     </div>
                   </div>
                   <div class="odoo-table-wrap max-h-52 overflow-y-auto egreso-grid-shell">
                     <table class="table table-sm align-middle mb-0 odoo-table text-sm w-100 egreso-pro-grid">
                       <thead class="odoo-table-head text-xs uppercase tracking-[0.2em]">
                         <tr>
-                          <th class="text-left px-3 py-2">Codigo</th>
-                          <th class="text-left px-3 py-2">Descripcion</th>
-                          <th class="text-right px-3 py-2">Costo {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
-                          <th class="text-right px-3 py-2">Precio {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
-                          <th class="text-right px-3 py-2">Cantidad</th>
-                          <th class="text-center px-3 py-2">Agregar</th>
+                          <th class="text-left px-3 py-2"><i class="bi bi-upc-scan me-1"></i>Codigo</th>
+                          <th class="text-left px-3 py-2"><i class="bi bi-box-seam me-1"></i>Descripcion</th>
+                          <th class="text-right px-3 py-2"><i class="bi bi-cash-stack me-1"></i>Costo {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
+                          <th class="text-right px-3 py-2"><i class="bi bi-tag me-1"></i>Precio {% if inventory_cs_only %}C${% else %}USD{% endif %}</th>
+                          <th class="text-right px-3 py-2"><i class="bi bi-123 me-1"></i>Cantidad</th>
+                          <th class="text-center px-3 py-2"><i class="bi bi-plus-circle me-1"></i>Agregar</th>
                         </tr>
                       </thead>
                       <tbody id="result-product-list" class="odoo-muted">
@@ -1054,7 +1173,7 @@
                     </table>
                   </div>
                   <div class="mt-3 mb-2 d-flex align-items-center justify-content-between">
-                    <div class="odoo-modal-title odoo-accent">Items de resultado cargados</div>
+                    <div class="odoo-modal-title odoo-accent"><i class="bi bi-clipboard2-check me-2"></i>Productos resultantes cargados</div>
                   </div>
                   <div class="odoo-table-wrap overflow-x-auto max-h-44 overflow-y-auto egreso-grid-shell">
                     <table id="result-items-table-grid" class="table table-sm align-middle mb-0 odoo-table text-base w-100 egreso-pro-grid">
@@ -1076,8 +1195,8 @@
                     </table>
                   </div>
                   <div class="mt-2 d-flex flex-wrap gap-3 justify-content-end fw-bold text-dark">
-                    <span>Bultos resultado: <span id="result-bultos-live">0.00</span></span>
-                    <span>Items resultado: <span id="result-items-live">0</span></span>
+                    <span><i class="bi bi-box2-heart me-1 text-success"></i>Bultos resultado: <span id="result-bultos-live">0.00</span></span>
+                    <span><i class="bi bi-list-check me-1 text-success"></i>Items resultado: <span id="result-items-live">0</span></span>
                     {% if not inventory_cs_only %}
                     <span>Total resultado USD: <span id="result-total-usd-live">$ 0.00</span></span>
                     {% endif %}
@@ -1087,21 +1206,21 @@
 
                 <div class="totals-bar d-flex flex-wrap gap-4 align-items-center justify-content-end border-top pt-3">
                   <div>
-                    <div class="label">Total bultos</div>
+                    <div class="label"><i class="bi bi-box2 me-1"></i>Total bultos</div>
                     <div id="total-bultos" class="value">0.00</div>
                   </div>
                   <div>
-                    <div class="label">Total items</div>
+                    <div class="label"><i class="bi bi-list-ol me-1"></i>Total items</div>
                     <div id="total-items" class="value">0</div>
                   </div>
                   {% if not inventory_cs_only %}
                   <div>
-                    <div class="label">Total USD</div>
+                    <div class="label"><i class="bi bi-currency-dollar me-1"></i>Total USD</div>
                     <div id="total-usd" class="value">$ 0.00</div>
                   </div>
                   {% endif %}
                   <div>
-                    <div class="label">Total C$</div>
+                    <div class="label"><i class="bi bi-wallet2 me-1"></i>Total C$</div>
                     <div id="total-cs" class="value">C$ 0.00</div>
                   </div>
                   <div class="label">
@@ -1191,6 +1310,22 @@
   let handleAddItem = null;
   const ingresoForm = document.getElementById("ingreso-form");
   const STORAGE_KEY = "hp_egreso_draft_v1";
+  const selectedLaboratory = {{ (selected_laboratory.id if selected_laboratory else none)|tojson }};
+  const productionOpenMode = {{ (production_open_mode or false)|tojson }};
+  const adjustmentMode = () => ingresoForm?.querySelector("input[name='laboratory_adjustment_mode']:checked")?.value || "AMBOS";
+  const syncLaboratoryAdjustmentMode = () => {
+    if (!selectedLaboratory) return;
+    const mode = adjustmentMode();
+    document.querySelectorAll(".lab-adjustment-card").forEach((card) => card.classList.toggle("is-active", card.dataset.mode === mode));
+    document.getElementById("source-products-wrap")?.classList.toggle("d-none", mode === "INGRESO");
+    abiertaResultWrap?.classList.toggle("d-none", mode === "EGRESO");
+    const submitButton = document.getElementById("submit-egreso");
+    if (submitButton) submitButton.innerHTML = mode === "INGRESO"
+      ? '<i class="bi bi-box-arrow-in-down"></i> Registrar ingreso adicional'
+      : mode === "EGRESO"
+        ? '<i class="bi bi-box-arrow-up"></i> Registrar baja adicional'
+        : '<i class="bi bi-arrow-left-right"></i> Registrar corrección completa';
+  };
 
   const setEgresoView = (view) => {
     const showForm = view === "form";
@@ -1341,6 +1476,20 @@
   const syncTrasladoMode = () => {
     const isTraslado = isTrasladoSelected();
     const isAbierta = isAbiertaSelected();
+    const formPanel = document.getElementById("ingreso-panel");
+    const sourceTitle = document.getElementById("source-products-title");
+    const sourceHelp = document.getElementById("source-products-help");
+    const submitButton = document.getElementById("submit-egreso");
+    formPanel?.classList.toggle("open-production-mode", isAbierta);
+    if (sourceTitle) sourceTitle.innerHTML = isAbierta
+      ? '<i class="bi bi-box-arrow-up-right me-2"></i>Pacas o productos consumidos'
+      : '<i class="bi bi-box-arrow-up-right me-2"></i>Productos a egresar';
+    if (sourceHelp) sourceHelp.textContent = isAbierta
+      ? "Busca y carga las unidades que salen de la bodega para realizar esta producción."
+      : "Buscador de productos - filtro principal.";
+    if (submitButton) submitButton.innerHTML = isAbierta
+      ? '<i class="bi bi-check2-circle"></i> Terminar producción y crear laboratorio'
+      : '<i class="bi bi-check2-circle"></i> Registrar egreso';
     if (bodegaDestinoWrap) {
       bodegaDestinoWrap.classList.toggle("d-none", !(isTraslado || isAbierta));
     }
@@ -1357,6 +1506,7 @@
     if (abiertaResultWrap) {
       abiertaResultWrap.classList.toggle("d-none", !isAbierta);
     }
+    if (selectedLaboratory && isAbierta) syncLaboratoryAdjustmentMode();
     updateBodegaBanner();
   };
 
@@ -1655,6 +1805,23 @@
       $(tipoField).on("change.select2", syncTrasladoMode);
     }
   }
+  if (selectedLaboratory || productionOpenMode) {
+    setEgresoView("form");
+    const abiertaOption = Array.from(tipoField?.options || []).find((option) => option.dataset.isAbierta === "1");
+    const origin = document.getElementById("field-bodega-origen");
+    const destination = document.getElementById("field-bodega-destino");
+    if (abiertaOption && tipoField) tipoField.value = abiertaOption.value;
+    if (selectedLaboratory && origin) origin.value = {{ (selected_laboratory.bodega_origen_id if selected_laboratory else '')|tojson }};
+    if (selectedLaboratory && destination) destination.value = {{ (selected_laboratory.bodega_destino_id if selected_laboratory else '')|tojson }};
+    syncTrasladoMode();
+    if (window.$ && $.fn.select2) {
+      $(tipoField).trigger("change.select2");
+      $(origin).trigger("change.select2");
+      $(destination).trigger("change.select2");
+    }
+  }
+  document.querySelectorAll(".lab-adjustment-mode").forEach((radio) => radio.addEventListener("change", syncLaboratoryAdjustmentMode));
+  syncLaboratoryAdjustmentMode();
   if (bodegaDestinoField) {
     bodegaDestinoField.addEventListener("change", updateBodegaBanner);
     if (window.$ && $.fn.select2) {
@@ -1687,7 +1854,11 @@
       allowClear: true,
     });
   }
-  restoreDraft();
+  if (selectedLaboratory) {
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  } else {
+    restoreDraft();
+  }
   wireSaldoRefresh();
   updateSaldoCells();
   syncBodegaGate();
@@ -2256,7 +2427,7 @@
     if (isTraslado && bodegaField?.value && bodegaDestinoField?.value && bodegaField.value === bodegaDestinoField.value) {
       missing.push("Destino distinto al origen");
     }
-    if (isAbierta) {
+    if (isAbierta && adjustmentMode() !== "EGRESO") {
       const resultCount = resultItemsTable?.querySelectorAll("tr[data-result-item-row]").length || 0;
       if (!resultCount) missing.push("Productos de resultado de abierta");
     }
@@ -2288,7 +2459,7 @@
   if (ingresoForm) {
     ingresoForm.addEventListener("submit", (event) => {
       const itemsCount = itemsTable?.querySelectorAll("tr[data-item-row]").length || 0;
-      if (!itemsCount) {
+      if (!itemsCount && adjustmentMode() !== "INGRESO") {
         event.preventDefault();
         const errorBanner = document.getElementById("egreso-client-error");
         if (errorBanner) {

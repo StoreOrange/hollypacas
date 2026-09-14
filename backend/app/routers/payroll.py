@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..core.deps import get_db
-from ..models.attendance import AttendanceDeviceUser, AttendancePolicySetting, AttendancePunch, HRArea, HREmployee, HRPosition
+from ..models.attendance import AttendanceDayOverride, AttendanceDeviceUser, AttendancePolicySetting, AttendancePunch, HRArea, HREmployee, HRPosition
 from ..models.user import Branch
 from ..models.payroll import (
     PayrollAdjustment,
@@ -177,6 +177,9 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
         selected_period = db.query(PayrollPeriod).filter(PayrollPeriod.id == int(selected_period_id)).first()
     if not selected_period and periods:
         selected_period = periods[0]
+    auto_refresh_error = None
+    if selected_period and selected_period.status != "CLOSED":
+        _refreshed_count, auto_refresh_error = _calculate_period_records(db, selected_period)
     calculations = []
     eligible_profiles_count = 0
     employees_without_profile = 0
@@ -263,6 +266,7 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
             "period_summary": period_summary,
             "eligible_profiles_count": eligible_profiles_count,
             "employees_without_profile": employees_without_profile,
+            "auto_refresh_error": auto_refresh_error,
             "deduction_overrides": deduction_overrides,
             "period_deductions": period_deductions,
             "holidays": db.query(PayrollHoliday).order_by(PayrollHoliday.holiday_date.desc()).limit(50).all(),
@@ -697,36 +701,53 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
     by_date = {}
     for punch in punches:
         by_date.setdefault(punch.occurred_at.date(), []).append(punch.occurred_at)
+    day_overrides = {
+        row.work_date: row
+        for row in db.query(AttendanceDayOverride).filter(
+            AttendanceDayOverride.employee_id == employee_id,
+            AttendanceDayOverride.work_date >= period.date_from,
+            AttendanceDayOverride.work_date <= period.date_to,
+        ).all()
+    }
     overtime_minutes = 0
     holiday_minutes = 0
+    late_minutes = 0
     for day, marks in by_date.items():
+        day_override = day_overrides.get(day)
+        entry = marks[0]
+        if day.weekday() <= 5 and not (day_override and day_override.waive_lateness):
+            expected_entry = datetime.combine(day, policy.weekday_start)
+            entry_delay = max(0, int((entry - expected_entry).total_seconds() // 60))
+            if entry_delay > int(policy.entry_grace_minutes or 0):
+                late_minutes += entry_delay
         if len(marks) < 2:
             continue
-        entry, exit_at = marks[0], marks[-1]
+        exit_at = marks[-1]
         gross = max(0, int((exit_at - entry).total_seconds() // 60))
         worked = max(0, gross - (policy.break_minutes if gross >= policy.break_after_minutes else 0))
         if day in holidays and holidays[day].worked_as_overtime:
             holiday_minutes += worked
         elif day.weekday() == 6 and policy.sunday_all_day_overtime:
-            overtime_minutes += worked
+            if not (day_override and day_override.exclude_overtime):
+                overtime_minutes += worked
         elif day.weekday() == 5:
             cutoff = datetime.combine(day, policy.saturday_overtime_start)
-            overtime_minutes += max(0, int((exit_at - max(entry, cutoff)).total_seconds() // 60))
+            candidate = max(0, int((exit_at - max(entry, cutoff)).total_seconds() // 60))
+            if candidate > int(policy.overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
+                overtime_minutes += candidate
         else:
             cutoff = datetime.combine(day, policy.weekday_overtime_start)
-            overtime_minutes += max(0, int((exit_at - max(entry, cutoff)).total_seconds() // 60))
-    return len(by_date), overtime_minutes, holiday_minutes
+            candidate = max(0, int((exit_at - max(entry, cutoff)).total_seconds() // 60))
+            if candidate > int(policy.overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
+                overtime_minutes += candidate
+    return len(by_date), overtime_minutes, holiday_minutes, late_minutes
 
 
-@router.post("/payroll/periods/{period_id}/calculate")
-def calculate_period(period_id: int, request: Request, db: Session = Depends(get_db)):
-    _browser_admin(request, db)
-    period = db.query(PayrollPeriod).filter(PayrollPeriod.id == period_id).first()
-    if not period or period.status == "CLOSED":
-        return RedirectResponse("/payroll?error=Periodo+no+disponible", status_code=303)
+def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, Optional[str]]:
+    """Actualiza el acumulado de una planilla abierta al corte del día actual."""
     policy = db.query(AttendancePolicySetting).first()
     if not policy:
-        return RedirectResponse("/payroll?error=Configure+primero+la+politica+de+marcadas", status_code=303)
+        return 0, "Configure primero la política de marcadas"
     holidays = {row.holiday_date: row for row in db.query(PayrollHoliday).filter(PayrollHoliday.holiday_date >= period.date_from, PayrollHoliday.holiday_date <= period.date_to).all()}
     profiles_query = db.query(PayrollEmployeeProfile).join(HREmployee).filter(
         PayrollEmployeeProfile.active.is_(True),
@@ -737,14 +758,14 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
     profiles = profiles_query.all()
     if not profiles:
         branch_name = period.branch.name if period.branch else "seleccionada"
-        message = quote_plus(f"No hay empleados activos con salario y perfil asignados a la sucursal {branch_name}")
-        return RedirectResponse(f"/payroll?period_id={period.id}&error={message}", status_code=303)
+        return 0, f"No hay empleados activos con salario y perfil asignados a la sucursal {branch_name}"
     for profile in profiles:
         salary = _money(profile.monthly_salary)
         hourly = salary / Decimal("240")
-        _attendance_days, overtime_minutes, holiday_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
+        _attendance_days, overtime_minutes, holiday_minutes, late_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
         overtime_pay = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
         holiday_pay = _money((Decimal(holiday_minutes) / 60) * hourly * 2)
+        late_deduction = _money((Decimal(late_minutes) / 60) * hourly)
         calc = db.query(PayrollCalculation).filter(PayrollCalculation.period_id == period.id, PayrollCalculation.employee_id == profile.employee_id).first()
         if not calc:
             calc = PayrollCalculation(period_id=period.id, employee_id=profile.employee_id, monthly_salary=salary, base_pay=0, gross_pay=0, net_pay=0)
@@ -753,7 +774,7 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
         else:
             calc.deduction_lines.clear()
             db.flush()
-        total_deductions = Decimal("0")
+        total_deductions = late_deduction
         enabled_type_ids = {
             row.deduction_type_id
             for row in db.query(PayrollEmployeeDeductionSetting).filter(
@@ -806,7 +827,7 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
         adjustments = db.query(PayrollAdjustment).filter(PayrollAdjustment.period_id == period.id, PayrollAdjustment.employee_id == profile.employee_id, PayrollAdjustment.active.is_(True)).order_by(PayrollAdjustment.created_at, PayrollAdjustment.id).all()
         additions = _money(sum((row.amount for row in adjustments if row.adjustment_type == "ADDITION"), Decimal("0")))
         manual_deductions = _money(sum((row.amount for row in adjustments if row.adjustment_type == "DEDUCTION"), Decimal("0")))
-        manual_days = next((row.worked_days for row in reversed(adjustments) if row.adjustment_type == "WORKED_DAYS" and row.worked_days is not None), None)
+        manual_days_row = next((row for row in reversed(adjustments) if row.adjustment_type == "WORKED_DAYS" and row.worked_days is not None), None)
         manual_overtime = next((row.worked_days for row in reversed(adjustments) if row.adjustment_type == "OVERTIME_MINUTES" and row.worked_days is not None), None)
         if manual_overtime is not None:
             overtime_minutes = max(0, manual_overtime)
@@ -818,17 +839,43 @@ def calculate_period(period_id: int, request: Request, db: Session = Depends(get
         if employee_start:
             employment_start = max(employment_start, employee_start)
         accrued_calendar_days = max(0, (cutoff - employment_start).days + 1)
-        payable_days = max(0, min(target_days, manual_days if manual_days is not None else accrued_calendar_days))
+        corrected_days = None
+        if manual_days_row is not None:
+            correction_date = max(period.date_from, manual_days_row.created_at.date())
+            days_after_correction = max(0, (cutoff - correction_date).days)
+            # Una corrección histórica nunca debe dejar congelado el acumulado
+            # por debajo de los días calendario ya transcurridos del período.
+            corrected_days = max(
+                accrued_calendar_days,
+                manual_days_row.worked_days + days_after_correction,
+            )
+        payable_days = max(0, min(target_days, corrected_days if corrected_days is not None else accrued_calendar_days))
         base = _money((salary / Decimal("30")) * Decimal(payable_days))
         gross = _money(base + overtime_pay + holiday_pay + additions)
         calc.monthly_salary, calc.base_pay, calc.days_worked = salary, base, payable_days
         calc.overtime_minutes, calc.overtime_pay, calc.holiday_pay = overtime_minutes, overtime_pay, holiday_pay
+        calc.late_minutes, calc.late_deduction = late_minutes, late_deduction
         calc.additions_pay = additions
         total_deductions += manual_deductions
         calc.gross_pay, calc.total_deductions, calc.net_pay = gross, _money(total_deductions), _money(gross - total_deductions)
         calc.calculated_at = datetime.utcnow()
     db.commit()
-    message = quote_plus(f"Planilla acumulada al corte actual: {len(profiles)} empleado(s) recalculado(s)")
+    return len(profiles), None
+
+
+@router.post("/payroll/periods/{period_id}/calculate")
+def calculate_period(period_id: int, request: Request, db: Session = Depends(get_db)):
+    _browser_admin(request, db)
+    period = db.query(PayrollPeriod).filter(PayrollPeriod.id == period_id).first()
+    if not period or period.status == "CLOSED":
+        return RedirectResponse("/payroll?error=Periodo+no+disponible", status_code=303)
+    refreshed_count, refresh_error = _calculate_period_records(db, period)
+    if refresh_error:
+        return RedirectResponse(
+            f"/payroll?period_id={period.id}&error={quote_plus(refresh_error)}",
+            status_code=303,
+        )
+    message = quote_plus(f"Planilla acumulada al corte actual: {refreshed_count} empleado(s) recalculado(s)")
     return RedirectResponse(f"/payroll?period_id={period.id}&ok={message}", status_code=303)
 
 
@@ -842,7 +889,7 @@ def _update_calculation_totals(db: Session, calculation: PayrollCalculation) -> 
     manual_deductions = sum((_money(row.amount) for row in adjustments if row.adjustment_type == "DEDUCTION"), Decimal("0"))
     additions = sum((_money(row.amount) for row in adjustments if row.adjustment_type == "ADDITION"), Decimal("0"))
     calculation.additions_pay = _money(additions)
-    calculation.total_deductions = _money(planned + manual_deductions)
+    calculation.total_deductions = _money(planned + manual_deductions + _money(calculation.late_deduction))
     calculation.gross_pay = _money(_money(calculation.base_pay) + _money(calculation.overtime_pay) + _money(calculation.holiday_pay) + additions)
     calculation.net_pay = _money(calculation.gross_pay - calculation.total_deductions)
     calculation.calculated_at = datetime.utcnow()

@@ -76,6 +76,8 @@ from ..models.inventory import (
     ProductoCombo,
     ProductoReceta,
     ProductoRecetaLinea,
+    ProductionLaboratory,
+    ProductionLaboratoryMovement,
     Proveedor,
     SaldoProducto,
     Segmento,
@@ -388,31 +390,32 @@ def _allowed_theme_codes() -> set[str]:
     return {item["code"] for item in THEME_OPTIONS}
 
 SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
-    {"id": "home", "label": "Panel", "href": "/home", "icon": "bi-grid-1x2-fill", "perm": "menu.home", "alt_perm": None},
-    {"id": "sales", "label": "Ventas", "href": "/sales", "icon": "bi-receipt-cutoff", "perm": "menu.sales", "alt_perm": None},
-    {"id": "sales_caliente", "label": "Ventas en Caliente", "href": "/sales/ventas-caliente", "icon": "bi-lightning-fill", "perm": "menu.sales.caliente", "alt_perm": None},
-    {"id": "reports", "label": "Informes", "href": "/reports", "icon": "bi-graph-up-arrow", "perm": "menu.reports", "alt_perm": None},
-    {"id": "sales_cobranza", "label": "Gestion de cobranza", "href": "/sales/cobranza", "icon": "bi-cash-coin", "perm": "menu.sales.cobranza", "alt_perm": None},
-    {"id": "sales_cierre", "label": "Cierre de caja", "href": "/sales/cierre", "icon": "bi-safe2", "perm": "menu.sales.cierre", "alt_perm": None},
-    {"id": "sales_utilitario", "label": "Utilitario Ventas", "href": "/sales/utilitario", "icon": "bi-tools", "perm": "menu.sales.utilitario", "alt_perm": None},
-    {"id": "sales_etiquetas", "label": "Impresion de etiquetas", "href": "/sales/etiquetas", "icon": "bi-printer-fill", "perm": "menu.sales.etiquetas", "alt_perm": None},
+    {"id": "home", "label": "Panel", "href": "/home", "icon": "bi-speedometer2", "perm": "menu.home", "alt_perm": None},
+    {"id": "sales", "label": "Ventas", "href": "/sales", "icon": "bi-cart-check-fill", "perm": "menu.sales", "alt_perm": None},
+    {"id": "sales_caliente", "label": "Ventas en Caliente", "href": "/sales/ventas-caliente", "icon": "bi-activity", "perm": "menu.sales.caliente", "alt_perm": None},
+    {"id": "reports", "label": "Informes", "href": "/reports", "icon": "bi-bar-chart-line-fill", "perm": "menu.reports", "alt_perm": None},
+    {"id": "sales_cobranza", "label": "Gestion de cobranza", "href": "/sales/cobranza", "icon": "bi-wallet-fill", "perm": "menu.sales.cobranza", "alt_perm": None},
+    {"id": "sales_cierre", "label": "Cierre de caja", "href": "/sales/cierre", "icon": "bi-cash-stack", "perm": "menu.sales.cierre", "alt_perm": None},
+    {"id": "sales_utilitario", "label": "Utilitario Ventas", "href": "/sales/utilitario", "icon": "bi-wrench-adjustable-circle", "perm": "menu.sales.utilitario", "alt_perm": None},
+    {"id": "sales_etiquetas", "label": "Impresion de etiquetas", "href": "/sales/etiquetas", "icon": "bi-upc-scan", "perm": "menu.sales.etiquetas", "alt_perm": None},
     {"id": "sales_roc", "label": "Recibos de caja", "href": "/sales/roc", "icon": "bi-file-earmark-text", "perm": "menu.sales.roc", "alt_perm": None},
     {"id": "sales_depositos", "label": "Registro de depositos", "href": "/sales/depositos", "icon": "bi-bank2", "perm": "menu.sales.depositos", "alt_perm": None},
-    {"id": "sales_comisiones", "label": "Registro de comisiones", "href": "/sales/comisiones", "icon": "bi-percent", "perm": "menu.sales.comisiones", "alt_perm": None},
-    {"id": "sales_preventas", "label": "Panel de preventas", "href": "/sales/preventas", "icon": "bi-journal-richtext", "perm": "menu.sales.preventas", "alt_perm": None},
-    {"id": "sales_preventas_mobile", "label": "Nueva preventa movil", "href": "/m/preventas", "icon": "bi-phone", "perm": "menu.sales.preventas.mobile", "alt_perm": "menu.sales.preventas"},
-    {"id": "inventory", "label": "Inventarios", "href": "/inventory", "icon": "bi-boxes", "perm": "menu.inventory", "alt_perm": None},
+    {"id": "sales_comisiones", "label": "Registro de comisiones", "href": "/sales/comisiones", "icon": "bi-trophy-fill", "perm": "menu.sales.comisiones", "alt_perm": None},
+    {"id": "sales_preventas", "label": "Panel de preventas", "href": "/sales/preventas", "icon": "bi-clipboard-check-fill", "perm": "menu.sales.preventas", "alt_perm": None},
+    {"id": "sales_preventas_mobile", "label": "Nueva preventa movil", "href": "/m/preventas", "icon": "bi-phone-fill", "perm": "menu.sales.preventas.mobile", "alt_perm": "menu.sales.preventas"},
+    {"id": "inventory", "label": "Inventarios", "href": "/inventory", "icon": "bi-box-seam-fill", "perm": "menu.inventory", "alt_perm": None},
     {"id": "inventory_caliente", "label": "Mi inventario en Caliente", "href": "/inventory/caliente", "icon": "bi-lightning-charge-fill", "perm": "menu.inventory.caliente", "alt_perm": None},
     {"id": "inventory_ingresos", "label": "Ingresos Inventario", "href": "/inventory/ingresos", "icon": "bi-box-arrow-in-down", "perm": "menu.inventory.ingresos", "alt_perm": None},
     {"id": "inventory_egresos", "label": "Egresos Inventario", "href": "/inventory/egresos", "icon": "bi-box-arrow-up", "perm": "menu.inventory.egresos", "alt_perm": None},
+    {"id": "inventory_production_labs", "label": "Laboratorio de produccion", "href": "/inventory/laboratorios-produccion", "icon": "bi-building-gear", "perm": "menu.inventory.egresos", "alt_perm": None, "hollpacas_only": "1"},
     {"id": "inventory_requisas", "label": "Gestion Bodega y Requisas", "href": "/inventory/gestion-bodega-requisas", "icon": "bi-clipboard2-data-fill", "perm": "menu.inventory.requisas", "alt_perm": None},
     {"id": "inventory_preproduction_mobile", "label": "Pre-produccion Bodega", "href": "/m/bodega/preproduccion", "icon": "bi-clipboard2-pulse", "perm": "menu.inventory.preproduction.mobile", "alt_perm": "menu.inventory.requisas"},
     {"id": "inventory_traslados", "label": "Traslados Rapidos", "href": "/inventory/traslados-rapidos", "icon": "bi-arrow-left-right", "perm": "menu.inventory.egresos", "alt_perm": None},
-    {"id": "finance", "label": "Finanzas", "href": "/finance", "icon": "bi-currency-dollar", "perm": "menu.finance", "alt_perm": None},
-    {"id": "accounting", "label": "Contabilidad", "href": "/accounting", "icon": "bi-journal-check", "perm": "menu.accounting", "alt_perm": None},
+    {"id": "finance", "label": "Finanzas", "href": "/finance", "icon": "bi-graph-up-arrow", "perm": "menu.finance", "alt_perm": None},
+    {"id": "accounting", "label": "Contabilidad", "href": "/accounting", "icon": "bi-journal-text", "perm": "menu.accounting", "alt_perm": None},
     {"id": "attendance", "label": "Control de marcadas", "href": "/attendance", "icon": "bi-fingerprint", "perm": "menu.attendance", "alt_perm": None},
-    {"id": "payroll", "label": "Gestion de planilla", "href": "/payroll", "icon": "bi-wallet2", "perm": "menu.payroll", "alt_perm": None},
-    {"id": "data", "label": "Datos", "href": "/data", "icon": "bi-database", "perm": "menu.data", "alt_perm": None},
+    {"id": "payroll", "label": "Gestion de planilla", "href": "/payroll", "icon": "bi-people-fill", "perm": "menu.payroll", "alt_perm": None},
+    {"id": "data", "label": "Datos", "href": "/data", "icon": "bi-sliders", "perm": "menu.data", "alt_perm": None},
 ]
 
 
@@ -429,7 +432,10 @@ def _normalize_sidebar_menu_order(raw_ids: list[str]) -> list[str]:
             ordered.append(key)
     for default_id in _default_sidebar_menu_order():
         if default_id not in ordered:
-            ordered.append(default_id)
+            if default_id == "inventory_production_labs" and "inventory_egresos" in ordered:
+                ordered.insert(ordered.index("inventory_egresos") + 1, default_id)
+            else:
+                ordered.append(default_id)
     return ordered
 
 
@@ -4099,6 +4105,56 @@ def home(
     active_company_key = (get_active_company_key() or "").strip().lower()
     comestibles_theme_enabled = sales_interface_code == "comestibles" or active_company_key == "comestibles"
     home_preventas: list[dict] = []
+    home_laboratory_notifications: list[dict] = []
+
+    if _is_hollpacas_mode():
+        latest_laboratories = (
+            db.query(ProductionLaboratory)
+            .order_by(ProductionLaboratory.created_at.desc(), ProductionLaboratory.id.desc())
+            .limit(5)
+            .all()
+        )
+        if latest_laboratories:
+            laboratory_ids = {laboratory.id for laboratory in latest_laboratories}
+            date_from = min(laboratory.fecha for laboratory in latest_laboratories)
+            date_to = max(laboratory.fecha for laboratory in latest_laboratories)
+            report_laboratories, _ = _production_laboratory_report_rows(db, date_from, date_to)
+            report_by_id = {
+                int(row["lab"].id): row
+                for row in report_laboratories
+                if int(row["lab"].id) in laboratory_ids
+            }
+            for laboratory in latest_laboratories:
+                report_row = report_by_id.get(int(laboratory.id))
+                if not report_row:
+                    continue
+                resulting_products = [item for item in report_row["products"] if item["direction"] == "ALTA"]
+                result_labels = [
+                    f"{item['producto'].descripcion}: {_format_qty(Decimal(str(item['cantidad'] or 0)))}"
+                    for item in resulting_products[:3]
+                    if item.get("producto")
+                ]
+                balance_cs = Decimal(str(report_row["balance_cs"] or 0))
+                created_value = laboratory.created_at or laboratory.terminada_at
+                home_laboratory_notifications.append(
+                    {
+                        "id": laboratory.id,
+                        "numero": laboratory.numero,
+                        "estado": laboratory.estado,
+                        "fecha_iso": laboratory.fecha.isoformat(),
+                        "fecha_label": created_value.strftime("%d/%m/%Y %H:%M") if created_value else laboratory.fecha.strftime("%d/%m/%Y"),
+                        "usuario": laboratory.usuario_registro or "Sistema",
+                        "origen": laboratory.bodega_origen.name if laboratory.bodega_origen else "-",
+                        "destino": laboratory.bodega_destino.name if laboratory.bodega_destino else "-",
+                        "bajas_cs": float(report_row["out_cs"] or 0),
+                        "altas_cs": float(report_row["in_cs"] or 0),
+                        "balance_cs": float(balance_cs),
+                        "balance_estado": "GANANCIA" if balance_cs > 0 else ("PÉRDIDA" if balance_cs < 0 else "EQUILIBRIO"),
+                        "balance_class": "positive" if balance_cs > 0 else ("negative" if balance_cs < 0 else "neutral"),
+                        "resultados": result_labels,
+                        "resultados_extra": max(0, len(resulting_products) - 3),
+                    }
+                )
 
     if vendedor_id:
         start_dt = datetime.combine(local_today() - timedelta(days=1), datetime.min.time())
@@ -4154,6 +4210,7 @@ def home(
             "user": user,
             "version": settings.UI_VERSION,
             "home_preventas": home_preventas,
+            "home_laboratory_notifications": home_laboratory_notifications,
             "sales_interface_code": sales_interface_code,
             "comestibles_theme_enabled": comestibles_theme_enabled,
         },
@@ -11035,6 +11092,329 @@ def inventory_ingresos_page(
     )
 
 
+def _production_laboratory_next_number(db: Session, value_date: date) -> str:
+    prefix = f"LAB-{value_date.strftime('%Y%m%d')}-"
+    latest = (
+        db.query(ProductionLaboratory)
+        .filter(ProductionLaboratory.numero.like(f"{prefix}%"))
+        .order_by(ProductionLaboratory.numero.desc())
+        .first()
+    )
+    sequence = 1
+    if latest:
+        try:
+            sequence = int(latest.numero.rsplit("-", 1)[-1]) + 1
+        except (TypeError, ValueError):
+            sequence = 1
+    return f"{prefix}{sequence:04d}"
+
+
+def _production_laboratory_report_rows(db: Session, start_date: date, end_date: date, state: str = ""):
+    rate_row = db.query(ExchangeRate).filter(ExchangeRate.effective_date <= end_date).order_by(ExchangeRate.effective_date.desc()).first()
+    bank_rate = Decimal(str(rate_row.rate or 0)) if rate_row and rate_row.rate else Decimal("0")
+    query = db.query(ProductionLaboratory).filter(ProductionLaboratory.fecha >= start_date, ProductionLaboratory.fecha <= end_date)
+    if state in {"TERMINADA", "CERRADA"}:
+        query = query.filter(ProductionLaboratory.estado == state)
+    laboratories = query.order_by(ProductionLaboratory.fecha, ProductionLaboratory.id).all()
+    result = []
+    for laboratory in laboratories:
+        products: dict[int, dict[str, object]] = {}
+        out_cs = out_usd = in_cs = in_usd = Decimal("0")
+        for movement in laboratory.movimientos or []:
+            for direction, document in (("BAJA", movement.egreso), ("ALTA", movement.ingreso)):
+                if not document:
+                    continue
+                movement_rate = Decimal(str(document.tasa_cambio or 0)) if document.tasa_cambio else bank_rate
+                for item in document.items or []:
+                    qty = Decimal(str(item.cantidad or 0))
+                    total_cs = Decimal(str(item.subtotal_cs or 0))
+                    total_usd = Decimal(str(item.subtotal_usd or 0))
+                    if total_cs <= 0:
+                        total_cs = Decimal(str(item.costo_unitario_cs or 0)) * qty
+                    if total_usd <= 0:
+                        total_usd = Decimal(str(item.costo_unitario_usd or 0)) * qty
+                    if total_cs <= 0 and total_usd > 0 and movement_rate > 0:
+                        total_cs = total_usd * movement_rate
+                    if total_usd <= 0 and total_cs > 0 and movement_rate > 0:
+                        total_usd = total_cs / movement_rate
+                    if direction == "BAJA":
+                        out_cs += total_cs; out_usd += total_usd
+                    else:
+                        in_cs += total_cs; in_usd += total_usd
+                    key = (item.producto_id * 10) + (0 if direction == "BAJA" else 1)
+                    bucket = products.setdefault(key, {"direction": direction, "producto": item.producto, "cantidad": Decimal("0"), "total_cs": Decimal("0"), "total_usd": Decimal("0")})
+                    bucket["cantidad"] += qty; bucket["total_cs"] += total_cs; bucket["total_usd"] += total_usd
+        result.append({"lab": laboratory, "products": list(products.values()), "out_cs": out_cs, "out_usd": out_usd, "in_cs": in_cs, "in_usd": in_usd, "balance_cs": in_cs - out_cs, "balance_usd": in_usd - out_usd})
+    return result, bank_rate
+
+
+def _production_report_dates(start_date: Optional[str], end_date: Optional[str]) -> tuple[date, date]:
+    today = local_today()
+    month_start = today.replace(day=1)
+    month_end = date(today.year, 12, 31) if today.month == 12 else date(today.year, today.month + 1, 1) - timedelta(days=1)
+    try:
+        parsed_start = date.fromisoformat((start_date or "").strip())
+    except ValueError:
+        parsed_start = month_start
+    try:
+        parsed_end = date.fromisoformat((end_date or "").strip())
+    except ValueError:
+        parsed_end = month_end
+    return (parsed_start, parsed_end) if parsed_start <= parsed_end else (parsed_end, parsed_start)
+
+
+@router.get("/inventory/laboratorios-produccion")
+def inventory_production_laboratories_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.egresos")
+    if not _is_hollpacas_mode():
+        return RedirectResponse("/inventory/egresos", status_code=303)
+    state = (request.query_params.get("estado") or "").strip().upper()
+    today = local_today()
+    default_start = today.replace(day=1)
+    default_end = date(today.year, 12, 31) if today.month == 12 else date(today.year, today.month + 1, 1) - timedelta(days=1)
+    try:
+        start_date = date.fromisoformat((request.query_params.get("start_date") or "").strip())
+    except ValueError:
+        start_date = default_start
+    try:
+        end_date = date.fromisoformat((request.query_params.get("end_date") or "").strip())
+    except ValueError:
+        end_date = default_end
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    query = db.query(ProductionLaboratory)
+    query = query.filter(ProductionLaboratory.fecha >= start_date, ProductionLaboratory.fecha <= end_date)
+    if state in {"TERMINADA", "CERRADA"}:
+        query = query.filter(ProductionLaboratory.estado == state)
+    laboratories = query.order_by(ProductionLaboratory.fecha.desc(), ProductionLaboratory.id.desc()).all()
+    total_laboratories = len(laboratories)
+    adjustable_laboratories = sum(1 for laboratory in laboratories if laboratory.estado == "TERMINADA")
+    closed_laboratories = sum(1 for laboratory in laboratories if laboratory.estado == "CERRADA")
+    today_laboratories = sum(1 for laboratory in laboratories if laboratory.fecha == today)
+    bank_rate_row = db.query(ExchangeRate).filter(ExchangeRate.effective_date <= local_today()).order_by(ExchangeRate.effective_date.desc()).first()
+    bank_rate = Decimal(str(bank_rate_row.rate or 0)) if bank_rate_row and bank_rate_row.rate else Decimal("0")
+
+    def laboratory_item_values(item, movement) -> tuple[Decimal, Decimal]:
+        quantity = Decimal(str(item.cantidad or 0))
+        total_cs = Decimal(str(item.subtotal_cs or 0))
+        total_usd = Decimal(str(item.subtotal_usd or 0))
+        movement_rate = Decimal(str(movement.tasa_cambio or 0)) if movement and movement.tasa_cambio else bank_rate
+        if total_cs <= 0 and total_usd > 0 and movement_rate > 0:
+            total_cs = total_usd * movement_rate
+        if total_usd <= 0 and total_cs > 0 and movement_rate > 0:
+            total_usd = total_cs / movement_rate
+        if total_cs <= 0 and quantity > 0:
+            total_cs = Decimal(str(item.costo_unitario_cs or 0)) * quantity
+        if total_usd <= 0 and quantity > 0:
+            total_usd = Decimal(str(item.costo_unitario_usd or 0)) * quantity
+        return total_usd.quantize(Decimal("0.01")), total_cs.quantize(Decimal("0.01"))
+
+    rows = []
+    for laboratory in laboratories:
+        movements = list(laboratory.movimientos or [])
+        outgoing_totals: dict[int, dict[str, object]] = {}
+        incoming_totals: dict[int, dict[str, object]] = {}
+        for movement in movements:
+            for item in (movement.egreso.items if movement.egreso else []):
+                item_usd, item_cs = laboratory_item_values(item, movement.egreso)
+                bucket = outgoing_totals.setdefault(item.producto_id, {"producto": item.producto, "cantidad": Decimal("0"), "total_usd": Decimal("0"), "total_cs": Decimal("0")})
+                bucket["cantidad"] = Decimal(str(bucket["cantidad"])) + Decimal(str(item.cantidad or 0))
+                bucket["total_usd"] = Decimal(str(bucket["total_usd"])) + item_usd
+                bucket["total_cs"] = Decimal(str(bucket["total_cs"])) + item_cs
+            for item in (movement.ingreso.items if movement.ingreso else []):
+                item_usd, item_cs = laboratory_item_values(item, movement.ingreso)
+                bucket = incoming_totals.setdefault(item.producto_id, {"producto": item.producto, "cantidad": Decimal("0"), "total_usd": Decimal("0"), "total_cs": Decimal("0")})
+                bucket["cantidad"] = Decimal(str(bucket["cantidad"])) + Decimal(str(item.cantidad or 0))
+                bucket["total_usd"] = Decimal(str(bucket["total_usd"])) + item_usd
+                bucket["total_cs"] = Decimal(str(bucket["total_cs"])) + item_cs
+        total_egreso = sum((Decimal(str(item["total_cs"])) for item in outgoing_totals.values()), Decimal("0"))
+        total_ingreso = sum((Decimal(str(item["total_cs"])) for item in incoming_totals.values()), Decimal("0"))
+        total_egreso_usd = sum((Decimal(str(item["total_usd"])) for item in outgoing_totals.values()), Decimal("0"))
+        total_ingreso_usd = sum((Decimal(str(item["total_usd"])) for item in incoming_totals.values()), Decimal("0"))
+        balance_cs = total_ingreso - total_egreso
+        balance_usd = total_ingreso_usd - total_egreso_usd
+        rows.append({
+            "lab": laboratory,
+            "movimientos": len(movements),
+            "total_egreso": total_egreso,
+            "total_ingreso": total_ingreso,
+            "total_egreso_usd": total_egreso_usd,
+            "total_ingreso_usd": total_ingreso_usd,
+            "balance_cs": balance_cs,
+            "balance_usd": balance_usd,
+            "balance_estado": "GANANCIA" if balance_cs > 0 else ("PERDIDA" if balance_cs < 0 else "EQUILIBRADO"),
+            "ultimo": movements[-1] if movements else None,
+            "ultimo_documento": next((m for m in reversed(movements) if m.egreso_id and m.ingreso_id), None),
+            "salientes": list(outgoing_totals.values()),
+            "resultantes": list(incoming_totals.values()),
+        })
+    summary_egreso_cs = sum((row["total_egreso"] for row in rows), Decimal("0"))
+    summary_ingreso_cs = sum((row["total_ingreso"] for row in rows), Decimal("0"))
+    summary_egreso_usd = sum((row["total_egreso_usd"] for row in rows), Decimal("0"))
+    summary_ingreso_usd = sum((row["total_ingreso_usd"] for row in rows), Decimal("0"))
+    return request.app.state.templates.TemplateResponse(
+        "inventory_production_labs.html",
+        {
+            "request": request,
+            "user": user,
+            "rows": rows,
+            "estado": state,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "total_laboratories": total_laboratories,
+            "adjustable_laboratories": adjustable_laboratories,
+            "closed_laboratories": closed_laboratories,
+            "today_laboratories": today_laboratories,
+            "bank_rate": bank_rate,
+            "summary_egreso_cs": summary_egreso_cs,
+            "summary_ingreso_cs": summary_ingreso_cs,
+            "summary_balance_cs": summary_ingreso_cs - summary_egreso_cs,
+            "summary_egreso_usd": summary_egreso_usd,
+            "summary_ingreso_usd": summary_ingreso_usd,
+            "summary_balance_usd": summary_ingreso_usd - summary_egreso_usd,
+            "success": request.query_params.get("success"),
+            "error": request.query_params.get("error"),
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/inventory/laboratorios-produccion/reporte-estados.pdf")
+def inventory_production_laboratories_state_pdf(
+    request: Request,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    estado: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.egresos")
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.pdfgen import canvas
+    start, end = _production_report_dates(start_date, end_date)
+    rows, bank_rate = _production_laboratory_report_rows(db, start, end, estado.strip().upper())
+    monthly: dict[str, dict[str, Decimal | int]] = {}
+    for row in rows:
+        key = row["lab"].fecha.strftime("%Y-%m")
+        bucket = monthly.setdefault(key, {"count": 0, "out_cs": Decimal("0"), "in_cs": Decimal("0"), "out_usd": Decimal("0"), "in_usd": Decimal("0")})
+        bucket["count"] += 1
+        for field in ("out_cs", "in_cs", "out_usd", "in_usd"):
+            bucket[field] += row[field]
+    totals = {key: sum((Decimal(str(data[key])) for data in monthly.values()), Decimal("0")) for key in ("out_cs", "in_cs", "out_usd", "in_usd")}
+    total_count = sum(int(data["count"]) for data in monthly.values())
+    company_profile = _company_profile_payload(db)
+    branch = rows[0]["lab"].bodega_origen.branch if rows and rows[0]["lab"].bodega_origen else None
+    identity = _company_identity(branch, company_profile)
+    logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
+    buffer = io.BytesIO(); pdf = canvas.Canvas(buffer, pagesize=landscape(letter)); width, height = landscape(letter); margin = 36
+    def header():
+        pdf.setFillColorRGB(.07,.14,.25); pdf.rect(0,height-92,width,92,fill=1,stroke=0)
+        if logo_path.exists(): pdf.drawImage(str(logo_path),margin,height-79,width=76,height=58,preserveAspectRatio=True,mask="auto")
+        text_x=margin+90; pdf.setFillColorRGB(1,1,1); pdf.setFont("Helvetica-Bold",11); pdf.drawString(text_x,height-29,identity["company_name"])
+        pdf.setFont("Helvetica-Bold",17); pdf.drawString(text_x,height-51,"Estado global de laboratorios")
+        pdf.setFont("Helvetica",8); pdf.setFillColorRGB(.78,.86,.96); pdf.drawString(text_x,height-68,f"Periodo {start:%d/%m/%Y} - {end:%d/%m/%Y}  |  Tasa C$ {bank_rate:,.4f}  |  Estado {estado or 'Todos'}")
+        card_y=height-137; card_w=(width-2*margin-24)/3
+        cards=(("TOTAL BAJAS",totals["out_cs"],(.72,.12,.12)),("TOTAL ALTAS",totals["in_cs"],(.06,.46,.25)),("BALANCE",totals["in_cs"]-totals["out_cs"],(.12,.32,.62)))
+        for index,(label,value,color) in enumerate(cards):
+            x=margin+index*(card_w+12); pdf.setFillColorRGB(.97,.98,1); pdf.roundRect(x,card_y,card_w,34,7,fill=1,stroke=0); pdf.setFillColorRGB(.36,.43,.53); pdf.setFont("Helvetica-Bold",7); pdf.drawString(x+10,card_y+22,label); pdf.setFillColorRGB(*color); pdf.setFont("Helvetica-Bold",11); pdf.drawRightString(x+card_w-10,card_y+9,f"C$ {value:,.2f}")
+        pdf.setFillColorRGB(.91,.94,.98); pdf.rect(margin,height-169,width-2*margin,20,fill=1,stroke=0); pdf.setFillColorRGB(.15,.23,.35); pdf.setFont("Helvetica-Bold",8); y=height-162
+        for x,text in ((margin,"Mes"),(margin+95,"Laboratorios"),(margin+180,"Bajas C$"),(margin+275,"Altas C$"),(margin+370,"Balance C$"),(margin+475,"Bajas USD"),(margin+570,"Altas USD"),(margin+665,"Balance USD")): pdf.drawString(x,y,text)
+        return y-17
+    def footer():
+        pdf.setFillColorRGB(.42,.48,.57); pdf.setFont("Helvetica",7); pdf.drawString(margin,20,f"Generado {local_now_naive():%d/%m/%Y %H:%M}"); pdf.drawRightString(width-margin,20,f"Pagina {pdf.getPageNumber()}")
+    y=header()
+    for index,(month, data) in enumerate(monthly.items()):
+        if y < 55: footer(); pdf.showPage(); y=header()
+        balance_cs=data["in_cs"]-data["out_cs"]; balance_usd=data["in_usd"]-data["out_usd"]
+        if index%2==1: pdf.setFillColorRGB(.975,.982,.992); pdf.rect(margin,y-4,width-2*margin,15,fill=1,stroke=0)
+        pdf.setFillColorRGB(0,0,0); pdf.setFont("Helvetica", 8); values=(month,str(data["count"]),f"{data['out_cs']:,.2f}",f"{data['in_cs']:,.2f}",f"{balance_cs:,.2f}",f"{data['out_usd']:,.2f}",f"{data['in_usd']:,.2f}",f"{balance_usd:,.2f}")
+        for x,text in zip((margin,margin+95,margin+180,margin+275,margin+370,margin+475,margin+570,margin+665),values): pdf.drawString(x,y,text)
+        y-=15
+    y-=5; pdf.setFillColorRGB(.07,.14,.25); pdf.roundRect(margin,y-7,width-2*margin,22,5,fill=1,stroke=0); pdf.setFillColorRGB(1,1,1); pdf.setFont("Helvetica-Bold",9)
+    final=("TOTAL GENERAL",str(total_count),f"{totals['out_cs']:,.2f}",f"{totals['in_cs']:,.2f}",f"{totals['in_cs']-totals['out_cs']:,.2f}",f"{totals['out_usd']:,.2f}",f"{totals['in_usd']:,.2f}",f"{totals['in_usd']-totals['out_usd']:,.2f}")
+    for x,text in zip((margin,margin+95,margin+180,margin+275,margin+370,margin+475,margin+570,margin+665),final): pdf.drawString(x,y,text)
+    footer(); pdf.save(); buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition":f"inline; filename=estado_laboratorios_{start}_{end}.pdf"})
+
+
+@router.get("/inventory/laboratorios-produccion/reporte-productos.pdf")
+def inventory_production_laboratories_products_pdf(
+    request: Request,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    estado: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.egresos")
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.pdfgen import canvas
+    start, end = _production_report_dates(start_date, end_date)
+    rows, bank_rate = _production_laboratory_report_rows(db, start, end, estado.strip().upper())
+    totals={key:sum((Decimal(str(row[key])) for row in rows),Decimal("0")) for key in ("out_cs","in_cs","out_usd","in_usd")}
+    company_profile=_company_profile_payload(db)
+    branch=rows[0]["lab"].bodega_origen.branch if rows and rows[0]["lab"].bodega_origen else None
+    identity=_company_identity(branch,company_profile); logo_path=_resolve_logo_path(company_profile.get("logo_url",""))
+    buffer=io.BytesIO(); pdf=canvas.Canvas(buffer,pagesize=landscape(letter)); width,height=landscape(letter); margin=32
+    def header():
+        pdf.setFillColorRGB(.07,.14,.25); pdf.rect(0,height-82,width,82,fill=1,stroke=0)
+        if logo_path.exists(): pdf.drawImage(str(logo_path),margin,height-72,width=68,height=50,preserveAspectRatio=True,mask="auto")
+        x=margin+82; pdf.setFillColorRGB(1,1,1); pdf.setFont("Helvetica-Bold",10); pdf.drawString(x,height-27,identity["company_name"]); pdf.setFont("Helvetica-Bold",16); pdf.drawString(x,height-48,"Detalle financiero por producto y laboratorio")
+        pdf.setFillColorRGB(.78,.86,.96); pdf.setFont("Helvetica",8); pdf.drawString(x,height-64,f"Periodo {start:%d/%m/%Y} - {end:%d/%m/%Y} | Tasa C$ {bank_rate:,.4f} | Estado {estado or 'Todos'}")
+        return height-99
+    def columns(y):
+        pdf.setFillColorRGB(.91,.94,.98); pdf.rect(margin,y-4,width-2*margin,16,fill=1,stroke=0); pdf.setFillColorRGB(.15,.23,.35); pdf.setFont("Helvetica-Bold",7)
+        for x,text in ((margin,"Tipo"),(margin+45,"Codigo"),(margin+115,"Producto"),(margin+385,"Cantidad"),(margin+450,"Total C$"),(margin+540,"Total USD")): pdf.drawString(x,y,text)
+        return y-11
+    def footer():
+        pdf.setFillColorRGB(.42,.48,.57); pdf.setFont("Helvetica",7); pdf.drawString(margin,18,f"Generado {local_now_naive():%d/%m/%Y %H:%M}"); pdf.drawRightString(width-margin,18,f"Pagina {pdf.getPageNumber()}")
+    y=header()
+    for row in rows:
+        if y < 115: footer(); pdf.showPage(); y=header()
+        lab=row["lab"]; pdf.setFillColorRGB(.10,.28,.49); pdf.roundRect(margin,y-5,width-2*margin,20,5,fill=1,stroke=0); pdf.setFillColorRGB(1,1,1); pdf.setFont("Helvetica-Bold",9); pdf.drawString(margin+7,y+2,f"{lab.numero}  |  {lab.fecha:%d/%m/%Y}  |  {lab.estado}  |  {lab.bodega_origen.name if lab.bodega_origen else '-'} -> {lab.bodega_destino.name if lab.bodega_destino else '-'}"); y-=24; y=columns(y)
+        for index,item in enumerate(row["products"]):
+            if y < 55: footer(); pdf.showPage(); y=header(); y=columns(y)
+            product=item["producto"]; description=(product.descripcion if product else "Producto")[:48]
+            values=(item["direction"],product.cod_producto if product else "-",description,f"{item['cantidad']:,.2f}",f"{item['total_cs']:,.2f}",f"{item['total_usd']:,.2f}")
+            if index%2==1: pdf.setFillColorRGB(.975,.982,.992); pdf.rect(margin,y-3,width-2*margin,10,fill=1,stroke=0)
+            pdf.setFillColorRGB(.72,.12,.12) if item["direction"]=="BAJA" else pdf.setFillColorRGB(.06,.46,.25); pdf.setFont("Helvetica-Bold",7); pdf.drawString(margin,y,str(values[0])); pdf.setFillColorRGB(0,0,0); pdf.setFont("Helvetica",7)
+            for x,text in zip((margin+45,margin+115,margin+385,margin+450,margin+540),values[1:]): pdf.drawString(x,y,str(text))
+            y-=10
+        pdf.setFillColorRGB(.94,.96,.99); pdf.roundRect(margin,y-4,width-2*margin,17,4,fill=1,stroke=0); pdf.setFillColorRGB(.08,.18,.32); pdf.setFont("Helvetica-Bold",8); pdf.drawRightString(width-margin-6,y+1,f"Bajas C$ {row['out_cs']:,.2f}  |  Altas C$ {row['in_cs']:,.2f}  |  Balance C$ {row['balance_cs']:,.2f}"); y-=23
+    if y < 75: footer(); pdf.showPage(); y=header()
+    pdf.setFillColorRGB(.07,.14,.25); pdf.roundRect(margin,y-31,width-2*margin,42,7,fill=1,stroke=0); pdf.setFillColorRGB(1,1,1); pdf.setFont("Helvetica-Bold",11); pdf.drawString(margin+10,y-7,"TOTAL GENERAL DEL PERIODO")
+    pdf.drawRightString(width-margin,y-8,f"Bajas C$ {totals['out_cs']:,.2f} | Altas C$ {totals['in_cs']:,.2f} | Balance C$ {totals['in_cs']-totals['out_cs']:,.2f}")
+    pdf.drawRightString(width-margin,y-23,f"Bajas USD {totals['out_usd']:,.2f} | Altas USD {totals['in_usd']:,.2f} | Balance USD {totals['in_usd']-totals['out_usd']:,.2f}")
+    footer(); pdf.save(); buffer.seek(0)
+    return StreamingResponse(buffer,media_type="application/pdf",headers={"Content-Disposition":f"inline; filename=detalle_laboratorios_{start}_{end}.pdf"})
+
+
+@router.post("/inventory/laboratorios-produccion/{laboratory_id}/estado")
+async def inventory_production_laboratory_state(
+    laboratory_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.egresos")
+    laboratory = db.query(ProductionLaboratory).filter(ProductionLaboratory.id == laboratory_id).first()
+    if not laboratory:
+        return RedirectResponse("/inventory/laboratorios-produccion?error=Laboratorio+no+encontrado", status_code=303)
+    form = await request.form()
+    target = (form.get("estado") or "").strip().upper()
+    if target not in {"TERMINADA", "CERRADA"}:
+        return RedirectResponse("/inventory/laboratorios-produccion?error=Estado+no+valido", status_code=303)
+    laboratory.estado = target
+    laboratory.cerrada_at = local_now_naive() if target == "CERRADA" else None
+    db.commit()
+    message = "Laboratorio+cerrado" if target == "CERRADA" else "Laboratorio+reabierto"
+    return RedirectResponse(f"/inventory/laboratorios-produccion?success={message}", status_code=303)
+
+
 @router.get("/inventory/egresos")
 def inventory_egresos_page(
     request: Request,
@@ -11116,6 +11496,15 @@ def inventory_egresos_page(
         .first()
     )
     inventory_cs_only = _inventory_cs_only_mode(db)
+    production_open_mode = (request.query_params.get("modo") or "").strip().lower() == "abierta"
+    laboratory_id_raw = (request.query_params.get("laboratorio_id") or "").strip()
+    selected_laboratory = None
+    if laboratory_id_raw.isdigit():
+        selected_laboratory = (
+            db.query(ProductionLaboratory)
+            .filter(ProductionLaboratory.id == int(laboratory_id_raw), ProductionLaboratory.estado == "TERMINADA")
+            .first()
+        )
     return request.app.state.templates.TemplateResponse(
         "inventory_egresos.html",
         {
@@ -11138,6 +11527,8 @@ def inventory_egresos_page(
             "print_mode": print_mode,
             "inventory_cs_only": inventory_cs_only,
             "pacasholl_egresos_ui": False,
+            "selected_laboratory": selected_laboratory,
+            "production_open_mode": production_open_mode,
             "version": settings.UI_VERSION,
         },
     )
@@ -12136,6 +12527,46 @@ def mobile_preventas_page(
     if vendedor_user_id:
         recent_preventas_query = recent_preventas_query.filter(Preventa.vendedor_id == vendedor_user_id)
     recent_preventas = recent_preventas_query.order_by(Preventa.created_at.desc(), Preventa.id.desc()).limit(20).all()
+    result_preventa = None
+    result_preventa_raw = (request.query_params.get("result_preventa") or "").strip()
+    if result_preventa_raw.isdigit():
+        result_row = (
+            _preventa_scope_query(db, user)
+            .filter(Preventa.id == int(result_preventa_raw))
+            .filter(Preventa.branch_id == branch.id, Preventa.bodega_id == bodega.id)
+            .first()
+        )
+        if result_row and (not vendedor_user_id or int(result_row.vendedor_id or 0) == int(vendedor_user_id)):
+            result_items = (
+                db.query(PreventaItem, Producto)
+                .join(Producto, Producto.id == PreventaItem.producto_id)
+                .filter(PreventaItem.preventa_id == result_row.id)
+                .order_by(PreventaItem.id.asc())
+                .all()
+            )
+            result_preventa = {
+                "id": result_row.id,
+                "numero": result_row.numero,
+                "cliente": result_row.cliente.nombre if result_row.cliente else "Consumidor final",
+                "vendedor": result_row.vendedor.nombre if result_row.vendedor else "-",
+                "fecha_label": result_row.fecha.strftime("%d/%m/%Y · %H:%M") if result_row.fecha else "-",
+                "estado": "CONGELADA" if result_row.is_frozen else result_row.estado,
+                "badge": _preventa_estado_badge(result_row.estado),
+                "total_usd": float(result_row.total_usd or 0),
+                "total_cs": float(result_row.total_cs or 0),
+                "total_items": float(result_row.total_items or 0),
+                "items": [
+                    {
+                        "codigo": producto.cod_producto,
+                        "descripcion": producto.descripcion,
+                        "cantidad": float(item.cantidad or 0),
+                        "precio_usd": float(item.precio_unitario_usd or 0),
+                        "subtotal_usd": float(item.subtotal_usd or 0),
+                        "combo_role": (item.combo_role or "").strip().lower(),
+                    }
+                    for item, producto in result_items
+                ],
+            }
     db.commit()
     success = request.query_params.get("success")
     error = request.query_params.get("error")
@@ -12171,6 +12602,7 @@ def mobile_preventas_page(
                 }
                 for p in recent_preventas
             ],
+            "result_preventa": result_preventa,
             "success": success,
             "error": error,
             "version": settings.UI_VERSION,
@@ -13488,7 +13920,7 @@ async def mobile_preventas_create(
         )
         if existing_signature == incoming_signature and (duplicate_candidate.observacion or "") == (observacion or ""):
             return RedirectResponse(
-                f"/m/preventas?success=Preventa+{duplicate_candidate.numero}+ya+registrada+(duplicado+evitado)",
+                f"/m/preventas?{urlencode({'success': f'Preventa {duplicate_candidate.numero} ya registrada (duplicado evitado)', 'result_preventa': duplicate_candidate.id})}",
                 status_code=303,
             )
 
@@ -13541,10 +13973,14 @@ async def mobile_preventas_create(
             )
         except Exception:
             pass
-    return RedirectResponse(
-        f"/m/preventas?success=Preventa+{preventa.numero}+{'congelada' if freeze_preventa else 'registrada'}",
-        status_code=303,
+    result_action = "congelada" if freeze_preventa else "registrada"
+    result_query = urlencode(
+        {
+            "success": f"Preventa {preventa.numero} {result_action}",
+            "result_preventa": preventa.id,
+        }
     )
+    return RedirectResponse(f"/m/preventas?{result_query}", status_code=303)
 
 
 @router.get("/sales/preventas")
@@ -22043,6 +22479,7 @@ def _build_sales_report_rows(
     facturas_set = set()
     total_items = Decimal("0")
     vendedor_totals: dict[str, Decimal] = {}
+    vendedor_bultos: dict[str, Decimal] = {}
     for factura, item, producto, cliente, vendedor, branch in rows:
         moneda = factura.moneda or "CS"
         tasa = Decimal(str(factura.tasa_cambio or 0))
@@ -22071,11 +22508,13 @@ def _build_sales_report_rows(
         is_setato_excluida = bool(factura.setato_excluida)
         if not is_anulada:
             facturas_set.add(factura.id)
-            total_items += Decimal(str(item.cantidad or 0))
+            item_qty = Decimal(str(item.cantidad or 0))
+            total_items += item_qty
+            vendedor_name = vendedor.nombre if vendedor else "Sin asignar"
+            vendedor_bultos[vendedor_name] = vendedor_bultos.get(vendedor_name, Decimal("0")) + item_qty
             if not is_setato_excluida:
                 total_usd += subtotal_usd
                 total_cs += subtotal_cs
-                vendedor_name = vendedor.nombre if vendedor else "Sin asignar"
                 vendedor_totals[vendedor_name] = vendedor_totals.get(vendedor_name, Decimal("0")) + subtotal_usd
         report_rows.append(
             {
@@ -22103,7 +22542,15 @@ def _build_sales_report_rows(
         {"vendedor": name, "total_usd": float(total)}
         for name, total in sorted(vendedor_totals.items(), key=lambda item: item[1], reverse=True)
     ]
-    return report_rows, total_usd, total_cs, len(facturas_set), float(total_items), vendor_summary
+    vendor_bultos_summary = [
+        {
+            "vendedor": name,
+            "bultos": float(quantity),
+            "porcentaje": float((quantity / total_items * Decimal("100")) if total_items else Decimal("0")),
+        }
+        for name, quantity in sorted(vendedor_bultos.items(), key=lambda item: (-item[1], item[0].casefold()))
+    ]
+    return report_rows, total_usd, total_cs, len(facturas_set), float(total_items), vendor_summary, vendor_bultos_summary
 
 
 @router.get("/reports/ventas")
@@ -22114,7 +22561,7 @@ def report_sales_detailed(
 ):
     _enforce_permission(request, user, "access.reports")
     start_date, end_date, branch_id, vendedor_id, producto_q = _sales_report_filters(request)
-    report_rows, total_usd, total_cs, total_facturas, total_items, vendor_summary = _build_sales_report_rows(
+    report_rows, total_usd, total_cs, total_facturas, total_items, vendor_summary, vendor_bultos_summary = _build_sales_report_rows(
         db,
         user,
         start_date,
@@ -22135,6 +22582,7 @@ def report_sales_detailed(
             "user": user,
             "rows": report_rows,
             "vendor_summary": vendor_summary,
+            "vendor_bultos_summary": vendor_bultos_summary,
             "branches": branches,
             "vendedores": vendedores,
             "start_date": start_date.isoformat(),
@@ -24072,7 +24520,7 @@ def report_sales_export(
     scoped_branch_ids = _user_scoped_branch_ids(db, user)
     company_profile = _company_profile_payload(db)
     start_date, end_date, branch_id, vendedor_id, producto_q = _sales_report_filters(request)
-    report_rows, total_usd, total_cs, total_facturas, total_items, vendor_summary = _build_sales_report_rows(
+    report_rows, total_usd, total_cs, total_facturas, total_items, vendor_summary, vendor_bultos_summary = _build_sales_report_rows(
         db,
         user,
         start_date,
@@ -24449,6 +24897,32 @@ def report_sales_export(
             c.drawString(margin, y, trunc(row["vendedor"], 25))
             c.drawRightString(margin + 260, y, f"$ {float(row['total_usd'] or 0):,.2f}")
             y -= 14
+
+        y -= 8
+        if y < 90:
+            c.showPage()
+            y = height - 50
+        c.setFont("Times-Bold", 10)
+        c.setFillColor(colors.HexColor("#1e3a8a"))
+        c.drawString(margin, y, "Bultos por vendedor (mayor a menor)")
+        c.setFillColor(colors.black)
+        y -= 18
+        c.setFont("Times-Bold", 8)
+        c.drawString(margin, y, "Pos.")
+        c.drawString(margin + 34, y, "Vendedor")
+        c.drawRightString(margin + 300, y, "Bultos")
+        c.drawRightString(margin + 380, y, "% del total")
+        y -= 13
+        c.setFont("Times-Roman", 9)
+        for position, row in enumerate(vendor_bultos_summary, start=1):
+            if y < 50:
+                c.showPage()
+                y = height - 60
+            c.drawString(margin, y, str(position))
+            c.drawString(margin + 34, y, trunc(row["vendedor"], 35))
+            c.drawRightString(margin + 300, y, f"{float(row['bultos'] or 0):,.2f}")
+            c.drawRightString(margin + 380, y, f"{float(row['porcentaje'] or 0):,.1f}%")
+            y -= 14
         c.showPage()
         y = height - 50
         c.setFont("Times-Bold", 10)
@@ -24583,6 +25057,11 @@ def report_sales_export(
     ws.append(["Resumen vendedores (USD)"])
     for row in vendor_summary:
         ws.append([row["vendedor"], float(row["total_usd"])])
+    ws.append([])
+    ws.append(["Bultos por vendedor (mayor a menor)"])
+    ws.append(["Posicion", "Vendedor", "Bultos", "% del total"])
+    for position, row in enumerate(vendor_bultos_summary, start=1):
+        ws.append([position, row["vendedor"], float(row["bultos"]), float(row["porcentaje"]) / 100])
     stream = io.BytesIO()
     wb.save(stream)
     stream.seek(0)
@@ -29008,8 +29487,9 @@ def inventory_ingreso_pdf(
 @router.get("/inventory/egresos/abierta/resultado/pdf")
 def inventory_abierta_resultado_pdf(
     request: Request,
-    egreso_id: int,
-    ingreso_id: int,
+    egreso_id: Optional[int] = None,
+    ingreso_id: Optional[int] = None,
+    laboratorio_id: Optional[int] = None,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -29021,12 +29501,28 @@ def inventory_abierta_resultado_pdf(
     except ImportError as exc:
         raise HTTPException(status_code=500, detail="ReportLab no esta instalado") from exc
 
-    egreso = db.query(EgresoInventario).filter(EgresoInventario.id == egreso_id).first()
-    if not egreso:
-        raise HTTPException(status_code=404, detail="Egreso no encontrado")
-    ingreso = db.query(IngresoInventario).filter(IngresoInventario.id == ingreso_id).first()
-    if not ingreso:
-        raise HTTPException(status_code=404, detail="Ingreso resultado no encontrado")
+    laboratory = None
+    egresos: list[EgresoInventario] = []
+    ingresos: list[IngresoInventario] = []
+    if laboratorio_id:
+        laboratory = db.query(ProductionLaboratory).filter(ProductionLaboratory.id == laboratorio_id).first()
+        if not laboratory:
+            raise HTTPException(status_code=404, detail="Laboratorio no encontrado")
+        egresos = [movement.egreso for movement in (laboratory.movimientos or []) if movement.egreso]
+        ingresos = [movement.ingreso for movement in (laboratory.movimientos or []) if movement.ingreso]
+    else:
+        egreso = db.query(EgresoInventario).filter(EgresoInventario.id == egreso_id).first() if egreso_id else None
+        ingreso = db.query(IngresoInventario).filter(IngresoInventario.id == ingreso_id).first() if ingreso_id else None
+        if not egreso:
+            raise HTTPException(status_code=404, detail="Egreso no encontrado")
+        if not ingreso:
+            raise HTTPException(status_code=404, detail="Ingreso resultado no encontrado")
+        egresos = [egreso]
+        ingresos = [ingreso]
+    if not egresos or not ingresos:
+        raise HTTPException(status_code=404, detail="El laboratorio aun no contiene ambos lados del proceso")
+    egreso = egresos[0]
+    ingreso = ingresos[0]
     rate_today = (
         db.query(ExchangeRate)
         .filter(ExchangeRate.effective_date <= local_today())
@@ -29034,10 +29530,10 @@ def inventory_abierta_resultado_pdf(
         .first()
     )
     fallback_rate = Decimal(str(rate_today.rate or 0)) if rate_today and rate_today.rate else Decimal("0")
-    egreso_total_bultos = sum(float(item.cantidad or 0) for item in (egreso.items or []))
-    ingreso_total_bultos = sum(float(item.cantidad or 0) for item in (ingreso.items or []))
-    egreso_total_items = len(egreso.items or [])
-    ingreso_total_items = len(ingreso.items or [])
+    egreso_total_bultos = sum(float(item.cantidad or 0) for movement in egresos for item in (movement.items or []))
+    ingreso_total_bultos = sum(float(item.cantidad or 0) for movement in ingresos for item in (movement.items or []))
+    egreso_total_items = sum(len(movement.items or []) for movement in egresos)
+    ingreso_total_items = sum(len(movement.items or []) for movement in ingresos)
     def _item_usd_values(item_obj, movement_rate: Decimal) -> tuple[float, float]:
         qty_dec = Decimal(str(item_obj.cantidad or 0))
         unit_usd_dec = Decimal(str(item_obj.costo_unitario_usd or 0))
@@ -29058,30 +29554,34 @@ def inventory_abierta_resultado_pdf(
     ingreso_rows = []
     egreso_total_usd = Decimal("0")
     ingreso_total_usd = Decimal("0")
-    for item in (egreso.items or []):
-        costo_usd, subtotal_usd = _item_usd_values(item, egreso_rate)
-        egreso_total_usd += Decimal(str(subtotal_usd))
-        egreso_rows.append(
-            (
-                item.producto.cod_producto if item.producto else "",
-                item.producto.descripcion if item.producto else "",
-                float(item.cantidad or 0),
-                costo_usd,
-                subtotal_usd,
+    for movement in egresos:
+        movement_rate = Decimal(str(movement.tasa_cambio or 0)) if movement.tasa_cambio else Decimal("0")
+        for item in (movement.items or []):
+            costo_usd, subtotal_usd = _item_usd_values(item, movement_rate)
+            egreso_total_usd += Decimal(str(subtotal_usd))
+            egreso_rows.append(
+                (
+                    item.producto.cod_producto if item.producto else "",
+                    item.producto.descripcion if item.producto else "",
+                    float(item.cantidad or 0),
+                    costo_usd,
+                    subtotal_usd,
+                )
             )
-        )
-    for item in (ingreso.items or []):
-        costo_usd, subtotal_usd = _item_usd_values(item, ingreso_rate)
-        ingreso_total_usd += Decimal(str(subtotal_usd))
-        ingreso_rows.append(
-            (
-                item.producto.cod_producto if item.producto else "",
-                item.producto.descripcion if item.producto else "",
-                float(item.cantidad or 0),
-                costo_usd,
-                subtotal_usd,
+    for movement in ingresos:
+        movement_rate = Decimal(str(movement.tasa_cambio or 0)) if movement.tasa_cambio else Decimal("0")
+        for item in (movement.items or []):
+            costo_usd, subtotal_usd = _item_usd_values(item, movement_rate)
+            ingreso_total_usd += Decimal(str(subtotal_usd))
+            ingreso_rows.append(
+                (
+                    item.producto.cod_producto if item.producto else "",
+                    item.producto.descripcion if item.producto else "",
+                    float(item.cantidad or 0),
+                    costo_usd,
+                    subtotal_usd,
+                )
             )
-        )
     diferencia_usd = float((ingreso_total_usd - egreso_total_usd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     diferencia_cs = float((Decimal(str(diferencia_usd)) * result_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if result_rate > 0 else 0.0
     resultado_label = "Ganancia" if diferencia_usd > 0 else ("Perdida" if diferencia_usd < 0 else "Equilibrado")
@@ -29129,7 +29629,8 @@ def inventory_abierta_resultado_pdf(
         pdf.setFont("Helvetica-Bold", 14)
         pdf.drawString(margin, height - 120, "Informe de Produccion de Abierta")
         pdf.setFont("Helvetica", 11)
-        pdf.drawString(margin, height - 136, f"Proceso #{egreso.id} / Resultado #{ingreso.id}")
+        report_reference = f"Laboratorio {laboratory.numero} · {len(laboratory.movimientos or [])} movimiento(s)" if laboratory else f"Proceso #{egreso.id} / Resultado #{ingreso.id}"
+        pdf.drawString(margin, height - 136, report_reference)
         pdf.setStrokeColorRGB(0.75, 0.75, 0.75)
         pdf.setLineWidth(0.6)
         pdf.line(margin, height - 146, width - margin, height - 146)
@@ -29139,9 +29640,9 @@ def inventory_abierta_resultado_pdf(
         pdf.drawString(margin + 200, height - 160, f"Tipo: {egreso.tipo.nombre if egreso.tipo else '-'}")
         pdf.drawString(margin, height - 174, f"Bodega origen: {egreso.bodega.name if egreso.bodega else '-'}")
         pdf.drawString(margin + 260, height - 174, f"Bodega resultado: {ingreso.bodega.name if ingreso.bodega else '-'}")
-        pdf.drawString(margin, height - 188, f"Egreso #: {egreso.id}")
-        pdf.drawString(margin + 200, height - 188, f"Ingreso resultado #: {ingreso.id}")
-        observacion = (egreso.observacion or ingreso.observacion or "-").strip()
+        pdf.drawString(margin, height - 188, f"Egresos incluidos: {len(egresos)}")
+        pdf.drawString(margin + 200, height - 188, f"Ingresos incluidos: {len(ingresos)}")
+        observacion = ((laboratory.observacion if laboratory else None) or egreso.observacion or ingreso.observacion or "-").strip()
         if len(observacion) > 120:
             observacion = f"{observacion[:117]}..."
         pdf.drawString(margin, height - 202, f"Detalle: {observacion}")
@@ -29267,7 +29768,7 @@ def inventory_abierta_resultado_pdf(
     pdf.save()
     buffer.seek(0)
     headers = {
-        "Content-Disposition": f"inline; filename=abierta_resultado_{egreso.id}_{ingreso.id}.pdf"
+        "Content-Disposition": f"inline; filename={'laboratorio_' + laboratory.numero if laboratory else 'abierta_resultado_' + str(egreso.id) + '_' + str(ingreso.id)}.pdf"
     }
     return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
 
@@ -32313,6 +32814,31 @@ async def inventory_create_egreso(
     result_item_qtys = form.getlist("result_item_cantidad")
     result_item_costs = form.getlist("result_item_costo")
     result_item_prices = form.getlist("result_item_precio")
+    laboratory_id_raw = (form.get("laboratorio_id") or "").strip()
+    laboratory_adjustment_mode = (form.get("laboratory_adjustment_mode") or "AMBOS").strip().upper()
+    if laboratory_adjustment_mode not in {"INGRESO", "EGRESO", "AMBOS"}:
+        laboratory_adjustment_mode = "AMBOS"
+
+    # En un ajuste el laboratorio es la fuente de verdad. No depender del valor
+    # del combo (que puede ser restaurado por el borrador del navegador).
+    selected_laboratory = None
+    if laboratory_id_raw:
+        if not laboratory_id_raw.isdigit():
+            return RedirectResponse(f"{redirect_to}?error=Laboratorio+de+produccion+no+valido", status_code=303)
+        selected_laboratory = db.query(ProductionLaboratory).filter(ProductionLaboratory.id == int(laboratory_id_raw)).first()
+        if not selected_laboratory or selected_laboratory.estado != "TERMINADA":
+            return RedirectResponse(f"{redirect_to}?error=El+laboratorio+no+esta+disponible+para+ajustes", status_code=303)
+        abierta_tipo = (
+            db.query(EgresoTipo)
+            .filter(func.lower(EgresoTipo.nombre).like("%produccion de abierta%"))
+            .order_by(EgresoTipo.id.asc())
+            .first()
+        )
+        if not abierta_tipo:
+            return RedirectResponse(f"{redirect_to}?error=No+existe+el+tipo+Produccion+de+Abierta", status_code=303)
+        tipo_id = str(abierta_tipo.id)
+        bodega_id = str(selected_laboratory.bodega_origen_id)
+        bodega_destino_id = str(selected_laboratory.bodega_destino_id)
 
     inventory_cs_only = _inventory_cs_only_mode(db)
     if inventory_cs_only:
@@ -32322,14 +32848,13 @@ async def inventory_create_egreso(
         moneda = "CS"
     if not tipo_id or not bodega_id or not fecha or not moneda:
         return RedirectResponse(f"{redirect_to}?error=Faltan+datos+obligatorios", status_code=303)
-    if not item_ids:
-        return RedirectResponse(f"{redirect_to}?error=Agrega+productos+al+egreso", status_code=303)
-
     tipo = db.query(EgresoTipo).filter(EgresoTipo.id == int(tipo_id)).first()
     if not tipo:
         return RedirectResponse(f"{redirect_to}?error=Tipo+no+valido", status_code=303)
     es_traslado = "traslado" in (tipo.nombre or "").lower()
     es_abierta = "produccion de abierta" in (tipo.nombre or "").lower()
+    if not item_ids and not (selected_laboratory and laboratory_adjustment_mode == "INGRESO"):
+        return RedirectResponse(f"{redirect_to}?error=Agrega+productos+al+egreso", status_code=303)
     bodega_destino_obj = None
     if es_traslado:
         moneda = "CS"
@@ -32369,6 +32894,99 @@ async def inventory_create_egreso(
 
     tasa = 0.0 if es_traslado else (float(rate_today.rate) if rate_today else 0.0)
     fecha_value = date.fromisoformat(str(fecha).split("T")[0])
+
+    # Una correccion de laboratorio puede sumar solamente resultado producido,
+    # sin inventar una baja vacia ni alterar nuevamente el material consumido.
+    if selected_laboratory and laboratory_adjustment_mode == "INGRESO":
+        result_rows: list[dict[str, float | int]] = []
+        for index, product_id in enumerate(result_item_ids):
+            if not str(product_id).isdigit():
+                continue
+            qty = to_float(result_item_qtys[index] if index < len(result_item_qtys) else 0)
+            cost = to_float(result_item_costs[index] if index < len(result_item_costs) else 0)
+            price = to_float(result_item_prices[index] if index < len(result_item_prices) else 0)
+            if qty <= 0:
+                continue
+            if moneda == "USD":
+                costo_usd, costo_cs = cost, cost * tasa
+                precio_usd, precio_cs = price, price * tasa
+            else:
+                costo_cs, costo_usd = cost, (cost / tasa if tasa else 0)
+                precio_cs, precio_usd = price, (price / tasa if tasa else 0)
+            result_rows.append({
+                "producto_id": int(product_id), "cantidad": qty,
+                "costo_unitario_usd": costo_usd, "costo_unitario_cs": costo_cs,
+                "precio_usd": precio_usd, "precio_cs": precio_cs,
+                "subtotal_usd": costo_usd * qty, "subtotal_cs": costo_cs * qty,
+            })
+        if not result_rows:
+            return RedirectResponse(f"{redirect_to}?error=Agrega+al+menos+un+producto+resultante", status_code=303)
+        ingreso_tipo = db.query(IngresoTipo).filter(func.lower(IngresoTipo.nombre) == "produccion").first()
+        if not ingreso_tipo:
+            ingreso_tipo = IngresoTipo(nombre="Produccion", requiere_proveedor=False)
+            db.add(ingreso_tipo)
+            db.flush()
+        adjustment_note = f"Ajuste de ingreso resultante del laboratorio {selected_laboratory.numero}"
+        if observacion:
+            adjustment_note = f"{adjustment_note} | {observacion}"
+        ingreso_resultado = IngresoInventario(
+            tipo_id=ingreso_tipo.id,
+            bodega_id=selected_laboratory.bodega_destino_id,
+            proveedor_id=None,
+            fecha=fecha_value,
+            moneda=moneda,
+            tasa_cambio=tasa if moneda == "USD" else None,
+            total_usd=sum(float(row["subtotal_usd"]) for row in result_rows),
+            total_cs=sum(float(row["subtotal_cs"]) for row in result_rows),
+            observacion=adjustment_note[:300],
+            usuario_registro=user.full_name,
+        )
+        db.add(ingreso_resultado)
+        db.flush()
+        for row in result_rows:
+            db.add(IngresoItem(
+                ingreso_id=ingreso_resultado.id,
+                producto_id=int(row["producto_id"]),
+                cantidad=float(row["cantidad"]),
+                costo_unitario_usd=float(row["costo_unitario_usd"]),
+                costo_unitario_cs=float(row["costo_unitario_cs"]),
+                subtotal_usd=float(row["subtotal_usd"]),
+                subtotal_cs=float(row["subtotal_cs"]),
+            ))
+            producto = db.query(Producto).filter(Producto.id == int(row["producto_id"])).first()
+            if producto and producto.saldo:
+                producto.saldo.existencia = to_decimal(producto.saldo.existencia) + to_decimal(float(row["cantidad"]))
+            elif producto:
+                db.add(SaldoProducto(producto_id=producto.id, existencia=to_decimal(float(row["cantidad"]))))
+            if producto and float(row["costo_unitario_cs"] or 0) > 0:
+                producto.costo_producto = float(row["costo_unitario_cs"])
+            if producto and float(row["precio_cs"] or 0) > 0:
+                producto.precio_venta1 = float(row["precio_cs"])
+        db.add(ProductionLaboratoryMovement(
+            laboratorio_id=selected_laboratory.id,
+            ingreso_id=ingreso_resultado.id,
+            egreso_id=None,
+            clase="AJUSTE_INGRESO",
+            observacion=observacion,
+            usuario_registro=user.full_name,
+        ))
+        auto_entry = _build_auto_accounting_entry(
+            db,
+            event_code="INV_IN",
+            branch_id=selected_laboratory.bodega_destino.branch_id if selected_laboratory.bodega_destino else None,
+            entry_date=fecha_value,
+            amount=to_decimal(ingreso_resultado.total_cs),
+            reference=f"AUTO-ING-{ingreso_resultado.id}",
+            description=f"Ajuste de ingreso de laboratorio {selected_laboratory.numero}",
+        )
+        if auto_entry:
+            db.add(auto_entry)
+        db.commit()
+        return RedirectResponse(
+            f"/inventory/laboratorios-produccion?success=Ingreso+adicional+aplicado+a+{quote_plus(selected_laboratory.numero)}",
+            status_code=303,
+        )
+
     ingreso_resultado_id: Optional[int] = None
     egreso = EgresoInventario(
         tipo_id=int(tipo_id),
@@ -32551,7 +33169,7 @@ async def inventory_create_egreso(
                         )
                     )
 
-    if es_abierta:
+    if es_abierta and laboratory_adjustment_mode != "EGRESO":
         result_rows: list[dict[str, float | int]] = []
         for index, product_id in enumerate(result_item_ids):
             if not str(product_id).isdigit():
@@ -32649,6 +33267,35 @@ async def inventory_create_egreso(
                         producto_result.precio_venta1_usd = float(row["precio_cs"]) / float(tasa)
                         producto_result.tasa_cambio = float(tasa)
 
+    if es_abierta and (ingreso_resultado_id or (selected_laboratory and laboratory_adjustment_mode == "EGRESO")):
+        if selected_laboratory:
+            laboratory = selected_laboratory
+            movement_class = "AJUSTE"
+        else:
+            laboratory = ProductionLaboratory(
+                numero=_production_laboratory_next_number(db, fecha_value),
+                fecha=fecha_value,
+                estado="TERMINADA",
+                bodega_origen_id=int(bodega_id),
+                bodega_destino_id=int(bodega_destino_obj.id),
+                observacion=observacion,
+                usuario_registro=user.full_name,
+                terminada_at=local_now_naive(),
+            )
+            db.add(laboratory)
+            db.flush()
+            movement_class = "INICIAL"
+        db.add(
+            ProductionLaboratoryMovement(
+                laboratorio_id=laboratory.id,
+                egreso_id=egreso.id,
+                ingreso_id=ingreso_resultado_id,
+                clase="AJUSTE_EGRESO" if selected_laboratory and laboratory_adjustment_mode == "EGRESO" else movement_class,
+                observacion=observacion,
+                usuario_registro=user.full_name,
+            )
+        )
+
     egreso.total_usd = 0 if es_traslado else total_usd
     egreso.total_cs = total_cs
     bodega_obj = db.query(Bodega).filter(Bodega.id == int(bodega_id)).first()
@@ -32665,7 +33312,12 @@ async def inventory_create_egreso(
     if auto_entry:
         db.add(auto_entry)
     db.commit()
-    if es_abierta and ingreso_resultado_id:
+    if es_abierta and (ingreso_resultado_id or (selected_laboratory and laboratory_adjustment_mode == "EGRESO")):
+        if selected_laboratory:
+            return RedirectResponse(
+                f"/inventory/laboratorios-produccion?success=Ajuste+agregado+al+laboratorio+{quote_plus(selected_laboratory.numero)}",
+                status_code=303,
+            )
         return RedirectResponse(
             f"{redirect_to}?success=Egreso+registrado&print_id={egreso.id}&print_result_id={ingreso_resultado_id}&print_mode=abierta&focus_egreso_id={egreso.id}",
             status_code=303,

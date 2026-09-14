@@ -384,3 +384,46 @@ class EgresoItem(Base):
     egreso = relationship("EgresoInventario", back_populates="items")
     producto = relationship("Producto")
     variante = relationship("ShoeProductVariant")
+
+
+class ProductionLaboratory(Base):
+    __tablename__ = "production_laboratories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    numero = Column(String(40), nullable=False, unique=True, index=True)
+    fecha = Column(Date, nullable=False, index=True)
+    estado = Column(String(24), nullable=False, default="TERMINADA", index=True)
+    bodega_origen_id = Column(Integer, ForeignKey("bodegas.id"), nullable=False)
+    bodega_destino_id = Column(Integer, ForeignKey("bodegas.id"), nullable=False)
+    observacion = Column(String(500), nullable=True)
+    usuario_registro = Column(String(120), nullable=True)
+    terminada_at = Column(DateTime, nullable=True)
+    cerrada_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    bodega_origen = relationship("Bodega", foreign_keys=[bodega_origen_id])
+    bodega_destino = relationship("Bodega", foreign_keys=[bodega_destino_id])
+    movimientos = relationship(
+        "ProductionLaboratoryMovement",
+        back_populates="laboratorio",
+        cascade="all, delete-orphan",
+        order_by="ProductionLaboratoryMovement.id",
+    )
+
+
+class ProductionLaboratoryMovement(Base):
+    __tablename__ = "production_laboratory_movements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    laboratorio_id = Column(Integer, ForeignKey("production_laboratories.id"), nullable=False, index=True)
+    egreso_id = Column(Integer, ForeignKey("egresos_inventario.id"), nullable=True, unique=True)
+    ingreso_id = Column(Integer, ForeignKey("ingresos_inventario.id"), nullable=True, unique=True)
+    clase = Column(String(20), nullable=False, default="INICIAL")
+    observacion = Column(String(300), nullable=True)
+    usuario_registro = Column(String(120), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    laboratorio = relationship("ProductionLaboratory", back_populates="movimientos")
+    egreso = relationship("EgresoInventario")
+    ingreso = relationship("IngresoInventario")

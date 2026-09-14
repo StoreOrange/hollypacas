@@ -122,6 +122,8 @@ class PayrollCalculation(Base):
     days_worked = Column(Integer, nullable=False, default=0)
     overtime_minutes = Column(Integer, nullable=False, default=0)
     overtime_pay = Column(Numeric(14, 2), nullable=False, default=0)
+    late_minutes = Column(Integer, nullable=False, default=0)
+    late_deduction = Column(Numeric(14, 2), nullable=False, default=0)
     holiday_pay = Column(Numeric(14, 2), nullable=False, default=0)
     additions_pay = Column(Numeric(14, 2), nullable=False, default=0)
     gross_pay = Column(Numeric(14, 2), nullable=False)

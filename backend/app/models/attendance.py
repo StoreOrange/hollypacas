@@ -169,5 +169,26 @@ class AttendancePolicySetting(Base):
     expected_daily_minutes = Column(Integer, nullable=False, default=480)
     break_minutes = Column(Integer, nullable=False, default=60)
     break_after_minutes = Column(Integer, nullable=False, default=360)
+    weekday_start = Column(Time, nullable=False, default=lambda: datetime.strptime("08:00", "%H:%M").time())
+    entry_grace_minutes = Column(Integer, nullable=False, default=20)
+    overtime_grace_minutes = Column(Integer, nullable=False, default=15)
     updated_by = Column(String(160), nullable=True)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AttendanceDayOverride(Base):
+    __tablename__ = "attendance_day_overrides"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "work_date", name="uq_attendance_day_override_employee_date"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    employee_id = Column(Integer, ForeignKey("hr_employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    work_date = Column(Date, nullable=False, index=True)
+    exclude_overtime = Column(Boolean, nullable=False, default=False)
+    waive_lateness = Column(Boolean, nullable=False, default=False)
+    note = Column(String(240), nullable=True)
+    updated_by = Column(String(160), nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    employee = relationship("HREmployee")

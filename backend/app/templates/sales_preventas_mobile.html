@@ -3,10 +3,11 @@
 {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
 <style>
   body {
-    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+    background: linear-gradient(180deg, #f5f8ff 0%, #eef4ff 48%, #f8fafc 100%);
   }
   .mobile-preventa {
-    padding-bottom: 96px;
+    padding-bottom: 132px;
+    padding-top: .65rem !important;
   }
   .mobile-preventa .form-control,
   .mobile-preventa .form-select,
@@ -20,14 +21,17 @@
     min-height: 44px;
   }
   .mobile-preventa .card {
-    border-radius: 18px;
+    border-radius: 20px;
     border: 1px solid #dbe6f4;
     box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
     background: rgba(255, 255, 255, 0.96);
     backdrop-filter: blur(4px);
   }
+  .mobile-preventa .card.mb-3 {
+    margin-bottom: .75rem !important;
+  }
   .mobile-preventa .card-header {
-    background: #f1f5f9;
+    background: linear-gradient(90deg, #f8fafc, #eef4ff);
     border-bottom: 1px solid #e2e8f0;
     font-weight: 700;
   }
@@ -40,6 +44,58 @@
   }
   .mobile-preventa .search-results:empty {
     display: none;
+  }
+  .mobile-preventa .search-results .list-group-item {
+    min-height: 62px;
+    padding: 0.72rem 0.8rem;
+    border-color: #edf2f7;
+  }
+  .mobile-preventa .field-label {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    margin-bottom: .45rem;
+    color: #334155;
+    font-size: .78rem;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .mobile-preventa .step-badge {
+    display: inline-flex;
+    width: 1.55rem;
+    height: 1.55rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #1d4ed8;
+    color: #fff;
+    font-size: .72rem;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, .22);
+  }
+  .mobile-preventa .selected-client {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-top: .65rem;
+    padding: .6rem .7rem;
+    border: 1px solid #bbf7d0;
+    border-radius: 12px;
+    background: #f0fdf4;
+    color: #166534;
+  }
+  .mobile-preventa .draft-summary {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+  }
+  .mobile-preventa .draft-chip {
+    border-radius: 999px;
+    background: #e0e7ff;
+    color: #3730a3;
+    padding: .3rem .62rem;
+    font-size: .74rem;
+    font-weight: 800;
   }
   .mobile-preventa .table td,
   .mobile-preventa .table th {
@@ -81,25 +137,34 @@
     text-transform: uppercase;
   }
   .mobile-preventa .app-topbar {
-    border-radius: 18px;
+    border-radius: 16px;
     background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #2563eb 100%);
     color: #fff;
-    padding: 0.9rem 1rem;
-    box-shadow: 0 8px 24px rgba(30, 58, 138, 0.25);
+    padding: .68rem .78rem;
+    box-shadow: 0 7px 20px rgba(30, 58, 138, 0.22);
+  }
+  .mobile-preventa .app-topbar h4 {
+    font-size: 1.08rem;
+    line-height: 1.1;
+  }
+  .mobile-preventa .app-topbar-title {
+    font-size: .62rem;
+    line-height: 1;
+    letter-spacing: .14em;
   }
   .mobile-preventa .app-brand-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.35rem;
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 999px;
-    padding: 0.28rem 0.65rem;
+    padding: .2rem .48rem;
     background: rgba(15, 23, 42, 0.22);
     backdrop-filter: blur(2px);
   }
   .mobile-preventa .app-brand-chip img {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     border-radius: 999px;
     object-fit: contain;
     background: #fff;
@@ -110,29 +175,32 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem 0.75rem;
-    margin-top: 0.45rem;
+    gap: .3rem .55rem;
+    margin-top: .35rem;
   }
   .mobile-preventa .app-location {
     color: rgba(255, 255, 255, 0.82);
-    font-size: 0.74rem;
+    font-size: .68rem;
     font-weight: 700;
     line-height: 1.25;
     text-align: right;
   }
   .mobile-preventa .app-topbar .btn {
-    border-radius: 12px;
+    min-height: 34px;
+    border-radius: 10px;
     font-weight: 600;
+    padding: .28rem .52rem;
+    font-size: .74rem;
   }
   .mobile-preventa .push-alert-btn {
     border-radius: 999px;
     border: 1px solid rgba(255, 255, 255, 0.24);
     background: rgba(255, 255, 255, 0.14);
     color: #fff;
-    font-size: 0.75rem;
+    font-size: .69rem;
     font-weight: 800;
     letter-spacing: 0.02em;
-    padding: 0.45rem 0.8rem;
+    padding: .3rem .58rem;
     box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
   }
   .mobile-preventa .push-alert-btn.is-active {
@@ -154,7 +222,7 @@
     border-radius: 16px;
     background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
     box-shadow: 0 8px 22px rgba(15, 23, 42, 0.07);
-    padding: 0.78rem 0.85rem;
+    padding: .62rem .72rem;
   }
   .mobile-preventa .seller-score-card .score-label {
     font-size: 0.68rem;
@@ -165,7 +233,7 @@
   }
   .mobile-preventa .seller-score-card .score-value {
     color: #0f172a;
-    font-size: 1.55rem;
+    font-size: 1.3rem;
     font-weight: 900;
     line-height: 1;
   }
@@ -175,11 +243,11 @@
     font-weight: 800;
   }
   .mobile-preventa .seller-score-card .score-message {
-    margin-top: 0.35rem;
+    margin-top: .25rem;
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    font-size: 0.86rem;
+    font-size: .78rem;
     font-weight: 800;
     line-height: 1.25;
   }
@@ -204,7 +272,7 @@
   .mobile-preventa .seller-score-hot .score-message {
     color: #1d4ed8;
   }
-  .mobile-preventa .app-actionbar {
+  .app-actionbar {
     position: fixed;
     left: 0;
     right: 0;
@@ -213,13 +281,27 @@
     background: rgba(255, 255, 255, 0.94);
     border-top: 1px solid #dbeafe;
     backdrop-filter: blur(8px);
-    padding: 0.65rem 0.75rem max(0.65rem, env(safe-area-inset-bottom));
+    padding: 0.55rem 0.75rem max(0.55rem, env(safe-area-inset-bottom));
+    box-shadow: 0 -10px 30px rgba(15, 23, 42, .09);
   }
-  .mobile-preventa .app-actionbar .btn {
+  .app-actionbar .btn {
     min-height: 48px;
     border-radius: 14px;
     font-weight: 700;
     letter-spacing: 0.01em;
+  }
+  .app-action-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: .4rem;
+    color: #475569;
+    font-size: .72rem;
+    font-weight: 700;
+  }
+  .app-action-summary strong {
+    color: #0f172a;
+    font-size: .82rem;
   }
   .mobile-preventa .mobile-brand-footer {
     margin: 1.1rem 0 0.35rem;
@@ -405,6 +487,181 @@
     color: #475569;
     margin-top: 0.18rem;
   }
+  .mobile-preventa .result-card {
+    overflow: hidden;
+    border: 0;
+    background: #fff;
+    box-shadow: 0 18px 44px rgba(15, 23, 42, .12);
+    animation: resultSlideIn .42s cubic-bezier(.22, 1, .36, 1) both;
+  }
+  .mobile-preventa .result-card.is-leaving { animation: resultSlideOut .24s ease-in both; }
+  .mobile-preventa .result-hero {
+    padding: 1.25rem 1rem 1rem;
+    text-align: center;
+    background: linear-gradient(145deg, #eff6ff, #f0fdf4);
+    border-bottom: 1px solid #dbeafe;
+  }
+  .mobile-preventa .result-progress {
+    --progress: 0deg;
+    position: relative;
+    display: grid;
+    width: 84px;
+    height: 84px;
+    place-items: center;
+    margin: 0 auto .7rem;
+    border-radius: 50%;
+    background: conic-gradient(#22c55e var(--progress), #dbeafe 0);
+    box-shadow: 0 10px 28px rgba(34, 197, 94, .2);
+  }
+  .mobile-preventa .result-progress::before {
+    content: "";
+    position: absolute;
+    inset: 7px;
+    border-radius: inherit;
+    background: #fff;
+  }
+  .mobile-preventa .result-progress-value,
+  .mobile-preventa .result-progress-check {
+    position: relative;
+    z-index: 1;
+    color: #166534;
+    font-weight: 900;
+  }
+  .mobile-preventa .result-progress-check {
+    display: none;
+    font-size: 2rem;
+    animation: checkPop .32s cubic-bezier(.34, 1.56, .64, 1) both;
+  }
+  .mobile-preventa .result-progress.is-complete .result-progress-value { display: none; }
+  .mobile-preventa .result-progress.is-complete .result-progress-check { display: block; }
+  .mobile-preventa .result-number {
+    color: #1d4ed8;
+    font-size: .8rem;
+    font-weight: 900;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .mobile-preventa .result-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .55rem;
+  }
+  .mobile-preventa .result-data {
+    padding: .65rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 13px;
+    background: #f8fafc;
+  }
+  .mobile-preventa .result-data span {
+    display: block;
+    color: #64748b;
+    font-size: .66rem;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .mobile-preventa .result-data strong {
+    display: block;
+    margin-top: .15rem;
+    color: #0f172a;
+    font-size: .84rem;
+  }
+  .mobile-preventa .result-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: .25rem .75rem;
+    padding: .65rem 0;
+    border-bottom: 1px solid #edf2f7;
+  }
+  .mobile-preventa .result-item:last-child { border-bottom: 0; }
+  .mobile-preventa .result-item-name { min-width: 0; font-size: .82rem; font-weight: 800; color: #0f172a; }
+  .mobile-preventa .result-item-code { color: #64748b; font-size: .68rem; }
+  .mobile-preventa .result-item-amount { text-align: right; font-size: .8rem; font-weight: 900; color: #1d4ed8; }
+  .mobile-preventa .result-new-btn {
+    min-height: 52px;
+    border: 0;
+    border-radius: 15px;
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    box-shadow: 0 10px 22px rgba(37, 99, 235, .24);
+    font-weight: 800;
+  }
+  .result-new-action {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1045;
+    padding: .6rem .75rem max(.6rem, env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(203, 213, 225, .85);
+    background: rgba(255, 255, 255, .94);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 -12px 32px rgba(15, 23, 42, .12);
+  }
+  .result-fixed-total {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: .48rem;
+    padding: .15rem .15rem 0;
+  }
+  .result-fixed-total .label {
+    color: #64748b;
+    font-size: .72rem;
+    font-weight: 700;
+  }
+  .result-fixed-total .quantity {
+    color: #475569;
+    font-size: .72rem;
+    font-weight: 800;
+  }
+  .result-fixed-total .amount {
+    color: #1d4ed8;
+    font-size: 1.02rem;
+    font-weight: 900;
+  }
+  .mobile-preventa.has-result {
+    padding-bottom: 122px;
+  }
+  .preventa-sending-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    background: rgba(15, 23, 42, .58);
+    backdrop-filter: blur(8px);
+  }
+  .preventa-sending-overlay.is-visible { display: flex; }
+  .preventa-sending-box {
+    width: min(88vw, 330px);
+    padding: 1.5rem 1.15rem;
+    border-radius: 24px;
+    background: #fff;
+    text-align: center;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .35);
+    animation: resultSlideIn .3s cubic-bezier(.22, 1, .36, 1) both;
+  }
+  .preventa-sending-ring {
+    --progress: 0deg;
+    position: relative;
+    display: grid;
+    width: 94px;
+    height: 94px;
+    place-items: center;
+    margin: 0 auto 1rem;
+    border-radius: 50%;
+    background: conic-gradient(#2563eb var(--progress), #dbeafe 0);
+  }
+  .preventa-sending-ring::before { content: ""; position: absolute; inset: 8px; border-radius: inherit; background: #fff; }
+  .preventa-sending-ring::after { content: ""; position: absolute; inset: -3px; border-radius: inherit; border: 2px solid transparent; border-top-color: #60a5fa; animation: elegantSpin .8s linear infinite; }
+  .preventa-sending-percent { position: relative; z-index: 1; color: #1d4ed8; font-size: 1.05rem; font-weight: 900; }
+  @keyframes elegantSpin { to { transform: rotate(360deg); } }
+  @keyframes resultSlideIn { from { opacity: 0; transform: translateY(18px) scale(.985); } to { opacity: 1; transform: none; } }
+  @keyframes resultSlideOut { to { opacity: 0; transform: translateX(-24px) scale(.985); } }
+  @keyframes checkPop { from { opacity: 0; transform: scale(.35) rotate(-16deg); } to { opacity: 1; transform: none; } }
   .swal2-popup.mobile-swal {
     border-radius: 18px;
     border: 1px solid #dbe6f4;
@@ -449,6 +706,145 @@
     font-size: 1.2rem !important;
   }
   @media (max-width: 576px) {
+    .mobile-preventa {
+      padding-left: .7rem;
+      padding-right: .7rem;
+    }
+    .mobile-preventa .app-topbar {
+      border-radius: 0 0 18px 18px;
+      margin-left: -.7rem;
+      margin-right: -.7rem;
+      margin-top: -.65rem;
+      padding: .6rem .72rem .65rem;
+    }
+    .mobile-preventa .app-topbar.mb-3 {
+      margin-bottom: .65rem !important;
+    }
+    .mobile-preventa .app-topbar-actions {
+      gap: .35rem !important;
+    }
+    .mobile-preventa .app-topbar-actions .btn span {
+      display: none;
+    }
+    .mobile-preventa .app-topbar-actions .btn {
+      width: 36px;
+      padding-left: 0;
+      padding-right: 0;
+    }
+    .mobile-preventa .app-meta-row {
+      flex-wrap: nowrap;
+    }
+    .mobile-preventa .app-brand-chip {
+      min-width: 0;
+      max-width: 54%;
+    }
+    .mobile-preventa .app-brand-chip span,
+    .mobile-preventa .app-location {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .mobile-preventa .app-location {
+      max-width: 46%;
+    }
+    .mobile-preventa .alerts-row {
+      margin-top: .35rem !important;
+    }
+    .mobile-preventa .seller-score-card.mb-3 {
+      margin-bottom: .65rem !important;
+    }
+    .mobile-preventa .seller-score-card .score-message {
+      max-width: 72%;
+    }
+    .mobile-preventa .preventas-report-card .card-body {
+      padding: .7rem .78rem;
+    }
+    .mobile-preventa .preventas-report-subtitle {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 78vw;
+    }
+    .mobile-preventa .card-body {
+      padding: .78rem;
+    }
+    .mobile-preventa .field-label {
+      margin-bottom: .35rem;
+    }
+    .mobile-preventa .form-control,
+    .mobile-preventa .form-select {
+      min-height: 46px;
+    }
+    .mobile-preventa .selected-client {
+      margin-top: .5rem;
+      padding: .48rem .6rem;
+    }
+    .mobile-preventa .draft-chip {
+      padding: .26rem .5rem;
+      font-size: .7rem;
+    }
+    .mobile-preventa .mobile-brand-footer {
+      margin-top: .55rem;
+      padding-top: .45rem;
+    }
+    .mobile-preventa .mobile-brand-footer img {
+      max-height: 58px;
+    }
+    .mobile-preventa .items-table thead {
+      display: none;
+    }
+    .mobile-preventa .items-table,
+    .mobile-preventa .items-table tbody,
+    .mobile-preventa .items-table tr,
+    .mobile-preventa .items-table td {
+      display: block;
+      width: 100%;
+    }
+    .mobile-preventa .items-table tr[data-item-row] {
+      position: relative;
+      padding: .78rem 3.1rem .75rem .8rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .mobile-preventa .items-table tr[data-item-row] td {
+      padding: .16rem 0;
+      border: 0;
+      text-align: left !important;
+    }
+    .mobile-preventa .items-table tr[data-item-row] td:nth-child(2),
+    .mobile-preventa .items-table tr[data-item-row] td:nth-child(3),
+    .mobile-preventa .items-table tr[data-item-row] td:nth-child(4) {
+      display: inline-flex;
+      width: auto;
+      margin-right: .8rem;
+      align-items: center;
+      gap: .3rem;
+    }
+    .mobile-preventa .items-table tr[data-item-row] td:nth-child(2)::before { content: "Cant."; font-size: .7rem; color: #64748b; font-weight: 700; }
+    .mobile-preventa .items-table tr[data-item-row] td:nth-child(3)::before { content: "Precio"; font-size: .7rem; color: #64748b; font-weight: 700; }
+    .mobile-preventa .items-table tr[data-item-row] td:nth-child(4)::before { content: "Exist."; font-size: .7rem; color: #64748b; font-weight: 700; }
+    .mobile-preventa .items-table .item-qty {
+      width: 76px;
+      min-height: 40px;
+    }
+    .mobile-preventa .items-table .item-remove {
+      position: absolute;
+      top: .75rem;
+      right: .65rem;
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+    }
+    .action-grid {
+      display: grid !important;
+      grid-template-columns: .82fr 1.35fr;
+      gap: .5rem !important;
+    }
+    .app-actionbar .btn {
+      min-height: 54px;
+      padding: .45rem .55rem;
+      font-size: .82rem;
+      line-height: 1.1;
+    }
     .swal2-popup.mobile-swal {
       padding: 0.95rem 0.85rem 0.8rem;
     }
@@ -461,20 +857,21 @@
   }
 </style>
 
-<div class="container py-3 mobile-preventa" style="max-width: 780px;">
+<div class="container py-3 mobile-preventa{% if result_preventa %} has-result{% endif %}" style="max-width: 780px;">
   <div class="app-topbar mb-3">
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div>
-        <h4 class="m-0 fw-bold">Preventa movil</h4>
+        <div class="app-topbar-title text-white-50 text-uppercase fw-bold">Ventas ágiles</div>
+        <h4 class="m-0 fw-bold">Nueva preventa</h4>
       </div>
-      <div class="d-flex gap-2">
+      <div class="d-flex gap-2 app-topbar-actions">
         <a class="btn btn-light btn-sm" href="/home">
           <i class="bi bi-house-door"></i>
-          Home
+          <span>Inicio</span>
         </a>
         <a class="btn btn-outline-light btn-sm" href="/sales/preventas">
           <i class="bi bi-grid"></i>
-          Panel
+          <span>Panel</span>
         </a>
       </div>
     </div>
@@ -485,7 +882,7 @@
       </div>
       <div class="app-location">Sucursal: {{ branch.name }} &middot; Bodega: {{ bodega.name }}</div>
     </div>
-    <div class="mt-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div class="mt-2 d-flex flex-wrap align-items-center justify-content-between gap-2 alerts-row">
       <button id="pushAlertsBtn" class="push-alert-btn" type="button">
         <i class="bi bi-bell me-1"></i>
         Activar alertas
@@ -494,6 +891,60 @@
     </div>
   </div>
 
+  {% if result_preventa %}
+  <section class="card result-card mb-3" aria-labelledby="resultTitle">
+    <div class="result-hero">
+      <div class="result-progress" id="resultProgress" aria-live="polite">
+        <span class="result-progress-value" id="resultProgressValue">0%</span>
+        <i class="bi bi-check-lg result-progress-check" aria-hidden="true"></i>
+      </div>
+      <div class="result-number">{{ result_preventa.numero }}</div>
+      <h2 class="h5 fw-bold mt-1 mb-1" id="resultTitle">Preventa enviada correctamente</h2>
+      <div class="text-slate small">Ya está disponible para seguimiento y facturación.</div>
+    </div>
+    <div class="card-body">
+      <div class="result-grid mb-3">
+        <div class="result-data"><span>Cliente</span><strong>{{ result_preventa.cliente }}</strong></div>
+        <div class="result-data"><span>Estado</span><strong>{{ result_preventa.estado }}</strong></div>
+        <div class="result-data"><span>Vendedor</span><strong>{{ result_preventa.vendedor }}</strong></div>
+        <div class="result-data"><span>Fecha y hora</span><strong>{{ result_preventa.fecha_label }}</strong></div>
+      </div>
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <div class="field-label m-0"><i class="bi bi-bag-check"></i> Detalle enviado</div>
+        <strong class="text-primary">{{ "{:,.2f}".format(result_preventa.total_items or 0) }} bultos</strong>
+      </div>
+      <div>
+        {% for item in result_preventa["items"] %}
+        <div class="result-item">
+          <div>
+            <div class="result-item-name">{{ item.descripcion }}</div>
+            <div class="result-item-code">{{ item.codigo }} · Cantidad {{ "{:,.2f}".format(item.cantidad or 0) }}</div>
+          </div>
+          <div class="result-item-amount">$ {{ "{:,.2f}".format(item.subtotal_usd or 0) }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="d-flex align-items-center justify-content-between mt-3 pt-3 border-top">
+        <span class="text-slate fw-semibold">Total de preventa</span>
+        <span class="h5 text-primary fw-bold m-0">$ {{ "{:,.2f}".format(result_preventa.total_usd or 0) }}</span>
+      </div>
+    </div>
+  </section>
+  <div class="result-new-action">
+    <div class="container p-0" style="max-width: 780px;">
+      <div class="result-fixed-total">
+        <div>
+          <div class="label">Total preventa enviada</div>
+          <div class="quantity">{{ "{:,.2f}".format(result_preventa.total_items or 0) }} bultos</div>
+        </div>
+        <div class="amount">$ {{ "{:,.2f}".format(result_preventa.total_usd or 0) }}</div>
+      </div>
+      <a class="btn btn-primary result-new-btn w-100" href="/m/preventas" id="newPreventaBtn">
+        <i class="bi bi-plus-circle me-2"></i>Nueva preventa
+      </a>
+    </div>
+  </div>
+  {% else %}
   {% if preventa_vendor_score %}
   <div class="seller-score-card seller-score-{{ preventa_vendor_score.level }} mb-3">
     <div class="d-flex align-items-start justify-content-between gap-3">
@@ -560,7 +1011,7 @@
       <div class="card-body">
         <div class="row g-2">
           <div class="col-12 col-md-6">
-            <label class="form-label">Cliente</label>
+            <label class="field-label"><span class="step-badge">1</span><i class="bi bi-person"></i> Cliente</label>
             <div class="input-group">
               <input id="clienteSearch" class="form-control" type="text" placeholder="Buscar cliente por nombre o telefono">
               <button class="btn btn-outline-secondary" type="button" id="btnClienteSearch">
@@ -581,10 +1032,10 @@
             </div>
             <div id="clienteSearchResults" class="list-group search-results mt-2"></div>
             <input type="hidden" name="cliente_id" id="clienteId" value="{{ consumidor_final_id }}">
-            <div id="clientePicked" class="small mt-1">Seleccionado: <strong>{{ consumidor_final_nombre }}</strong></div>
+            <div id="clientePicked" class="selected-client small"><i class="bi bi-check-circle-fill"></i><span>Seleccionado: <strong>{{ consumidor_final_nombre }}</strong></span></div>
           </div>
           <div class="col-12 col-md-6">
-            <label class="form-label">Vendedor</label>
+            <label class="field-label"><i class="bi bi-person-badge"></i> Vendedor</label>
             {% if is_vendedor_role and vendedor_user_id %}
             <input type="hidden" name="vendedor_id" value="{{ vendedor_user_id }}">
             <input class="form-control" type="text" value="{{ user.full_name }}" readonly>
@@ -605,13 +1056,13 @@
     <div class="card mb-3">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <label class="form-label m-0">Agregar producto</label>
+          <label class="field-label m-0"><span class="step-badge">2</span><i class="bi bi-search"></i> Agregar producto</label>
           <button id="btnOpenCombo" class="btn btn-outline-primary btn-sm" type="button">
             <i class="bi bi-boxes"></i> Armar combo
           </button>
         </div>
         <div class="input-group mb-2">
-          <input id="productSearch" class="form-control" type="text" placeholder="Codigo o descripcion">
+          <input id="productSearch" class="form-control" type="search" inputmode="search" enterkeyhint="search" placeholder="Escribe código o nombre...">
           <button class="btn btn-outline-primary" type="button" id="btnProductSearch">
             <i class="bi bi-search"></i>
           </button>
@@ -621,10 +1072,16 @@
     </div>
 
     <div class="card mb-3">
-      <div class="card-header">Items de preventa</div>
+      <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <span class="field-label m-0"><span class="step-badge">3</span><i class="bi bi-bag-check"></i> Productos agregados</span>
+        <div class="draft-summary">
+          <span class="draft-chip"><span id="draftItemCount">0</span> bultos</span>
+          <span class="draft-chip">$ <span id="draftTotalUsd">0.00</span></span>
+        </div>
+      </div>
       <div class="card-body p-0">
         <div class="table-responsive">
-          <table class="table table-sm align-middle m-0">
+          <table class="table table-sm align-middle m-0 items-table">
             <thead>
               <tr>
                 <th>Producto</th>
@@ -653,20 +1110,37 @@
     <img src="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="{{ branding.get('trade_name', 'Empresa') }}">
     <div class="brand-caption">{{ branding.get("trade_name", "Empresa") }}</div>
   </div>
+  {% endif %}
 </div>
 
+{% if not result_preventa %}
 <div class="app-actionbar">
   <div class="container" style="max-width: 780px;">
-    <div class="d-grid gap-2">
+    <div class="app-action-summary">
+      <span><i class="bi bi-bag-check me-1 text-primary"></i><strong id="draftBarItemCount">0</strong> bultos</span>
+      <span>Total estimado: <strong>$ <span id="draftBarTotalUsd">0.00</span></strong></span>
+    </div>
+    <div class="d-grid gap-2 action-grid">
       <button id="freezePreventaBtn" class="btn btn-outline-primary w-100" type="submit" form="preventaForm" data-freeze-choice="1">
         <i class="bi bi-snow2 me-1"></i>
-        Congelar preventa
+        Congelar
       </button>
       <button id="submitPreventaBtn" class="btn btn-primary w-100" type="submit" form="preventaForm" data-freeze-choice="0">
         <i class="bi bi-send-check me-1"></i>
-        Enviar directo a facturacion
+        Enviar a facturación
       </button>
     </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="preventa-sending-overlay" id="preventaSendingOverlay" role="status" aria-live="assertive" aria-hidden="true">
+  <div class="preventa-sending-box">
+    <div class="preventa-sending-ring" id="preventaSendingRing">
+      <span class="preventa-sending-percent" id="preventaSendingPercent">0%</span>
+    </div>
+    <div class="fw-bold fs-5">Enviando preventa</div>
+    <div class="small text-slate mt-1">Validando inventario y guardando la información…</div>
   </div>
 </div>
 
@@ -726,6 +1200,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     const flashError = {{ (error or "") | tojson }};
     const flashSuccess = {{ (success or "") | tojson }};
+    const hasResultPreventa = {{ (result_preventa is not none) | tojson }};
     const productSearch = document.getElementById("productSearch");
     const btnProductSearch = document.getElementById("btnProductSearch");
     const productResults = document.getElementById("productSearchResults");
@@ -733,6 +1208,16 @@
     const freezePreventa = document.getElementById("freezePreventa");
     const itemsBody = document.getElementById("itemsBody");
     const noItemsRow = document.getElementById("noItemsRow");
+    const draftItemCount = document.getElementById("draftItemCount");
+    const draftTotalUsd = document.getElementById("draftTotalUsd");
+    const draftBarItemCount = document.getElementById("draftBarItemCount");
+    const draftBarTotalUsd = document.getElementById("draftBarTotalUsd");
+    const preventaSendingOverlay = document.getElementById("preventaSendingOverlay");
+    const preventaSendingRing = document.getElementById("preventaSendingRing");
+    const preventaSendingPercent = document.getElementById("preventaSendingPercent");
+    const resultProgress = document.getElementById("resultProgress");
+    const resultProgressValue = document.getElementById("resultProgressValue");
+    const newPreventaBtn = document.getElementById("newPreventaBtn");
     const submitButtons = Array.from(document.querySelectorAll('button[type="submit"][form="preventaForm"], #preventaForm button[type="submit"]'));
     let requestedFreezeChoice = "0";
 
@@ -1127,7 +1612,7 @@
 
     if (flashError) {
       notify("warning", "Validacion de inventario", flashError);
-    } else if (flashSuccess) {
+    } else if (flashSuccess && !hasResultPreventa) {
       notify("success", "Preventa", flashSuccess);
     }
     if (pushAlertsBtn) {
@@ -1166,6 +1651,33 @@
       if (!rows.length && noItemsRow) noItemsRow.style.display = "";
     }
 
+    function updateDraftSummary() {
+      let quantity = 0;
+      let totalUsd = 0;
+      if (!itemsBody) {
+        return;
+      }
+      itemsBody.querySelectorAll("tr[data-item-row]").forEach((row) => {
+        const qty = Number(row.querySelector('input[name="item_cantidad"]')?.value || 0);
+        const priceUsd = Number(row.querySelector('input[name="item_precio_usd"]')?.value || 0);
+        quantity += Number.isFinite(qty) ? qty : 0;
+        totalUsd += Number.isFinite(qty * priceUsd) ? qty * priceUsd : 0;
+      });
+      if (draftItemCount) {
+        draftItemCount.textContent = quantity.toLocaleString("en-US", { maximumFractionDigits: 2 });
+      }
+      if (draftTotalUsd) {
+        draftTotalUsd.textContent = totalUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+      if (draftBarItemCount) {
+        draftBarItemCount.textContent = quantity.toLocaleString("en-US", { maximumFractionDigits: 2 });
+      }
+      if (draftBarTotalUsd) {
+        draftBarTotalUsd.textContent = totalUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+    }
+    updateDraftSummary();
+
     function clearProductResults() { productResults.innerHTML = ""; }
     function clearClienteResults() { clienteResults.innerHTML = ""; }
 
@@ -1183,6 +1695,45 @@
       });
     }
 
+    function startElegantSending() {
+      if (!preventaSendingOverlay || !preventaSendingRing || !preventaSendingPercent) return;
+      preventaSendingOverlay.classList.add("is-visible");
+      preventaSendingOverlay.setAttribute("aria-hidden", "false");
+      let progress = 4;
+      const paint = () => {
+        preventaSendingPercent.textContent = `${Math.round(progress)}%`;
+        preventaSendingRing.style.setProperty("--progress", `${progress * 3.6}deg`);
+      };
+      paint();
+      window.setInterval(() => {
+        if (progress >= 94) return;
+        const remaining = 94 - progress;
+        progress = Math.min(94, progress + Math.max(.7, remaining * .12));
+        paint();
+      }, 90);
+    }
+
+    function completeResultAnimation() {
+      if (!resultProgress || !resultProgressValue) return;
+      let progress = 0;
+      const timer = window.setInterval(() => {
+        progress = Math.min(100, progress + (progress < 72 ? 8 : 4));
+        resultProgress.style.setProperty("--progress", `${progress * 3.6}deg`);
+        resultProgressValue.textContent = `${progress}%`;
+        if (progress >= 100) {
+          window.clearInterval(timer);
+          window.setTimeout(() => resultProgress.classList.add("is-complete"), 120);
+        }
+      }, 34);
+    }
+    completeResultAnimation();
+
+    newPreventaBtn?.addEventListener("click", (event) => {
+      event.preventDefault();
+      document.querySelector(".result-card")?.classList.add("is-leaving");
+      window.setTimeout(() => { window.location.href = newPreventaBtn.href; }, 210);
+    });
+
     function getCurrentQty(productId) {
       let sum = 0;
       itemsBody.querySelectorAll(`tr[data-item-row][data-product-id="${productId}"]`).forEach((row) => {
@@ -1198,7 +1749,7 @@
 
     function setClientePicked(cliente) {
       clienteId.value = cliente.id;
-      clientePicked.innerHTML = `Seleccionado: <strong>${esc(cliente.nombre)}</strong>`;
+      clientePicked.innerHTML = `<i class="bi bi-check-circle-fill"></i><span>Seleccionado: <strong>${esc(cliente.nombre)}</strong></span>`;
       clienteSearch.value = cliente.nombre;
       clearClienteResults();
     }
@@ -1223,6 +1774,7 @@
         existing.querySelector('input[name="item_cantidad"]').value = qtyInput.value;
         productSearch.value = "";
         clearProductResults();
+        updateDraftSummary();
         return;
       }
 
@@ -1296,11 +1848,13 @@
           const clean = Math.max(1, Math.round(Number(qtyInput.value || 1)));
           qtyInput.value = String(clean);
           hiddenQty.value = String(clean);
+          updateDraftSummary();
         });
         qtyInput.addEventListener("change", () => {
           const clean = Math.max(1, Math.round(Number(qtyInput.value || 1)));
           qtyInput.value = String(clean);
           hiddenQty.value = String(clean);
+          updateDraftSummary();
         });
       }
 
@@ -1310,6 +1864,7 @@
           const doRemove = () => {
             itemsBody.querySelectorAll(`tr[data-combo-group="${group}"]`).forEach((row) => row.remove());
             ensureNoItems();
+            updateDraftSummary();
           };
           if (typeof Swal !== "undefined") {
             Swal.fire({
@@ -1336,11 +1891,13 @@
         }
         tr.remove();
         ensureNoItems();
+        updateDraftSummary();
       });
 
       itemsBody.appendChild(tr);
       productSearch.value = "";
       clearProductResults();
+      updateDraftSummary();
     }
 
     async function searchProducts() {
@@ -1909,6 +2466,7 @@
       }
       isSubmittingPreventa = true;
       setSubmittingState(true);
+      startElegantSending();
       preventaForm.submit();
     });
 

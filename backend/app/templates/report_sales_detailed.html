@@ -41,6 +41,29 @@
         .report-sales-table td.col-codigo {
           min-width: 110px;
         }
+        .vendor-rank {
+          display: inline-flex;
+          width: 2rem;
+          height: 2rem;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          background: #eef2ff;
+          color: #3730a3;
+          font-weight: 700;
+        }
+        .vendor-share-track {
+          height: 0.4rem;
+          min-width: 110px;
+          overflow: hidden;
+          border-radius: 999px;
+          background: #e2e8f0;
+        }
+        .vendor-share-bar {
+          height: 100%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, #2563eb, #06b6d4);
+        }
       </style>
       <div class="odoo-header">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
@@ -278,6 +301,57 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div class="odoo-card mt-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <div>
+            <div class="odoo-section-title text-base">Bultos por vendedor</div>
+            <div class="text-slate text-xs mt-1">Clasificación de mayor a menor según los filtros aplicados.</div>
+          </div>
+          <span class="odoo-pill primary">
+            <i class="bi bi-box-seam"></i>
+            Total: {{ "{:,.2f}".format(total_items or 0) }} bultos
+          </span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover odoo-table text-sm align-middle mb-0">
+            <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+              <tr>
+                <th style="width: 80px;">Posición</th>
+                <th>Vendedor</th>
+                <th style="width: 35%;">Participación</th>
+                <th class="text-end" style="width: 150px;">Bultos vendidos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in vendor_bultos_summary %}
+              <tr>
+                <td><span class="vendor-rank">{{ loop.index }}</span></td>
+                <td class="fw-semibold">{{ row.vendedor }}</td>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="vendor-share-track flex-grow-1">
+                      <div class="vendor-share-bar" style="width: {{ [row.porcentaje, 100]|min }}%;"></div>
+                    </div>
+                    <span class="text-slate text-xs" style="min-width: 48px;">{{ "{:,.1f}".format(row.porcentaje or 0) }}%</span>
+                  </div>
+                </td>
+                <td class="text-end fw-bold">{{ "{:,.2f}".format(row.bultos or 0) }}</td>
+              </tr>
+              {% endfor %}
+              {% if vendor_bultos_summary|length == 0 %}
+              <tr><td colspan="4" class="text-center text-slate py-4">No hay bultos vendidos dentro de los filtros seleccionados.</td></tr>
+              {% endif %}
+            </tbody>
+            <tfoot>
+              <tr class="table-light">
+                <th colspan="3" class="text-end">Total general</th>
+                <th class="text-end">{{ "{:,.2f}".format(total_items or 0) }}</th>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
     </div>

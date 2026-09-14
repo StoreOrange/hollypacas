@@ -4,6 +4,7 @@ from .attendance import (
     AttendanceDeviceUser,
     AttendancePunch,
     AttendancePolicySetting,
+    AttendanceDayOverride,
     AttendanceSyncRun,
     HRArea,
     HREmployee,

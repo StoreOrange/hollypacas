@@ -2,7 +2,7 @@
 {% block content %}
 <style>
   .attendance-control-table {
-    min-width: 1180px;
+    min-width: 1430px;
     font-size: .72rem;
     line-height: 1.15;
   }
@@ -63,7 +63,7 @@
       {% if range_limited %}<div class="alert alert-warning py-2">El rango fue limitado automáticamente a 31 días.</div>{% endif %}
 
       <div class="alert alert-info py-2 small">
-        <strong>Politica de horas extra:</strong> lunes a viernes después de <strong>{{ policy.weekday_overtime_start.strftime('%I:%M %p') }}</strong>; sábado después de <strong>{{ policy.saturday_overtime_start.strftime('%I:%M %p') }}</strong>; domingo <strong>todo el tiempo neto trabajado</strong>. Jornada esperada {{ expected_label }} y descanso de {{ break_minutes }} minutos cuando la permanencia alcanza {{ (break_after_minutes / 60)|int }} horas. <a href="/data">Editar en Datos</a>.
+        <strong>Política vigente:</strong> entrada esperada <strong>{{ policy.weekday_start.strftime('%I:%M %p') }}</strong> con {{ policy.entry_grace_minutes }} minutos de tolerancia. Después de ese margen, la tardanza se cuenta completa desde la hora esperada. El tiempo extra inicia a las <strong>{{ policy.weekday_overtime_start.strftime('%I:%M %p') }}</strong> entre semana y solo se reconoce al superar {{ policy.overtime_grace_minutes }} minutos. <a href="/data">Editar en Datos</a>.
       </div>
       {% if unlinked_count %}<div class="alert alert-warning py-2"><strong>{{ unlinked_count }}</strong> marcada(s) del rango estan sin empleado vinculado y no entran en estos calculos. <a href="/attendance">Vincular ahora</a>.</div>{% endif %}
 
@@ -71,11 +71,12 @@
       <section class="card shadow-sm mb-4 overflow-hidden">
         <div class="card-header bg-primary text-white py-2"><strong><i class="bi bi-people-fill me-2"></i>{{ group.name }}</strong><span class="badge bg-light text-primary ms-2">{{ group.rows|length }}</span></div>
         <div class="table-responsive"><table class="table table-hover align-middle mb-0 attendance-control-table">
-          <thead class="table-light"><tr><th>Fecha</th><th>Codigo</th><th>Empleado</th><th>Cargo</th><th>Entrada</th><th>Salida</th><th>Marcadas</th><th>Tiempo total</th><th>Tiempo regular</th><th>Tiempo extra</th><th>Regla y calculo del extra</th><th>Estado</th></tr></thead>
+          <thead class="table-light"><tr><th>Fecha</th><th>Codigo</th><th>Empleado</th><th>Cargo</th><th>Entrada</th><th>Salida</th><th>Marcadas</th><th>Tiempo total</th><th>Tiempo regular</th><th>Tardanza</th><th>Tiempo extra</th><th>Regla y calculo del extra</th><th>Estado</th><th>Corrección</th></tr></thead>
           <tbody>{% for row in group.rows %}<tr>
             <td class="fw-semibold">{{ row.date.strftime('%d/%m/%Y') }}</td><td>{{ row.employee.employee_code }}</td><td class="fw-semibold employee-name">{{ row.employee.full_name }}</td><td>{{ row.employee.position.name if row.employee.position else '-' }}</td>
             <td>{{ row.entry.strftime('%I:%M:%S %p') if row.entry else '--:--' }}</td><td>{{ row.exit.strftime('%I:%M:%S %p') if row.exit else '--:--' }}</td><td>{{ row.punch_count }}</td>
-            <td class="fw-semibold">{{ row.worked_label }}</td><td>{{ row.regular_label }}</td><td class="fw-bold {% if row.overtime_minutes %}text-success{% endif %}">{{ row.overtime_label }}</td><td class="overtime-rule"><div class="fw-semibold">{{ row.overtime_rule }}</div><div class="text-muted">{{ row.overtime_detail }}</div></td><td><span class="badge text-bg-{{ row.status_class }}">{{ row.status_label }}</span></td>
+            <td class="fw-semibold">{{ row.worked_label }}</td><td>{{ row.regular_label }}</td><td class="fw-bold {% if row.late_minutes %}text-danger{% endif %}">{% if row.day_override and row.day_override.waive_lateness %}<span class="badge text-bg-light border text-success">Justificada</span>{% else %}{{ row.late_label }}{% endif %}</td><td class="fw-bold {% if row.overtime_minutes %}text-success{% endif %}">{{ row.overtime_label }}</td><td class="overtime-rule"><div class="fw-semibold">{{ row.overtime_rule }}</div><div class="text-muted">{{ row.overtime_detail }}</div></td><td><span class="badge text-bg-{{ row.status_class }}">{{ row.status_label }}</span></td>
+            <td><form method="post" action="/attendance/control/day-override" class="d-flex gap-1"><input type="hidden" name="employee_id" value="{{ row.employee.id }}"><input type="hidden" name="work_date" value="{{ row.date.isoformat() }}"><input type="hidden" name="date_from" value="{{ selected_date_from.isoformat() }}"><input type="hidden" name="date_to" value="{{ selected_date_to.isoformat() }}"><input type="hidden" name="area_id" value="{{ selected_area_id or '' }}"><input type="hidden" name="search" value="{{ search }}"><button class="btn btn-sm text-nowrap {% if row.day_override and row.day_override.exclude_overtime %}btn-success{% else %}btn-outline-secondary{% endif %}" name="action" value="{% if row.day_override and row.day_override.exclude_overtime %}restore_overtime{% else %}exclude_overtime{% endif %}" title="{% if row.day_override and row.day_override.exclude_overtime %}Restaurar cálculo de extra{% else %}No considerar extra este día{% endif %}"><i class="bi {% if row.day_override and row.day_override.exclude_overtime %}bi-clock-history{% else %}bi-clock-fill{% endif %} me-1"></i>Extra</button><button class="btn btn-sm text-nowrap {% if row.day_override and row.day_override.waive_lateness %}btn-success{% else %}btn-outline-warning{% endif %}" name="action" value="{% if row.day_override and row.day_override.waive_lateness %}restore_lateness{% else %}waive_lateness{% endif %}" title="{% if row.day_override and row.day_override.waive_lateness %}Restaurar tardanza{% else %}Justificar tardanza este día{% endif %}"><i class="bi bi-person-check-fill me-1"></i>Tardanza</button></form></td>
           </tr>{% endfor %}</tbody>
         </table></div>
       </section>

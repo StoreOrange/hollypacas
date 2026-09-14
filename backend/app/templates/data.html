@@ -434,9 +434,12 @@
         {% if request.query_params.get('policy_error') %}<div class="alert alert-danger">{{ request.query_params.get('policy_error') }}</div>{% endif %}
         <div class="alert alert-info">
           <strong>Reglas vigentes:</strong>
-          lunes a viernes el tiempo extra inicia a la hora indicada; el sábado utiliza su propia hora; el domingo todo el tiempo neto trabajado se considera extra.
+          la entrada tiene un margen de cortesía; si lo supera, la tardanza se cuenta completa desde la hora de entrada esperada. Los minutos posteriores a la salida solo son extra cuando superan la tolerancia configurada.
         </div>
         <div class="row g-3">
+          <div class="col-md-4"><label class="form-label">Hora esperada de entrada</label><input class="form-control" type="time" name="weekday_start" value="{{ attendance_policy.weekday_start.strftime('%H:%M') if attendance_policy and attendance_policy.weekday_start else '08:00' }}" required></div>
+          <div class="col-md-4"><label class="form-label">Tolerancia de entrada</label><div class="input-group"><input class="form-control" type="number" min="0" max="180" name="entry_grace_minutes" value="{{ attendance_policy.entry_grace_minutes if attendance_policy else 20 }}" required><span class="input-group-text">min</span></div><div class="form-text">Hasta este límite no hay tardanza.</div></div>
+          <div class="col-md-4"><label class="form-label">Tolerancia para horas extra</label><div class="input-group"><input class="form-control" type="number" min="0" max="180" name="overtime_grace_minutes" value="{{ attendance_policy.overtime_grace_minutes if attendance_policy else 15 }}" required><span class="input-group-text">min</span></div><div class="form-text">Solo se paga extra al superar este margen.</div></div>
           <div class="col-md-6"><label class="form-label">Inicio extra lunes a viernes</label><input class="form-control" type="time" name="weekday_overtime_start" value="{{ attendance_policy.weekday_overtime_start.strftime('%H:%M') if attendance_policy else '17:00' }}" required></div>
           <div class="col-md-6"><label class="form-label">Inicio extra sábado</label><input class="form-control" type="time" name="saturday_overtime_start" value="{{ attendance_policy.saturday_overtime_start.strftime('%H:%M') if attendance_policy else '16:00' }}" required></div>
           <div class="col-md-4"><label class="form-label">Jornada neta (minutos)</label><input class="form-control" type="number" min="1" max="1440" name="expected_daily_minutes" value="{{ attendance_policy.expected_daily_minutes if attendance_policy else 480 }}" required></div>

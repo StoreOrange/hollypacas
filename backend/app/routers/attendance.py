@@ -28,6 +28,7 @@ from ..models.attendance import (
     AttendanceDeviceUser,
     AttendancePunch,
     AttendancePolicySetting,
+    AttendanceDayOverride,
     AttendanceSyncCommand,
     AttendanceSyncRun,
     HRArea,
@@ -457,6 +458,7 @@ def attendance_control_page(
     employee_ids = [employee.id for employee in employees]
 
     punches_by_employee_date = {}
+    overrides_by_employee_date = {}
     if employee_ids:
         punches = (
             db.query(AttendancePunch)
@@ -471,6 +473,14 @@ def attendance_control_page(
         for punch in punches:
             key = (punch.employee_id, punch.occurred_at.date())
             punches_by_employee_date.setdefault(key, []).append(punch)
+        overrides_by_employee_date = {
+            (row.employee_id, row.work_date): row
+            for row in db.query(AttendanceDayOverride).filter(
+                AttendanceDayOverride.employee_id.in_(employee_ids),
+                AttendanceDayOverride.work_date >= selected_date_from,
+                AttendanceDayOverride.work_date <= selected_date_to,
+            ).all()
+        }
 
     groups = {}
     totals = {"employees": len(employees), "employee_days": len(employees) * range_days, "present": 0, "pending": 0, "absent": 0, "overtime_minutes": 0}
@@ -479,10 +489,12 @@ def attendance_control_page(
         group = groups.setdefault(area_name, {"name": area_name, "rows": []})
         for report_date in report_dates:
             employee_punches = punches_by_employee_date.get((employee.id, report_date), [])
+            day_override = overrides_by_employee_date.get((employee.id, report_date))
             entry = employee_punches[0].occurred_at if employee_punches else None
             exit_at = employee_punches[-1].occurred_at if len(employee_punches) >= 2 else None
             worked_minutes = 0
             overtime_minutes = 0
+            late_minutes = 0
             regular_minutes = 0
             overtime_detail = "Sin salida para calcular"
             weekday = report_date.weekday()
@@ -492,17 +504,23 @@ def attendance_control_page(
                 overtime_rule = f"Sabado despues de {policy.saturday_overtime_start.strftime('%I:%M %p')}"
             else:
                 overtime_rule = f"Lun-Vie despues de {policy.weekday_overtime_start.strftime('%I:%M %p')}"
+            if entry and weekday <= 5:
+                expected_entry = datetime.combine(report_date, policy.weekday_start)
+                entry_delay = max(0, int((entry - expected_entry).total_seconds() // 60))
+                if entry_delay > int(policy.entry_grace_minutes or 0) and not (day_override and day_override.waive_lateness):
+                    late_minutes = entry_delay
             if entry and exit_at:
                 gross_minutes = max(0, int((exit_at - entry).total_seconds() // 60))
                 applied_break = break_minutes if gross_minutes >= break_after_minutes else 0
                 worked_minutes = max(0, gross_minutes - applied_break)
                 if weekday == 6 and policy.sunday_all_day_overtime:
-                    overtime_minutes = worked_minutes
+                    overtime_minutes = 0 if day_override and day_override.exclude_overtime else worked_minutes
                     overtime_detail = f"{entry.strftime('%I:%M %p')} - {exit_at.strftime('%I:%M %p')} (jornada dominical)"
                 elif weekday == 5:
                     overtime_start = datetime.combine(report_date, policy.saturday_overtime_start)
                     effective_start = max(entry, overtime_start)
-                    overtime_minutes = max(0, int((exit_at - effective_start).total_seconds() // 60))
+                    candidate_overtime = max(0, int((exit_at - effective_start).total_seconds() // 60))
+                    overtime_minutes = candidate_overtime if candidate_overtime > int(policy.overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime) else 0
                     overtime_detail = (
                         f"{effective_start.strftime('%I:%M %p')} - {exit_at.strftime('%I:%M %p')}"
                         if overtime_minutes else "No alcanzo el inicio de tiempo extra"
@@ -510,11 +528,14 @@ def attendance_control_page(
                 elif weekday <= 4:
                     overtime_start = datetime.combine(report_date, policy.weekday_overtime_start)
                     effective_start = max(entry, overtime_start)
-                    overtime_minutes = max(0, int((exit_at - effective_start).total_seconds() // 60))
+                    candidate_overtime = max(0, int((exit_at - effective_start).total_seconds() // 60))
+                    overtime_minutes = candidate_overtime if candidate_overtime > int(policy.overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime) else 0
                     overtime_detail = (
                         f"{effective_start.strftime('%I:%M %p')} - {exit_at.strftime('%I:%M %p')}"
                         if overtime_minutes else "No alcanzo el inicio de tiempo extra"
                     )
+                if day_override and day_override.exclude_overtime:
+                    overtime_detail = "Tiempo extra excluido manualmente para esta jornada"
                 regular_minutes = max(0, worked_minutes - overtime_minutes)
                 totals["present"] += 1
             elif entry:
@@ -545,6 +566,9 @@ def attendance_control_page(
                     "regular_label": _duration_label(regular_minutes) if exit_at else "--:--",
                     "overtime_label": _duration_label(overtime_minutes),
                     "overtime_minutes": overtime_minutes,
+                    "late_minutes": late_minutes,
+                    "late_label": _duration_label(late_minutes),
+                    "day_override": day_override,
                     "overtime_rule": overtime_rule,
                     "overtime_detail": overtime_detail,
                     "status_label": status_label,
@@ -584,6 +608,53 @@ def attendance_control_page(
             "policy": policy,
         },
     )
+
+
+@web_router.post("/attendance/control/day-override")
+def update_attendance_day_override(
+    request: Request,
+    employee_id: int = Form(...),
+    work_date: date = Form(...),
+    action: str = Form(...),
+    date_from: str = Form(""),
+    date_to: str = Form(""),
+    area_id: str = Form(""),
+    search: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = _browser_admin(request, db)
+    employee = db.query(HREmployee).filter(HREmployee.id == employee_id).first()
+    if not employee:
+        raise HTTPException(404, "Empleado no encontrado")
+    override = db.query(AttendanceDayOverride).filter(
+        AttendanceDayOverride.employee_id == employee_id,
+        AttendanceDayOverride.work_date == work_date,
+    ).first()
+    if not override:
+        override = AttendanceDayOverride(employee_id=employee_id, work_date=work_date)
+        db.add(override)
+    if action == "exclude_overtime":
+        override.exclude_overtime = True
+    elif action == "restore_overtime":
+        override.exclude_overtime = False
+    elif action == "waive_lateness":
+        override.waive_lateness = True
+    elif action == "restore_lateness":
+        override.waive_lateness = False
+    else:
+        raise HTTPException(400, "Acción no válida")
+    override.updated_by = user.email
+    override.updated_at = datetime.utcnow()
+    db.flush()
+    if not override.exclude_overtime and not override.waive_lateness:
+        db.delete(override)
+    db.commit()
+    params = [f"date_from={quote_plus(date_from)}", f"date_to={quote_plus(date_to)}"]
+    if area_id:
+        params.append(f"area_id={quote_plus(area_id)}")
+    if search:
+        params.append(f"search={quote_plus(search)}")
+    return RedirectResponse(f"/attendance/control?{'&'.join(params)}", status_code=303)
 
 
 @web_router.get("/attendance/control/pdf")
@@ -719,12 +790,16 @@ def update_attendance_policy(
     expected_daily_minutes: int = Form(..., ge=1, le=1440),
     break_minutes: int = Form(..., ge=0, le=480),
     break_after_minutes: int = Form(..., ge=0, le=1440),
+    weekday_start: str = Form("08:00"),
+    entry_grace_minutes: int = Form(20, ge=0, le=180),
+    overtime_grace_minutes: int = Form(15, ge=0, le=180),
     db: Session = Depends(get_db),
 ):
     user = _browser_admin(request, db)
     try:
         weekday_start = time.fromisoformat(weekday_overtime_start)
         saturday_start = time.fromisoformat(saturday_overtime_start)
+        regular_start = time.fromisoformat(weekday_start)
     except ValueError:
         return RedirectResponse("/data?policy_error=Horario+invalido", status_code=303)
     policy = db.query(AttendancePolicySetting).order_by(AttendancePolicySetting.id).first()
@@ -737,6 +812,9 @@ def update_attendance_policy(
     policy.expected_daily_minutes = expected_daily_minutes
     policy.break_minutes = break_minutes
     policy.break_after_minutes = break_after_minutes
+    policy.weekday_start = regular_start
+    policy.entry_grace_minutes = entry_grace_minutes
+    policy.overtime_grace_minutes = overtime_grace_minutes
     policy.updated_by = user.email
     policy.updated_at = datetime.utcnow()
     db.commit()

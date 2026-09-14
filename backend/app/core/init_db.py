@@ -1659,6 +1659,14 @@ def init_db() -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     with engine.begin() as conn:
+        if "attendance_policy_settings" in table_names:
+            policy_columns = {col["name"] for col in inspect(engine).get_columns("attendance_policy_settings")}
+            if "weekday_start" not in policy_columns:
+                conn.execute(text("ALTER TABLE attendance_policy_settings ADD COLUMN weekday_start TIME NOT NULL DEFAULT '08:00:00'"))
+            if "entry_grace_minutes" not in policy_columns:
+                conn.execute(text("ALTER TABLE attendance_policy_settings ADD COLUMN entry_grace_minutes INTEGER NOT NULL DEFAULT 20"))
+            if "overtime_grace_minutes" not in policy_columns:
+                conn.execute(text("ALTER TABLE attendance_policy_settings ADD COLUMN overtime_grace_minutes INTEGER NOT NULL DEFAULT 15"))
         if "payroll_periods" in table_names:
             period_columns = {col["name"] for col in inspect(engine).get_columns("payroll_periods")}
             if "branch_id" not in period_columns:
@@ -1672,6 +1680,10 @@ def init_db() -> None:
             calc_columns = {col["name"] for col in inspect(engine).get_columns("payroll_calculations")}
             if "additions_pay" not in calc_columns:
                 conn.execute(text("ALTER TABLE payroll_calculations ADD COLUMN additions_pay NUMERIC(14,2) NOT NULL DEFAULT 0"))
+            if "late_minutes" not in calc_columns:
+                conn.execute(text("ALTER TABLE payroll_calculations ADD COLUMN late_minutes INTEGER NOT NULL DEFAULT 0"))
+            if "late_deduction" not in calc_columns:
+                conn.execute(text("ALTER TABLE payroll_calculations ADD COLUMN late_deduction NUMERIC(14,2) NOT NULL DEFAULT 0"))
         if "payroll_employee_profiles" in table_names:
             profile_columns = {col["name"] for col in inspect(engine).get_columns("payroll_employee_profiles")}
             for column_name in ("vacation_paid_through", "bonus_paid_through", "seniority_paid_through"):
