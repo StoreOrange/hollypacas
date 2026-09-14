@@ -7,7 +7,7 @@
     <style>
       @page { size: 80mm {{ "%.0f"|format(page_height_mm or 255) }}mm; margin: 2mm; }
       * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; width: 80mm; min-width: 80mm; font-family: Arial, sans-serif; color: #111; }
+      html, body { margin: 0; padding: 0; width: 80mm; min-width: 80mm; font-family: Arial, sans-serif; color: #111; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
       body { line-height: 1.4; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .ticket { box-sizing: border-box; width: 76mm; max-width: 76mm; margin: 0 auto; font-size: 14px; transform: none !important; zoom: 1 !important; overflow: visible; }
       .ticket, .ticket * { max-width: 100%; }
@@ -213,15 +213,15 @@
         const dynamicStyle = document.createElement("style");
         dynamicStyle.setAttribute("data-ticket-page-size", "true");
         document.head.appendChild(dynamicStyle);
-        const initialPageMm = Number({{ "%.0f"|format(page_height_mm or 255) }});
-
         const syncTicketPageSize = () => {
           if (!ticket) return;
           const pxPerMm = 96 / 25.4;
           const rectHeight = ticket.getBoundingClientRect().height;
-          const documentHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight || 0);
-          const contentPx = Math.max(ticket.scrollHeight, rectHeight, documentHeight) + 28;
-          const dynamicPageMm = Math.max(initialPageMm || 120, 120, Math.ceil(contentPx / pxPerMm) + 12);
+          const contentPx = Math.max(ticket.scrollHeight, rectHeight) + 28;
+          const measuredPageMm = Math.ceil(contentPx / pxPerMm) + 12;
+          // The roll grows with the ticket. Using the measured content prevents
+          // the print driver from applying "fit to page" and shrinking letters.
+          const dynamicPageMm = Math.max(120, measuredPageMm);
           dynamicStyle.textContent = `@page { size: 80mm ${dynamicPageMm}mm; margin: 2mm; }`;
         };
 

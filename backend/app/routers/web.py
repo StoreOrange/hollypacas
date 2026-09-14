@@ -30766,13 +30766,11 @@ def sales_ticket_print(
         line_count += 1  # equivalente USD
     line_count += 4  # footer
 
-    # Use a generous initial continuous-roll height; the browser recalculates the
-    # exact content size before printing, but a short first @page can trigger
-    # shrink-to-fit in POS drivers when invoices have many items.
+    # Estimate the continuous-roll length from the real number of rendered lines.
+    # Never force an oversized page: thermal drivers shrink the entire ticket
+    # when asked to fit a mostly empty 1200 mm sheet.
     line_height_mm = 4.6 if is_amajo_mode else 5.65
     page_height_mm = max(180.0, 18.0 + line_count * line_height_mm + 18.0)
-    if (_is_pacasholl_company() or is_hollpacas_mode) and line_count >= 55:
-        page_height_mm = max(page_height_mm, 1200.0)
 
     return request.app.state.templates.TemplateResponse(
         "sales_ticket_print.html",
