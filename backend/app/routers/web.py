@@ -3232,11 +3232,13 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
 
     total_height = top_margin + bottom_margin + logo_height + logo_spacing
     total_height += sum(line_gap(size) for _, _, _, size in lines)
-    total_height = max(total_height, 120 * mm)
+    # Keep every logical PDF page within a size thermal drivers can print at
+    # 100%. Very tall custom pages are commonly reduced with "fit to page".
+    page_height = min(max(total_height, 120 * mm), 280 * mm)
 
     buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=(width, total_height))
-    y = total_height - top_margin
+    pdf = canvas.Canvas(buffer, pagesize=(width, page_height))
+    y = page_height - top_margin
 
     if logo_height:
         logo_width = 78 * mm
@@ -3252,6 +3254,11 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
         y -= logo_height + logo_spacing
 
     for text, align, bold, size in lines:
+        gap = line_gap(size)
+        if y - gap < bottom_margin:
+            pdf.showPage()
+            pdf.setPageSize((width, page_height))
+            y = page_height - top_margin
         pdf.setFont("Helvetica-Bold" if bold else "Helvetica", size)
         if align == "center":
             pdf.drawCentredString(width / 2, y, text)
@@ -3259,7 +3266,7 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
             pdf.drawRightString(width - margin, y, text)
         else:
             pdf.drawString(margin, y, text)
-        y -= line_gap(size)
+        y -= gap
 
     pdf.showPage()
     pdf.save()
@@ -30770,7 +30777,10 @@ def sales_ticket_print(
     # Never force an oversized page: thermal drivers shrink the entire ticket
     # when asked to fit a mostly empty 1200 mm sheet.
     line_height_mm = 4.6 if is_amajo_mode else 5.65
-    page_height_mm = max(180.0, 18.0 + line_count * line_height_mm + 18.0)
+    estimated_height_mm = max(120.0, 18.0 + line_count * line_height_mm + 18.0)
+    # Short tickets use only the paper they need. Long tickets paginate in the
+    # same print job instead of being shrunk into one oversized logical page.
+    page_height_mm = min(estimated_height_mm, 280.0)
 
     return request.app.state.templates.TemplateResponse(
         "sales_ticket_print.html",

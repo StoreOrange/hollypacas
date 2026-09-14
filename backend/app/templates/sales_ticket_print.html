@@ -98,6 +98,7 @@
         html, body { width: 80mm !important; min-width: 80mm !important; overflow: visible !important; }
         .ticket { width: 76mm !important; max-width: 76mm !important; margin: 0 auto !important; transform: none !important; zoom: 1 !important; overflow: visible !important; page-break-inside: auto !important; break-inside: auto !important; }
         .ticket, .ticket * { max-width: 100% !important; }
+        .item-block { break-inside: avoid-page !important; page-break-inside: avoid !important; }
         .ticket.lock-font { font-size: 14px !important; }
         .ticket.lock-font .small { font-size: 12px !important; }
       }
@@ -209,22 +210,6 @@
         if (!Number.isFinite(copies) || copies < 1) {
           copies = 2;
         }
-        const ticket = document.querySelector(".ticket");
-        const dynamicStyle = document.createElement("style");
-        dynamicStyle.setAttribute("data-ticket-page-size", "true");
-        document.head.appendChild(dynamicStyle);
-        const syncTicketPageSize = () => {
-          if (!ticket) return;
-          const pxPerMm = 96 / 25.4;
-          const rectHeight = ticket.getBoundingClientRect().height;
-          const contentPx = Math.max(ticket.scrollHeight, rectHeight) + 28;
-          const measuredPageMm = Math.ceil(contentPx / pxPerMm) + 12;
-          // The roll grows with the ticket. Using the measured content prevents
-          // the print driver from applying "fit to page" and shrinking letters.
-          const dynamicPageMm = Math.max(120, measuredPageMm);
-          dynamicStyle.textContent = `@page { size: 80mm ${dynamicPageMm}mm; margin: 2mm; }`;
-        };
-
         const waitForTicketReady = async () => {
           if (document.fonts && document.fonts.ready) {
             try { await document.fonts.ready; } catch (_) {}
@@ -241,11 +226,8 @@
             });
           }));
           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-          syncTicketPageSize();
         };
 
-        syncTicketPageSize();
-        window.addEventListener("beforeprint", syncTicketPageSize);
         let printed = 0;
         let printing = false;
         let printRequestedAt = 0;
@@ -254,7 +236,6 @@
         const triggerPrint = () => {
           if (exited || printing) return;
           if (printed >= copies) return;
-          syncTicketPageSize();
           printing = true;
           printRequestedAt = Date.now();
           if (closeFallbackTimer) {
