@@ -2,12 +2,12 @@
 {% block content %}
 <style>
   .attendance-control-table {
-    min-width: 1430px;
-    font-size: .72rem;
-    line-height: 1.15;
+    min-width: 1120px;
+    font-size: .75rem;
+    line-height: 1.2;
   }
   .attendance-control-table > :not(caption) > * > * {
-    padding: .36rem .32rem;
+    padding: .38rem .3rem;
     white-space: nowrap;
   }
   .attendance-control-table thead th {
@@ -17,21 +17,67 @@
     color: var(--bs-secondary-color);
   }
   .attendance-control-table .employee-name {
-    min-width: 155px;
+    min-width: 145px;
+    max-width: 190px;
     white-space: normal;
   }
   .attendance-control-table .overtime-rule {
-    min-width: 180px;
-    max-width: 240px;
+    min-width: 145px;
+    max-width: 185px;
     white-space: normal;
   }
   .attendance-control-table .badge {
     font-size: .65rem;
   }
+  .attendance-main {
+    min-width: 0;
+    overflow-x: hidden;
+  }
+  .attendance-table-wrap {
+    overflow-x: auto;
+    scrollbar-gutter: stable;
+  }
+  .attendance-actions-head,
+  .attendance-actions-cell {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    min-width: 110px;
+    width: 110px;
+    background: var(--bs-body-bg);
+    box-shadow: -6px 0 10px rgba(15, 23, 42, .08);
+  }
+  .attendance-actions-head {
+    z-index: 3;
+    background: var(--bs-tertiary-bg);
+  }
+  .attendance-control-table tbody tr:hover .attendance-actions-cell {
+    background: var(--bs-tertiary-bg);
+  }
+  .attendance-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .2rem;
+  }
+  .attendance-actions .btn {
+    width: 32px;
+    height: 30px;
+    padding: .2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .attendance-actions .btn i {
+    margin: 0 !important;
+  }
+  @media (max-width: 1199.98px) {
+    .attendance-control-table { min-width: 1040px; }
+    .attendance-control-table .overtime-rule { min-width: 125px; max-width: 150px; }
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
-  <main class="p-4 p-lg-5">
+  <main class="p-3 p-lg-4 attendance-main">
     <div class="container-fluid">
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
         <div>
@@ -71,13 +117,13 @@
       {% for group in groups %}
       <section class="card shadow-sm mb-4 overflow-hidden">
         <div class="card-header bg-primary text-white py-2"><strong><i class="bi bi-people-fill me-2"></i>{{ group.name }}</strong><span class="badge bg-light text-primary ms-2">{{ group.rows|length }}</span></div>
-        <div class="table-responsive"><table class="table table-hover align-middle mb-0 attendance-control-table">
-          <thead class="table-light"><tr><th>Fecha</th><th>Codigo</th><th>Empleado</th><th>Cargo</th><th>Entrada</th><th>Salida</th><th>Marcadas</th><th>Tiempo total</th><th>Tiempo regular</th><th>Tardanza</th><th>Tiempo extra</th><th>Regla y calculo del extra</th><th>Estado</th><th>Corrección</th></tr></thead>
+        <div class="table-responsive attendance-table-wrap"><table class="table table-hover align-middle mb-0 attendance-control-table">
+          <thead class="table-light"><tr><th>Fecha</th><th>Empleado</th><th>Entrada</th><th>Salida</th><th>Mar.</th><th>Total</th><th>Regular</th><th>Tardanza</th><th>Extra</th><th>Regla del extra</th><th>Estado</th><th class="attendance-actions-head text-end">Acciones</th></tr></thead>
           <tbody>{% for row in group.rows %}<tr>
-            <td class="fw-semibold">{{ row.date.strftime('%d/%m/%Y') }}</td><td>{{ row.employee.employee_code }}</td><td class="fw-semibold employee-name">{{ row.employee.full_name }}</td><td>{{ row.employee.position.name if row.employee.position else '-' }}</td>
+            <td class="fw-semibold">{{ row.date.strftime('%d/%m/%Y') }}</td><td class="employee-name"><div class="fw-semibold">{{ row.employee.full_name }}</div><div class="text-muted small">{{ row.employee.employee_code }}{% if row.employee.position %} · {{ row.employee.position.name }}{% endif %}</div></td>
             <td>{{ row.entry.strftime('%I:%M:%S %p') if row.entry else '--:--' }}</td><td>{{ row.exit.strftime('%I:%M:%S %p') if row.exit else '--:--' }}</td><td>{{ row.punch_count }}</td>
             <td class="fw-semibold">{{ row.worked_label }}</td><td>{{ row.regular_label }}</td><td class="fw-bold {% if row.late_minutes %}text-danger{% endif %}">{% if row.day_override and row.day_override.waive_lateness %}<span class="badge text-bg-light border text-success">Justificada</span>{% else %}{{ row.late_label }}{% endif %}</td><td class="fw-bold {% if row.overtime_minutes %}text-success{% endif %}">{{ row.overtime_label }}</td><td class="overtime-rule"><div class="fw-semibold">{{ row.overtime_rule }}</div><div class="text-muted">{{ row.overtime_detail }}</div></td><td><span class="badge text-bg-{{ row.status_class }}">{{ row.status_label }}</span>{% if row.justification_label %}<div class="badge text-bg-success mt-1 d-block" title="{{ row.day_override.note or '' }}"><i class="bi bi-file-earmark-check me-1"></i>Justificado: {{ row.justification_label }}</div>{% endif %}</td>
-            <td><form method="post" action="/attendance/control/day-override" class="d-flex gap-1"><input type="hidden" name="employee_id" value="{{ row.employee.id }}"><input type="hidden" name="work_date" value="{{ row.date.isoformat() }}"><input type="hidden" name="date_from" value="{{ selected_date_from.isoformat() }}"><input type="hidden" name="date_to" value="{{ selected_date_to.isoformat() }}"><input type="hidden" name="area_id" value="{{ selected_area_id or '' }}"><input type="hidden" name="search" value="{{ search }}"><button class="btn btn-sm text-nowrap {% if row.day_override and row.day_override.exclude_overtime %}btn-success{% else %}btn-outline-secondary{% endif %}" name="action" value="{% if row.day_override and row.day_override.exclude_overtime %}restore_overtime{% else %}exclude_overtime{% endif %}" title="{% if row.day_override and row.day_override.exclude_overtime %}Restaurar cálculo de extra{% else %}No considerar extra este día{% endif %}"><i class="bi {% if row.day_override and row.day_override.exclude_overtime %}bi-clock-history{% else %}bi-clock-fill{% endif %} me-1"></i>Extra</button><button class="btn btn-sm text-nowrap {% if row.day_override and row.day_override.waive_lateness %}btn-success{% else %}btn-outline-warning{% endif %}" name="action" value="{% if row.day_override and row.day_override.waive_lateness %}restore_lateness{% else %}waive_lateness{% endif %}" title="{% if row.day_override and row.day_override.waive_lateness %}Restaurar tardanza{% else %}Justificar tardanza este día{% endif %}"><i class="bi bi-person-check-fill me-1"></i>Tardanza</button>{% if row.justification_label %}<button class="btn btn-sm btn-success text-nowrap" name="action" value="clear_justification" title="Quitar justificación"><i class="bi bi-file-earmark-x me-1"></i>Quitar</button>{% else %}<button class="btn btn-sm btn-outline-primary text-nowrap attendance-justify-btn" type="button" data-bs-toggle="modal" data-bs-target="#attendanceJustificationModal" data-employee-id="{{ row.employee.id }}" data-employee-name="{{ row.employee.full_name }}" data-work-date="{{ row.date.isoformat() }}"><i class="bi bi-file-earmark-check me-1"></i>Justificar</button>{% endif %}</form></td>
+            <td class="attendance-actions-cell"><form method="post" action="/attendance/control/day-override" class="attendance-actions"><input type="hidden" name="employee_id" value="{{ row.employee.id }}"><input type="hidden" name="work_date" value="{{ row.date.isoformat() }}"><input type="hidden" name="date_from" value="{{ selected_date_from.isoformat() }}"><input type="hidden" name="date_to" value="{{ selected_date_to.isoformat() }}"><input type="hidden" name="area_id" value="{{ selected_area_id or '' }}"><input type="hidden" name="search" value="{{ search }}"><button class="btn btn-sm {% if row.day_override and row.day_override.exclude_overtime %}btn-success{% else %}btn-outline-secondary{% endif %}" name="action" value="{% if row.day_override and row.day_override.exclude_overtime %}restore_overtime{% else %}exclude_overtime{% endif %}" title="{% if row.day_override and row.day_override.exclude_overtime %}Restaurar cálculo de extra{% else %}No considerar extra este día{% endif %}" aria-label="Corregir tiempo extra"><i class="bi {% if row.day_override and row.day_override.exclude_overtime %}bi-clock-history{% else %}bi-clock-fill{% endif %}"></i></button><button class="btn btn-sm {% if row.day_override and row.day_override.waive_lateness %}btn-success{% else %}btn-outline-warning{% endif %}" name="action" value="{% if row.day_override and row.day_override.waive_lateness %}restore_lateness{% else %}waive_lateness{% endif %}" title="{% if row.day_override and row.day_override.waive_lateness %}Restaurar tardanza{% else %}Justificar tardanza este día{% endif %}" aria-label="Justificar tardanza"><i class="bi bi-person-check-fill"></i></button>{% if row.justification_label %}<button class="btn btn-sm btn-success" name="action" value="clear_justification" title="Quitar justificación" aria-label="Quitar justificación"><i class="bi bi-file-earmark-x"></i></button>{% else %}<button class="btn btn-sm btn-outline-primary attendance-justify-btn" type="button" data-bs-toggle="modal" data-bs-target="#attendanceJustificationModal" data-employee-id="{{ row.employee.id }}" data-employee-name="{{ row.employee.full_name }}" data-work-date="{{ row.date.isoformat() }}" title="Justificar ausencia o tiempo" aria-label="Justificar ausencia o tiempo"><i class="bi bi-file-earmark-check"></i></button>{% endif %}</form></td>
           </tr>{% endfor %}</tbody>
         </table></div>
       </section>

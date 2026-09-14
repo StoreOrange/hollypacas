@@ -7,7 +7,7 @@ from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -694,6 +694,42 @@ def create_holiday(request: Request, holiday_date: date = Form(...), name: str =
     return RedirectResponse("/payroll?ok=Feriado+registrado", status_code=303)
 
 
+@router.post("/payroll/holidays/{holiday_id}/delete")
+def delete_holiday(holiday_id: int, request: Request, db: Session = Depends(get_db)):
+    _browser_admin(request, db)
+    holiday = db.query(PayrollHoliday).filter(PayrollHoliday.id == holiday_id).first()
+    if not holiday:
+        return RedirectResponse("/payroll?error=Feriado+no+encontrado#holidays", status_code=303)
+
+    affected_periods_query = db.query(PayrollPeriod)
+    if holiday.period_id:
+        affected_periods_query = affected_periods_query.filter(PayrollPeriod.id == holiday.period_id)
+    else:
+        affected_periods_query = affected_periods_query.filter(
+            PayrollPeriod.date_from <= holiday.holiday_date,
+            PayrollPeriod.date_to >= holiday.holiday_date,
+        )
+    affected_periods = affected_periods_query.all()
+    if any(period.status == "CLOSED" for period in affected_periods):
+        return RedirectResponse(
+            "/payroll?error=No+se+puede+eliminar+un+feriado+aplicado+a+una+planilla+cerrada#holidays",
+            status_code=303,
+        )
+
+    open_periods = [period for period in affected_periods if period.status != "CLOSED"]
+    db.delete(holiday)
+    db.flush()
+    if open_periods:
+        for period in open_periods:
+            _calculate_period_records(db, period)
+    else:
+        db.commit()
+    return RedirectResponse(
+        "/payroll?ok=Feriado+eliminado+y+planilla+recalculada#holidays",
+        status_code=303,
+    )
+
+
 def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy: AttendancePolicySetting, holidays: dict):
     start = datetime.combine(period.date_from, time.min)
     end = datetime.combine(period.date_to + timedelta(days=1), time.min)
@@ -749,7 +785,17 @@ def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, 
     policy = db.query(AttendancePolicySetting).first()
     if not policy:
         return 0, "Configure primero la política de marcadas"
-    holidays = {row.holiday_date: row for row in db.query(PayrollHoliday).filter(PayrollHoliday.holiday_date >= period.date_from, PayrollHoliday.holiday_date <= period.date_to).all()}
+    holidays = {
+        row.holiday_date: row
+        for row in db.query(PayrollHoliday).filter(
+            PayrollHoliday.holiday_date >= period.date_from,
+            PayrollHoliday.holiday_date <= period.date_to,
+            # Un feriado sin período aplica por fecha. Si fue asignado, solamente
+            # puede afectar la planilla elegida por el usuario.
+            or_(PayrollHoliday.period_id.is_(None), PayrollHoliday.period_id == period.id),
+            PayrollHoliday.paid.is_(True),
+        ).all()
+    }
     profiles_query = db.query(PayrollEmployeeProfile).join(HREmployee).filter(
         PayrollEmployeeProfile.active.is_(True),
         HREmployee.status == "ACTIVE",
@@ -763,9 +809,20 @@ def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, 
     for profile in profiles:
         salary = _money(profile.monthly_salary)
         hourly = salary / Decimal("240")
-        _attendance_days, overtime_minutes, holiday_minutes, late_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
+        _attendance_days, overtime_minutes, _holiday_minutes, late_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
         overtime_pay = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
-        holiday_pay = _money((Decimal(holiday_minutes) / 60) * hourly * 2)
+        cutoff = min(date.today(), period.date_to)
+        employment_start = period.date_from
+        employee_start = profile.contract_start or profile.employee.hire_date
+        if employee_start:
+            employment_start = max(employment_start, employee_start)
+        paid_holiday_count = sum(
+            1 for holiday_date in holidays
+            if employment_start <= holiday_date <= cutoff
+        )
+        # Política de planilla solicitada: cada feriado pagado agrega un día de
+        # salario al ingreso de todos los empleados activos del período.
+        holiday_pay = _money((salary / Decimal("30")) * paid_holiday_count)
         late_deduction = _money((Decimal(late_minutes) / 60) * hourly)
         calc = db.query(PayrollCalculation).filter(PayrollCalculation.period_id == period.id, PayrollCalculation.employee_id == profile.employee_id).first()
         if not calc:
@@ -834,11 +891,6 @@ def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, 
             overtime_minutes = max(0, manual_overtime)
             overtime_pay = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
         target_days = (period.date_to - period.date_from).days + 1
-        cutoff = min(date.today(), period.date_to)
-        employment_start = period.date_from
-        employee_start = profile.contract_start or profile.employee.hire_date
-        if employee_start:
-            employment_start = max(employment_start, employee_start)
         accrued_calendar_days = max(0, (cutoff - employment_start).days + 1)
         corrected_days = None
         if manual_days_row is not None:
