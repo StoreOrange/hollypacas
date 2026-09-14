@@ -29,21 +29,28 @@ def upgrade() -> None:
     if "late_deduction" not in calculation_columns:
         op.add_column("payroll_calculations", sa.Column("late_deduction", sa.Numeric(14, 2), nullable=False, server_default="0"))
     if "attendance_day_overrides" in inspector.get_table_names():
-        return
-    op.create_table(
-        "attendance_day_overrides",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("employee_id", sa.Integer(), sa.ForeignKey("hr_employees.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("work_date", sa.Date(), nullable=False),
-        sa.Column("exclude_overtime", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("waive_lateness", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("note", sa.String(240), nullable=True),
-        sa.Column("updated_by", sa.String(160), nullable=True),
-        sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-        sa.UniqueConstraint("employee_id", "work_date", name="uq_attendance_day_override_employee_date"),
-    )
-    op.create_index("ix_attendance_day_overrides_employee_id", "attendance_day_overrides", ["employee_id"])
-    op.create_index("ix_attendance_day_overrides_work_date", "attendance_day_overrides", ["work_date"])
+        override_columns = {column["name"] for column in inspector.get_columns("attendance_day_overrides")}
+        if "full_day_justified" not in override_columns:
+            op.add_column("attendance_day_overrides", sa.Column("full_day_justified", sa.Boolean(), nullable=False, server_default=sa.false()))
+        if "justified_minutes" not in override_columns:
+            op.add_column("attendance_day_overrides", sa.Column("justified_minutes", sa.Integer(), nullable=False, server_default="0"))
+    else:
+        op.create_table(
+            "attendance_day_overrides",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("employee_id", sa.Integer(), sa.ForeignKey("hr_employees.id", ondelete="CASCADE"), nullable=False),
+            sa.Column("work_date", sa.Date(), nullable=False),
+            sa.Column("exclude_overtime", sa.Boolean(), nullable=False, server_default=sa.false()),
+            sa.Column("waive_lateness", sa.Boolean(), nullable=False, server_default=sa.false()),
+            sa.Column("full_day_justified", sa.Boolean(), nullable=False, server_default=sa.false()),
+            sa.Column("justified_minutes", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("note", sa.String(240), nullable=True),
+            sa.Column("updated_by", sa.String(160), nullable=True),
+            sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+            sa.UniqueConstraint("employee_id", "work_date", name="uq_attendance_day_override_employee_date"),
+        )
+        op.create_index("ix_attendance_day_overrides_employee_id", "attendance_day_overrides", ["employee_id"])
+        op.create_index("ix_attendance_day_overrides_work_date", "attendance_day_overrides", ["work_date"])
 
 
 def downgrade() -> None:

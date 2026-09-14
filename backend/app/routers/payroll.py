@@ -715,11 +715,12 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
     for day, marks in by_date.items():
         day_override = day_overrides.get(day)
         entry = marks[0]
-        if day.weekday() <= 5 and not (day_override and day_override.waive_lateness):
+        if day.weekday() <= 5 and not (day_override and (day_override.waive_lateness or day_override.full_day_justified)):
             expected_entry = datetime.combine(day, policy.weekday_start)
             entry_delay = max(0, int((entry - expected_entry).total_seconds() // 60))
             if entry_delay > int(policy.entry_grace_minutes or 0):
-                late_minutes += entry_delay
+                justified_minutes = int(day_override.justified_minutes or 0) if day_override else 0
+                late_minutes += max(0, entry_delay - justified_minutes)
         if len(marks) < 2:
             continue
         exit_at = marks[-1]

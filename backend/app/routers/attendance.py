@@ -7,6 +7,7 @@ import re
 import threading
 import unicodedata
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import List, Optional
 from urllib.parse import quote_plus
 
@@ -483,7 +484,7 @@ def attendance_control_page(
         }
 
     groups = {}
-    totals = {"employees": len(employees), "employee_days": len(employees) * range_days, "present": 0, "pending": 0, "absent": 0, "overtime_minutes": 0}
+    totals = {"employees": len(employees), "employee_days": len(employees) * range_days, "present": 0, "pending": 0, "absent": 0, "justified": 0, "overtime_minutes": 0}
     for employee in employees:
         area_name = employee.area.name if employee.area else "Sin area asignada"
         group = groups.setdefault(area_name, {"name": area_name, "rows": []})
@@ -507,8 +508,9 @@ def attendance_control_page(
             if entry and weekday <= 5:
                 expected_entry = datetime.combine(report_date, policy.weekday_start)
                 entry_delay = max(0, int((entry - expected_entry).total_seconds() // 60))
-                if entry_delay > int(policy.entry_grace_minutes or 0) and not (day_override and day_override.waive_lateness):
-                    late_minutes = entry_delay
+                if entry_delay > int(policy.entry_grace_minutes or 0) and not (day_override and (day_override.waive_lateness or day_override.full_day_justified)):
+                    justified_minutes = int(day_override.justified_minutes or 0) if day_override else 0
+                    late_minutes = max(0, entry_delay - justified_minutes)
             if entry and exit_at:
                 gross_minutes = max(0, int((exit_at - entry).total_seconds() // 60))
                 applied_break = break_minutes if gross_minutes >= break_after_minutes else 0
@@ -541,10 +543,15 @@ def attendance_control_page(
             elif entry:
                 totals["pending"] += 1
             else:
-                totals["absent"] += 1
+                if day_override and day_override.full_day_justified:
+                    totals["justified"] += 1
+                else:
+                    totals["absent"] += 1
             totals["overtime_minutes"] += overtime_minutes
 
-            if not entry:
+            if not entry and day_override and day_override.full_day_justified:
+                status_label, status_class = "Ausencia justificada", "success"
+            elif not entry:
                 status_label, status_class = "Sin marcadas", "secondary"
             elif not exit_at:
                 status_label, status_class = "Salida pendiente", "warning"
@@ -569,6 +576,13 @@ def attendance_control_page(
                     "late_minutes": late_minutes,
                     "late_label": _duration_label(late_minutes),
                     "day_override": day_override,
+                    "justification_label": (
+                        "Día completo"
+                        if day_override and day_override.full_day_justified
+                        else _duration_label(day_override.justified_minutes)
+                        if day_override and day_override.justified_minutes
+                        else None
+                    ),
                     "overtime_rule": overtime_rule,
                     "overtime_detail": overtime_detail,
                     "status_label": status_label,
@@ -620,6 +634,9 @@ def update_attendance_day_override(
     date_to: str = Form(""),
     area_id: str = Form(""),
     search: str = Form(""),
+    justified_hours: str = Form(""),
+    full_day: Optional[str] = Form(None),
+    reason: str = Form(""),
     db: Session = Depends(get_db),
 ):
     user = _browser_admin(request, db)
@@ -641,12 +658,29 @@ def update_attendance_day_override(
         override.waive_lateness = True
     elif action == "restore_lateness":
         override.waive_lateness = False
+    elif action == "justify":
+        if len(reason.strip()) < 3:
+            raise HTTPException(400, "Debe indicar el motivo de la justificación")
+        is_full_day = full_day == "on"
+        try:
+            minutes = int((Decimal(justified_hours or "0") * 60).quantize(Decimal("1")))
+        except Exception:
+            raise HTTPException(400, "Cantidad de horas no válida")
+        if not is_full_day and not 1 <= minutes <= 24 * 60:
+            raise HTTPException(400, "Indique las horas justificadas o seleccione día completo")
+        override.full_day_justified = is_full_day
+        override.justified_minutes = 0 if is_full_day else minutes
+        override.note = reason.strip()
+    elif action == "clear_justification":
+        override.full_day_justified = False
+        override.justified_minutes = 0
+        override.note = None
     else:
         raise HTTPException(400, "Acción no válida")
     override.updated_by = user.email
     override.updated_at = datetime.utcnow()
     db.flush()
-    if not override.exclude_overtime and not override.waive_lateness:
+    if not override.exclude_overtime and not override.waive_lateness and not override.full_day_justified and not override.justified_minutes:
         db.delete(override)
     db.commit()
     params = [f"date_from={quote_plus(date_from)}", f"date_to={quote_plus(date_to)}"]
@@ -707,8 +741,8 @@ def attendance_control_pdf(
     ]
     totals = data["totals"]
     summary = Table(
-        [["Empleados", "Dias", "Completas", "Pendientes", "Sin marcadas", "Horas extra"], [str(totals["employees"]), str(data["range_days"]), str(totals["present"]), str(totals["pending"]), str(totals["absent"]), data["total_overtime_label"]]],
-        colWidths=[52 * mm] * 6,
+        [["Empleados", "Dias", "Completas", "Pendientes", "Justificadas", "Sin marcadas", "Horas extra"], [str(totals["employees"]), str(data["range_days"]), str(totals["present"]), str(totals["pending"]), str(totals["justified"]), str(totals["absent"]), data["total_overtime_label"]]],
+        colWidths=[44 * mm] * 7,
     )
     summary.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#172554")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"), ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#94a3b8")), ("FONTSIZE", (0, 0), (-1, -1), 7), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
     story.extend([summary, Spacer(1, 4 * mm)])
