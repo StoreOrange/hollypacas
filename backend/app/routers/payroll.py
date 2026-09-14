@@ -245,6 +245,18 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
             "net": sum((_money(row.net_pay) for row in calculations), Decimal("0")),
             "projected_base": sum((_money(row.monthly_salary) / 2 for row in calculations), Decimal("0")),
         }
+    kardex_employee_id = request.query_params.get("kardex_employee_id", "")
+    kardex_calculation = None
+    if calculations:
+        if kardex_employee_id.isdigit():
+            kardex_calculation = next(
+                (row for row in calculations if row.employee_id == int(kardex_employee_id)),
+                None,
+            )
+        kardex_calculation = kardex_calculation or calculations[0]
+    kardex_rows, kardex_totals = _build_employee_kardex(
+        db, selected_period, kardex_calculation
+    ) if selected_period and kardex_calculation else ([], None)
     return request.app.state.templates.TemplateResponse(
         "payroll.html",
         {
@@ -264,6 +276,9 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
             "selected_period": selected_period,
             "calculations": calculations,
             "period_summary": period_summary,
+            "kardex_calculation": kardex_calculation,
+            "kardex_rows": kardex_rows,
+            "kardex_totals": kardex_totals,
             "eligible_profiles_count": eligible_profiles_count,
             "employees_without_profile": employees_without_profile,
             "auto_refresh_error": auto_refresh_error,
@@ -730,7 +745,7 @@ def delete_holiday(holiday_id: int, request: Request, db: Session = Depends(get_
     )
 
 
-def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy: AttendancePolicySetting, holidays: dict):
+def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy: AttendancePolicySetting, holidays: dict, include_details: bool = False):
     start = datetime.combine(period.date_from, time.min)
     end = datetime.combine(period.date_to + timedelta(days=1), time.min)
     punches = db.query(AttendancePunch).filter(AttendancePunch.employee_id == employee_id, AttendancePunch.occurred_at >= start, AttendancePunch.occurred_at < end).order_by(AttendancePunch.occurred_at).all()
@@ -748,36 +763,152 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
     overtime_minutes = 0
     holiday_minutes = 0
     late_minutes = 0
+    details = []
     for day, marks in by_date.items():
         day_override = day_overrides.get(day)
         entry = marks[0]
+        day_late_minutes = 0
+        day_overtime_minutes = 0
+        day_holiday_minutes = 0
         if day.weekday() <= 5 and not (day_override and (day_override.waive_lateness or day_override.full_day_justified)):
             expected_entry = datetime.combine(day, policy.weekday_start)
             entry_delay = max(0, int((entry - expected_entry).total_seconds() // 60))
             if entry_delay > int(policy.entry_grace_minutes or 0):
                 justified_minutes = int(day_override.justified_minutes or 0) if day_override else 0
-                late_minutes += max(0, entry_delay - justified_minutes)
+                day_late_minutes = max(0, entry_delay - justified_minutes)
+                late_minutes += day_late_minutes
         if len(marks) < 2:
+            details.append({"date": day, "entry": entry, "exit": None, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "holiday_minutes": 0, "override": day_override})
             continue
         exit_at = marks[-1]
         gross = max(0, int((exit_at - entry).total_seconds() // 60))
         worked = max(0, gross - (policy.break_minutes if gross >= policy.break_after_minutes else 0))
         if day in holidays and holidays[day].worked_as_overtime:
-            holiday_minutes += worked
+            day_holiday_minutes = worked
+            holiday_minutes += day_holiday_minutes
         elif day.weekday() == 6 and policy.sunday_all_day_overtime:
             if not (day_override and day_override.exclude_overtime):
-                overtime_minutes += worked
+                day_overtime_minutes = worked
+                overtime_minutes += day_overtime_minutes
         elif day.weekday() == 5:
             cutoff = datetime.combine(day, policy.saturday_overtime_start)
             candidate = max(0, int((exit_at - max(entry, cutoff)).total_seconds() // 60))
             if candidate > int(policy.overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
-                overtime_minutes += candidate
+                day_overtime_minutes = candidate
+                overtime_minutes += day_overtime_minutes
         else:
             cutoff = datetime.combine(day, policy.weekday_overtime_start)
             candidate = max(0, int((exit_at - max(entry, cutoff)).total_seconds() // 60))
             if candidate > int(policy.overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
-                overtime_minutes += candidate
-    return len(by_date), overtime_minutes, holiday_minutes, late_minutes
+                day_overtime_minutes = candidate
+                overtime_minutes += day_overtime_minutes
+        details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "holiday_minutes": day_holiday_minutes, "override": day_override})
+    result = (len(by_date), overtime_minutes, holiday_minutes, late_minutes)
+    return (*result, details) if include_details else result
+
+
+def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: PayrollCalculation):
+    """Construye un mayor legible y conciliado con el neto de la planilla."""
+    policy = db.query(AttendancePolicySetting).first()
+    if not policy:
+        return [], None
+    holidays = {
+        row.holiday_date: row
+        for row in db.query(PayrollHoliday).filter(
+            PayrollHoliday.holiday_date >= period.date_from,
+            PayrollHoliday.holiday_date <= period.date_to,
+            or_(PayrollHoliday.period_id.is_(None), PayrollHoliday.period_id == period.id),
+            PayrollHoliday.paid.is_(True),
+        ).all()
+    }
+    profile = db.query(PayrollEmployeeProfile).filter(
+        PayrollEmployeeProfile.employee_id == calculation.employee_id
+    ).first()
+    salary = _money(calculation.monthly_salary)
+    hourly = salary / Decimal("240")
+    _days, _extra, _holiday, _late, attendance_details = _employee_time(
+        db, calculation.employee_id, period, policy, holidays, include_details=True
+    )
+    attendance_by_date = {row["date"]: row for row in attendance_details}
+    cutoff = min(date.today(), period.date_to)
+    start = period.date_from
+    if profile:
+        employee_start = profile.contract_start or profile.employee.hire_date
+        if employee_start:
+            start = max(start, employee_start)
+
+    rows = [{
+        "date": start,
+        "order": 0,
+        "type": "BASE",
+        "concept": "Salario base acumulado",
+        "detail": f"{calculation.days_worked} día(s) reconocidos en el período",
+        "entry": None,
+        "exit": None,
+        "credit": _money(calculation.base_pay),
+        "debit": Decimal("0"),
+    }]
+    current = start
+    computed_overtime = Decimal("0")
+    while current <= cutoff:
+        detail = attendance_by_date.get(current)
+        overtime_minutes = int(detail["overtime_minutes"] or 0) if detail else 0
+        late_minutes = int(detail["late_minutes"] or 0) if detail else 0
+        overtime_value = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
+        late_value = _money((Decimal(late_minutes) / 60) * hourly)
+        holiday = holidays.get(current)
+        holiday_value = _money(salary / Decimal("30")) if holiday else Decimal("0")
+        computed_overtime += overtime_value
+        notes = []
+        if detail and detail["exit"] is None:
+            notes.append("Salida pendiente")
+        elif not detail:
+            notes.append("Sin marcadas")
+        if overtime_minutes:
+            notes.append(f"{overtime_minutes} min extra")
+        if late_minutes:
+            notes.append(f"{late_minutes} min tarde")
+        if holiday:
+            notes.append(f"Feriado: {holiday.name}")
+        rows.append({
+            "date": current,
+            "order": 1,
+            "type": "FERIADO" if holiday else "ASISTENCIA",
+            "concept": "Jornada y marcadas",
+            "detail": " · ".join(notes) or "Jornada sin incidencias",
+            "entry": detail["entry"] if detail else None,
+            "exit": detail["exit"] if detail else None,
+            "credit": _money(overtime_value + holiday_value),
+            "debit": late_value,
+        })
+        current += timedelta(days=1)
+
+    overtime_difference = _money(_money(calculation.overtime_pay) - computed_overtime)
+    if overtime_difference:
+        rows.append({"date": cutoff, "order": 2, "type": "AJUSTE", "concept": "Corrección consolidada de horas extra", "detail": "Ajuste manual aplicado al período", "entry": None, "exit": None, "credit": max(Decimal("0"), overtime_difference), "debit": max(Decimal("0"), -overtime_difference)})
+
+    adjustments = db.query(PayrollAdjustment).filter(
+        PayrollAdjustment.period_id == period.id,
+        PayrollAdjustment.employee_id == calculation.employee_id,
+        PayrollAdjustment.active.is_(True),
+        PayrollAdjustment.adjustment_type.in_(["ADDITION", "DEDUCTION"]),
+    ).order_by(PayrollAdjustment.created_at, PayrollAdjustment.id).all()
+    for adjustment in adjustments:
+        is_addition = adjustment.adjustment_type == "ADDITION"
+        rows.append({"date": adjustment.created_at.date(), "order": 3, "type": "ADICIÓN" if is_addition else "DEDUCCIÓN", "concept": adjustment.description, "detail": "Movimiento manual de planilla", "entry": None, "exit": None, "credit": _money(adjustment.amount) if is_addition else Decimal("0"), "debit": _money(adjustment.amount) if not is_addition else Decimal("0")})
+
+    for line in calculation.deduction_lines:
+        debt = line.employee_deduction
+        rows.append({"date": period.pay_date, "order": 4, "type": "DEDUCCIÓN", "concept": debt.deduction_type.name if debt and debt.deduction_type else "Deducción planificada", "detail": f"{debt.description} · cuota {line.installment_number}" if debt else f"Cuota {line.installment_number}", "entry": None, "exit": None, "credit": Decimal("0"), "debit": _money(line.amount)})
+
+    rows.sort(key=lambda row: (row["date"], row["order"]))
+    balance = Decimal("0")
+    for row in rows:
+        balance = _money(balance + row["credit"] - row["debit"])
+        row["balance"] = balance
+    credits = _money(sum((row["credit"] for row in rows), Decimal("0")))
+    debits = _money(sum((row["debit"] for row in rows), Decimal("0")))
+    return rows, {"credits": credits, "debits": debits, "balance": _money(credits - debits), "expected": _money(calculation.net_pay), "difference": _money(credits - debits - _money(calculation.net_pay))}
 
 
 def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, Optional[str]]:

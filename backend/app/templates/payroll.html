@@ -118,6 +118,21 @@
   }
   .debt-money-item strong { font-size: .82rem; }
   .debt-grid .debt-action { white-space: nowrap; text-align: right; }
+  .employee-ledger {
+    min-width: 980px;
+    font-size: .82rem;
+  }
+  .employee-ledger > :not(caption) > * > * { padding: .52rem .48rem; }
+  .employee-ledger thead th {
+    background: var(--bs-tertiary-bg);
+    color: var(--bs-secondary-color);
+    font-size: .69rem;
+    letter-spacing: .035em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .employee-ledger .ledger-concept { min-width: 220px; white-space: normal; }
+  .employee-ledger .ledger-money { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -140,6 +155,7 @@
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#profiles">Perfiles de empleados</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deductions">Prestamos y deducciones</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#holidays">Feriados</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#kardex"><i class="bi bi-journal-text me-1"></i>Kardex del empleado</button></li>
     </ul>
     <div class="tab-content">
       <section class="tab-pane fade show active" id="periods">
@@ -203,6 +219,26 @@
       </div></section>
 
       <section class="tab-pane fade" id="holidays"><div class="row g-3"><div class="col-lg-5"><div class="card shadow-sm"><div class="card-body"><h2 class="h6">Registrar día feriado</h2><div class="alert alert-info small py-2"><i class="bi bi-info-circle me-1"></i>Cada feriado pagado agrega automáticamente un día de salario al ingreso de todos los empleados activos del período.</div><form method="post" action="/payroll/holidays" class="row g-2"><div class="col-12"><label class="form-label">Fecha</label><input class="form-control" type="date" name="holiday_date" required></div><div class="col-12"><label class="form-label">Descripción</label><input class="form-control" name="name" required></div><div class="col-12"><label class="form-label">Período donde se pagará</label><select class="form-select" name="period_id"><option value="">Aplicar por fecha</option>{% for p in periods %}<option value="{{ p.id }}">{{ p.code }}</option>{% endfor %}</select></div><div class="col-12"><button class="btn btn-primary w-100">Guardar feriado</button></div></form></div></div></div><div class="col-lg-7"><div class="card shadow-sm"><div class="card-body"><h2 class="h6">Feriados registrados</h2><div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Fecha</th><th>Descripción</th><th>Período</th><th>Ingreso automático</th><th class="text-end">Acción</th></tr></thead><tbody>{% for h in holidays %}<tr><td>{{ h.holiday_date.strftime('%d/%m/%Y') }}</td><td>{{ h.name }}</td><td>{{ h.period.code if h.period else 'Por fecha' }}</td><td><span class="badge text-bg-success">1 día adicional</span></td><td class="text-end">{% if not h.period or h.period.status != 'CLOSED' %}<form method="post" action="/payroll/holidays/{{ h.id }}/delete" onsubmit="return confirm('¿Eliminar este feriado? Se retirará el ingreso de todos los empleados de la planilla abierta.')"><button class="btn btn-outline-danger btn-sm" type="submit" title="Eliminar feriado"><i class="bi bi-trash3 me-1"></i>Eliminar</button></form>{% else %}<span class="badge text-bg-secondary"><i class="bi bi-lock me-1"></i>Planilla cerrada</span>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="text-muted">No hay feriados registrados.</td></tr>{% endfor %}</tbody></table></div></div></div></div></div></section>
+
+      <section class="tab-pane fade" id="kardex">
+        <div class="card shadow-sm mb-3"><div class="card-body">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3"><div><h2 class="h5 mb-1"><i class="bi bi-journal-check text-primary me-2"></i>Kardex de movimientos del empleado</h2><p class="small text-muted mb-0">Historial conciliado de marcadas, ingresos, feriados, horas extra y deducciones.</p></div>{% if selected_period %}<span class="badge {% if selected_period.status == 'CLOSED' %}text-bg-secondary{% else %}text-bg-success{% endif %}">{{ selected_period.code }} · {{ 'Cerrada' if selected_period.status == 'CLOSED' else 'Abierta' }}</span>{% endif %}</div>
+          <form method="get" action="/payroll#kardex" class="row g-2 align-items-end">
+            <div class="col-lg-5"><label class="form-label fw-semibold">Período de planilla</label><select class="form-select" name="period_id" required>{% for p in periods %}<option value="{{ p.id }}" {% if selected_period and p.id == selected_period.id %}selected{% endif %}>{{ p.code }} · {{ p.branch.name if p.branch else 'Sin sucursal' }} · {{ p.date_from.strftime('%d/%m/%Y') }}–{{ p.date_to.strftime('%d/%m/%Y') }}</option>{% endfor %}</select></div>
+            <div class="col-lg-5"><label class="form-label fw-semibold">Empleado</label><select class="form-select" name="kardex_employee_id" required>{% for row in calculations %}<option value="{{ row.employee_id }}" {% if kardex_calculation and row.employee_id == kardex_calculation.employee_id %}selected{% endif %}>{{ row.employee.full_name }} · {{ row.employee.employee_code }}</option>{% endfor %}</select></div>
+            <div class="col-lg-2"><button class="btn btn-primary w-100"><i class="bi bi-search me-1"></i>Consultar</button></div>
+          </form>
+        </div></div>
+        {% if kardex_calculation and kardex_totals %}
+        <div class="row g-3 mb-3">
+          <div class="col-md-6 col-xl-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="small text-muted">Empleado</div><strong>{{ kardex_calculation.employee.full_name }}</strong><div class="small text-muted">{{ kardex_calculation.employee.employee_code }} · {{ kardex_calculation.employee.area.name if kardex_calculation.employee.area else 'Sin área' }}</div></div></div></div>
+          <div class="col-6 col-xl-3"><div class="card border-success-subtle bg-success-subtle h-100"><div class="card-body"><div class="small text-muted">Total ingresos</div><strong class="fs-5 text-success">C$ {{ '%.2f'|format(kardex_totals.credits) }}</strong></div></div></div>
+          <div class="col-6 col-xl-3"><div class="card border-danger-subtle bg-danger-subtle h-100"><div class="card-body"><div class="small text-muted">Total deducciones</div><strong class="fs-5 text-danger">C$ {{ '%.2f'|format(kardex_totals.debits) }}</strong></div></div></div>
+          <div class="col-md-6 col-xl-3"><div class="card bg-dark text-white h-100"><div class="card-body"><div class="small text-white-50">Neto del kardex</div><strong class="fs-5">C$ {{ '%.2f'|format(kardex_totals.balance) }}</strong><div class="small {% if kardex_totals.difference %}text-warning{% else %}text-success{% endif %}">{% if kardex_totals.difference %}Diferencia con planilla: C$ {{ '%.2f'|format(kardex_totals.difference) }}{% else %}<i class="bi bi-check-circle me-1"></i>Conciliado con planilla{% endif %}</div></div></div></div>
+        </div>
+        <div class="card shadow-sm overflow-hidden"><div class="table-responsive"><table class="table table-hover align-middle mb-0 employee-ledger"><thead><tr><th>Fecha</th><th>Movimiento</th><th>Detalle</th><th>Entrada</th><th>Salida</th><th class="text-end">Ingreso</th><th class="text-end">Deducción</th><th class="text-end">Saldo</th></tr></thead><tbody>{% for movement in kardex_rows %}<tr><td class="text-nowrap fw-semibold">{{ movement.date.strftime('%d/%m/%Y') }}</td><td><span class="badge {% if movement.credit %}text-bg-success{% elif movement.debit %}text-bg-danger{% else %}text-bg-light border text-secondary{% endif %}">{{ movement.type }}</span></td><td class="ledger-concept"><strong>{{ movement.concept }}</strong><div class="small text-muted">{{ movement.detail }}</div></td><td class="text-nowrap">{{ movement.entry.strftime('%I:%M:%S %p') if movement.entry else '—' }}</td><td class="text-nowrap">{{ movement.exit.strftime('%I:%M:%S %p') if movement.exit else '—' }}</td><td class="ledger-money text-success">{% if movement.credit %}+ C$ {{ '%.2f'|format(movement.credit) }}{% else %}—{% endif %}</td><td class="ledger-money text-danger">{% if movement.debit %}− C$ {{ '%.2f'|format(movement.debit) }}{% else %}—{% endif %}</td><td class="ledger-money fw-bold">C$ {{ '%.2f'|format(movement.balance) }}</td></tr>{% else %}<tr><td colspan="8" class="text-center text-muted py-5">No existen movimientos para este empleado y período.</td></tr>{% endfor %}</tbody><tfoot class="table-light"><tr><th colspan="5">TOTALES DEL PERÍODO</th><th class="ledger-money text-success">C$ {{ '%.2f'|format(kardex_totals.credits) }}</th><th class="ledger-money text-danger">C$ {{ '%.2f'|format(kardex_totals.debits) }}</th><th class="ledger-money">C$ {{ '%.2f'|format(kardex_totals.balance) }}</th></tr></tfoot></table></div></div>
+        {% else %}<div class="card shadow-sm"><div class="card-body text-center text-muted py-5"><i class="bi bi-person-exclamation fs-2 d-block mb-2"></i>Seleccione un período con empleados calculados.</div></div>{% endif %}
+      </section>
     </div>
   </div></main>
 </div>
