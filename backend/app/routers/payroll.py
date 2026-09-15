@@ -770,7 +770,7 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
         day_late_minutes = 0
         day_overtime_minutes = 0
         day_holiday_minutes = 0
-        if day.weekday() <= 5 and not (day_override and (day_override.waive_lateness or day_override.full_day_justified)):
+        if day.weekday() <= 5 and day not in holidays and not (day_override and (day_override.waive_lateness or day_override.full_day_justified)):
             expected_entry = datetime.combine(day, policy.weekday_start)
             entry_delay = max(0, int((entry - expected_entry).total_seconds() // 60))
             if entry_delay > int(policy.entry_grace_minutes or 0):
@@ -857,7 +857,11 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         overtime_value = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
         late_value = _money((Decimal(late_minutes) / 60) * hourly)
         holiday = holidays.get(current)
-        holiday_value = _money(salary / Decimal("30")) if holiday else Decimal("0")
+        holiday_minutes = int(detail["holiday_minutes"] or 0) if detail else 0
+        # El salario base contiene la tarifa ordinaria del día. Solamente una
+        # jornada feriada efectivamente marcada recibe el suplemento ordinario
+        # que completa el pago doble.
+        holiday_value = _money((Decimal(holiday_minutes) / 60) * hourly)
         computed_overtime += overtime_value
         notes = []
         if detail and detail["exit"] is None:
@@ -869,7 +873,11 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         if late_minutes:
             notes.append(f"{late_minutes} min tarde")
         if holiday:
-            notes.append(f"Feriado: {holiday.name}")
+            notes.append(
+                f"Feriado trabajado: {holiday.name}"
+                if holiday_minutes
+                else f"Feriado sin trabajo marcado: {holiday.name} (sin suplemento)"
+            )
         rows.append({
             "date": current,
             "order": 1,
@@ -940,20 +948,16 @@ def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, 
     for profile in profiles:
         salary = _money(profile.monthly_salary)
         hourly = salary / Decimal("240")
-        _attendance_days, overtime_minutes, _holiday_minutes, late_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
+        _attendance_days, overtime_minutes, holiday_minutes, late_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
         overtime_pay = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
         cutoff = min(date.today(), period.date_to)
         employment_start = period.date_from
         employee_start = profile.contract_start or profile.employee.hire_date
         if employee_start:
             employment_start = max(employment_start, employee_start)
-        paid_holiday_count = sum(
-            1 for holiday_date in holidays
-            if employment_start <= holiday_date <= cutoff
-        )
-        # Política de planilla solicitada: cada feriado pagado agrega un día de
-        # salario al ingreso de todos los empleados activos del período.
-        holiday_pay = _money((salary / Decimal("30")) * paid_holiday_count)
+        # El día ordinario ya forma parte del salario base. El suplemento se
+        # genera únicamente con entrada y salida válidas en el feriado.
+        holiday_pay = _money((Decimal(holiday_minutes) / 60) * hourly)
         late_deduction = _money((Decimal(late_minutes) / 60) * hourly)
         calc = db.query(PayrollCalculation).filter(PayrollCalculation.period_id == period.id, PayrollCalculation.employee_id == profile.employee_id).first()
         if not calc:
@@ -1310,6 +1314,105 @@ def payroll_period_html(period_id: int, request: Request, db: Session = Depends(
             "format_money": _format_money,
         },
     )
+
+
+@router.get("/payroll/periods/{period_id}/employees/{employee_id}/kardex.pdf")
+def payroll_employee_kardex_pdf(period_id: int, employee_id: int, request: Request, db: Session = Depends(get_db)):
+    _browser_admin(request, db)
+    period = db.query(PayrollPeriod).filter(PayrollPeriod.id == period_id).first()
+    calculation = db.query(PayrollCalculation).filter(
+        PayrollCalculation.period_id == period_id,
+        PayrollCalculation.employee_id == employee_id,
+    ).first()
+    if not period or not calculation:
+        raise HTTPException(404, "Kardex de planilla no encontrado")
+    movements, totals = _build_employee_kardex(db, period, calculation)
+    if totals is None:
+        raise HTTPException(400, "No se puede generar el kardex sin política de marcadas")
+
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from xml.sax.saxutils import escape
+
+    buffer = BytesIO()
+    page_size = landscape(A4)
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=page_size,
+        leftMargin=10 * mm,
+        rightMargin=10 * mm,
+        topMargin=14 * mm,
+        bottomMargin=14 * mm,
+        title=f"Kardex {calculation.employee.full_name} - {period.code}",
+        author="Hollywood Pacas",
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("KardexTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=16, leading=19, textColor=colors.HexColor("#123B72"), alignment=TA_LEFT, spaceAfter=2)
+    subtitle_style = ParagraphStyle("KardexSubtitle", parent=styles["Normal"], fontSize=8.5, leading=11, textColor=colors.HexColor("#5B6472"))
+    cell_style = ParagraphStyle("KardexCell", parent=styles["Normal"], fontSize=7, leading=9, textColor=colors.HexColor("#172033"))
+    detail_style = ParagraphStyle("KardexDetail", parent=cell_style, fontSize=6.5, leading=8, textColor=colors.HexColor("#626B79"))
+    money_style = ParagraphStyle("KardexMoney", parent=cell_style, alignment=TA_RIGHT, fontName="Helvetica-Bold")
+    header_style = ParagraphStyle("KardexHeader", parent=cell_style, alignment=TA_CENTER, fontName="Helvetica-Bold", textColor=colors.white, fontSize=6.5)
+
+    employee = calculation.employee
+    branch_name = employee.branch.name if employee.branch else (period.branch.name if period.branch else "Sin sucursal")
+    area_name = employee.area.name if employee.area else "Sin área"
+    story = [
+        Paragraph("HOLLYWOOD PACAS", title_style),
+        Paragraph("Kardex individual de planilla y control de marcadas", subtitle_style),
+        Spacer(1, 4 * mm),
+    ]
+    identity = Table([
+        [Paragraph("<b>Empleado</b><br/>" + escape(employee.full_name), cell_style), Paragraph("<b>Código</b><br/>" + escape(employee.employee_code), cell_style), Paragraph("<b>Sucursal / área</b><br/>" + escape(f"{branch_name} · {area_name}"), cell_style), Paragraph("<b>Período</b><br/>" + escape(f"{period.date_from:%d/%m/%Y} al {period.date_to:%d/%m/%Y}"), cell_style)],
+    ], colWidths=[82 * mm, 38 * mm, 70 * mm, 67 * mm])
+    identity.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F3F6FA")), ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#CFD7E3")), ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#DCE2EA")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    story.extend([identity, Spacer(1, 3 * mm)])
+
+    summary = Table([
+        [Paragraph("TOTAL INGRESOS", header_style), Paragraph("TOTAL DEDUCCIONES", header_style), Paragraph("NETO DEL KARDEX", header_style), Paragraph("NETO EN PLANILLA", header_style)],
+        [Paragraph(f"C$ {_format_money(totals['credits'])}", money_style), Paragraph(f"C$ {_format_money(totals['debits'])}", money_style), Paragraph(f"C$ {_format_money(totals['balance'])}", money_style), Paragraph(f"C$ {_format_money(totals['expected'])}", money_style)],
+    ], colWidths=[64.25 * mm] * 4)
+    summary.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#123B72")), ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#F8FAFC")), ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#CBD5E1")), ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#DCE2EA")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+    story.extend([KeepTogether(summary), Spacer(1, 4 * mm)])
+
+    table_data = [[Paragraph(label, header_style) for label in ("Fecha", "Tipo", "Movimiento / detalle", "Entrada", "Salida", "Ingreso", "Deducción", "Saldo")]]
+    for movement in movements:
+        entry_label = movement["entry"].strftime("%I:%M:%S %p") if movement["entry"] else "—"
+        exit_label = movement["exit"].strftime("%I:%M:%S %p") if movement["exit"] else "—"
+        concept = f"<b>{escape(str(movement['concept']))}</b><br/><font color='#626B79'>{escape(str(movement['detail']))}</font>"
+        table_data.append([
+            Paragraph(movement["date"].strftime("%d/%m/%Y"), cell_style),
+            Paragraph(escape(str(movement["type"])), cell_style),
+            Paragraph(concept, detail_style),
+            Paragraph(entry_label, cell_style),
+            Paragraph(exit_label, cell_style),
+            Paragraph(f"+ C$ {_format_money(movement['credit'])}" if movement["credit"] else "—", money_style),
+            Paragraph(f"- C$ {_format_money(movement['debit'])}" if movement["debit"] else "—", money_style),
+            Paragraph(f"C$ {_format_money(movement['balance'])}", money_style),
+        ])
+    table_data.append([Paragraph("TOTALES", header_style), "", "", "", "", Paragraph(f"C$ {_format_money(totals['credits'])}", money_style), Paragraph(f"C$ {_format_money(totals['debits'])}", money_style), Paragraph(f"C$ {_format_money(totals['balance'])}", money_style)])
+    movement_table = Table(table_data, repeatRows=1, colWidths=[18 * mm, 22 * mm, 82 * mm, 24 * mm, 24 * mm, 29 * mm, 29 * mm, 29 * mm])
+    movement_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#123B72")), ("GRID", (0, 0), (-1, -2), .3, colors.HexColor("#D8DEE8")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4), ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#F8FAFC")]), ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#E8EEF7")), ("SPAN", (0, -1), (4, -1)), ("ALIGN", (0, -1), (0, -1), "RIGHT"), ("LINEABOVE", (0, -1), (-1, -1), 1, colors.HexColor("#123B72"))]))
+    story.append(movement_table)
+
+    def page_footer(canvas, document):
+        canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor("#D8DEE8"))
+        canvas.line(10 * mm, 10 * mm, page_size[0] - 10 * mm, 10 * mm)
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(colors.HexColor("#6B7280"))
+        canvas.drawString(10 * mm, 6.5 * mm, f"Generado: {datetime.now():%d/%m/%Y %I:%M %p}")
+        canvas.drawRightString(page_size[0] - 10 * mm, 6.5 * mm, f"Página {document.page}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
+    buffer.seek(0)
+    safe_code = "".join(character if character.isalnum() or character in "-_" else "_" for character in employee.employee_code)
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="kardex_{safe_code}_{period.code}.pdf"'})
 
 
 @router.get("/payroll/periods/{period_id}/report.pdf")

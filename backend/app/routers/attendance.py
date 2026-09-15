@@ -37,6 +37,7 @@ from ..models.attendance import (
     HRPosition,
 )
 from ..models.user import Branch, User
+from ..models.payroll import PayrollHoliday
 
 router = APIRouter(prefix="/api/attendance", tags=["Attendance synchronization"])
 web_router = APIRouter(tags=["Attendance"])
@@ -460,6 +461,14 @@ def attendance_control_page(
 
     punches_by_employee_date = {}
     overrides_by_employee_date = {}
+    holidays_by_date = {
+        row.holiday_date: row
+        for row in db.query(PayrollHoliday).filter(
+            PayrollHoliday.holiday_date >= selected_date_from,
+            PayrollHoliday.holiday_date <= selected_date_to,
+            PayrollHoliday.paid.is_(True),
+        ).all()
+    }
     if employee_ids:
         punches = (
             db.query(AttendancePunch)
@@ -499,13 +508,16 @@ def attendance_control_page(
             regular_minutes = 0
             overtime_detail = "Sin salida para calcular"
             weekday = report_date.weekday()
-            if weekday == 6 and policy.sunday_all_day_overtime:
+            holiday = holidays_by_date.get(report_date)
+            if holiday:
+                overtime_rule = f"Feriado: {holiday.name}"
+            elif weekday == 6 and policy.sunday_all_day_overtime:
                 overtime_rule = "Domingo: toda la jornada"
             elif weekday == 5:
                 overtime_rule = f"Sabado despues de {policy.saturday_overtime_start.strftime('%I:%M %p')}"
             else:
                 overtime_rule = f"Lun-Vie despues de {policy.weekday_overtime_start.strftime('%I:%M %p')}"
-            if entry and weekday <= 5:
+            if entry and weekday <= 5 and not holiday:
                 expected_entry = datetime.combine(report_date, policy.weekday_start)
                 entry_delay = max(0, int((entry - expected_entry).total_seconds() // 60))
                 if entry_delay > int(policy.entry_grace_minutes or 0) and not (day_override and (day_override.waive_lateness or day_override.full_day_justified)):
@@ -515,7 +527,13 @@ def attendance_control_page(
                 gross_minutes = max(0, int((exit_at - entry).total_seconds() // 60))
                 applied_break = break_minutes if gross_minutes >= break_after_minutes else 0
                 worked_minutes = max(0, gross_minutes - applied_break)
-                if weekday == 6 and policy.sunday_all_day_overtime:
+                if holiday:
+                    overtime_minutes = 0 if day_override and day_override.exclude_overtime else worked_minutes
+                    overtime_detail = (
+                        f"{entry.strftime('%I:%M %p')} - {exit_at.strftime('%I:%M %p')} "
+                        "(jornada feriada; suplemento para completar pago doble)"
+                    )
+                elif weekday == 6 and policy.sunday_all_day_overtime:
                     overtime_minutes = 0 if day_override and day_override.exclude_overtime else worked_minutes
                     overtime_detail = f"{entry.strftime('%I:%M %p')} - {exit_at.strftime('%I:%M %p')} (jornada dominical)"
                 elif weekday == 5:
@@ -587,6 +605,7 @@ def attendance_control_page(
                     "overtime_detail": overtime_detail,
                     "status_label": status_label,
                     "status_class": status_class,
+                    "holiday": holiday,
                 }
             )
 
