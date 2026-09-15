@@ -28,7 +28,7 @@ from ..models.payroll import (
     PayrollPeriod,
     PayrollSettlement,
 )
-from .attendance import _browser_admin, _unique_catalog_code
+from .attendance import _attendance_day_bounds, _browser_admin, _unique_catalog_code
 
 router = APIRouter(tags=["Payroll"])
 MONEY = Decimal("0.01")
@@ -751,7 +751,7 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
     punches = db.query(AttendancePunch).filter(AttendancePunch.employee_id == employee_id, AttendancePunch.occurred_at >= start, AttendancePunch.occurred_at < end).order_by(AttendancePunch.occurred_at).all()
     by_date = {}
     for punch in punches:
-        by_date.setdefault(punch.occurred_at.date(), []).append(punch.occurred_at)
+        by_date.setdefault(punch.occurred_at.date(), []).append(punch)
     day_overrides = {
         row.work_date: row
         for row in db.query(AttendanceDayOverride).filter(
@@ -766,21 +766,20 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
     details = []
     for day, marks in by_date.items():
         day_override = day_overrides.get(day)
-        entry = marks[0]
+        entry, exit_at = _attendance_day_bounds(marks)
         day_late_minutes = 0
         day_overtime_minutes = 0
         day_holiday_minutes = 0
-        if day.weekday() <= 5 and day not in holidays and not (day_override and (day_override.waive_lateness or day_override.full_day_justified)):
+        if entry and day.weekday() <= 5 and day not in holidays and not (day_override and (day_override.waive_lateness or day_override.full_day_justified)):
             expected_entry = datetime.combine(day, policy.weekday_start)
             entry_delay = max(0, int((entry - expected_entry).total_seconds() // 60))
             if entry_delay > int(policy.entry_grace_minutes or 0):
                 justified_minutes = int(day_override.justified_minutes or 0) if day_override else 0
                 day_late_minutes = max(0, entry_delay - justified_minutes)
                 late_minutes += day_late_minutes
-        if len(marks) < 2:
-            details.append({"date": day, "entry": entry, "exit": None, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "holiday_minutes": 0, "override": day_override})
+        if not entry or not exit_at:
+            details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "holiday_minutes": 0, "override": day_override})
             continue
-        exit_at = marks[-1]
         gross = max(0, int((exit_at - entry).total_seconds() // 60))
         worked = max(0, gross - (policy.break_minutes if gross >= policy.break_after_minutes else 0))
         if day in holidays and holidays[day].worked_as_overtime:
@@ -867,7 +866,9 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         holiday_value = _money((Decimal(holiday_minutes) / 60) * hourly)
         computed_overtime += overtime_value
         notes = []
-        if detail and detail["exit"] is None:
+        if detail and not detail["entry"]:
+            notes.append("Entrada pendiente")
+        elif detail and detail["exit"] is None:
             notes.append("Salida pendiente")
         elif not detail:
             notes.append(

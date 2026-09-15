@@ -10,6 +10,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import List, Optional
 from urllib.parse import quote_plus
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Request, WebSocket, status
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -37,7 +38,7 @@ from ..models.attendance import (
     HRPosition,
 )
 from ..models.user import Branch, User
-from ..models.payroll import PayrollHoliday
+from ..models.payroll import PayrollHoliday, PayrollPeriod
 
 router = APIRouter(prefix="/api/attendance", tags=["Attendance synchronization"])
 web_router = APIRouter(tags=["Attendance"])
@@ -395,6 +396,24 @@ def _duration_label(total_minutes: int) -> str:
     return f"{hours:02d}:{minutes:02d}"
 
 
+def _attendance_day_bounds(punches):
+    """Resuelve entrada/salida respetando tipos explícitos de marcas manuales."""
+    ordered = sorted(punches, key=lambda punch: punch.occurred_at)
+    manual_entries = [punch.occurred_at for punch in ordered if punch.work_code == "MANUAL_ENTRY"]
+    manual_exits = [punch.occurred_at for punch in ordered if punch.work_code == "MANUAL_EXIT"]
+    generic = [punch.occurred_at for punch in ordered if punch.work_code not in {"MANUAL_ENTRY", "MANUAL_EXIT"}]
+    entry = min(manual_entries) if manual_entries else (generic[0] if generic else None)
+    if manual_exits:
+        exit_at = max(manual_exits)
+    elif len(generic) >= 2:
+        exit_at = generic[-1]
+    elif manual_entries and generic and generic[-1] > entry:
+        exit_at = generic[-1]
+    else:
+        exit_at = None
+    return entry, exit_at
+
+
 def _unique_catalog_code(db: Session, model, name: str) -> str:
     normalized = (
         unicodedata.normalize("NFKD", name.strip().lower())
@@ -510,8 +529,7 @@ def attendance_control_page(
         for report_date in report_dates:
             employee_punches = punches_by_employee_date.get((employee.id, report_date), [])
             day_override = overrides_by_employee_date.get((employee.id, report_date))
-            entry = employee_punches[0].occurred_at if employee_punches else None
-            exit_at = employee_punches[-1].occurred_at if len(employee_punches) >= 2 else None
+            entry, exit_at = _attendance_day_bounds(employee_punches)
             worked_minutes = 0
             overtime_minutes = 0
             late_minutes = 0
@@ -520,7 +538,7 @@ def attendance_control_page(
             weekday = report_date.weekday()
             day_expected_minutes = saturday_expected_minutes if weekday == 5 else expected_minutes
             holiday = holidays_by_date.get(report_date)
-            is_esteli_auto = is_esteli_employee and not entry and weekday != 6 and report_date <= date.today()
+            is_esteli_auto = is_esteli_employee and not entry and not exit_at and weekday != 6 and report_date <= date.today()
             if holiday:
                 overtime_rule = f"Feriado: {holiday.name}"
             elif is_esteli_auto:
@@ -572,7 +590,7 @@ def attendance_control_page(
                     overtime_detail = "Tiempo extra excluido manualmente para esta jornada"
                 regular_minutes = max(0, worked_minutes - overtime_minutes)
                 totals["present"] += 1
-            elif entry:
+            elif entry or exit_at:
                 totals["pending"] += 1
             else:
                 if is_esteli_auto:
@@ -586,7 +604,9 @@ def attendance_control_page(
                     totals["absent"] += 1
             totals["overtime_minutes"] += overtime_minutes
 
-            if is_esteli_auto:
+            if not entry and exit_at:
+                status_label, status_class = "Entrada pendiente", "warning"
+            elif is_esteli_auto:
                 status_label, status_class = "Jornada completa automática", "success"
             elif not entry and weekday == 6:
                 status_label, status_class = "Domingo / descanso", "info"
@@ -621,7 +641,7 @@ def attendance_control_page(
                         "Estelí · sin reloj"
                         if is_esteli_auto
                         else "Domingo automático"
-                        if not entry and weekday == 6
+                        if not entry and not exit_at and weekday == 6
                         else "Día completo"
                         if day_override and day_override.full_day_justified
                         else _duration_label(day_override.justified_minutes)
@@ -633,7 +653,7 @@ def attendance_control_page(
                     "status_label": status_label,
                     "status_class": status_class,
                     "holiday": holiday,
-                    "is_sunday_rest": not entry and weekday == 6,
+                    "is_sunday_rest": not entry and not exit_at and weekday == 6,
                     "is_esteli_auto": is_esteli_auto,
                 }
             )
@@ -732,6 +752,87 @@ def update_attendance_day_override(
         db.delete(override)
     db.commit()
     params = [f"date_from={quote_plus(date_from)}", f"date_to={quote_plus(date_to)}"]
+    if area_id:
+        params.append(f"area_id={quote_plus(area_id)}")
+    if search:
+        params.append(f"search={quote_plus(search)}")
+    return RedirectResponse(f"/attendance/control?{'&'.join(params)}", status_code=303)
+
+
+@web_router.post("/attendance/control/manual-punch")
+def create_manual_attendance_punch(
+    request: Request,
+    employee_id: int = Form(...),
+    work_date: date = Form(...),
+    punch_type: str = Form(...),
+    punch_time: str = Form(...),
+    reason: str = Form(..., min_length=3),
+    date_from: str = Form(""),
+    date_to: str = Form(""),
+    area_id: str = Form(""),
+    search: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = _browser_admin(request, db)
+    employee = db.query(HREmployee).filter(HREmployee.id == employee_id, HREmployee.status == "ACTIVE").first()
+    if not employee:
+        raise HTTPException(404, "Empleado activo no encontrado")
+    normalized_type = punch_type.strip().upper()
+    if normalized_type not in {"ENTRY", "EXIT"}:
+        raise HTTPException(400, "Seleccione si la marcada corresponde a entrada o salida")
+    try:
+        occurred_at = datetime.combine(work_date, time.fromisoformat(punch_time))
+    except ValueError as exc:
+        raise HTTPException(400, "Hora manual no válida") from exc
+    if occurred_at > datetime.now():
+        raise HTTPException(400, "No se permiten marcadas manuales en el futuro")
+    closed_period = db.query(PayrollPeriod.id).filter(
+        PayrollPeriod.status == "CLOSED",
+        PayrollPeriod.date_from <= work_date,
+        PayrollPeriod.date_to >= work_date,
+        or_(PayrollPeriod.branch_id.is_(None), PayrollPeriod.branch_id == employee.branch_id),
+    ).first()
+    if closed_period:
+        raise HTTPException(409, "La planilla de esta fecha está cerrada y no admite nuevas marcadas")
+    duplicate = db.query(AttendancePunch.id).filter(
+        AttendancePunch.employee_id == employee.id,
+        AttendancePunch.occurred_at == occurred_at,
+    ).first()
+    if duplicate:
+        raise HTTPException(409, "Ya existe una marcada del empleado exactamente a esa hora")
+
+    device_code = f"MANUAL-{employee.branch_id or 0}"
+    device = db.query(AttendanceDevice).filter(AttendanceDevice.code == device_code).first()
+    if not device:
+        branch_name = employee.branch.name if employee.branch else "General"
+        device = AttendanceDevice(code=device_code, name=f"Marcadas manuales · {branch_name}", model="Registro administrativo", branch_id=employee.branch_id, active=True)
+        db.add(device)
+        db.flush()
+    work_code = f"MANUAL_{normalized_type}"
+    punch = AttendancePunch(
+        source_event_key=f"manual:{uuid4().hex}",
+        device_id=device.id,
+        device_user_id=employee.employee_code,
+        employee_id=employee.id,
+        occurred_at=occurred_at,
+        punch_state=0 if normalized_type == "ENTRY" else 1,
+        verify_mode=-1,
+        work_code=work_code,
+        raw_payload=json.dumps({"source": "manual", "type": normalized_type, "reason": reason.strip(), "created_by": user.email}, ensure_ascii=False),
+    )
+    existing_day_punches = db.query(AttendancePunch).filter(
+        AttendancePunch.employee_id == employee.id,
+        AttendancePunch.occurred_at >= datetime.combine(work_date, time.min),
+        AttendancePunch.occurred_at < datetime.combine(work_date + timedelta(days=1), time.min),
+    ).all()
+    resolved_entry, resolved_exit = _attendance_day_bounds([*existing_day_punches, punch])
+    if resolved_entry and resolved_exit and resolved_exit <= resolved_entry:
+        raise HTTPException(400, "La salida debe ser posterior a la entrada registrada")
+    db.add(punch)
+    db.commit()
+    db.refresh(punch)
+    attendance_socket_hub.publish({"type": "attendance.punches", "events": [{"id": punch.id, "occurred_at": punch.occurred_at.isoformat(timespec="seconds"), "date": punch.occurred_at.strftime("%d/%m/%Y"), "time": punch.occurred_at.strftime("%I:%M:%S %p"), "device_user_id": punch.device_user_id, "employee": employee.full_name, "device": device.name, "punch_state": punch.punch_state}]})
+    params = [f"date_from={quote_plus(date_from or work_date.isoformat())}", f"date_to={quote_plus(date_to or work_date.isoformat())}", "ok=Marcada+manual+registrada+y+calculos+actualizados"]
     if area_id:
         params.append(f"area_id={quote_plus(area_id)}")
     if search:
