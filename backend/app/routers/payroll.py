@@ -699,8 +699,11 @@ def create_period(request: Request, branch_id: int = Form(...), date_from: date 
 
 
 @router.post("/payroll/holidays")
-def create_holiday(request: Request, holiday_date: date = Form(...), name: str = Form(...), period_id: str = Form(""), db: Session = Depends(get_db)):
+def create_holiday(request: Request, branch_id: int = Form(...), holiday_date: date = Form(...), name: str = Form(...), period_id: str = Form(""), db: Session = Depends(get_db)):
     _browser_admin(request, db)
+    branch = db.query(Branch).filter(Branch.id == branch_id, Branch.activo.is_(True)).first()
+    if not branch:
+        return RedirectResponse("/payroll?error=Sucursal+no+valida#holidays", status_code=303)
     selected_period_id = int(period_id) if period_id.isdigit() else None
     if selected_period_id:
         selected_period = db.query(PayrollPeriod).filter(PayrollPeriod.id == selected_period_id).first()
@@ -708,14 +711,17 @@ def create_holiday(request: Request, holiday_date: date = Form(...), name: str =
             return RedirectResponse("/payroll?error=El+periodo+seleccionado+no+esta+abierto#holidays", status_code=303)
         if not selected_period.date_from <= holiday_date <= selected_period.date_to:
             return RedirectResponse("/payroll?error=El+feriado+no+pertenece+al+periodo+seleccionado#holidays", status_code=303)
-    db.add(PayrollHoliday(holiday_date=holiday_date, name=name.strip(), period_id=selected_period_id, paid=True, worked_as_overtime=True))
+        if selected_period.branch_id != branch_id:
+            return RedirectResponse("/payroll?error=El+periodo+no+pertenece+a+la+sucursal+seleccionada#holidays", status_code=303)
+    db.add(PayrollHoliday(branch_id=branch_id, holiday_date=holiday_date, name=name.strip(), period_id=selected_period_id, paid=True, worked_as_overtime=True))
     try:
         db.flush()
     except IntegrityError:
         db.rollback()
-        return RedirectResponse("/payroll?error=Feriado+duplicado", status_code=303)
+        return RedirectResponse("/payroll?error=El+feriado+ya+existe+en+esta+sucursal#holidays", status_code=303)
     affected_periods_query = db.query(PayrollPeriod).filter(
         PayrollPeriod.status != "CLOSED",
+        PayrollPeriod.branch_id == branch_id,
         PayrollPeriod.date_from <= holiday_date,
         PayrollPeriod.date_to >= holiday_date,
     )
@@ -747,6 +753,8 @@ def delete_holiday(holiday_id: int, request: Request, db: Session = Depends(get_
             PayrollPeriod.date_from <= holiday.holiday_date,
             PayrollPeriod.date_to >= holiday.holiday_date,
         )
+        if holiday.branch_id:
+            affected_periods_query = affected_periods_query.filter(PayrollPeriod.branch_id == holiday.branch_id)
     affected_periods = affected_periods_query.all()
     if any(period.status == "CLOSED" for period in affected_periods):
         return RedirectResponse(
@@ -869,6 +877,7 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
             PayrollHoliday.holiday_date >= period.date_from,
             PayrollHoliday.holiday_date <= period.date_to,
             or_(PayrollHoliday.period_id.is_(None), PayrollHoliday.period_id == period.id),
+            or_(PayrollHoliday.branch_id.is_(None), PayrollHoliday.branch_id == period.branch_id),
             PayrollHoliday.paid.is_(True),
         ).all()
     }
@@ -1061,6 +1070,7 @@ def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, 
             # Un feriado sin período aplica por fecha. Si fue asignado, solamente
             # puede afectar la planilla elegida por el usuario.
             or_(PayrollHoliday.period_id.is_(None), PayrollHoliday.period_id == period.id),
+            or_(PayrollHoliday.branch_id.is_(None), PayrollHoliday.branch_id == period.branch_id),
             PayrollHoliday.paid.is_(True),
         ).all()
     }

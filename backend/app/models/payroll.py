@@ -72,9 +72,11 @@ class PayrollPeriod(Base):
 
 class PayrollHoliday(Base):
     __tablename__ = "payroll_holidays"
+    __table_args__ = (UniqueConstraint("branch_id", "holiday_date", name="uq_payroll_holiday_branch_date"),)
 
     id = Column(Integer, primary_key=True)
-    holiday_date = Column(Date, unique=True, nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    holiday_date = Column(Date, nullable=False)
     name = Column(String(160), nullable=False)
     period_id = Column(Integer, ForeignKey("payroll_periods.id"), nullable=True)
     paid = Column(Boolean, nullable=False, default=True)
@@ -82,6 +84,7 @@ class PayrollHoliday(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     period = relationship("PayrollPeriod")
+    branch = relationship("Branch")
 
 
 class PayrollEmployeeDeduction(Base):

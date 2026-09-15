@@ -516,8 +516,8 @@ def attendance_control_page(
 
     punches_by_employee_date = {}
     overrides_by_employee_date = {}
-    holidays_by_date = {
-        row.holiday_date: row
+    holidays_by_branch_date = {
+        (row.branch_id, row.holiday_date): row
         for row in db.query(PayrollHoliday).filter(
             PayrollHoliday.holiday_date >= selected_date_from,
             PayrollHoliday.holiday_date <= selected_date_to,
@@ -567,7 +567,7 @@ def attendance_control_page(
             overtime_detail = "Sin salida para calcular"
             weekday = report_date.weekday()
             day_expected_minutes = saturday_expected_minutes if weekday == 5 else expected_minutes
-            holiday = holidays_by_date.get(report_date)
+            holiday = holidays_by_branch_date.get((employee.branch_id, report_date)) or holidays_by_branch_date.get((None, report_date))
             is_esteli_auto = is_esteli_employee and not entry and not exit_at and weekday != 6 and report_date <= date.today()
             if holiday:
                 if weekday == 6 and policy.sunday_all_day_overtime:

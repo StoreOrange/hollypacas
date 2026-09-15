@@ -1683,6 +1683,18 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE attendance_day_overrides ADD COLUMN authorize_early_overtime BOOLEAN NOT NULL DEFAULT FALSE"))
             if "early_overtime_note" not in override_columns:
                 conn.execute(text("ALTER TABLE attendance_day_overrides ADD COLUMN early_overtime_note VARCHAR(240)"))
+        if "payroll_holidays" in table_names:
+            holiday_columns = {col["name"] for col in inspect(engine).get_columns("payroll_holidays")}
+            if "branch_id" not in holiday_columns:
+                conn.execute(text("ALTER TABLE payroll_holidays ADD COLUMN branch_id INTEGER REFERENCES branches(id)"))
+            holiday_constraints = inspect(engine).get_unique_constraints("payroll_holidays")
+            for constraint in holiday_constraints:
+                if constraint.get("column_names") == ["holiday_date"] and constraint.get("name"):
+                    safe_name = constraint["name"].replace('"', '""')
+                    conn.execute(text(f'ALTER TABLE payroll_holidays DROP CONSTRAINT "{safe_name}"'))
+            holiday_constraint_names = {row.get("name") for row in inspect(engine).get_unique_constraints("payroll_holidays")}
+            if "uq_payroll_holiday_branch_date" not in holiday_constraint_names:
+                conn.execute(text("ALTER TABLE payroll_holidays ADD CONSTRAINT uq_payroll_holiday_branch_date UNIQUE (branch_id, holiday_date)"))
         if "payroll_periods" in table_names:
             period_columns = {col["name"] for col in inspect(engine).get_columns("payroll_periods")}
             if "branch_id" not in period_columns:
