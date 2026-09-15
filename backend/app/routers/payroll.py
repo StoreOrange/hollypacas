@@ -867,7 +867,7 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         if detail and detail["exit"] is None:
             notes.append("Salida pendiente")
         elif not detail:
-            notes.append("Sin marcadas")
+            notes.append("Domingo / descanso automático" if current.weekday() == 6 else "Sin marcadas")
         if overtime_minutes:
             notes.append(f"{overtime_minutes} min extra")
         if late_minutes:
@@ -881,7 +881,7 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         rows.append({
             "date": current,
             "order": 1,
-            "type": "FERIADO" if holiday else "ASISTENCIA",
+            "type": "FERIADO" if holiday else "DESCANSO" if not detail and current.weekday() == 6 else "ASISTENCIA",
             "concept": "Jornada y marcadas",
             "detail": " · ".join(notes) or "Jornada sin incidencias",
             "entry": detail["entry"] if detail else None,

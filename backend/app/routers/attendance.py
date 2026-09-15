@@ -561,13 +561,15 @@ def attendance_control_page(
             elif entry:
                 totals["pending"] += 1
             else:
-                if day_override and day_override.full_day_justified:
+                if weekday == 6 or (day_override and day_override.full_day_justified):
                     totals["justified"] += 1
                 else:
                     totals["absent"] += 1
             totals["overtime_minutes"] += overtime_minutes
 
-            if not entry and day_override and day_override.full_day_justified:
+            if not entry and weekday == 6:
+                status_label, status_class = "Domingo / descanso", "info"
+            elif not entry and day_override and day_override.full_day_justified:
                 status_label, status_class = "Ausencia justificada", "success"
             elif not entry:
                 status_label, status_class = "Sin marcadas", "secondary"
@@ -595,7 +597,9 @@ def attendance_control_page(
                     "late_label": _duration_label(late_minutes),
                     "day_override": day_override,
                     "justification_label": (
-                        "Día completo"
+                        "Domingo automático"
+                        if not entry and weekday == 6
+                        else "Día completo"
                         if day_override and day_override.full_day_justified
                         else _duration_label(day_override.justified_minutes)
                         if day_override and day_override.justified_minutes
@@ -606,6 +610,7 @@ def attendance_control_page(
                     "status_label": status_label,
                     "status_class": status_class,
                     "holiday": holiday,
+                    "is_sunday_rest": not entry and weekday == 6,
                 }
             )
 
