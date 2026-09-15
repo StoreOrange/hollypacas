@@ -497,6 +497,8 @@ def attendance_control_page(
     for employee in employees:
         area_name = employee.area.name if employee.area else "Sin area asignada"
         group = groups.setdefault(area_name, {"name": area_name, "rows": []})
+        branch_identity = f"{employee.branch.code} {employee.branch.name}".lower() if employee.branch else ""
+        is_esteli_employee = "estel" in branch_identity
         for report_date in report_dates:
             employee_punches = punches_by_employee_date.get((employee.id, report_date), [])
             day_override = overrides_by_employee_date.get((employee.id, report_date))
@@ -509,8 +511,11 @@ def attendance_control_page(
             overtime_detail = "Sin salida para calcular"
             weekday = report_date.weekday()
             holiday = holidays_by_date.get(report_date)
+            is_esteli_auto = is_esteli_employee and not entry and weekday != 6 and report_date <= date.today()
             if holiday:
                 overtime_rule = f"Feriado: {holiday.name}"
+            elif is_esteli_auto:
+                overtime_rule = "Estelí: jornada automática sin reloj"
             elif weekday == 6 and policy.sunday_all_day_overtime:
                 overtime_rule = "Domingo: toda la jornada"
             elif weekday == 5:
@@ -561,13 +566,20 @@ def attendance_control_page(
             elif entry:
                 totals["pending"] += 1
             else:
-                if weekday == 6 or (day_override and day_override.full_day_justified):
+                if is_esteli_auto:
+                    worked_minutes = expected_minutes
+                    regular_minutes = expected_minutes
+                    overtime_detail = "Jornada completa justificada automáticamente; sucursal sin reloj asignado"
+                    totals["justified"] += 1
+                elif weekday == 6 or (day_override and day_override.full_day_justified):
                     totals["justified"] += 1
                 else:
                     totals["absent"] += 1
             totals["overtime_minutes"] += overtime_minutes
 
-            if not entry and weekday == 6:
+            if is_esteli_auto:
+                status_label, status_class = "Jornada completa automática", "success"
+            elif not entry and weekday == 6:
                 status_label, status_class = "Domingo / descanso", "info"
             elif not entry and day_override and day_override.full_day_justified:
                 status_label, status_class = "Ausencia justificada", "success"
@@ -597,7 +609,9 @@ def attendance_control_page(
                     "late_label": _duration_label(late_minutes),
                     "day_override": day_override,
                     "justification_label": (
-                        "Domingo automático"
+                        "Estelí · sin reloj"
+                        if is_esteli_auto
+                        else "Domingo automático"
                         if not entry and weekday == 6
                         else "Día completo"
                         if day_override and day_override.full_day_justified
@@ -611,6 +625,7 @@ def attendance_control_page(
                     "status_class": status_class,
                     "holiday": holiday,
                     "is_sunday_rest": not entry and weekday == 6,
+                    "is_esteli_auto": is_esteli_auto,
                 }
             )
 
