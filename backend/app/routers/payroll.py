@@ -770,6 +770,8 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
         entry, exit_at = _attendance_day_bounds(marks)
         day_late_minutes = 0
         day_overtime_minutes = 0
+        day_early_overtime_minutes = 0
+        day_late_overtime_minutes = 0
         day_holiday_worked = False
         if entry and day.weekday() <= 5 and day not in holidays and not (day_override and (day_override.waive_lateness or day_override.full_day_justified)):
             expected_entry = datetime.combine(day, policy.weekday_start)
@@ -794,7 +796,7 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
                 "created_by": payload.get("created_by") or "Usuario no identificado",
             })
         if not entry or not exit_at:
-            details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "holiday_worked": False, "override": day_override, "manual_marks": manual_marks})
+            details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "early_overtime_minutes": 0, "late_overtime_minutes": 0, "holiday_worked": False, "override": day_override, "manual_marks": manual_marks})
             continue
         gross = max(0, int((exit_at - entry).total_seconds() // 60))
         worked = max(0, gross - (policy.break_minutes if gross >= policy.break_after_minutes else 0))
@@ -806,20 +808,24 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
         if day.weekday() == 6 and policy.sunday_all_day_overtime:
             if not (day_override and day_override.exclude_overtime):
                 day_overtime_minutes = worked
-                overtime_minutes += day_overtime_minutes
         elif day.weekday() == 5:
             cutoff = datetime.combine(day, policy.saturday_overtime_start)
             candidate = max(0, int((exit_at - max(entry, cutoff)).total_seconds() // 60))
             if candidate > int(policy.saturday_overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
-                day_overtime_minutes = candidate
-                overtime_minutes += day_overtime_minutes
+                day_late_overtime_minutes = candidate
+                day_overtime_minutes += candidate
         else:
             cutoff = datetime.combine(day, policy.weekday_overtime_start)
             candidate = max(0, int((exit_at - max(entry, cutoff)).total_seconds() // 60))
             if candidate > int(policy.weekday_overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
-                day_overtime_minutes = candidate
-                overtime_minutes += day_overtime_minutes
-        details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "holiday_worked": day_holiday_worked, "override": day_override, "manual_marks": manual_marks})
+                day_late_overtime_minutes = candidate
+                day_overtime_minutes += candidate
+        if day.weekday() <= 5 and day_override and day_override.authorize_early_overtime and not day_override.exclude_overtime:
+            expected_entry = datetime.combine(day, policy.weekday_start)
+            day_early_overtime_minutes = max(0, int((expected_entry - entry).total_seconds() // 60))
+            day_overtime_minutes += day_early_overtime_minutes
+        overtime_minutes += day_overtime_minutes
+        details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "early_overtime_minutes": day_early_overtime_minutes, "late_overtime_minutes": day_late_overtime_minutes, "holiday_worked": day_holiday_worked, "override": day_override, "manual_marks": manual_marks})
     result = (len(by_date), overtime_minutes, holiday_days, late_minutes)
     return (*result, details) if include_details else result
 
@@ -876,8 +882,12 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
     while current <= cutoff:
         detail = attendance_by_date.get(current)
         overtime_minutes = int(detail["overtime_minutes"] or 0) if detail else 0
+        early_overtime_minutes = int(detail.get("early_overtime_minutes", 0) or 0) if detail else 0
+        other_overtime_minutes = max(0, overtime_minutes - early_overtime_minutes)
         late_minutes = int(detail["late_minutes"] or 0) if detail else 0
         overtime_value = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
+        early_overtime_value = _money((Decimal(early_overtime_minutes) / 60) * hourly * 2)
+        other_overtime_value = _money(overtime_value - early_overtime_value)
         late_value = _money((Decimal(late_minutes) / 60) * hourly)
         holiday = holidays.get(current)
         holiday_worked = bool(detail["holiday_worked"]) if detail else False
@@ -927,12 +937,19 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
                 "exit": manual_mark["time"] if manual_mark["type"] == "Salida" else None,
                 "credit": Decimal("0"), "debit": Decimal("0"),
             })
-        if overtime_minutes:
+        if early_overtime_minutes:
+            rows.append({
+                "date": current, "order": 19, "type": "EXTRA ENTRADA",
+                "concept": "Tiempo anterior a la hora de entrada autorizado manualmente",
+                "detail": f"{early_overtime_minutes} min ({Decimal(early_overtime_minutes) / Decimal('60'):.2f} h) × hora doble C$ {_format_money(hourly * 2)} · {detail['override'].early_overtime_note or 'Autorización administrativa'}",
+                "entry": detail["entry"], "exit": None, "credit": early_overtime_value, "debit": Decimal("0"),
+            })
+        if other_overtime_minutes:
             rows.append({
                 "date": current, "order": 20, "type": "HORA EXTRA",
                 "concept": "Tiempo extra dominical" if is_sunday else "Tiempo extra después del corte",
-                "detail": f"{overtime_minutes} min ({Decimal(overtime_minutes) / Decimal('60'):.2f} h) × valor de hora doble C$ {_format_money(hourly * 2)}",
-                "entry": None, "exit": None, "credit": overtime_value, "debit": Decimal("0"),
+                "detail": f"{other_overtime_minutes} min ({Decimal(other_overtime_minutes) / Decimal('60'):.2f} h) × valor de hora doble C$ {_format_money(hourly * 2)}",
+                "entry": None, "exit": None, "credit": other_overtime_value, "debit": Decimal("0"),
             })
         elif is_sunday:
             rows.append({

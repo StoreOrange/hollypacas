@@ -532,6 +532,8 @@ def attendance_control_page(
             entry, exit_at = _attendance_day_bounds(employee_punches)
             worked_minutes = 0
             overtime_minutes = 0
+            early_overtime_minutes = 0
+            early_overtime_candidate = 0
             late_minutes = 0
             regular_minutes = 0
             overtime_detail = "Sin salida para calcular"
@@ -586,6 +588,14 @@ def attendance_control_page(
                         f"{effective_start.strftime('%I:%M %p')} - {exit_at.strftime('%I:%M %p')}"
                         if overtime_minutes else "No alcanzo el inicio de tiempo extra"
                     )
+                if weekday <= 5:
+                    expected_entry = datetime.combine(report_date, policy.weekday_start)
+                    early_overtime_candidate = max(0, int((expected_entry - entry).total_seconds() // 60))
+                    if early_overtime_candidate and day_override and day_override.authorize_early_overtime and not day_override.exclude_overtime:
+                        early_overtime_minutes = early_overtime_candidate
+                        overtime_minutes += early_overtime_minutes
+                        early_detail = f"{entry.strftime('%I:%M %p')} - {policy.weekday_start.strftime('%I:%M %p')} autorizado manualmente"
+                        overtime_detail = f"{overtime_detail} · Entrada anticipada: {early_detail}"
                 if day_override and day_override.exclude_overtime:
                     overtime_detail = "Tiempo extra excluido manualmente para esta jornada"
                 regular_minutes = max(0, worked_minutes - overtime_minutes)
@@ -634,6 +644,8 @@ def attendance_control_page(
                     "regular_label": _duration_label(regular_minutes) if exit_at else "--:--",
                     "overtime_label": _duration_label(overtime_minutes),
                     "overtime_minutes": overtime_minutes,
+                    "early_overtime_minutes": early_overtime_minutes,
+                    "early_overtime_candidate": early_overtime_candidate,
                     "late_minutes": late_minutes,
                     "late_label": _duration_label(late_minutes),
                     "day_override": day_override,
@@ -711,6 +723,13 @@ def update_attendance_day_override(
     employee = db.query(HREmployee).filter(HREmployee.id == employee_id).first()
     if not employee:
         raise HTTPException(404, "Empleado no encontrado")
+    if db.query(PayrollPeriod.id).filter(
+        PayrollPeriod.status == "CLOSED",
+        PayrollPeriod.date_from <= work_date,
+        PayrollPeriod.date_to >= work_date,
+        or_(PayrollPeriod.branch_id.is_(None), PayrollPeriod.branch_id == employee.branch_id),
+    ).first():
+        raise HTTPException(409, "La planilla de esta fecha está cerrada y no admite cambios")
     override = db.query(AttendanceDayOverride).filter(
         AttendanceDayOverride.employee_id == employee_id,
         AttendanceDayOverride.work_date == work_date,
@@ -743,19 +762,44 @@ def update_attendance_day_override(
         override.full_day_justified = False
         override.justified_minutes = 0
         override.note = None
+    elif action == "authorize_early_overtime":
+        if len(reason.strip()) < 3:
+            raise HTTPException(400, "Debe indicar el motivo para autorizar el tiempo extra de entrada")
+        override.authorize_early_overtime = True
+        override.early_overtime_note = reason.strip()
+    elif action == "remove_early_overtime":
+        override.authorize_early_overtime = False
+        override.early_overtime_note = None
     else:
         raise HTTPException(400, "Acción no válida")
     override.updated_by = user.email
     override.updated_at = datetime.utcnow()
     db.flush()
-    if not override.exclude_overtime and not override.waive_lateness and not override.full_day_justified and not override.justified_minutes:
+    if not override.exclude_overtime and not override.waive_lateness and not override.full_day_justified and not override.justified_minutes and not override.authorize_early_overtime:
         db.delete(override)
-    db.commit()
+    db.flush()
+    open_periods = db.query(PayrollPeriod).filter(
+        PayrollPeriod.status != "CLOSED",
+        PayrollPeriod.date_from <= work_date,
+        PayrollPeriod.date_to >= work_date,
+        or_(PayrollPeriod.branch_id.is_(None), PayrollPeriod.branch_id == employee.branch_id),
+    ).all()
+    if open_periods:
+        from .payroll import _calculate_period_records
+        for period in open_periods:
+            _calculate_period_records(db, period)
+        db.commit()
+    else:
+        db.commit()
     params = [f"date_from={quote_plus(date_from)}", f"date_to={quote_plus(date_to)}"]
     if area_id:
         params.append(f"area_id={quote_plus(area_id)}")
     if search:
         params.append(f"search={quote_plus(search)}")
+    if action == "authorize_early_overtime":
+        params.append("ok=Tiempo+extra+de+entrada+autorizado+y+planilla+recalculada")
+    elif action == "remove_early_overtime":
+        params.append("ok=Tiempo+extra+de+entrada+retirado+y+planilla+recalculada")
     return RedirectResponse(f"/attendance/control?{'&'.join(params)}", status_code=303)
 
 

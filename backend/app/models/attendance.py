@@ -191,6 +191,8 @@ class AttendanceDayOverride(Base):
     waive_lateness = Column(Boolean, nullable=False, default=False)
     full_day_justified = Column(Boolean, nullable=False, default=False)
     justified_minutes = Column(Integer, nullable=False, default=0)
+    authorize_early_overtime = Column(Boolean, nullable=False, default=False)
+    early_overtime_note = Column(String(240), nullable=True)
     note = Column(String(240), nullable=True)
     updated_by = Column(String(160), nullable=True)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
