@@ -2,6 +2,7 @@ from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 from io import BytesIO
+import json
 from typing import List, Optional
 from urllib.parse import quote_plus
 
@@ -777,8 +778,23 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
                 justified_minutes = int(day_override.justified_minutes or 0) if day_override else 0
                 day_late_minutes = max(0, entry_delay - justified_minutes)
                 late_minutes += day_late_minutes
+        manual_marks = []
+        for mark in marks:
+            if not str(mark.work_code or "").startswith("MANUAL_"):
+                continue
+            payload = {}
+            try:
+                payload = json.loads(mark.raw_payload or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                payload = {}
+            manual_marks.append({
+                "type": "Entrada" if mark.work_code == "MANUAL_ENTRY" else "Salida",
+                "time": mark.occurred_at,
+                "reason": payload.get("reason") or "Sin motivo especificado",
+                "created_by": payload.get("created_by") or "Usuario no identificado",
+            })
         if not entry or not exit_at:
-            details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "holiday_worked": False, "override": day_override})
+            details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "holiday_worked": False, "override": day_override, "manual_marks": manual_marks})
             continue
         gross = max(0, int((exit_at - entry).total_seconds() // 60))
         worked = max(0, gross - (policy.break_minutes if gross >= policy.break_after_minutes else 0))
@@ -803,7 +819,7 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
             if candidate > int(policy.weekday_overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
                 day_overtime_minutes = candidate
                 overtime_minutes += day_overtime_minutes
-        details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "holiday_worked": day_holiday_worked, "override": day_override})
+        details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "holiday_worked": day_holiday_worked, "override": day_override, "manual_marks": manual_marks})
     result = (len(by_date), overtime_minutes, holiday_days, late_minutes)
     return (*result, details) if include_details else result
 
@@ -854,6 +870,9 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
     }]
     current = start
     computed_overtime = Decimal("0")
+    computed_holiday = Decimal("0")
+    manual_punches = 0
+    sundays_worked = 0
     while current <= cutoff:
         detail = attendance_by_date.get(current)
         overtime_minutes = int(detail["overtime_minutes"] or 0) if detail else 0
@@ -864,6 +883,10 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         holiday_worked = bool(detail["holiday_worked"]) if detail else False
         holiday_value = _money(salary / Decimal("30")) if holiday_worked else Decimal("0")
         computed_overtime += overtime_value
+        computed_holiday += holiday_value
+        manual_punches += len(detail.get("manual_marks", [])) if detail else 0
+        if current.weekday() == 6 and overtime_minutes:
+            sundays_worked += 1
         notes = []
         if detail and not detail["entry"]:
             notes.append("Entrada pendiente")
@@ -877,27 +900,66 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
                 if is_esteli_employee
                 else "Sin marcadas"
             )
-        if overtime_minutes:
-            notes.append(f"{overtime_minutes} min extra")
-        if late_minutes:
-            notes.append(f"{late_minutes} min tarde")
-        if holiday:
+        is_sunday = current.weekday() == 6
+        if is_sunday:
             notes.append(
-                f"Feriado trabajado: {holiday.name}"
-                if holiday_worked
-                else f"Feriado sin trabajo marcado: {holiday.name} (sin suplemento)"
+                "Domingo trabajado: tiene derecho a tiempo extra por toda la jornada neta"
+                if detail and detail["entry"] and detail["exit"] and overtime_minutes
+                else "Domingo sin jornada completa marcada: no genera tiempo extra"
             )
         rows.append({
             "date": current,
             "order": 1,
-            "type": "FERIADO" if holiday else "DESCANSO" if not detail and current.weekday() == 6 else "AUTOMÁTICA" if not detail and is_esteli_employee else "ASISTENCIA",
+            "type": "DOMINGO" if is_sunday else "AUTOMÁTICA" if not detail and is_esteli_employee else "ASISTENCIA",
             "concept": "Jornada y marcadas",
             "detail": " · ".join(notes) or "Jornada sin incidencias",
             "entry": detail["entry"] if detail else None,
             "exit": detail["exit"] if detail else None,
-            "credit": _money(overtime_value + holiday_value),
-            "debit": late_value,
+            "credit": Decimal("0"),
+            "debit": Decimal("0"),
         })
+        for index, manual_mark in enumerate(detail.get("manual_marks", []) if detail else []):
+            rows.append({
+                "date": current, "order": 10 + index, "type": "MANUAL",
+                "concept": f"Marcada manual de {manual_mark['type'].lower()}",
+                "detail": f"{manual_mark['reason']} · registrada por {manual_mark['created_by']}",
+                "entry": manual_mark["time"] if manual_mark["type"] == "Entrada" else None,
+                "exit": manual_mark["time"] if manual_mark["type"] == "Salida" else None,
+                "credit": Decimal("0"), "debit": Decimal("0"),
+            })
+        if overtime_minutes:
+            rows.append({
+                "date": current, "order": 20, "type": "HORA EXTRA",
+                "concept": "Tiempo extra dominical" if is_sunday else "Tiempo extra después del corte",
+                "detail": f"{overtime_minutes} min ({Decimal(overtime_minutes) / Decimal('60'):.2f} h) × valor de hora doble C$ {_format_money(hourly * 2)}",
+                "entry": None, "exit": None, "credit": overtime_value, "debit": Decimal("0"),
+            })
+        elif is_sunday:
+            rows.append({
+                "date": current, "order": 20, "type": "SIN EXTRA", "concept": "Evaluación de domingo",
+                "detail": "No hay entrada y salida válidas que sustenten el pago de tiempo extra dominical",
+                "entry": None, "exit": None, "credit": Decimal("0"), "debit": Decimal("0"),
+            })
+        if holiday:
+            rows.append({
+                "date": current, "order": 30, "type": "FERIADO",
+                "concept": holiday.name,
+                "detail": "Feriado trabajado: corresponde un día adicional de salario" if holiday_worked else "Sin entrada y salida válidas: no corresponde suplemento de feriado",
+                "entry": None, "exit": None, "credit": holiday_value, "debit": Decimal("0"),
+            })
+        if late_minutes:
+            rows.append({
+                "date": current, "order": 40, "type": "TARDANZA", "concept": "Tiempo tardío descontable",
+                "detail": f"{late_minutes} min × valor de hora ordinaria C$ {_format_money(hourly)}",
+                "entry": None, "exit": None, "credit": Decimal("0"), "debit": late_value,
+            })
+        daily_credit = _money(overtime_value + holiday_value)
+        if daily_credit or late_value:
+            rows.append({
+                "date": current, "order": 90, "type": "TOTAL DÍA", "concept": "Subtotal de incidencias del día",
+                "detail": f"Ingresos C$ {_format_money(daily_credit)} · deducciones C$ {_format_money(late_value)} · resultado C$ {_format_money(daily_credit - late_value)}",
+                "entry": None, "exit": None, "credit": Decimal("0"), "debit": Decimal("0"),
+            })
         current += timedelta(days=1)
 
     overtime_difference = _money(_money(calculation.overtime_pay) - computed_overtime)
@@ -925,7 +987,19 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         row["balance"] = balance
     credits = _money(sum((row["credit"] for row in rows), Decimal("0")))
     debits = _money(sum((row["debit"] for row in rows), Decimal("0")))
-    return rows, {"credits": credits, "debits": debits, "balance": _money(credits - debits), "expected": _money(calculation.net_pay), "difference": _money(credits - debits - _money(calculation.net_pay))}
+    return rows, {
+        "credits": credits,
+        "debits": debits,
+        "balance": _money(credits - debits),
+        "expected": _money(calculation.net_pay),
+        "difference": _money(credits - debits - _money(calculation.net_pay)),
+        "overtime_minutes": sum((int(row["overtime_minutes"] or 0) for row in attendance_details), 0),
+        "overtime_value": computed_overtime,
+        "holiday_days": sum((1 for row in attendance_details if row["holiday_worked"])),
+        "holiday_value": computed_holiday,
+        "manual_punches": manual_punches,
+        "sundays_worked": sundays_worked,
+    }
 
 
 def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, Optional[str]]:
@@ -1386,7 +1460,12 @@ def payroll_employee_kardex_pdf(period_id: int, employee_id: int, request: Reque
         [Paragraph(f"C$ {_format_money(totals['credits'])}", money_style), Paragraph(f"C$ {_format_money(totals['debits'])}", money_style), Paragraph(f"C$ {_format_money(totals['balance'])}", money_style), Paragraph(f"C$ {_format_money(totals['expected'])}", money_style)],
     ], colWidths=[64.25 * mm] * 4)
     summary.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#123B72")), ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#F8FAFC")), ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#CBD5E1")), ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#DCE2EA")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
-    story.extend([KeepTogether(summary), Spacer(1, 4 * mm)])
+    audit_summary = Table([
+        [Paragraph("DOMINGOS CON EXTRA", header_style), Paragraph("HORAS EXTRA", header_style), Paragraph("FERIADOS PAGADOS", header_style), Paragraph("MARCADAS MANUALES", header_style)],
+        [Paragraph(str(totals["sundays_worked"]), cell_style), Paragraph(f"{Decimal(totals['overtime_minutes']) / Decimal('60'):.2f} h · C$ {_format_money(totals['overtime_value'])}", cell_style), Paragraph(f"{totals['holiday_days']} día(s) · C$ {_format_money(totals['holiday_value'])}", cell_style), Paragraph(str(totals["manual_punches"]), cell_style)],
+    ], colWidths=[64.25 * mm] * 4)
+    audit_summary.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#52677F")), ("BACKGROUND", (0, 1), (-1, 1), colors.white), ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#CBD5E1")), ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#DCE2EA")), ("ALIGN", (0, 1), (-1, 1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+    story.extend([KeepTogether(summary), Spacer(1, 2 * mm), KeepTogether(audit_summary), Spacer(1, 4 * mm)])
 
     table_data = [[Paragraph(label, header_style) for label in ("Fecha", "Tipo", "Movimiento / detalle", "Entrada", "Salida", "Ingreso", "Deducción", "Saldo")]]
     for movement in movements:
