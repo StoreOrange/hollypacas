@@ -777,6 +777,12 @@ def delete_holiday(holiday_id: int, request: Request, db: Session = Depends(get_
 
 
 def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy: AttendancePolicySetting, holidays: dict, include_details: bool = False):
+    branch = period.branch
+    if not branch:
+        employee = db.query(HREmployee).filter(HREmployee.id == employee_id).first()
+        branch = employee.branch if employee else None
+    branch_identity = f"{branch.code} {branch.name}".lower() if branch else ""
+    is_esteli_employee = "estel" in branch_identity
     start = datetime.combine(period.date_from, time.min)
     end = datetime.combine(period.date_to + timedelta(days=1), time.min)
     punches = db.query(AttendancePunch).filter(AttendancePunch.employee_id == employee_id, AttendancePunch.occurred_at >= start, AttendancePunch.occurred_at < end).order_by(AttendancePunch.occurred_at).all()
@@ -862,6 +868,30 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
             day_overtime_minutes += day_early_overtime_minutes
         overtime_minutes += day_overtime_minutes
         details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "early_overtime_minutes": day_early_overtime_minutes, "late_overtime_minutes": day_late_overtime_minutes, "holiday_worked": day_holiday_worked, "holiday_projected": False, "override": day_override, "manual_marks": manual_marks})
+    # Estelí opera sin reloj biométrico: sus jornadas hábiles se reconocen
+    # automáticamente. El feriado debe seguir esa misma regla para no quedar
+    # en C$0.00 únicamente por carecer de marcadas físicas.
+    if is_esteli_employee:
+        cutoff = min(date.today(), period.date_to)
+        for holiday_date, holiday in holidays.items():
+            if holiday_date in by_date or holiday_date > cutoff or holiday_date.weekday() == 6:
+                continue
+            holiday_days += 1
+            details.append({
+                "date": holiday_date,
+                "entry": None,
+                "exit": None,
+                "punch_count": 0,
+                "late_minutes": 0,
+                "overtime_minutes": 0,
+                "early_overtime_minutes": 0,
+                "late_overtime_minutes": 0,
+                "holiday_worked": True,
+                "holiday_projected": holiday_date == date.today(),
+                "holiday_auto": True,
+                "override": day_overrides.get(holiday_date),
+                "manual_marks": [],
+            })
     result = (len(by_date), overtime_minutes, holiday_days, late_minutes)
     return (*result, details) if include_details else result
 
@@ -936,7 +966,9 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         if current.weekday() == 6 and overtime_minutes:
             sundays_worked += 1
         notes = []
-        if detail and not detail["entry"]:
+        if detail and detail.get("holiday_auto"):
+            notes.append("Jornada completa automática · Estelí sin reloj")
+        elif detail and not detail["entry"]:
             notes.append("Entrada pendiente")
         elif detail and detail["exit"] is None:
             notes.append("Salida pendiente")
@@ -999,7 +1031,7 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
             rows.append({
                 "date": current, "order": 30, "type": "FERIADO",
                 "concept": holiday.name,
-                "detail": "Pago provisional por entrada registrada hoy; quedará sustentado al completar la jornada" if holiday_projected else "Feriado trabajado: corresponde un día adicional de salario" if holiday_worked else "Sin entrada y salida válidas: no corresponde suplemento de feriado",
+                "detail": "Feriado reconocido automáticamente para Estelí · sucursal sin reloj" if detail and detail.get("holiday_auto") else "Pago provisional por entrada registrada hoy; quedará sustentado al completar la jornada" if holiday_projected else "Feriado trabajado: corresponde un día adicional de salario" if holiday_worked else "Sin entrada y salida válidas: no corresponde suplemento de feriado",
                 "entry": None, "exit": None, "credit": holiday_value, "debit": Decimal("0"),
             })
         if late_minutes:
