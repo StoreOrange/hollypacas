@@ -701,13 +701,35 @@ def create_period(request: Request, branch_id: int = Form(...), date_from: date 
 @router.post("/payroll/holidays")
 def create_holiday(request: Request, holiday_date: date = Form(...), name: str = Form(...), period_id: str = Form(""), db: Session = Depends(get_db)):
     _browser_admin(request, db)
-    db.add(PayrollHoliday(holiday_date=holiday_date, name=name.strip(), period_id=int(period_id) if period_id.isdigit() else None, paid=True, worked_as_overtime=True))
+    selected_period_id = int(period_id) if period_id.isdigit() else None
+    if selected_period_id:
+        selected_period = db.query(PayrollPeriod).filter(PayrollPeriod.id == selected_period_id).first()
+        if not selected_period or selected_period.status == "CLOSED":
+            return RedirectResponse("/payroll?error=El+periodo+seleccionado+no+esta+abierto#holidays", status_code=303)
+        if not selected_period.date_from <= holiday_date <= selected_period.date_to:
+            return RedirectResponse("/payroll?error=El+feriado+no+pertenece+al+periodo+seleccionado#holidays", status_code=303)
+    db.add(PayrollHoliday(holiday_date=holiday_date, name=name.strip(), period_id=selected_period_id, paid=True, worked_as_overtime=True))
     try:
-        db.commit()
+        db.flush()
     except IntegrityError:
         db.rollback()
         return RedirectResponse("/payroll?error=Feriado+duplicado", status_code=303)
-    return RedirectResponse("/payroll?ok=Feriado+registrado", status_code=303)
+    affected_periods_query = db.query(PayrollPeriod).filter(
+        PayrollPeriod.status != "CLOSED",
+        PayrollPeriod.date_from <= holiday_date,
+        PayrollPeriod.date_to >= holiday_date,
+    )
+    if selected_period_id:
+        affected_periods_query = affected_periods_query.filter(PayrollPeriod.id == selected_period_id)
+    affected_periods = affected_periods_query.all()
+    recalculated = 0
+    for affected_period in affected_periods:
+        count, error = _calculate_period_records(db, affected_period)
+        if not error:
+            recalculated += count
+    db.commit()
+    message = quote_plus(f"Feriado registrado y planilla recalculada para {recalculated} empleado(s)")
+    return RedirectResponse(f"/payroll?ok={message}#holidays", status_code=303)
 
 
 @router.post("/payroll/holidays/{holiday_id}/delete")
@@ -796,7 +818,13 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
                 "created_by": payload.get("created_by") or "Usuario no identificado",
             })
         if not entry or not exit_at:
-            details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "early_overtime_minutes": 0, "late_overtime_minutes": 0, "holiday_worked": False, "override": day_override, "manual_marks": manual_marks})
+            # Durante el feriado vigente se muestra una proyección desde la
+            # primera entrada. Así la planilla anticipa el pago sin concederlo
+            # a quien todavía no se presentó.
+            projected_holiday = bool(entry and day == date.today() and day in holidays and holidays[day].worked_as_overtime)
+            if projected_holiday:
+                holiday_days += 1
+            details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "early_overtime_minutes": 0, "late_overtime_minutes": 0, "holiday_worked": projected_holiday, "holiday_projected": projected_holiday, "override": day_override, "manual_marks": manual_marks})
             continue
         gross = max(0, int((exit_at - entry).total_seconds() // 60))
         worked = max(0, gross - (policy.break_minutes if gross >= policy.break_after_minutes else 0))
@@ -825,7 +853,7 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
             day_early_overtime_minutes = max(0, int((expected_entry - entry).total_seconds() // 60))
             day_overtime_minutes += day_early_overtime_minutes
         overtime_minutes += day_overtime_minutes
-        details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "early_overtime_minutes": day_early_overtime_minutes, "late_overtime_minutes": day_late_overtime_minutes, "holiday_worked": day_holiday_worked, "override": day_override, "manual_marks": manual_marks})
+        details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "early_overtime_minutes": day_early_overtime_minutes, "late_overtime_minutes": day_late_overtime_minutes, "holiday_worked": day_holiday_worked, "holiday_projected": False, "override": day_override, "manual_marks": manual_marks})
     result = (len(by_date), overtime_minutes, holiday_days, late_minutes)
     return (*result, details) if include_details else result
 
@@ -891,6 +919,7 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         late_value = _money((Decimal(late_minutes) / 60) * hourly)
         holiday = holidays.get(current)
         holiday_worked = bool(detail["holiday_worked"]) if detail else False
+        holiday_projected = bool(detail.get("holiday_projected")) if detail else False
         holiday_value = _money(salary / Decimal("30")) if holiday_worked else Decimal("0")
         computed_overtime += overtime_value
         computed_holiday += holiday_value
@@ -961,7 +990,7 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
             rows.append({
                 "date": current, "order": 30, "type": "FERIADO",
                 "concept": holiday.name,
-                "detail": "Feriado trabajado: corresponde un día adicional de salario" if holiday_worked else "Sin entrada y salida válidas: no corresponde suplemento de feriado",
+                "detail": "Pago provisional por entrada registrada hoy; quedará sustentado al completar la jornada" if holiday_projected else "Feriado trabajado: corresponde un día adicional de salario" if holiday_worked else "Sin entrada y salida válidas: no corresponde suplemento de feriado",
                 "entry": None, "exit": None, "credit": holiday_value, "debit": Decimal("0"),
             })
         if late_minutes:

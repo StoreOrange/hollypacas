@@ -300,6 +300,10 @@ def ingest_attendance_batch(payload: AttendanceBatchIn, db: Session = Depends(ge
         raise HTTPException(status_code=409, detail="Lote duplicado o inconsistente") from exc
 
     if new_events:
+        _recalculate_open_payroll_for_holidays(
+            db,
+            {datetime.fromisoformat(event["occurred_at"]).date() for event in new_events},
+        )
         attendance_socket_hub.publish({"type": "attendance.punches", "events": new_events})
 
     return {
@@ -327,6 +331,30 @@ def _browser_admin(request: Request, db: Session) -> User:
     if not any(role.name == "administrador" for role in user.roles):
         raise HTTPException(status_code=403, detail="Acceso denegado")
     return user
+
+
+def _recalculate_open_payroll_for_holidays(db: Session, work_dates: set[date]) -> None:
+    """Actualiza planillas abiertas cuando llegan marcas de un feriado."""
+    if not work_dates:
+        return
+    holiday_dates = {
+        row[0]
+        for row in db.query(PayrollHoliday.holiday_date).filter(
+            PayrollHoliday.holiday_date.in_(work_dates),
+            PayrollHoliday.paid.is_(True),
+        ).all()
+    }
+    if not holiday_dates:
+        return
+    periods = db.query(PayrollPeriod).filter(
+        PayrollPeriod.status != "CLOSED",
+        PayrollPeriod.date_from <= max(holiday_dates),
+        PayrollPeriod.date_to >= min(holiday_dates),
+    ).all()
+    from .payroll import _calculate_period_records
+    for period in periods:
+        if any(period.date_from <= holiday_date <= period.date_to for holiday_date in holiday_dates):
+            _calculate_period_records(db, period)
 
 
 @web_router.get("/attendance")
@@ -875,6 +903,7 @@ def create_manual_attendance_punch(
     db.add(punch)
     db.commit()
     db.refresh(punch)
+    _recalculate_open_payroll_for_holidays(db, {work_date})
     attendance_socket_hub.publish({"type": "attendance.punches", "events": [{"id": punch.id, "occurred_at": punch.occurred_at.isoformat(timespec="seconds"), "date": punch.occurred_at.strftime("%d/%m/%Y"), "time": punch.occurred_at.strftime("%I:%M:%S %p"), "device_user_id": punch.device_user_id, "employee": employee.full_name, "device": device.name, "punch_state": punch.punch_state}]})
     params = [f"date_from={quote_plus(date_from or work_date.isoformat())}", f"date_to={quote_plus(date_to or work_date.isoformat())}", "ok=Marcada+manual+registrada+y+calculos+actualizados"]
     if area_id:
