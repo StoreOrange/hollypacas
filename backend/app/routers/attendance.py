@@ -540,7 +540,13 @@ def attendance_control_page(
             holiday = holidays_by_date.get(report_date)
             is_esteli_auto = is_esteli_employee and not entry and not exit_at and weekday != 6 and report_date <= date.today()
             if holiday:
-                overtime_rule = f"Feriado: {holiday.name}"
+                if weekday == 6 and policy.sunday_all_day_overtime:
+                    extra_rule = "domingo: toda la jornada"
+                elif weekday == 5:
+                    extra_rule = f"extra después de {policy.saturday_overtime_start.strftime('%I:%M %p')}"
+                else:
+                    extra_rule = f"extra después de {policy.weekday_overtime_start.strftime('%I:%M %p')}"
+                overtime_rule = f"Feriado: 1 día adicional · {extra_rule}"
             elif is_esteli_auto:
                 overtime_rule = "Estelí: jornada automática sin reloj"
             elif weekday == 6 and policy.sunday_all_day_overtime:
@@ -559,13 +565,7 @@ def attendance_control_page(
                 gross_minutes = max(0, int((exit_at - entry).total_seconds() // 60))
                 applied_break = break_minutes if gross_minutes >= break_after_minutes else 0
                 worked_minutes = max(0, gross_minutes - applied_break)
-                if holiday:
-                    overtime_minutes = 0 if day_override and day_override.exclude_overtime else worked_minutes
-                    overtime_detail = (
-                        f"{entry.strftime('%I:%M %p')} - {exit_at.strftime('%I:%M %p')} "
-                        "(jornada feriada; suplemento para completar pago doble)"
-                    )
-                elif weekday == 6 and policy.sunday_all_day_overtime:
+                if weekday == 6 and policy.sunday_all_day_overtime:
                     overtime_minutes = 0 if day_override and day_override.exclude_overtime else worked_minutes
                     overtime_detail = f"{entry.strftime('%I:%M %p')} - {exit_at.strftime('%I:%M %p')} (jornada dominical)"
                 elif weekday == 5:

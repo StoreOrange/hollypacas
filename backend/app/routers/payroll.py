@@ -761,7 +761,7 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
         ).all()
     }
     overtime_minutes = 0
-    holiday_minutes = 0
+    holiday_days = 0
     late_minutes = 0
     details = []
     for day, marks in by_date.items():
@@ -769,7 +769,7 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
         entry, exit_at = _attendance_day_bounds(marks)
         day_late_minutes = 0
         day_overtime_minutes = 0
-        day_holiday_minutes = 0
+        day_holiday_worked = False
         if entry and day.weekday() <= 5 and day not in holidays and not (day_override and (day_override.waive_lateness or day_override.full_day_justified)):
             expected_entry = datetime.combine(day, policy.weekday_start)
             entry_delay = max(0, int((entry - expected_entry).total_seconds() // 60))
@@ -778,14 +778,16 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
                 day_late_minutes = max(0, entry_delay - justified_minutes)
                 late_minutes += day_late_minutes
         if not entry or not exit_at:
-            details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "holiday_minutes": 0, "override": day_override})
+            details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": 0, "holiday_worked": False, "override": day_override})
             continue
         gross = max(0, int((exit_at - entry).total_seconds() // 60))
         worked = max(0, gross - (policy.break_minutes if gross >= policy.break_after_minutes else 0))
-        if day in holidays and holidays[day].worked_as_overtime:
-            day_holiday_minutes = worked
-            holiday_minutes += day_holiday_minutes
-        elif day.weekday() == 6 and policy.sunday_all_day_overtime:
+        if day in holidays and holidays[day].worked_as_overtime and worked > 0:
+            day_holiday_worked = True
+            holiday_days += 1
+        # El feriado es un día adicional independiente. Las horas extra siguen
+        # usando el corte normal del día y nunca incluyen toda la jornada.
+        if day.weekday() == 6 and policy.sunday_all_day_overtime:
             if not (day_override and day_override.exclude_overtime):
                 day_overtime_minutes = worked
                 overtime_minutes += day_overtime_minutes
@@ -801,8 +803,8 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
             if candidate > int(policy.weekday_overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
                 day_overtime_minutes = candidate
                 overtime_minutes += day_overtime_minutes
-        details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "holiday_minutes": day_holiday_minutes, "override": day_override})
-    result = (len(by_date), overtime_minutes, holiday_minutes, late_minutes)
+        details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "holiday_worked": day_holiday_worked, "override": day_override})
+    result = (len(by_date), overtime_minutes, holiday_days, late_minutes)
     return (*result, details) if include_details else result
 
 
@@ -859,11 +861,8 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         overtime_value = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
         late_value = _money((Decimal(late_minutes) / 60) * hourly)
         holiday = holidays.get(current)
-        holiday_minutes = int(detail["holiday_minutes"] or 0) if detail else 0
-        # El salario base contiene la tarifa ordinaria del día. Solamente una
-        # jornada feriada efectivamente marcada recibe el suplemento ordinario
-        # que completa el pago doble.
-        holiday_value = _money((Decimal(holiday_minutes) / 60) * hourly)
+        holiday_worked = bool(detail["holiday_worked"]) if detail else False
+        holiday_value = _money(salary / Decimal("30")) if holiday_worked else Decimal("0")
         computed_overtime += overtime_value
         notes = []
         if detail and not detail["entry"]:
@@ -885,7 +884,7 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
         if holiday:
             notes.append(
                 f"Feriado trabajado: {holiday.name}"
-                if holiday_minutes
+                if holiday_worked
                 else f"Feriado sin trabajo marcado: {holiday.name} (sin suplemento)"
             )
         rows.append({
@@ -958,7 +957,7 @@ def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, 
     for profile in profiles:
         salary = _money(profile.monthly_salary)
         hourly = salary / Decimal("240")
-        _attendance_days, overtime_minutes, holiday_minutes, late_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
+        _attendance_days, overtime_minutes, holiday_days, late_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
         overtime_pay = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
         cutoff = min(date.today(), period.date_to)
         employment_start = period.date_from
@@ -967,7 +966,7 @@ def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, 
             employment_start = max(employment_start, employee_start)
         # El día ordinario ya forma parte del salario base. El suplemento se
         # genera únicamente con entrada y salida válidas en el feriado.
-        holiday_pay = _money((Decimal(holiday_minutes) / 60) * hourly)
+        holiday_pay = _money((salary / Decimal("30")) * Decimal(holiday_days))
         late_deduction = _money((Decimal(late_minutes) / 60) * hourly)
         calc = db.query(PayrollCalculation).filter(PayrollCalculation.period_id == period.id, PayrollCalculation.employee_id == profile.employee_id).first()
         if not calc:
