@@ -1667,6 +1667,12 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE attendance_policy_settings ADD COLUMN entry_grace_minutes INTEGER NOT NULL DEFAULT 20"))
             if "overtime_grace_minutes" not in policy_columns:
                 conn.execute(text("ALTER TABLE attendance_policy_settings ADD COLUMN overtime_grace_minutes INTEGER NOT NULL DEFAULT 15"))
+            if "weekday_overtime_grace_minutes" not in policy_columns:
+                conn.execute(text("ALTER TABLE attendance_policy_settings ADD COLUMN weekday_overtime_grace_minutes INTEGER NOT NULL DEFAULT 15"))
+                conn.execute(text("UPDATE attendance_policy_settings SET weekday_overtime_grace_minutes = overtime_grace_minutes"))
+            if "saturday_overtime_grace_minutes" not in policy_columns:
+                conn.execute(text("ALTER TABLE attendance_policy_settings ADD COLUMN saturday_overtime_grace_minutes INTEGER NOT NULL DEFAULT 15"))
+                conn.execute(text("UPDATE attendance_policy_settings SET saturday_overtime_grace_minutes = overtime_grace_minutes"))
         if "attendance_day_overrides" in table_names:
             override_columns = {col["name"] for col in inspect(engine).get_columns("attendance_day_overrides")}
             if "full_day_justified" not in override_columns:

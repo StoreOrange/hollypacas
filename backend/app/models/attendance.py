@@ -172,6 +172,8 @@ class AttendancePolicySetting(Base):
     weekday_start = Column(Time, nullable=False, default=lambda: datetime.strptime("08:00", "%H:%M").time())
     entry_grace_minutes = Column(Integer, nullable=False, default=20)
     overtime_grace_minutes = Column(Integer, nullable=False, default=15)
+    weekday_overtime_grace_minutes = Column(Integer, nullable=False, default=15)
+    saturday_overtime_grace_minutes = Column(Integer, nullable=False, default=15)
     updated_by = Column(String(160), nullable=True)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

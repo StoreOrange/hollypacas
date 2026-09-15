@@ -445,6 +445,14 @@ def attendance_control_page(
     expected_minutes = max(1, int(policy.expected_daily_minutes or 480))
     break_minutes = max(0, int(policy.break_minutes or 0))
     break_after_minutes = max(0, int(policy.break_after_minutes or 0))
+    saturday_span_minutes = (
+        policy.saturday_overtime_start.hour * 60
+        + policy.saturday_overtime_start.minute
+        - policy.weekday_start.hour * 60
+        - policy.weekday_start.minute
+    )
+    saturday_scheduled_break = break_minutes if saturday_span_minutes >= break_after_minutes else 0
+    saturday_expected_minutes = max(1, saturday_span_minutes - saturday_scheduled_break)
     selected_area_id = int(area_id) if area_id.strip().isdigit() else None
 
     employee_query = db.query(HREmployee).filter(HREmployee.status == "ACTIVE")
@@ -510,6 +518,7 @@ def attendance_control_page(
             regular_minutes = 0
             overtime_detail = "Sin salida para calcular"
             weekday = report_date.weekday()
+            day_expected_minutes = saturday_expected_minutes if weekday == 5 else expected_minutes
             holiday = holidays_by_date.get(report_date)
             is_esteli_auto = is_esteli_employee and not entry and weekday != 6 and report_date <= date.today()
             if holiday:
@@ -545,7 +554,7 @@ def attendance_control_page(
                     overtime_start = datetime.combine(report_date, policy.saturday_overtime_start)
                     effective_start = max(entry, overtime_start)
                     candidate_overtime = max(0, int((exit_at - effective_start).total_seconds() // 60))
-                    overtime_minutes = candidate_overtime if candidate_overtime > int(policy.overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime) else 0
+                    overtime_minutes = candidate_overtime if candidate_overtime > int(policy.saturday_overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime) else 0
                     overtime_detail = (
                         f"{effective_start.strftime('%I:%M %p')} - {exit_at.strftime('%I:%M %p')}"
                         if overtime_minutes else "No alcanzo el inicio de tiempo extra"
@@ -554,7 +563,7 @@ def attendance_control_page(
                     overtime_start = datetime.combine(report_date, policy.weekday_overtime_start)
                     effective_start = max(entry, overtime_start)
                     candidate_overtime = max(0, int((exit_at - effective_start).total_seconds() // 60))
-                    overtime_minutes = candidate_overtime if candidate_overtime > int(policy.overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime) else 0
+                    overtime_minutes = candidate_overtime if candidate_overtime > int(policy.weekday_overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime) else 0
                     overtime_detail = (
                         f"{effective_start.strftime('%I:%M %p')} - {exit_at.strftime('%I:%M %p')}"
                         if overtime_minutes else "No alcanzo el inicio de tiempo extra"
@@ -567,8 +576,8 @@ def attendance_control_page(
                 totals["pending"] += 1
             else:
                 if is_esteli_auto:
-                    worked_minutes = expected_minutes
-                    regular_minutes = expected_minutes
+                    worked_minutes = day_expected_minutes
+                    regular_minutes = day_expected_minutes
                     overtime_detail = "Jornada completa justificada automáticamente; sucursal sin reloj asignado"
                     totals["justified"] += 1
                 elif weekday == 6 or (day_override and day_override.full_day_justified):
@@ -589,7 +598,7 @@ def attendance_control_page(
                 status_label, status_class = "Salida pendiente", "warning"
             elif overtime_minutes > 0:
                 status_label, status_class = "Tiempo extra", "success"
-            elif worked_minutes < expected_minutes:
+            elif worked_minutes < day_expected_minutes:
                 status_label, status_class = "Jornada parcial", "info"
             else:
                 status_label, status_class = "Jornada completa", "primary"
@@ -787,7 +796,7 @@ def attendance_control_pdf(
     story.extend([summary, Spacer(1, 4 * mm)])
     policy = data["policy"]
     story.extend([
-        Paragraph(f"Politica: lunes a viernes despues de {policy.weekday_overtime_start:%I:%M %p}; sabado despues de {policy.saturday_overtime_start:%I:%M %p}; domingo, toda la jornada neta.", small_style),
+        Paragraph(f"Politica: lunes a viernes despues de {policy.weekday_overtime_start:%I:%M %p} con {policy.weekday_overtime_grace_minutes} min de tolerancia; sabado despues de {policy.saturday_overtime_start:%I:%M %p} con {policy.saturday_overtime_grace_minutes} min; domingo, toda la jornada neta.", small_style),
         Spacer(1, 3 * mm),
     ])
     headers = ["Fecha", "Codigo", "Empleado", "Cargo", "Entrada", "Salida", "Marc.", "Total", "Regular", "Extra", "Estado"]
@@ -865,7 +874,8 @@ def update_attendance_policy(
     break_after_minutes: int = Form(..., ge=0, le=1440),
     weekday_start: str = Form("08:00"),
     entry_grace_minutes: int = Form(20, ge=0, le=180),
-    overtime_grace_minutes: int = Form(15, ge=0, le=180),
+    weekday_overtime_grace_minutes: int = Form(15, ge=0, le=180),
+    saturday_overtime_grace_minutes: int = Form(15, ge=0, le=180),
     db: Session = Depends(get_db),
 ):
     user = _browser_admin(request, db)
@@ -887,7 +897,11 @@ def update_attendance_policy(
     policy.break_after_minutes = break_after_minutes
     policy.weekday_start = regular_start
     policy.entry_grace_minutes = entry_grace_minutes
-    policy.overtime_grace_minutes = overtime_grace_minutes
+    # Se conserva el valor legado para compatibilidad con conectores/versiones
+    # anteriores; los cálculos actuales usan las tolerancias independientes.
+    policy.overtime_grace_minutes = weekday_overtime_grace_minutes
+    policy.weekday_overtime_grace_minutes = weekday_overtime_grace_minutes
+    policy.saturday_overtime_grace_minutes = saturday_overtime_grace_minutes
     policy.updated_by = user.email
     policy.updated_at = datetime.utcnow()
     db.commit()

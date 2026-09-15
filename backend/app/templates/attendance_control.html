@@ -128,7 +128,7 @@
       {% if range_limited %}<div class="alert alert-warning py-2">El rango fue limitado automáticamente a 31 días.</div>{% endif %}
 
       <div class="alert alert-info py-2 small">
-        <strong>Política vigente:</strong> entrada esperada <strong>{{ policy.weekday_start.strftime('%I:%M %p') }}</strong> con {{ policy.entry_grace_minutes }} minutos de tolerancia. Después de ese margen, la tardanza se cuenta completa desde la hora esperada. El tiempo extra inicia a las <strong>{{ policy.weekday_overtime_start.strftime('%I:%M %p') }}</strong> entre semana y solo se reconoce al superar {{ policy.overtime_grace_minutes }} minutos. <a href="/data">Editar en Datos</a>.
+        <strong>Política vigente:</strong> entrada esperada <strong>{{ policy.weekday_start.strftime('%I:%M %p') }}</strong> con {{ policy.entry_grace_minutes }} minutos de tolerancia. De lunes a viernes el extra inicia a las <strong>{{ policy.weekday_overtime_start.strftime('%I:%M %p') }}</strong> con {{ policy.weekday_overtime_grace_minutes }} min de tolerancia; el sábado la jornada regular finaliza a las <strong>{{ policy.saturday_overtime_start.strftime('%I:%M %p') }}</strong> con {{ policy.saturday_overtime_grace_minutes }} min de tolerancia. <a href="/data">Editar en Datos</a>.
       </div>
       {% if unlinked_count %}<div class="alert alert-warning py-2"><strong>{{ unlinked_count }}</strong> marcada(s) del rango estan sin empleado vinculado y no entran en estos calculos. <a href="/attendance">Vincular ahora</a>.</div>{% endif %}
 

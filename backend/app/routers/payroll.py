@@ -793,13 +793,13 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
         elif day.weekday() == 5:
             cutoff = datetime.combine(day, policy.saturday_overtime_start)
             candidate = max(0, int((exit_at - max(entry, cutoff)).total_seconds() // 60))
-            if candidate > int(policy.overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
+            if candidate > int(policy.saturday_overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
                 day_overtime_minutes = candidate
                 overtime_minutes += day_overtime_minutes
         else:
             cutoff = datetime.combine(day, policy.weekday_overtime_start)
             candidate = max(0, int((exit_at - max(entry, cutoff)).total_seconds() // 60))
-            if candidate > int(policy.overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
+            if candidate > int(policy.weekday_overtime_grace_minutes or 0) and not (day_override and day_override.exclude_overtime):
                 day_overtime_minutes = candidate
                 overtime_minutes += day_overtime_minutes
         details.append({"date": day, "entry": entry, "exit": exit_at, "punch_count": len(marks), "late_minutes": day_late_minutes, "overtime_minutes": day_overtime_minutes, "holiday_minutes": day_holiday_minutes, "override": day_override})
