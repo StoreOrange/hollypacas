@@ -36,7 +36,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import String, and_, create_engine, func, or_
-from sqlalchemy.orm import Session, aliased, object_session
+from sqlalchemy.orm import Session, aliased, joinedload, object_session
 
 from ..config import (
     get_active_company_key,
@@ -17855,6 +17855,155 @@ def reports_index(
             "version": settings.UI_VERSION,
         },
     )
+
+
+def _price_list_payload(db: Session, branch_raw: str = "", search: str = "") -> dict[str, object]:
+    branches = db.query(Branch).filter(Branch.activo.is_(True)).order_by(Branch.name).all()
+    branch_id = int(branch_raw) if str(branch_raw).isdigit() else None
+    selected_branch = next((row for row in branches if row.id == branch_id), None)
+    bodegas_query = db.query(Bodega).filter(Bodega.activo.is_(True))
+    if selected_branch:
+        bodegas_query = bodegas_query.filter(Bodega.branch_id == selected_branch.id)
+    bodegas = bodegas_query.order_by(Bodega.name).all()
+    product_query = db.query(Producto).filter(Producto.activo.is_(True), Producto.servicio_producto.isnot(True))
+    normalized_search = (search or "").strip()
+    if normalized_search:
+        product_query = product_query.filter(
+            or_(Producto.cod_producto.ilike(f"%{normalized_search}%"), Producto.descripcion.ilike(f"%{normalized_search}%"))
+        )
+    products = product_query.options(joinedload(Producto.linea), joinedload(Producto.segmento), joinedload(Producto.unidad_medida)).all()
+    product_ids = [int(product.id) for product in products]
+    bodega_ids = [int(bodega.id) for bodega in bodegas]
+    balances = _balances_by_bodega(db, bodega_ids, product_ids) if bodega_ids and product_ids else {}
+    rate_row = db.query(ExchangeRate).filter(ExchangeRate.effective_date <= local_today()).order_by(ExchangeRate.effective_date.desc(), ExchangeRate.id.desc()).first()
+    rate = Decimal(str(rate_row.rate or 0)) if rate_row else Decimal("0")
+
+    def category(product: Producto) -> tuple[int, str]:
+        label = " ".join((product.linea.linea if product.linea else "", product.segmento.segmento if product.segmento else "", product.descripcion or "")).lower()
+        normalized = unicodedata.normalize("NFKD", label).encode("ascii", "ignore").decode("ascii")
+        if "paca" in normalized:
+            return 0, "Pacas"
+        if "bolsa" in normalized:
+            return 1, "Bolsas"
+        if "saco" in normalized:
+            return 2, "Sacos"
+        return 3, "Otros"
+
+    rows = []
+    for product in products:
+        priority, category_name = category(product)
+        price_usd = Decimal(str(product.precio_venta1_usd or 0))
+        price_cs = Decimal(str(product.precio_venta1 or 0))
+        if price_usd <= 0 and price_cs > 0 and rate > 0:
+            price_usd = (price_cs / rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if price_cs <= 0 and price_usd > 0 and rate > 0:
+            price_cs = (price_usd * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        stock = sum((balances.get((int(product.id), bodega_id), Decimal("0")) for bodega_id in bodega_ids), Decimal("0"))
+        rows.append({
+            "priority": priority,
+            "category": category_name,
+            "code": product.cod_producto,
+            "description": product.descripcion,
+            "line": product.linea.linea if product.linea else "Sin línea",
+            "segment": product.segmento.segmento if product.segmento else "Sin segmento",
+            "unit": product.unidad_medida.nombre if product.unidad_medida else "Unidad",
+            "stock": stock,
+            "price_usd": price_usd.quantize(Decimal("0.01")),
+            "price_cs": price_cs.quantize(Decimal("0.01")),
+        })
+    rows.sort(key=lambda row: (row["priority"], str(row["line"]).lower(), str(row["description"]).lower(), str(row["code"])))
+    return {
+        "rows": rows,
+        "branches": branches,
+        "selected_branch": selected_branch,
+        "selected_branch_id": branch_id,
+        "branch_label": selected_branch.name if selected_branch else "Todas las sucursales",
+        "search": normalized_search,
+        "rate": rate,
+        "rate_date": rate_row.effective_date if rate_row else None,
+        "total_stock": sum((row["stock"] for row in rows), Decimal("0")),
+    }
+
+
+@router.get("/reports/lista-precios")
+def report_price_list(request: Request, branch_id: str = "", search: str = "", db: Session = Depends(get_db), user: User = Depends(_require_user_web)):
+    _enforce_permission(request, user, "access.reports")
+    payload = _price_list_payload(db, branch_id, search)
+    return request.app.state.templates.TemplateResponse("report_price_list.html", {"request": request, "user": user, **payload, "version": settings.UI_VERSION})
+
+
+@router.get("/reports/lista-precios.xlsx")
+def report_price_list_xlsx(request: Request, branch_id: str = "", search: str = "", db: Session = Depends(get_db), user: User = Depends(_require_user_web)):
+    _enforce_permission(request, user, "access.reports")
+    payload = _price_list_payload(db, branch_id, search)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Lista de precios"
+    ws.append(["HOLLYWOOD PACAS · LISTA DE PRECIOS"])
+    ws.merge_cells("A1:H1")
+    ws["A1"].font = Font(bold=True, color="FFFFFF", size=16)
+    ws["A1"].fill = PatternFill("solid", fgColor="123B72")
+    ws["A1"].alignment = Alignment(horizontal="center")
+    ws.append(["Sucursal", payload["branch_label"], "Tasa bancaria", float(payload["rate"]), "Fecha tasa", payload["rate_date"].strftime("%d/%m/%Y") if payload["rate_date"] else "No disponible"])
+    ws.append(["Generado", local_now_naive().strftime("%d/%m/%Y %I:%M %p"), "Productos", len(payload["rows"]), "Existencia total", float(payload["total_stock"])])
+    ws.append([])
+    headers = ["Orden", "Código", "Producto", "Línea / clasificación", "Unidad", "Existencia", "Precio USD", "Precio C$"]
+    ws.append(headers)
+    for cell in ws[5]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="2563A6")
+        cell.alignment = Alignment(horizontal="center")
+    for row in payload["rows"]:
+        ws.append([row["category"], row["code"], row["description"], f"{row['line']} · {row['segment']}", row["unit"], float(row["stock"]), float(row["price_usd"]), float(row["price_cs"])])
+    ws.append(["TOTAL", "", f"{len(payload['rows'])} productos", "", "", float(payload["total_stock"]), "", ""])
+    for cell in ws[ws.max_row]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="E8EEF7")
+    for row_number in range(6, ws.max_row):
+        ws.cell(row_number, 6).number_format = '#,##0.00'
+        ws.cell(row_number, 7).number_format = '$#,##0.00'
+        ws.cell(row_number, 8).number_format = 'C$ #,##0.00'
+    for index, width in enumerate([14, 16, 42, 34, 14, 14, 15, 16], start=1):
+        ws.column_dimensions[get_column_letter(index)].width = width
+    ws.freeze_panes = "A6"
+    ws.auto_filter.ref = f"A5:H{ws.max_row - 1}"
+    ws.sheet_view.showGridLines = False
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=lista_precios_hollywood_pacas.xlsx"})
+
+
+@router.get("/reports/lista-precios.pdf")
+def report_price_list_pdf(request: Request, branch_id: str = "", search: str = "", db: Session = Depends(get_db), user: User = Depends(_require_user_web)):
+    _enforce_permission(request, user, "access.reports")
+    payload = _price_list_payload(db, branch_id, search)
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from xml.sax.saxutils import escape
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), leftMargin=10 * mm, rightMargin=10 * mm, topMargin=12 * mm, bottomMargin=12 * mm, title="Lista de precios Hollywood Pacas", author="Hollywood Pacas")
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle("PriceTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=17, textColor=colors.HexColor("#123B72"), alignment=TA_CENTER)
+    small = ParagraphStyle("PriceSmall", parent=styles["BodyText"], fontSize=7, leading=9)
+    money = ParagraphStyle("PriceMoney", parent=small, alignment=TA_RIGHT, fontName="Helvetica-Bold")
+    story = [Paragraph("HOLLYWOOD PACAS", title), Paragraph("Lista oficial de precios e inventario", ParagraphStyle("PriceSub", parent=small, alignment=TA_CENTER, fontSize=9)), Spacer(1, 3 * mm)]
+    info = Table([[f"Sucursal: {payload['branch_label']}", f"Tasa: C$ {payload['rate']:,.4f} por USD", f"Productos: {len(payload['rows'])}", f"Generado: {local_now_naive():%d/%m/%Y %I:%M %p}"]], colWidths=[65 * mm, 65 * mm, 45 * mm, 80 * mm])
+    info.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EEF4FA")), ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#B8C7D9")), ("INNERGRID", (0, 0), (-1, -1), .3, colors.HexColor("#D4DFEA")), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 7), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    story.extend([info, Spacer(1, 3 * mm)])
+    data = [["Orden", "Código", "Producto", "Línea / segmento", "Unidad", "Existencia", "Precio USD", "Precio C$"]]
+    for row in payload["rows"]:
+        data.append([row["category"], row["code"], Paragraph(escape(str(row["description"])), small), Paragraph(escape(f"{row['line']} · {row['segment']}"), small), row["unit"], f"{row['stock']:,.2f}", f"$ {row['price_usd']:,.2f}", f"C$ {row['price_cs']:,.2f}"])
+    data.append(["TOTAL", "", f"{len(payload['rows'])} productos", "", "", f"{payload['total_stock']:,.2f}", "", ""])
+    table = Table(data, repeatRows=1, colWidths=[20 * mm, 24 * mm, 64 * mm, 52 * mm, 23 * mm, 25 * mm, 28 * mm, 30 * mm])
+    table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#123B72")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 6.5), ("GRID", (0, 0), (-1, -2), .3, colors.HexColor("#D5DEE9")), ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#F7F9FC")]), ("ALIGN", (5, 1), (-1, -1), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4), ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#E8EEF7")), ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("SPAN", (0, -1), (1, -1)), ("SPAN", (2, -1), (4, -1)), ("LINEABOVE", (0, -1), (-1, -1), 1, colors.HexColor("#123B72"))]))
+    story.append(table)
+    doc.build(story)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": "inline; filename=lista_precios_hollywood_pacas.pdf"})
 
 
 def _sales_report_filters(request: Request):
