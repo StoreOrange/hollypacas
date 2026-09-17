@@ -100,6 +100,7 @@
 
       <div class="odoo-card">
         <form id="ventas-report-form" class="row g-2 align-items-end" method="get" action="/reports/ventas">
+          <input id="report-currency" type="hidden" name="moneda" value="{{ display_currency or 'USD' }}">
           <div class="col-12 col-md-3">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
             <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
@@ -139,11 +140,11 @@
               <i class="bi bi-search"></i>
               Filtrar
             </button>
-            <a class="btn btn-outline-success btn-sm" href="/reports/ventas/export?format=xlsx&start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&vendedor_id={{ selected_vendedor }}&producto={{ producto_q }}">
+            <a id="sales-export-xlsx" class="btn btn-outline-success btn-sm" href="/reports/ventas/export?format=xlsx&start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&vendedor_id={{ selected_vendedor }}&producto={{ producto_q }}&moneda={{ display_currency or 'USD' }}">
               <i class="bi bi-file-earmark-excel"></i>
               Excel
             </a>
-            <a class="btn btn-outline-danger btn-sm" href="/reports/ventas/export?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&vendedor_id={{ selected_vendedor }}&producto={{ producto_q }}">
+            <a id="sales-export-pdf" class="btn btn-outline-danger btn-sm" href="/reports/ventas/export?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}&branch_id={{ selected_branch }}&vendedor_id={{ selected_vendedor }}&producto={{ producto_q }}&moneda={{ display_currency or 'USD' }}">
               <i class="bi bi-file-earmark-pdf"></i>
               PDF
             </a>
@@ -154,11 +155,11 @@
           </div>
           <div class="col-12 col-lg-auto ms-auto">
             <div class="btn-group btn-group-sm" role="group" aria-label="Moneda">
-              <button type="button" class="btn btn-outline-secondary currency-toggle" data-currency="USD">
+              <button type="button" class="btn btn-outline-secondary currency-toggle {% if (display_currency or 'USD') == 'USD' %}active{% endif %}" data-currency="USD">
                 <i class="bi bi-currency-dollar"></i>
                 USD
               </button>
-              <button type="button" class="btn btn-outline-secondary currency-toggle active" data-currency="CS">
+              <button type="button" class="btn btn-outline-secondary currency-toggle {% if display_currency == 'CS' %}active{% endif %}" data-currency="CS">
                 <i class="bi bi-currency-exchange"></i>
                 C$
               </button>
@@ -199,13 +200,13 @@
                 <td class="col-producto">{{ row.producto }}</td>
                 <td class="text-end">{{ "{:,.2f}".format(row.cantidad or 0) }}</td>
                 <td class="text-end">
-                  <span class="money-cell" data-usd="{{ row.precio_usd }}" data-cs="{{ row.precio_cs }}">C$ {{ "{:,.2f}".format(row.precio_cs or 0) }}</span>
+                  <span class="money-cell" data-usd="{{ row.precio_usd }}" data-cs="{{ row.precio_cs }}"></span>
                 </td>
                 <td class="text-end">
-                  <span class="money-cell" data-usd="{{ row.subtotal_usd }}" data-cs="{{ row.subtotal_cs }}">C$ {{ "{:,.2f}".format(row.subtotal_cs or 0) }}</span>
+                  <span class="money-cell" data-usd="{{ row.subtotal_usd }}" data-cs="{{ row.subtotal_cs }}"></span>
                 </td>
                 <td class="text-end">
-                  <span class="money-cell" data-usd="{{ row.total_factura_usd }}" data-cs="{{ row.total_factura_cs }}">C$ {{ "{:,.2f}".format(row.total_factura_cs or 0) }}</span>
+                  <span class="money-cell" data-usd="{{ row.total_factura_usd }}" data-cs="{{ row.total_factura_cs }}"></span>
                 </td>
                 <td class="text-center">
                   {% if row.anulada %}
@@ -230,10 +231,10 @@
                 <th class="text-end">{{ "{:,.2f}".format(total_items or 0) }}</th>
                 <th class="text-end">-</th>
                 <th class="text-end">
-                  <span id="totals-subtotal" class="fw-semibold">C$ {{ "{:,.2f}".format(total_cs or 0) }}</span>
+                  <span id="totals-subtotal" class="fw-semibold"></span>
                 </th>
                 <th class="text-end">
-                  <span id="totals-total" class="fw-semibold">C$ {{ "{:,.2f}".format(total_cs or 0) }}</span>
+                  <span id="totals-total" class="fw-semibold"></span>
                 </th>
                 <th class="text-center">
                   <span class="badge bg-secondary">Facturas: {{ total_facturas or 0 }}</span>
@@ -364,6 +365,8 @@
   const currencyButtons = document.querySelectorAll(".currency-toggle");
   const totalsSubtotal = document.getElementById("totals-subtotal");
   const totalsTotal = document.getElementById("totals-total");
+  const currencyField = document.getElementById("report-currency");
+  const exportLinks = [document.getElementById("sales-export-xlsx"), document.getElementById("sales-export-pdf")];
   let debounceTimer = null;
 
   const formatMoney = (value, currency) => {
@@ -380,6 +383,13 @@
     const total = currency === "USD" ? "{{ total_usd or 0 }}" : "{{ total_cs or 0 }}";
     totalsSubtotal.textContent = formatMoney(total, currency);
     totalsTotal.textContent = formatMoney(total, currency);
+    if (currencyField) currencyField.value = currency;
+    exportLinks.forEach((link) => {
+      if (!link) return;
+      const url = new URL(link.href, window.location.origin);
+      url.searchParams.set("moneda", currency);
+      link.href = `${url.pathname}${url.search}`;
+    });
   };
 
   currencyButtons.forEach((btn) => {
@@ -387,6 +397,7 @@
       setCurrency(btn.dataset.currency);
     });
   });
+  setCurrency("{{ display_currency or 'USD' }}");
 
   if (productoFilter && reportForm) {
     productoFilter.addEventListener("input", () => {
@@ -396,7 +407,5 @@
       }, 450);
     });
   }
-
-  setCurrency("CS");
 </script>
 {% endblock %}

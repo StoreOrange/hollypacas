@@ -22834,6 +22834,9 @@ def report_sales_detailed(
 ):
     _enforce_permission(request, user, "access.reports")
     start_date, end_date, branch_id, vendedor_id, producto_q = _sales_report_filters(request)
+    display_currency = (request.query_params.get("moneda") or "USD").strip().upper()
+    if display_currency not in {"USD", "CS"}:
+        display_currency = "USD"
     report_rows, total_usd, total_cs, total_facturas, total_items, vendor_summary, vendor_bultos_summary = _build_sales_report_rows(
         db,
         user,
@@ -22863,6 +22866,7 @@ def report_sales_detailed(
             "selected_branch": branch_id or "",
             "selected_vendedor": vendedor_id or "",
             "producto_q": producto_q,
+            "display_currency": display_currency,
             "total_usd": float(total_usd),
             "total_cs": float(total_cs),
             "total_facturas": total_facturas,
@@ -24793,6 +24797,9 @@ def report_sales_export(
     scoped_branch_ids = _user_scoped_branch_ids(db, user)
     company_profile = _company_profile_payload(db)
     start_date, end_date, branch_id, vendedor_id, producto_q = _sales_report_filters(request)
+    display_currency = (request.query_params.get("moneda") or "USD").strip().upper()
+    if display_currency not in {"USD", "CS"}:
+        display_currency = "USD"
     report_rows, total_usd, total_cs, total_facturas, total_items, vendor_summary, vendor_bultos_summary = _build_sales_report_rows(
         db,
         user,
@@ -24822,7 +24829,9 @@ def report_sales_export(
         c.drawString(margin + 110, y - 10, "Reporte Detallado de Ventas")
         c.setFont("Times-Roman", 8)
         c.setFillColor(colors.HexColor("#475569"))
-        c.drawString(margin + 110, y - 24, f"Rango: {start_date} a {end_date}")
+        currency_label = "USD" if display_currency == "USD" else "Córdobas (C$)"
+        currency_symbol = "$" if display_currency == "USD" else "C$"
+        c.drawString(margin + 110, y - 24, f"Rango: {start_date} a {end_date} | Moneda: {currency_label}")
 
         selected_branch = None
         if branch_id and branch_id != "all":
@@ -25071,10 +25080,9 @@ def report_sales_export(
         draw_header()
         line_height = 12
         for row in report_rows:
-            moneda = row.get("moneda") or "CS"
-            label = "$" if moneda == "USD" else "C$"
-            precio = row["precio_usd"] if moneda == "USD" else row["precio_cs"]
-            subtotal = row["subtotal_usd"] if moneda == "USD" else row["subtotal_cs"]
+            label = currency_symbol
+            precio = row["precio_usd"] if display_currency == "USD" else row["precio_cs"]
+            subtotal = row["subtotal_usd"] if display_currency == "USD" else row["subtotal_cs"]
             product_text = f"{row.get('producto') or ''}".strip()
             product_limit = max_chars_for_width(vendedor_x - producto_x - 8, 8)
             producto_lines = wrap_lines(product_text, product_limit, 2)
@@ -25112,7 +25120,8 @@ def report_sales_export(
         )
         rate = Decimal(str(rate_row.rate)) if rate_row else Decimal("0")
         total_cs_decimal = Decimal(str(total_cs or 0))
-        total_usd_conv = (total_cs_decimal / rate) if rate > 0 else Decimal("0")
+        total_usd_decimal = Decimal(str(total_usd or 0))
+        selected_total = total_usd_decimal if display_currency == "USD" else total_cs_decimal
 
         y -= 10
         c.setFont("Times-Bold", 10)
@@ -25121,15 +25130,13 @@ def report_sales_export(
         c.setFillColor(colors.black)
         y -= 16
         c.setFont("Times-Roman", 9)
-        c.drawString(margin, y, f"Total final (C$): {total_cs:,.2f}")
+        c.drawString(margin, y, f"Total final ({currency_label}): {currency_symbol} {float(selected_total):,.2f}")
         c.drawString(margin + 220, y, f"Bultos vendidos: {float(total_items or 0):,.2f}")
         y -= 14
-        c.drawString(margin, y, f"Total C$: {total_cs:,.2f}")
+        c.drawString(margin, y, f"Equivalente USD: $ {float(total_usd_decimal):,.2f}")
+        c.drawString(margin + 220, y, f"Equivalente C$: C$ {float(total_cs_decimal):,.2f}")
         if rate > 0:
-            c.drawString(margin + 220, y, f"Total USD conversion: {float(total_usd_conv):,.2f}")
-            c.drawString(margin + 420, y, f"Tasa: {float(rate):,.4f}")
-        else:
-            c.drawString(margin + 220, y, "Total USD conversion: -")
+            c.drawString(margin + 420, y, f"Tasa cierre: {float(rate):,.4f}")
         y -= 24
 
         if y < 120:
@@ -25138,20 +25145,24 @@ def report_sales_export(
 
         c.setFont("Times-Bold", 10)
         c.setFillColor(colors.HexColor("#1e3a8a"))
-        c.drawString(margin, y, "Resumen arqueo (USD)")
+        c.drawString(margin, y, f"Resumen arqueo ({currency_label})")
         c.setFillColor(colors.black)
         y -= 16
         c.setFont("Times-Roman", 9)
-        c.drawString(margin, y, f"Total ventas: $ {float(total_ventas_usd):,.2f}")
+        aggregate_cs_rate = rate
+        if aggregate_cs_rate <= 0 and total_usd_decimal > 0:
+            aggregate_cs_rate = total_cs_decimal / total_usd_decimal
+        aggregate_factor = Decimal("1") if display_currency == "USD" else aggregate_cs_rate
+        c.drawString(margin, y, f"Total ventas: {currency_symbol} {float(total_ventas_usd * aggregate_factor):,.2f}")
         y -= 12
-        c.drawString(margin, y, f"- Depositos: $ {float(total_depositos_usd):,.2f}")
+        c.drawString(margin, y, f"- Depositos: {currency_symbol} {float(total_depositos_usd * aggregate_factor):,.2f}")
         y -= 12
-        c.drawString(margin, y, f"- Gastos recibos de caja: $ {float(total_egresos_usd):,.2f}")
+        c.drawString(margin, y, f"- Gastos recibos de caja: {currency_symbol} {float(total_egresos_usd * aggregate_factor):,.2f}")
         y -= 12
-        c.drawString(margin, y, f"- Pendientes deudas: $ {float(total_creditos_usd):,.2f}")
+        c.drawString(margin, y, f"- Pendientes deudas: {currency_symbol} {float(total_creditos_usd * aggregate_factor):,.2f}")
         y -= 12
         c.setFont("Times-Bold", 9)
-        c.drawString(margin, y, f"Total residuo esperado (efectivo): $ {float(total_residuo_usd):,.2f}")
+        c.drawString(margin, y, f"Total residuo esperado (efectivo): {currency_symbol} {float(total_residuo_usd * aggregate_factor):,.2f}")
         y -= 22
 
         c.setFont("Times-Bold", 10)
@@ -25159,16 +25170,24 @@ def report_sales_export(
         if y < 90:
             c.showPage()
             y = height - 50
-        c.drawString(margin, y, "Resumen por vendedor (USD)")
+        c.drawString(margin, y, f"Resumen por vendedor ({currency_label})")
         c.setFillColor(colors.black)
         y -= 16
         c.setFont("Times-Roman", 9)
-        for row in vendor_summary:
+        vendor_display_totals: dict[str, Decimal] = {}
+        for detail_row in report_rows:
+            if detail_row.get("anulada") or detail_row.get("setato_excluida"):
+                continue
+            vendor_name = str(detail_row.get("vendedor") or "Sin asignar")
+            detail_amount = detail_row["subtotal_usd"] if display_currency == "USD" else detail_row["subtotal_cs"]
+            vendor_display_totals[vendor_name] = vendor_display_totals.get(vendor_name, Decimal("0")) + Decimal(str(detail_amount or 0))
+        vendor_display_summary = sorted(vendor_display_totals.items(), key=lambda item: item[1], reverse=True)
+        for vendor_name, vendor_total in vendor_display_summary:
             if y < 50:
                 c.showPage()
                 y = height - 60
-            c.drawString(margin, y, trunc(row["vendedor"], 25))
-            c.drawRightString(margin + 260, y, f"$ {float(row['total_usd'] or 0):,.2f}")
+            c.drawString(margin, y, trunc(vendor_name, 25))
+            c.drawRightString(margin + 260, y, f"{currency_symbol} {float(vendor_total):,.2f}")
             y -= 14
 
         y -= 8
@@ -25219,9 +25238,9 @@ def report_sales_export(
             c.drawString(factura_x, y, "Factura")
             c.drawString(cliente_x, y, "Cliente")
             c.drawString(vendedor_x, y, "Vendedor")
-            c.drawRightString(monto_right, y, "Monto USD")
-            c.drawRightString(abono_right, y, "Abono USD")
-            c.drawRightString(saldo_right, y, "Saldo USD")
+            c.drawRightString(monto_right, y, f"Monto {display_currency}")
+            c.drawRightString(abono_right, y, f"Abono {display_currency}")
+            c.drawRightString(saldo_right, y, f"Saldo {display_currency}")
             c.setFillColor(colors.HexColor("#e2e8f0"))
             c.line(margin, y - 6, width - margin, y - 6)
             c.setFillColor(colors.black)
@@ -25247,9 +25266,9 @@ def report_sales_export(
             c.drawString(factura_x, y, trunc(str(row["factura"] or ""), factura_limit))
             c.drawString(cliente_x, y, trunc(row["cliente"] or "-", cliente_limit))
             c.drawString(vendedor_x, y, trunc(row["vendedor"] or "-", vendedor_limit))
-            c.drawRightString(monto_right, y, f"$ {float(row['total_usd'] or 0):,.2f}")
-            c.drawRightString(abono_right, y, f"$ {float(row['abono_usd'] or 0):,.2f}")
-            c.drawRightString(saldo_right, y, f"$ {float(row['saldo_usd'] or 0):,.2f}")
+            c.drawRightString(monto_right, y, f"{currency_symbol} {float(Decimal(str(row['total_usd'] or 0)) * aggregate_factor):,.2f}")
+            c.drawRightString(abono_right, y, f"{currency_symbol} {float(Decimal(str(row['abono_usd'] or 0)) * aggregate_factor):,.2f}")
+            c.drawRightString(saldo_right, y, f"{currency_symbol} {float(Decimal(str(row['saldo_usd'] or 0)) * aggregate_factor):,.2f}")
             y -= 12
 
         if y < 90:
@@ -25264,7 +25283,7 @@ def report_sales_export(
         c.drawRightString(
             saldo_right,
             y,
-            f"Total creditos pendientes: $ {float(total_creditos_pendientes_usd):,.2f}",
+            f"Total creditos pendientes: {currency_symbol} {float(total_creditos_pendientes_usd * aggregate_factor):,.2f}",
         )
         y -= 14
 
