@@ -11128,14 +11128,19 @@ def _production_laboratory_report_rows(db: Session, start_date: date, end_date: 
         products: dict[int, dict[str, object]] = {}
         out_cs = out_usd = in_cs = in_usd = Decimal("0")
         for movement in laboratory.movimientos or []:
-            for direction, document in (("BAJA", movement.egreso), ("ALTA", movement.ingreso)):
+            movement_entries = [("BAJA", movement.egreso, Decimal("1")), ("ALTA", movement.ingreso, Decimal("1"))]
+            if movement.clase == "CORRECCION_INGRESO":
+                movement_entries = [("ALTA", movement.egreso, Decimal("-1"))]
+            elif movement.clase == "CORRECCION_EGRESO":
+                movement_entries = [("BAJA", movement.ingreso, Decimal("-1"))]
+            for direction, document, sign in movement_entries:
                 if not document:
                     continue
                 movement_rate = Decimal(str(document.tasa_cambio or 0)) if document.tasa_cambio else bank_rate
                 for item in document.items or []:
-                    qty = Decimal(str(item.cantidad or 0))
-                    total_cs = Decimal(str(item.subtotal_cs or 0))
-                    total_usd = Decimal(str(item.subtotal_usd or 0))
+                    qty = Decimal(str(item.cantidad or 0)) * sign
+                    total_cs = Decimal(str(item.subtotal_cs or 0)) * sign
+                    total_usd = Decimal(str(item.subtotal_usd or 0)) * sign
                     if total_cs <= 0:
                         total_cs = Decimal(str(item.costo_unitario_cs or 0)) * qty
                     if total_usd <= 0:
@@ -11226,18 +11231,18 @@ def inventory_production_laboratories_page(
         outgoing_totals: dict[int, dict[str, object]] = {}
         incoming_totals: dict[int, dict[str, object]] = {}
         for movement in movements:
-            for item in (movement.egreso.items if movement.egreso else []):
-                item_usd, item_cs = laboratory_item_values(item, movement.egreso)
-                bucket = outgoing_totals.setdefault(item.producto_id, {"producto": item.producto, "cantidad": Decimal("0"), "total_usd": Decimal("0"), "total_cs": Decimal("0")})
-                bucket["cantidad"] = Decimal(str(bucket["cantidad"])) + Decimal(str(item.cantidad or 0))
-                bucket["total_usd"] = Decimal(str(bucket["total_usd"])) + item_usd
-                bucket["total_cs"] = Decimal(str(bucket["total_cs"])) + item_cs
-            for item in (movement.ingreso.items if movement.ingreso else []):
-                item_usd, item_cs = laboratory_item_values(item, movement.ingreso)
-                bucket = incoming_totals.setdefault(item.producto_id, {"producto": item.producto, "cantidad": Decimal("0"), "total_usd": Decimal("0"), "total_cs": Decimal("0")})
-                bucket["cantidad"] = Decimal(str(bucket["cantidad"])) + Decimal(str(item.cantidad or 0))
-                bucket["total_usd"] = Decimal(str(bucket["total_usd"])) + item_usd
-                bucket["total_cs"] = Decimal(str(bucket["total_cs"])) + item_cs
+            movement_entries = [(outgoing_totals, movement.egreso, Decimal("1")), (incoming_totals, movement.ingreso, Decimal("1"))]
+            if movement.clase == "CORRECCION_INGRESO":
+                movement_entries = [(incoming_totals, movement.egreso, Decimal("-1"))]
+            elif movement.clase == "CORRECCION_EGRESO":
+                movement_entries = [(outgoing_totals, movement.ingreso, Decimal("-1"))]
+            for target, document, sign in movement_entries:
+                for item in (document.items if document else []):
+                    item_usd, item_cs = laboratory_item_values(item, document)
+                    bucket = target.setdefault(item.producto_id, {"producto": item.producto, "cantidad": Decimal("0"), "total_usd": Decimal("0"), "total_cs": Decimal("0")})
+                    bucket["cantidad"] = Decimal(str(bucket["cantidad"])) + (Decimal(str(item.cantidad or 0)) * sign)
+                    bucket["total_usd"] = Decimal(str(bucket["total_usd"])) + (item_usd * sign)
+                    bucket["total_cs"] = Decimal(str(bucket["total_cs"])) + (item_cs * sign)
         total_egreso = sum((Decimal(str(item["total_cs"])) for item in outgoing_totals.values()), Decimal("0"))
         total_ingreso = sum((Decimal(str(item["total_cs"])) for item in incoming_totals.values()), Decimal("0"))
         total_egreso_usd = sum((Decimal(str(item["total_usd"])) for item in outgoing_totals.values()), Decimal("0"))
@@ -11258,6 +11263,7 @@ def inventory_production_laboratories_page(
             "ultimo_documento": next((m for m in reversed(movements) if m.egreso_id and m.ingreso_id), None),
             "salientes": list(outgoing_totals.values()),
             "resultantes": list(incoming_totals.values()),
+            "correcciones": [movement for movement in movements if movement.clase in {"CORRECCION_INGRESO", "CORRECCION_EGRESO"}],
         })
     summary_egreso_cs = sum((row["total_egreso"] for row in rows), Decimal("0"))
     summary_ingreso_cs = sum((row["total_ingreso"] for row in rows), Decimal("0"))
@@ -11420,6 +11426,117 @@ async def inventory_production_laboratory_state(
     db.commit()
     message = "Laboratorio+cerrado" if target == "CERRADA" else "Laboratorio+reabierto"
     return RedirectResponse(f"/inventory/laboratorios-produccion?success={message}", status_code=303)
+
+
+@router.post("/inventory/laboratorios-produccion/{laboratory_id}/correccion-reduccion")
+async def inventory_production_laboratory_reduction(
+    laboratory_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    """Revierte parcialmente unidades sin modificar el documento histórico."""
+    _enforce_permission(request, user, "access.inventory.egresos")
+    laboratory = db.query(ProductionLaboratory).filter(ProductionLaboratory.id == laboratory_id).with_for_update().first()
+    if not laboratory or laboratory.estado != "TERMINADA":
+        return RedirectResponse("/inventory/laboratorios-produccion?error=El+laboratorio+debe+estar+abierto+para+corregirlo", status_code=303)
+    form = await request.form()
+    side = (form.get("lado") or "").strip().upper()
+    product_raw = (form.get("producto_id") or "").strip()
+    reason = (form.get("motivo") or "").strip()
+    try:
+        quantity = Decimal(str(form.get("cantidad") or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        quantity = Decimal("0")
+    if side not in {"INGRESO", "EGRESO"} or not product_raw.isdigit() or quantity <= 0 or len(reason) < 5:
+        return RedirectResponse("/inventory/laboratorios-produccion?error=Indica+producto,+cantidad+y+motivo+valido", status_code=303)
+    product_id = int(product_raw)
+    product = db.query(Producto).filter(Producto.id == product_id).first()
+    if not product:
+        return RedirectResponse("/inventory/laboratorios-produccion?error=Producto+no+encontrado", status_code=303)
+
+    net_quantity = net_cs = net_usd = Decimal("0")
+    for movement in laboratory.movimientos or []:
+        if side == "INGRESO":
+            entries = [(movement.ingreso, Decimal("1"))]
+            if movement.clase == "CORRECCION_INGRESO": entries = [(movement.egreso, Decimal("-1"))]
+            elif movement.clase == "CORRECCION_EGRESO": entries = []
+        else:
+            entries = [(movement.egreso, Decimal("1"))]
+            if movement.clase == "CORRECCION_EGRESO": entries = [(movement.ingreso, Decimal("-1"))]
+            elif movement.clase == "CORRECCION_INGRESO": entries = []
+        for document, sign in entries:
+            for item in (document.items if document else []):
+                if int(item.producto_id) != product_id:
+                    continue
+                item_quantity = Decimal(str(item.cantidad or 0))
+                item_cs = Decimal(str(item.subtotal_cs or 0)) or (Decimal(str(item.costo_unitario_cs or 0)) * item_quantity)
+                item_usd = Decimal(str(item.subtotal_usd or 0)) or (Decimal(str(item.costo_unitario_usd or 0)) * item_quantity)
+                net_quantity += item_quantity * sign
+                net_cs += item_cs * sign
+                net_usd += item_usd * sign
+    if net_quantity <= 0 or quantity > net_quantity:
+        available_label = f"{max(net_quantity, Decimal('0')):,.2f}"
+        return RedirectResponse(f"/inventory/laboratorios-produccion?error=Solo+puedes+reducir+hasta+{quote_plus(available_label)}+unidades", status_code=303)
+
+    rate_row = db.query(ExchangeRate).filter(ExchangeRate.effective_date <= local_today()).order_by(ExchangeRate.effective_date.desc()).first()
+    rate = Decimal(str(rate_row.rate or 0)) if rate_row else Decimal("0")
+    unit_cs = (net_cs / net_quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if net_cs > 0 else Decimal(str(product.costo_producto or 0))
+    unit_usd = (net_usd / net_quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if net_usd > 0 else ((unit_cs / rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if rate > 0 else Decimal("0"))
+    subtotal_cs = (unit_cs * quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    subtotal_usd = (unit_usd * quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    note = f"Corrección por reducción {side.lower()} · {laboratory.numero} · {reason}"[:300]
+    today = local_today()
+
+    if side == "INGRESO":
+        destination_balance = _balances_by_bodega(db, [laboratory.bodega_destino_id], [product_id]).get((product_id, laboratory.bodega_destino_id), Decimal("0"))
+        if destination_balance < quantity:
+            balance_label = f"{destination_balance:,.2f}"
+            return RedirectResponse(f"/inventory/laboratorios-produccion?error=La+bodega+destino+solo+tiene+{quote_plus(balance_label)}+unidades+disponibles", status_code=303)
+        movement_type = db.query(EgresoTipo).filter(func.lower(EgresoTipo.nombre) == "correccion de laboratorio").first()
+        if not movement_type:
+            movement_type = EgresoTipo(nombre="Correccion de laboratorio")
+            db.add(movement_type); db.flush()
+        document = EgresoInventario(tipo_id=movement_type.id, bodega_id=laboratory.bodega_destino_id, fecha=today, moneda="CS", tasa_cambio=rate or None, total_usd=subtotal_usd, total_cs=subtotal_cs, observacion=note, usuario_registro=user.full_name)
+        db.add(document); db.flush()
+        db.add(EgresoItem(egreso_id=document.id, producto_id=product_id, cantidad=quantity, costo_unitario_usd=unit_usd, costo_unitario_cs=unit_cs, subtotal_usd=subtotal_usd, subtotal_cs=subtotal_cs))
+        db.add(ProductionLaboratoryMovement(laboratorio_id=laboratory.id, egreso_id=document.id, clase="CORRECCION_INGRESO", observacion=reason[:300], usuario_registro=user.full_name))
+        accounting_code = "INV_OUT"
+        accounting_branch = laboratory.bodega_destino.branch_id if laboratory.bodega_destino else None
+        accounting_reference = f"AUTO-EGR-{document.id}"
+    else:
+        movement_type = db.query(IngresoTipo).filter(func.lower(IngresoTipo.nombre) == "correccion de laboratorio").first()
+        if not movement_type:
+            movement_type = IngresoTipo(nombre="Correccion de laboratorio", requiere_proveedor=False)
+            db.add(movement_type); db.flush()
+        document = IngresoInventario(tipo_id=movement_type.id, bodega_id=laboratory.bodega_origen_id, proveedor_id=None, fecha=today, moneda="CS", tasa_cambio=rate or None, total_usd=subtotal_usd, total_cs=subtotal_cs, observacion=note, usuario_registro=user.full_name)
+        db.add(document); db.flush()
+        db.add(IngresoItem(ingreso_id=document.id, producto_id=product_id, cantidad=quantity, costo_unitario_usd=unit_usd, costo_unitario_cs=unit_cs, subtotal_usd=subtotal_usd, subtotal_cs=subtotal_cs))
+        db.add(ProductionLaboratoryMovement(laboratorio_id=laboratory.id, ingreso_id=document.id, clase="CORRECCION_EGRESO", observacion=reason[:300], usuario_registro=user.full_name))
+        accounting_code = "INV_IN"
+        accounting_branch = laboratory.bodega_origen.branch_id if laboratory.bodega_origen else None
+        accounting_reference = f"AUTO-ING-{document.id}"
+
+    # El kardex por bodega es la fuente de verdad. Sincronizar el saldo auxiliar
+    # después de insertar el documento compensatorio evita arrastrar diferencias
+    # históricas o duplicar el efecto de esta corrección.
+    db.flush()
+    all_bodega_ids = [row.id for row in db.query(Bodega.id).all()]
+    global_balances = _balances_by_bodega(db, all_bodega_ids, [product_id])
+    global_quantity = sum(
+        (global_balances.get((product_id, bodega_id), Decimal("0")) for bodega_id in all_bodega_ids),
+        Decimal("0"),
+    )
+    if product.saldo:
+        product.saldo.existencia = global_quantity
+    else:
+        db.add(SaldoProducto(producto_id=product.id, existencia=global_quantity))
+    accounting_entry = _build_auto_accounting_entry(db, event_code=accounting_code, branch_id=accounting_branch, entry_date=today, amount=subtotal_cs, reference=accounting_reference, description=f"Corrección auditada de laboratorio {laboratory.numero}")
+    if accounting_entry:
+        db.add(accounting_entry)
+    db.commit()
+    quantity_label = f"{quantity:,.2f}"
+    return RedirectResponse(f"/inventory/laboratorios-produccion?success=Correccion+aplicada:+{quote_plus(quantity_label)}+unidades+deducidas+de+{quote_plus(product.cod_producto)}", status_code=303)
 
 
 @router.get("/inventory/egresos")
@@ -29660,12 +29777,24 @@ def inventory_abierta_resultado_pdf(
     laboratory = None
     egresos: list[EgresoInventario] = []
     ingresos: list[IngresoInventario] = []
+    outgoing_documents: list[tuple[object, Decimal]] = []
+    incoming_documents: list[tuple[object, Decimal]] = []
     if laboratorio_id:
         laboratory = db.query(ProductionLaboratory).filter(ProductionLaboratory.id == laboratorio_id).first()
         if not laboratory:
             raise HTTPException(status_code=404, detail="Laboratorio no encontrado")
-        egresos = [movement.egreso for movement in (laboratory.movimientos or []) if movement.egreso]
-        ingresos = [movement.ingreso for movement in (laboratory.movimientos or []) if movement.ingreso]
+        for movement in laboratory.movimientos or []:
+            if movement.clase == "CORRECCION_INGRESO" and movement.egreso:
+                incoming_documents.append((movement.egreso, Decimal("-1")))
+            elif movement.clase == "CORRECCION_EGRESO" and movement.ingreso:
+                outgoing_documents.append((movement.ingreso, Decimal("-1")))
+            else:
+                if movement.egreso:
+                    outgoing_documents.append((movement.egreso, Decimal("1")))
+                if movement.ingreso:
+                    incoming_documents.append((movement.ingreso, Decimal("1")))
+        egresos = [document for document, sign in outgoing_documents if sign > 0]
+        ingresos = [document for document, sign in incoming_documents if sign > 0]
     else:
         egreso = db.query(EgresoInventario).filter(EgresoInventario.id == egreso_id).first() if egreso_id else None
         ingreso = db.query(IngresoInventario).filter(IngresoInventario.id == ingreso_id).first() if ingreso_id else None
@@ -29675,6 +29804,8 @@ def inventory_abierta_resultado_pdf(
             raise HTTPException(status_code=404, detail="Ingreso resultado no encontrado")
         egresos = [egreso]
         ingresos = [ingreso]
+        outgoing_documents = [(egreso, Decimal("1"))]
+        incoming_documents = [(ingreso, Decimal("1"))]
     if not egresos or not ingresos:
         raise HTTPException(status_code=404, detail="El laboratorio aun no contiene ambos lados del proceso")
     egreso = egresos[0]
@@ -29686,10 +29817,10 @@ def inventory_abierta_resultado_pdf(
         .first()
     )
     fallback_rate = Decimal(str(rate_today.rate or 0)) if rate_today and rate_today.rate else Decimal("0")
-    egreso_total_bultos = sum(float(item.cantidad or 0) for movement in egresos for item in (movement.items or []))
-    ingreso_total_bultos = sum(float(item.cantidad or 0) for movement in ingresos for item in (movement.items or []))
-    egreso_total_items = sum(len(movement.items or []) for movement in egresos)
-    ingreso_total_items = sum(len(movement.items or []) for movement in ingresos)
+    egreso_total_bultos = sum(float(Decimal(str(item.cantidad or 0)) * sign) for movement, sign in outgoing_documents for item in (movement.items or []))
+    ingreso_total_bultos = sum(float(Decimal(str(item.cantidad or 0)) * sign) for movement, sign in incoming_documents for item in (movement.items or []))
+    egreso_total_items = sum(len(movement.items or []) for movement, sign in outgoing_documents if sign > 0)
+    ingreso_total_items = sum(len(movement.items or []) for movement, sign in incoming_documents if sign > 0)
     def _item_usd_values(item_obj, movement_rate: Decimal) -> tuple[float, float]:
         qty_dec = Decimal(str(item_obj.cantidad or 0))
         unit_usd_dec = Decimal(str(item_obj.costo_unitario_usd or 0))
@@ -29708,36 +29839,101 @@ def inventory_abierta_resultado_pdf(
     diferencia_bultos = ingreso_total_bultos - egreso_total_bultos
     egreso_rows = []
     ingreso_rows = []
+    correction_rows = []
     egreso_total_usd = Decimal("0")
     ingreso_total_usd = Decimal("0")
-    for movement in egresos:
+    for movement, sign in outgoing_documents:
         movement_rate = Decimal(str(movement.tasa_cambio or 0)) if movement.tasa_cambio else Decimal("0")
         for item in (movement.items or []):
             costo_usd, subtotal_usd = _item_usd_values(item, movement_rate)
-            egreso_total_usd += Decimal(str(subtotal_usd))
+            signed_quantity = float(Decimal(str(item.cantidad or 0)) * sign)
+            signed_subtotal = float(Decimal(str(subtotal_usd)) * sign)
+            egreso_total_usd += Decimal(str(signed_subtotal))
             egreso_rows.append(
                 (
                     item.producto.cod_producto if item.producto else "",
-                    item.producto.descripcion if item.producto else "",
-                    float(item.cantidad or 0),
+                    ("Corrección (-) · " if sign < 0 else "") + (item.producto.descripcion if item.producto else ""),
+                    signed_quantity,
                     costo_usd,
-                    subtotal_usd,
+                    signed_subtotal,
                 )
             )
-    for movement in ingresos:
+    for movement, sign in incoming_documents:
         movement_rate = Decimal(str(movement.tasa_cambio or 0)) if movement.tasa_cambio else Decimal("0")
         for item in (movement.items or []):
             costo_usd, subtotal_usd = _item_usd_values(item, movement_rate)
-            ingreso_total_usd += Decimal(str(subtotal_usd))
+            signed_quantity = float(Decimal(str(item.cantidad or 0)) * sign)
+            signed_subtotal = float(Decimal(str(subtotal_usd)) * sign)
+            ingreso_total_usd += Decimal(str(signed_subtotal))
             ingreso_rows.append(
                 (
                     item.producto.cod_producto if item.producto else "",
-                    item.producto.descripcion if item.producto else "",
-                    float(item.cantidad or 0),
+                    ("Corrección (-) · " if sign < 0 else "") + (item.producto.descripcion if item.producto else ""),
+                    signed_quantity,
                     costo_usd,
-                    subtotal_usd,
+                    signed_subtotal,
                 )
             )
+
+    def _consolidate_net_rows(rows: list[tuple[str, str, float, float, float]]) -> list[tuple[str, str, float, float, float]]:
+        consolidated: dict[tuple[str, str], dict[str, Decimal]] = {}
+        correction_prefix = "Corrección (-) · "
+        for code, description, quantity, _unit_cost, subtotal in rows:
+            clean_description = description.removeprefix(correction_prefix)
+            bucket = consolidated.setdefault(
+                (code, clean_description),
+                {"quantity": Decimal("0"), "subtotal": Decimal("0")},
+            )
+            bucket["quantity"] += Decimal(str(quantity))
+            bucket["subtotal"] += Decimal(str(subtotal))
+        net_rows = []
+        for (code, description), values in consolidated.items():
+            net_quantity = values["quantity"]
+            net_subtotal = values["subtotal"]
+            if net_quantity == 0 and net_subtotal == 0:
+                continue
+            net_unit_cost = (net_subtotal / net_quantity) if net_quantity else Decimal("0")
+            net_rows.append((code, description, float(net_quantity), float(net_unit_cost), float(net_subtotal)))
+        return net_rows
+
+    # El cuerpo principal del documento muestra la realidad vigente (por ejemplo,
+    # 10 originales - 5 corregidas = 5). La trazabilidad se imprime aparte abajo.
+    egreso_rows = _consolidate_net_rows(egreso_rows)
+    ingreso_rows = _consolidate_net_rows(ingreso_rows)
+    if laboratory:
+        for movement in laboratory.movimientos or []:
+            if movement.clase == "CORRECCION_INGRESO":
+                correction_side = "Reduccion de producto resultante"
+                correction_document = movement.egreso
+                document_label = f"Egreso #{movement.egreso_id}" if movement.egreso_id else "-"
+            elif movement.clase == "CORRECCION_EGRESO":
+                correction_side = "Devolucion de material consumido"
+                correction_document = movement.ingreso
+                document_label = f"Ingreso #{movement.ingreso_id}" if movement.ingreso_id else "-"
+            else:
+                continue
+            movement_rate = Decimal(str(correction_document.tasa_cambio or 0)) if correction_document and correction_document.tasa_cambio else result_rate
+            for item in (correction_document.items if correction_document else []):
+                item_quantity = Decimal(str(item.cantidad or 0))
+                item_unit_usd, item_subtotal_usd = _item_usd_values(item, movement_rate)
+                item_subtotal_cs = Decimal(str(item.subtotal_cs or 0))
+                if item_subtotal_cs <= 0 and movement_rate > 0:
+                    item_subtotal_cs = Decimal(str(item_subtotal_usd)) * movement_rate
+                correction_rows.append(
+                    {
+                        "date": movement.created_at.strftime("%d/%m/%Y %I:%M %p") if movement.created_at else "-",
+                        "side": correction_side,
+                        "document": document_label,
+                        "code": item.producto.cod_producto if item.producto else "-",
+                        "description": item.producto.descripcion if item.producto else "Producto",
+                        "quantity": item_quantity,
+                        "unit_usd": Decimal(str(item_unit_usd)),
+                        "total_usd": Decimal(str(item_subtotal_usd)),
+                        "total_cs": item_subtotal_cs,
+                        "reason": movement.observacion or "-",
+                        "user": movement.usuario_registro or "-",
+                    }
+                )
     diferencia_usd = float((ingreso_total_usd - egreso_total_usd).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     diferencia_cs = float((Decimal(str(diferencia_usd)) * result_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if result_rate > 0 else 0.0
     resultado_label = "Ganancia" if diferencia_usd > 0 else ("Perdida" if diferencia_usd < 0 else "Equilibrado")
@@ -29752,14 +29948,17 @@ def inventory_abierta_resultado_pdf(
     width, height = letter
     margin = 36
     table_top_offset = 232
+    page_started = False
 
     def draw_footer() -> None:
         pdf.setFont("Helvetica", 8)
         pdf.drawRightString(width - margin, margin - 18, f"Pagina {pdf.getPageNumber()}")
 
     def start_page() -> float:
-        if pdf.getPageNumber() > 1:
+        nonlocal page_started
+        if page_started:
             pdf.showPage()
+        page_started = True
         logo_path = _resolve_logo_path(company_profile.get("logo_url", ""))
         if logo_path.exists():
             pdf.drawImage(
@@ -29796,8 +29995,8 @@ def inventory_abierta_resultado_pdf(
         pdf.drawString(margin + 200, height - 160, f"Tipo: {egreso.tipo.nombre if egreso.tipo else '-'}")
         pdf.drawString(margin, height - 174, f"Bodega origen: {egreso.bodega.name if egreso.bodega else '-'}")
         pdf.drawString(margin + 260, height - 174, f"Bodega resultado: {ingreso.bodega.name if ingreso.bodega else '-'}")
-        pdf.drawString(margin, height - 188, f"Egresos incluidos: {len(egresos)}")
-        pdf.drawString(margin + 200, height - 188, f"Ingresos incluidos: {len(ingresos)}")
+        pdf.drawString(margin, height - 188, f"Movimientos lado baja: {len(outgoing_documents)}")
+        pdf.drawString(margin + 200, height - 188, f"Movimientos lado alta: {len(incoming_documents)}")
         observacion = ((laboratory.observacion if laboratory else None) or egreso.observacion or ingreso.observacion or "-").strip()
         if len(observacion) > 120:
             observacion = f"{observacion[:117]}..."
@@ -29901,6 +30100,34 @@ def inventory_abierta_resultado_pdf(
         pdf.drawRightString(width - margin - 10, top_y - 94, f"Diferencia bultos: {diferencia_bultos:,.2f}")
         return bottom_y - 12
 
+    def draw_corrections(y_pos: float) -> float:
+        if not correction_rows:
+            return y_pos
+        y_pos = draw_section_title(y_pos, "Historial de correcciones auditadas")
+        for correction in correction_rows:
+            y_pos = ensure_space(y_pos, 82)
+            pdf.setFillColorRGB(1, 0.98, 0.91)
+            pdf.roundRect(margin, y_pos - 57, width - (margin * 2), 64, 6, fill=1, stroke=0)
+            pdf.setFillColorRGB(0.30, 0.22, 0.05)
+            pdf.setFont("Helvetica-Bold", 8)
+            pdf.drawString(margin + 8, y_pos - 7, f"{correction['side']}  |  {correction['document']}  |  {correction['date']}")
+            pdf.setFont("Helvetica", 8)
+            product_text = f"{correction['code']} - {correction['description']}"
+            if len(product_text) > 68:
+                product_text = f"{product_text[:65]}..."
+            pdf.drawString(margin + 8, y_pos - 21, product_text)
+            pdf.drawString(margin + 8, y_pos - 35, f"Cantidad corregida: {correction['quantity']:,.2f}")
+            pdf.drawString(margin + 165, y_pos - 35, f"Costo unitario USD: {correction['unit_usd']:,.2f}")
+            pdf.drawString(margin + 340, y_pos - 35, f"Costo deducido USD: {correction['total_usd']:,.2f}")
+            reason_text = f"Motivo: {correction['reason']} | Usuario: {correction['user']}"
+            if len(reason_text) > 100:
+                reason_text = f"{reason_text[:97]}..."
+            pdf.drawString(margin + 8, y_pos - 49, reason_text)
+            pdf.drawRightString(width - margin - 8, y_pos - 49, f"C$ {correction['total_cs']:,.2f}")
+            pdf.setFillColorRGB(0, 0, 0)
+            y_pos -= 72
+        return y_pos
+
     y = start_page()
     y = draw_items_section(
         y,
@@ -29919,6 +30146,7 @@ def inventory_abierta_resultado_pdf(
         float(ingreso_total_usd),
     )
     y = draw_balance_summary(y)
+    y = draw_corrections(y)
 
     draw_footer()
     pdf.save()
