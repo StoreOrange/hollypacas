@@ -547,7 +547,7 @@
       <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2 flex flex-wrap items-center justify-between gap-3" data-success-banner>
         <span>{{ success }}</span>
         {% if print_id %}
-        <div class="d-flex d-lg-none flex-wrap align-items-center gap-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
             <a
             href="/sales/{{ print_id }}/ticket/print?copies=2&return_to=/sales"
             target="_blank"
@@ -607,6 +607,10 @@
                   <button id="open-promotion-modal" class="btn btn-outline-success btn-sm d-inline-flex align-items-center gap-2" type="button">
                     <i class="bi bi-gift"></i>
                     Promoción 2x1
+                  </button>
+                  <button id="open-discount-promotion-modal" class="btn btn-outline-warning btn-sm d-inline-flex align-items-center gap-2" type="button">
+                    <i class="bi bi-tags"></i>
+                    2 por precio especial
                   </button>
                   {% endif %}
                   <div id="preventa-live-inline" class="preventa-live-inline">
@@ -1207,6 +1211,19 @@
   </div>
 </div>
 
+{% if pacasholl_libreado_enabled %}
+<div class="modal fade" id="discount-promotion-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content border-0 shadow-lg">
+    <div class="modal-header"><div><div class="text-xs text-uppercase text-muted fw-semibold">Promoción controlada</div><h2 class="h5 mb-0">Dos unidades por precio especial</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div class="alert alert-light border small"><i class="bi bi-info-circle text-primary"></i> Las dos unidades salen del inventario. El sistema cobra el precio especial y descuenta dos unidades del cupo administrativo por cada paquete.</div>
+      <div id="discount-promotion-loading" class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm"></span> Cargando promociones...</div>
+      <div id="discount-promotion-list" class="row g-3"></div>
+    </div>
+  </div></div>
+</div>
+{% endif %}
+
 <div class="modal fade" id="cliente-search-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
@@ -1310,6 +1327,10 @@
   const productListPanel = document.getElementById("product-list-panel");
   const openComboModal = document.getElementById("open-combo-modal");
   const openPromotionModal = document.getElementById("open-promotion-modal");
+  const openDiscountPromotionModal = document.getElementById("open-discount-promotion-modal");
+  const discountPromotionModal = document.getElementById("discount-promotion-modal");
+  const discountPromotionList = document.getElementById("discount-promotion-list");
+  const discountPromotionLoading = document.getElementById("discount-promotion-loading");
   const comboModal = document.getElementById("combo-modal");
   const comboModalEyebrow = document.getElementById("combo-modal-eyebrow");
   const comboModalTitle = document.getElementById("combo-modal-title");
@@ -1724,13 +1745,16 @@
       row.dataset.comboGroup = payload.comboGroup;
     }
     const isTwoForOne = String(payload.comboGroup || "").startsWith("promotion-");
-    const badgeLabel = payload.role === "parent"
+    const isDiscountPromotion = String(payload.comboGroup || "").startsWith("discount2-");
+    const badgeLabel = payload.role === "discount"
+      ? "2 por precio especial"
+      : payload.role === "parent"
       ? (isTwoForOne ? "Promoción 2x1" : "Oferta")
       : payload.role === "gift"
         ? (isTwoForOne ? "Regalía 2x1" : "Regalia")
         : "";
-    const badgeClass = payload.role === "parent" ? "combo-parent-badge" : payload.role === "gift" ? "combo-gift-badge" : "";
-    const badgeIcon = payload.role === "parent" ? "bi-boxes" : payload.role === "gift" ? "bi-gift" : "";
+    const badgeClass = payload.role === "discount" ? "combo-parent-badge" : payload.role === "parent" ? "combo-parent-badge" : payload.role === "gift" ? "combo-gift-badge" : "";
+    const badgeIcon = payload.role === "discount" ? "bi-tags" : payload.role === "parent" ? "bi-boxes" : payload.role === "gift" ? "bi-gift" : "";
     const badgeHtml = badgeLabel
       ? `<span class="ms-2 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] font-semibold ${badgeClass}">
           <i class="bi ${badgeIcon}"></i> ${badgeLabel}
@@ -2994,6 +3018,69 @@
     });
   }
 
+  const currentDiscountPromotionUnits = (promotionId) => {
+    let units = 0;
+    document.querySelectorAll(`tr[data-combo-group^="discount2-${promotionId}-"]`).forEach((row) => {
+      units += Number(row.querySelector('input[name="item_cantidad"]')?.value || 0);
+    });
+    return units;
+  };
+
+  const renderDiscountPromotions = (items) => {
+    if (!discountPromotionList) return;
+    discountPromotionList.innerHTML = items.length ? items.map((item) => {
+      const inCart = currentDiscountPromotionUnits(item.promotion_id);
+      const packagesLeft = Math.max(0, Math.floor((Number(item.remaining_units || 0) - inCart) / 2));
+      const stockPackages = Math.max(0, Math.floor((Number(item.physical_stock || 0) - getInvoiceQty(item.product_id)) / 2));
+      const available = Math.min(packagesLeft, stockPackages);
+      return `<div class="col-md-6"><div class="card h-100 border ${available > 0 ? 'border-warning-subtle' : 'border-light'}"><div class="card-body">
+        <div class="d-flex justify-content-between gap-3"><div><div class="fw-bold text-ink">${item.code}</div><div class="small text-muted">${item.description}</div></div><span class="badge text-bg-warning align-self-start">2 unidades</span></div>
+        <div class="row g-2 mt-2 small"><div class="col-6"><span class="text-muted">Normal</span><div class="text-decoration-line-through">US$ ${(Number(item.normal_unit_usd)*2).toFixed(2)}</div></div><div class="col-6"><span class="text-muted">Oferta</span><div class="fw-bold text-success fs-5">US$ ${Number(item.package_price_usd).toFixed(2)}</div></div><div class="col-6"><span class="text-muted">Existencia física</span><div class="fw-semibold">${Number(item.physical_stock).toFixed(0)} uds.</div></div><div class="col-6"><span class="text-muted">Cupo disponible</span><div class="fw-semibold">${Math.max(0,Number(item.remaining_units)-inCart).toFixed(0)} uds.</div></div></div>
+        <div class="input-group mt-3"><span class="input-group-text">Paquetes</span><input class="form-control text-center discount-package-count" type="number" min="1" max="${available}" value="1" ${available < 1 ? 'disabled' : ''}><button type="button" class="btn btn-warning discount-promotion-add" data-promotion='${JSON.stringify(item).replaceAll("'", "&#39;")}' ${available < 1 ? 'disabled' : ''}><i class="bi bi-cart-plus"></i> Agregar</button></div>
+        ${available < 1 ? '<div class="small text-danger mt-2">Sin cupo promocional o existencia suficiente.</div>' : `<div class="small text-muted mt-2">Máximo disponible: ${available} paquete(s).</div>`}
+      </div></div></div>`;
+    }).join('') : '<div class="col-12 text-center text-muted py-5">No hay promociones activas con cupo.</div>';
+  };
+
+  const loadDiscountPromotions = async () => {
+    if (discountPromotionLoading) discountPromotionLoading.classList.remove('d-none');
+    if (discountPromotionList) discountPromotionList.innerHTML = '';
+    try {
+      const response = await fetch('/sales/discount-promotions');
+      const payload = await response.json();
+      renderDiscountPromotions(payload.items || []);
+    } catch (_) {
+      if (discountPromotionList) discountPromotionList.innerHTML = '<div class="col-12 alert alert-danger">No fue posible cargar las promociones.</div>';
+    } finally {
+      if (discountPromotionLoading) discountPromotionLoading.classList.add('d-none');
+    }
+  };
+
+  openDiscountPromotionModal?.addEventListener('click', async () => {
+    await loadDiscountPromotions();
+    window.bootstrap?.Modal.getOrCreateInstance(discountPromotionModal).show();
+  });
+
+  discountPromotionList?.addEventListener('click', (event) => {
+    const button = event.target.closest('.discount-promotion-add');
+    if (!button) return;
+    const item = JSON.parse(button.dataset.promotion || '{}');
+    const packagesInput = button.closest('.input-group')?.querySelector('.discount-package-count');
+    const packages = Math.max(1, Math.round(Number(packagesInput?.value || 1)));
+    const maxPackages = Number(packagesInput?.max || 0);
+    if (!maxPackages || packages > maxPackages) {
+      pauseNavForAlert({icon:'warning', title:'Promoción', text:`Solo hay ${maxPackages} paquete(s) disponibles.`});
+      return;
+    }
+    const qty = packages * 2;
+    const currency = monedaField?.value || 'USD';
+    const packagePrice = currency === 'USD' ? Number(item.package_price_usd) : Number(item.package_price_usd) * rateToday;
+    const unitPrice = packagePrice / 2;
+    const subtotal = packagePrice * packages;
+    addItemRow({productId:item.product_id, code:item.code, name:item.description, qtyValue:qty.toFixed(2), qtyValueDisplay:String(qty), qtyStep:'1', qtyReadonly:true, maxQty:Number(item.physical_stock), priceValue:unitPrice.toFixed(2), subtotalUsd:currency === 'USD' ? subtotal : subtotal/rateToday, subtotalCs:currency === 'USD' ? subtotal*rateToday : subtotal, role:'discount', lockPrice:true, comboGroup:`discount2-${item.promotion_id}-${Date.now()}`});
+    window.bootstrap?.Modal.getInstance(discountPromotionModal)?.hide();
+  });
+
   const productEmptyRow = document.getElementById("product-empty");
   let searchTimer = null;
 
@@ -3598,6 +3685,19 @@
         return;
       }
       syncPaymentHidden();
+      // Reservar la ventana mientras aun estamos dentro del clic del usuario.
+      // Tras el POST el navegador reutiliza este nombre para mostrar el ticket,
+      // evitando que el bloqueador de ventanas emergentes oculte la factura POS.
+      try {
+        const pendingPrint = window.matchMedia("(max-width: 991.98px)").matches
+          ? null
+          : window.open("", "erp_print_window", "width=520,height=780,resizable=yes,scrollbars=yes");
+        if (pendingPrint) {
+          pendingPrint.document.title = "Preparando factura POS";
+          pendingPrint.document.body.innerHTML = '<div style="font-family:Arial,sans-serif;padding:32px;text-align:center;color:#334155"><div style="font-size:18px;font-weight:700;margin-bottom:10px">Preparando factura POS…</div><div>Espere mientras se registra la venta.</div></div>';
+          sessionStorage.setItem("erpPendingSalesPrint", "1");
+        }
+      } catch (_) {}
       document.getElementById("sales-form").requestSubmit();
     });
   }
@@ -4246,6 +4346,13 @@
   }
 
   {% if error %}
+  try {
+    if (sessionStorage.getItem("erpPendingSalesPrint") === "1") {
+      const pendingPrint = window.open("", "erp_print_window");
+      if (pendingPrint) pendingPrint.close();
+      sessionStorage.removeItem("erpPendingSalesPrint");
+    }
+  } catch (_) {}
   if (typeof Swal !== "undefined") {
     Swal.fire({
       icon: "error",
@@ -4286,11 +4393,14 @@
           }, 300);
         };
         window.addEventListener("focus", reloadAfterPrint, { once: true });
+        let printResult = null;
         if (window.erpOpenPrintable) {
-          window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
+          printResult = window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
         } else {
-          window.open(printUrl, "erp_print_window", "width=520,height=780,resizable=yes,scrollbars=yes");
+          const popup = window.open(printUrl, "erp_print_window", "width=520,height=780,resizable=yes,scrollbars=yes");
+          printResult = { opened: Boolean(popup), popup };
         }
+        sessionStorage.removeItem("erpPendingSalesPrint");
         setTimeout(() => {
           window.location.replace("/sales");
         }, 12000);

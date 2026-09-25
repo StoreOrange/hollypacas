@@ -261,6 +261,26 @@ class RegaliaProducto(Base):
     producto = relationship("Producto")
 
 
+class PromocionDescuentoProducto(Base):
+    """Promocion de cantidad con precio cerrado (por ejemplo, 2 por US$ 200)."""
+
+    __tablename__ = "promociones_descuento_productos"
+    __table_args__ = (UniqueConstraint("producto_id", name="uq_promocion_descuento_producto"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
+    cantidad_paquete = Column(Integer, nullable=False, default=2)
+    precio_paquete_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    cupo_unidades = Column(Numeric(14, 2), nullable=False, default=0)
+    nota = Column(String(240), nullable=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    usuario_registro = Column(String(120), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    producto = relationship("Producto")
+
+
 class RegaliaVendedorPolitica(Base):
     __tablename__ = "regalias_vendedores_politicas"
     __table_args__ = (UniqueConstraint("vendedor_id", name="uq_regalia_vendedor_politica"),)

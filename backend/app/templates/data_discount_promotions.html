@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Descuentos 2 por precio especial{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+    <div><div class="text-uppercase text-muted small fw-semibold">Datos · Pacas Hollywood</div><h1 class="h3 mb-1">Descuentos por cantidad</h1><p class="text-muted mb-0">Configura dos unidades del mismo producto por un precio cerrado y limita las unidades autorizadas.</p></div>
+    <a class="btn btn-outline-secondary" href="/data"><i class="bi bi-arrow-left"></i> Volver a Datos</a>
+  </div>
+  {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
+  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+  <div class="card border-0 shadow-sm mb-4"><div class="card-body p-4">
+    <h2 class="h5 mb-3"><i class="bi bi-tags text-primary"></i> Nueva promoción</h2>
+    <div class="mb-3"><label class="form-label fw-semibold">Buscar producto</label><input id="discount-product-search" class="form-control" placeholder="Escribe código o descripción" autocomplete="off"><div id="discount-product-results" class="list-group mt-2"></div></div>
+    <form method="post" action="/data/promociones-descuento" class="row g-3 align-items-end">
+      <input id="discount-product-id" type="hidden" name="producto_id" required>
+      <div class="col-lg-4"><label class="form-label">Producto seleccionado</label><input id="discount-product-selected" class="form-control" value="Sin seleccionar" readonly></div>
+      <div class="col-md-3 col-lg-2"><label class="form-label">Precio normal (2)</label><input id="discount-normal-price" class="form-control" readonly></div>
+      <div class="col-md-3 col-lg-2"><label class="form-label">Precio especial USD</label><input class="form-control" name="precio_paquete_usd" type="number" min="0.01" step="0.01" required></div>
+      <div class="col-md-3 col-lg-2"><label class="form-label">Cupo en unidades</label><input class="form-control" name="cupo_unidades" type="number" min="2" step="2" required><div class="form-text">Debe ser par.</div></div>
+      <div class="col-md-3 col-lg-2"><button class="btn btn-primary w-100"><i class="bi bi-plus-circle"></i> Guardar</button></div>
+      <div class="col-12"><label class="form-label">Nota</label><input class="form-control" name="nota" maxlength="240" placeholder="Ej.: oferta por temporada"></div>
+    </form>
+  </div></div>
+  <div class="card border-0 shadow-sm"><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+    <thead class="table-light"><tr><th>Producto</th><th class="text-end">Normal 2 uds.</th><th class="text-end">Precio oferta</th><th class="text-end">Cupo</th><th class="text-end">Usado</th><th class="text-end">Disponible</th><th>Configuración</th></tr></thead>
+    <tbody>{% for row in promotions %}<tr><td><div class="fw-semibold">{{ row.product.cod_producto }}</div><div class="small text-muted">{{ row.product.descripcion }}</div></td><td class="text-end">US$ {{ "{:,.2f}".format((row.product.precio_venta1_usd or 0) * 2) }}</td><td class="text-end fw-bold text-primary">US$ {{ "{:,.2f}".format(row.promotion.precio_paquete_usd or 0) }}</td><td class="text-end">{{ row.promotion.cupo_unidades }}</td><td class="text-end">{{ row.used }}</td><td class="text-end fw-bold">{{ row.remaining }}</td><td style="min-width:360px"><form method="post" action="/data/promociones-descuento/{{ row.promotion.id }}/update" class="row g-2"><div class="col-3"><input class="form-control form-control-sm" name="precio_paquete_usd" type="number" min=".01" step=".01" value="{{ row.promotion.precio_paquete_usd }}" required></div><div class="col-3"><input class="form-control form-control-sm" name="cupo_unidades" type="number" min="2" step="2" value="{{ row.promotion.cupo_unidades }}" required></div><div class="col-3"><input class="form-control form-control-sm" name="nota" value="{{ row.promotion.nota or '' }}" placeholder="Nota"></div><div class="col-3 d-flex gap-2 align-items-center"><div class="form-check"><input class="form-check-input" type="checkbox" name="activo" {% if row.promotion.activo %}checked{% endif %}><label class="form-check-label small">Activa</label></div><button class="btn btn-sm btn-outline-primary"><i class="bi bi-save"></i></button></div></form></td></tr>{% else %}<tr><td colspan="7" class="text-center text-muted py-5">No hay promociones configuradas.</td></tr>{% endfor %}</tbody>
+  </table></div></div></div>
+</div>
+<script>
+(() => { const input=document.getElementById('discount-product-search'), results=document.getElementById('discount-product-results'); let timer;
+input?.addEventListener('input',()=>{ clearTimeout(timer); const q=input.value.trim(); if(q.length<2){results.innerHTML='';return;} timer=setTimeout(async()=>{ const r=await fetch(`/data/promociones-descuento/productos/search?q=${encodeURIComponent(q)}`); const p=await r.json(); results.innerHTML=(p.items||[]).map(x=>`<button type="button" class="list-group-item list-group-item-action" data-id="${x.id}" data-label="${x.code} - ${x.description}" data-price="${x.price_usd}"><strong>${x.code}</strong> · ${x.description}<span class="float-end">US$ ${Number(x.price_usd).toFixed(2)}</span></button>`).join('')||'<div class="text-muted small p-2">Sin resultados.</div>'; },250); });
+results?.addEventListener('click',e=>{const b=e.target.closest('button[data-id]');if(!b)return;document.getElementById('discount-product-id').value=b.dataset.id;document.getElementById('discount-product-selected').value=b.dataset.label;document.getElementById('discount-normal-price').value=`US$ ${(Number(b.dataset.price)*2).toFixed(2)}`;input.value='';results.innerHTML='';}); })();
+</script>
+{% endblock %}
