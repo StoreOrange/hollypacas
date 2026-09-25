@@ -281,6 +281,23 @@ class PromocionDescuentoProducto(Base):
     producto = relationship("Producto")
 
 
+class PromocionDescuentoSucursal(Base):
+    __tablename__ = "promociones_descuento_sucursales"
+    __table_args__ = (UniqueConstraint("promocion_id", "branch_id", name="uq_promocion_descuento_sucursal"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    promocion_id = Column(Integer, ForeignKey("promociones_descuento_productos.id"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
+    precio_paquete_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    cupo_unidades = Column(Numeric(14, 2), nullable=False, default=0)
+    activo = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    promocion = relationship("PromocionDescuentoProducto")
+    branch = relationship("Branch")
+
+
 class RegaliaVendedorPolitica(Base):
     __tablename__ = "regalias_vendedores_politicas"
     __table_args__ = (UniqueConstraint("vendedor_id", name="uq_regalia_vendedor_politica"),)

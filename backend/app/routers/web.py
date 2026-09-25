@@ -113,6 +113,7 @@ from ..models.sales import (
     NotificationRecipient,
     PosPrintSetting,
     PromocionDescuentoProducto,
+    PromocionDescuentoSucursal,
     PreProductionAudit,
     PreProductionInput,
     PreProductionOrder,
@@ -2600,18 +2601,20 @@ def _regalia_consumption_by_product(db: Session, product_ids: list[int]) -> dict
     return {int(product_id): Decimal(str(qty or 0)) for product_id, qty in rows}
 
 
-def _discount_promotion_used_units(db: Session, promotion_id: int) -> Decimal:
+def _discount_promotion_used_units(db: Session, promotion_id: int, branch_id: Optional[int] = None) -> Decimal:
     used = (
         db.query(func.sum(VentaItem.cantidad))
         .join(VentaFactura, VentaFactura.id == VentaItem.factura_id)
+        .join(Bodega, Bodega.id == VentaFactura.bodega_id)
         .filter(
             VentaFactura.estado != "ANULADA",
             VentaItem.combo_role == "discount",
             VentaItem.combo_group.like(f"discount2-{int(promotion_id)}-%"),
         )
-        .scalar()
     )
-    return Decimal(str(used or 0))
+    if branch_id:
+        used = used.filter(Bodega.branch_id == int(branch_id))
+    return Decimal(str(used.scalar() or 0))
 
 
 def _regalia_vendor_payload(db: Session, vendedor_id: int, bodega: Optional[Bodega]) -> dict[str, object]:
@@ -26578,23 +26581,35 @@ def data_discount_promotions(request: Request, db: Session = Depends(get_db), us
     _enforce_permission(request, user, "access.data.catalogs")
     if not _is_pacasholl_company():
         return RedirectResponse("/data", status_code=303)
-    rows = db.query(PromocionDescuentoProducto, Producto).join(Producto, Producto.id == PromocionDescuentoProducto.producto_id).order_by(PromocionDescuentoProducto.activo.desc(), Producto.descripcion.asc()).all()
+    branches = db.query(Branch).filter(Branch.activo.is_(True)).order_by(Branch.name.asc()).all()
+    # Compatibilidad con promociones creadas antes del control por sucursal:
+    # su cupo se asigna una sola vez a la sucursal operativa del usuario.
+    legacy = db.query(PromocionDescuentoProducto).filter(~PromocionDescuentoProducto.id.in_(db.query(PromocionDescuentoSucursal.promocion_id))).all()
+    current_branch, _ = _resolve_branch_bodega(db, user)
+    fallback_branch = current_branch or (branches[0] if branches else None)
+    if fallback_branch:
+        for promotion in legacy:
+            db.add(PromocionDescuentoSucursal(promocion_id=promotion.id, branch_id=fallback_branch.id, precio_paquete_usd=promotion.precio_paquete_usd or 0, cupo_unidades=promotion.cupo_unidades or 0, activo=promotion.activo))
+        if legacy:
+            db.commit()
+    rows = db.query(PromocionDescuentoSucursal, PromocionDescuentoProducto, Producto, Branch).join(PromocionDescuentoProducto, PromocionDescuentoProducto.id == PromocionDescuentoSucursal.promocion_id).join(Producto, Producto.id == PromocionDescuentoProducto.producto_id).join(Branch, Branch.id == PromocionDescuentoSucursal.branch_id).order_by(Branch.name.asc(), Producto.descripcion.asc()).all()
     promotions = []
-    for promotion, product in rows:
-        used = _discount_promotion_used_units(db, promotion.id)
-        quota = Decimal(str(promotion.cupo_unidades or 0))
-        promotions.append({"promotion": promotion, "product": product, "used": used, "remaining": max(Decimal("0"), quota - used)})
-    return request.app.state.templates.TemplateResponse("data_discount_promotions.html", {"request": request, "user": user, "promotions": promotions, "success": request.query_params.get("success") or "", "error": request.query_params.get("error") or "", "version": settings.UI_VERSION})
+    for allocation, promotion, product, branch in rows:
+        used = _discount_promotion_used_units(db, promotion.id, branch.id)
+        quota = Decimal(str(allocation.cupo_unidades or 0))
+        promotions.append({"allocation": allocation, "promotion": promotion, "product": product, "branch": branch, "used": used, "remaining": max(Decimal("0"), quota - used)})
+    return request.app.state.templates.TemplateResponse("data_discount_promotions.html", {"request": request, "user": user, "branches": branches, "promotions": promotions, "success": request.query_params.get("success") or "", "error": request.query_params.get("error") or "", "version": settings.UI_VERSION})
 
 
 @router.post("/data/promociones-descuento")
-def data_discount_promotions_add(request: Request, producto_id: int = Form(...), precio_paquete_usd: Decimal = Form(...), cupo_unidades: Decimal = Form(...), nota: Optional[str] = Form(None), db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+def data_discount_promotions_add(request: Request, producto_id: int = Form(...), branch_id: int = Form(...), precio_paquete_usd: Decimal = Form(...), cupo_unidades: Decimal = Form(...), nota: Optional[str] = Form(None), db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
     _enforce_permission(request, user, "access.data.catalogs")
     if not _is_pacasholl_company():
         return RedirectResponse("/data", status_code=303)
     product = db.query(Producto).filter(Producto.id == producto_id, Producto.activo.is_(True)).first()
     quota = cupo_unidades.to_integral_value(rounding=ROUND_HALF_UP)
-    if not product or precio_paquete_usd <= 0 or quota < 2 or quota % 2:
+    branch = db.query(Branch).filter(Branch.id == branch_id, Branch.activo.is_(True)).first()
+    if not product or not branch or precio_paquete_usd <= 0 or quota < 2 or quota % 2:
         return RedirectResponse("/data/promociones-descuento?error=Revise+el+producto,+precio+y+cupo; el+cupo+debe+ser+par", status_code=303)
     item = db.query(PromocionDescuentoProducto).filter(PromocionDescuentoProducto.producto_id == producto_id).first()
     if not item:
@@ -26605,6 +26620,14 @@ def data_discount_promotions_add(request: Request, producto_id: int = Form(...),
     item.cupo_unidades = quota
     item.nota = (nota or "").strip()[:240] or None
     item.activo = True
+    db.flush()
+    allocation = db.query(PromocionDescuentoSucursal).filter(PromocionDescuentoSucursal.promocion_id == item.id, PromocionDescuentoSucursal.branch_id == branch.id).first()
+    if not allocation:
+        allocation = PromocionDescuentoSucursal(promocion_id=item.id, branch_id=branch.id)
+        db.add(allocation)
+    allocation.cupo_unidades = quota
+    allocation.precio_paquete_usd = precio_paquete_usd
+    allocation.activo = True
     db.commit()
     return RedirectResponse("/data/promociones-descuento?success=Promocion+guardada", status_code=303)
 
@@ -26614,17 +26637,20 @@ def data_discount_promotions_update(request: Request, item_id: int, precio_paque
     _enforce_permission(request, user, "access.data.catalogs")
     if not _is_pacasholl_company():
         return RedirectResponse("/data", status_code=303)
-    item = db.query(PromocionDescuentoProducto).filter(PromocionDescuentoProducto.id == item_id).first()
-    if not item:
+    allocation = db.query(PromocionDescuentoSucursal).filter(PromocionDescuentoSucursal.id == item_id).first()
+    if not allocation:
         return RedirectResponse("/data/promociones-descuento?error=Promocion+no+encontrada", status_code=303)
-    used = _discount_promotion_used_units(db, item.id)
+    item = allocation.promocion
+    used = _discount_promotion_used_units(db, item.id, allocation.branch_id)
     quota = cupo_unidades.to_integral_value(rounding=ROUND_HALF_UP)
     if precio_paquete_usd <= 0 or quota < used or quota % 2:
         return RedirectResponse("/data/promociones-descuento?error=El+cupo+debe+ser+par+y+no+menor+al+consumo", status_code=303)
     item.precio_paquete_usd = precio_paquete_usd
-    item.cupo_unidades = quota
+    allocation.precio_paquete_usd = precio_paquete_usd
+    allocation.cupo_unidades = quota
     item.nota = (nota or "").strip()[:240] or None
-    item.activo = activo == "on"
+    allocation.activo = activo == "on"
+    item.activo = True
     db.commit()
     return RedirectResponse("/data/promociones-descuento?success=Promocion+actualizada", status_code=303)
 
@@ -26636,14 +26662,11 @@ def data_discount_promotions_products_search(q: str = "", db: Session = Depends(
     query = (q or "").strip()
     if len(query) < 2:
         return JSONResponse({"ok": True, "items": []})
-    existing_ids = {row[0] for row in db.query(PromocionDescuentoProducto.producto_id).all()}
     filters = []
     for token in _tokenize_search(query):
         like = f"%{token}%"
         filters.append(or_(func.lower(func.coalesce(Producto.cod_producto, "")).like(like), func.lower(func.coalesce(Producto.descripcion, "")).like(like)))
     product_query = _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
-    if existing_ids:
-        product_query = product_query.filter(~Producto.id.in_(existing_ids))
     products = product_query.filter(and_(*filters)).order_by(Producto.descripcion.asc()).limit(60).all() if filters else []
     return JSONResponse({"ok": True, "items": [{"id": product.id, "code": product.cod_producto, "description": product.descripcion, "price_usd": float(_product_price_map(product).get("precio_venta1_usd", 0) or 0)} for product in products]})
 
@@ -29215,24 +29238,27 @@ def sales_discount_promotions(request: Request, db: Session = Depends(get_db), u
     if not _is_pacasholl_company():
         return JSONResponse({"ok": True, "items": []})
     _, bodega = _resolve_branch_bodega(db, user)
-    rows = db.query(PromocionDescuentoProducto, Producto).join(Producto, Producto.id == PromocionDescuentoProducto.producto_id).filter(PromocionDescuentoProducto.activo.is_(True), Producto.activo.is_(True)).order_by(Producto.descripcion.asc()).all()
-    product_ids = [product.id for _, product in rows]
+    if not bodega:
+        return JSONResponse({"ok": True, "items": []})
+    rows = db.query(PromocionDescuentoSucursal, PromocionDescuentoProducto, Producto).join(PromocionDescuentoProducto, PromocionDescuentoProducto.id == PromocionDescuentoSucursal.promocion_id).join(Producto, Producto.id == PromocionDescuentoProducto.producto_id).filter(PromocionDescuentoSucursal.branch_id == bodega.branch_id, PromocionDescuentoSucursal.activo.is_(True), PromocionDescuentoProducto.activo.is_(True), Producto.activo.is_(True)).order_by(Producto.descripcion.asc()).all()
+    product_ids = [product.id for _, _, product in rows]
     balances = _balances_by_bodega(db, [bodega.id], product_ids) if bodega and product_ids else {}
     items = []
-    for promotion, product in rows:
-        used = _discount_promotion_used_units(db, promotion.id)
-        remaining = max(Decimal("0"), Decimal(str(promotion.cupo_unidades or 0)) - used)
+    for allocation, promotion, product in rows:
+        used = _discount_promotion_used_units(db, promotion.id, bodega.branch_id)
+        remaining = max(Decimal("0"), Decimal(str(allocation.cupo_unidades or 0)) - used)
         stock = Decimal(str(balances.get((product.id, bodega.id), 0) or 0)) if bodega else Decimal("0")
         available_units = max(Decimal("0"), min(remaining, stock))
         packages = int(available_units // Decimal("2"))
         prices = _product_price_map(product)
         items.append({
             "promotion_id": promotion.id,
+            "allocation_id": allocation.id,
             "product_id": product.id,
             "code": product.cod_producto,
             "description": product.descripcion,
             "normal_unit_usd": float(prices.get("precio_venta1_usd", 0) or 0),
-            "package_price_usd": float(promotion.precio_paquete_usd or 0),
+            "package_price_usd": float(allocation.precio_paquete_usd or 0),
             "remaining_units": float(remaining),
             "physical_stock": float(stock),
             "available_packages": packages,
@@ -35417,16 +35443,28 @@ async def sales_create_invoice(
             if not promotion or not promotion.activo or int(promotion.producto_id) != int(parents[0]["product_id"]):
                 db.rollback()
                 return RedirectResponse("/sales?error=La+promocion+ya+no+esta+activa", status_code=303)
+            allocation = (
+                db.query(PromocionDescuentoSucursal)
+                .filter(
+                    PromocionDescuentoSucursal.promocion_id == promotion.id,
+                    PromocionDescuentoSucursal.branch_id == bodega.branch_id,
+                )
+                .with_for_update()
+                .first()
+            )
+            if not allocation or not allocation.activo:
+                db.rollback()
+                return RedirectResponse("/sales?error=La+promocion+no+esta+habilitada+para+esta+sucursal", status_code=303)
             package_qty = Decimal(str(promotion.cantidad_paquete or 2))
             if package_qty != 2 or parent_qty % package_qty:
                 db.rollback()
                 return RedirectResponse("/sales?error=La+promocion+requiere+pares+completos+de+unidades", status_code=303)
             discount_requested_units[promotion.id] += parent_qty
-            used_units = _discount_promotion_used_units(db, promotion.id)
-            if used_units + discount_requested_units[promotion.id] > Decimal(str(promotion.cupo_unidades or 0)):
+            used_units = _discount_promotion_used_units(db, promotion.id, bodega.branch_id)
+            if used_units + discount_requested_units[promotion.id] > Decimal(str(allocation.cupo_unidades or 0)):
                 db.rollback()
                 return RedirectResponse("/sales?error=El+cupo+de+la+promocion+se+agoto", status_code=303)
-            package_price_usd = Decimal(str(promotion.precio_paquete_usd or 0))
+            package_price_usd = Decimal(str(allocation.precio_paquete_usd or 0))
             unit_usd = (package_price_usd / package_qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             combo_parent_prices[combo_group] = (float(unit_usd), float((unit_usd * Decimal(str(tasa))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)))
             continue

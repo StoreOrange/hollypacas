@@ -36,6 +36,7 @@ from ..models.sales import (
     NotificationRecipient,
     PosPrintSetting,
     PromocionDescuentoProducto,
+    PromocionDescuentoSucursal,
     ProductoEstancado,
     RestaurantTable,
     MobilePushSubscription,
@@ -1660,6 +1661,10 @@ def init_db() -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     with engine.begin() as conn:
+        if "promociones_descuento_sucursales" in table_names:
+            promotion_branch_columns = {col["name"] for col in inspect(engine).get_columns("promociones_descuento_sucursales")}
+            if "precio_paquete_usd" not in promotion_branch_columns:
+                conn.execute(text("ALTER TABLE promociones_descuento_sucursales ADD COLUMN precio_paquete_usd NUMERIC(14, 2) NOT NULL DEFAULT 0"))
         if "attendance_policy_settings" in table_names:
             policy_columns = {col["name"] for col in inspect(engine).get_columns("attendance_policy_settings")}
             if "weekday_start" not in policy_columns:
