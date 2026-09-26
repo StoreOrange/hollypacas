@@ -3034,11 +3034,14 @@
       const packagesLeft = Math.max(0, Number(item.remaining_packages || 0) - inCartPackages);
       const stockPackages = Math.max(0, Math.floor((Number(item.physical_stock || 0) - getInvoiceQty(item.product_id)) / 2));
       const available = Math.min(packagesLeft, stockPackages);
+      const unavailableReason = packagesLeft < 1
+        ? 'Sin saldo administrativo de cupos para esta sucursal.'
+        : 'La bodega seleccionada no tiene dos unidades físicas disponibles.';
       return `<div class="col-md-6"><div class="card h-100 border ${available > 0 ? 'border-warning-subtle' : 'border-light'}"><div class="card-body">
         <div class="d-flex justify-content-between gap-3"><div><div class="fw-bold text-ink">${item.code}</div><div class="small text-muted">${item.description}</div></div><span class="badge text-bg-warning align-self-start">2 unidades</span></div>
         <div class="row g-2 mt-2 small"><div class="col-6"><span class="text-muted">Normal</span><div class="text-decoration-line-through">US$ ${(Number(item.normal_unit_usd)*2).toFixed(2)}</div></div><div class="col-6"><span class="text-muted">Oferta</span><div class="fw-bold text-success fs-5">US$ ${Number(item.package_price_usd).toFixed(2)}</div></div><div class="col-6"><span class="text-muted">Existencia física</span><div class="fw-semibold">${Number(item.physical_stock).toFixed(0)} uds. (${stockPackages} pares)</div></div><div class="col-6"><span class="text-muted">Cupos disponibles</span><div class="fw-semibold">${packagesLeft} paquete(s)</div></div></div>
         <div class="input-group mt-3"><span class="input-group-text">Paquetes</span><input class="form-control text-center discount-package-count" type="number" min="1" max="${available}" value="1" ${available < 1 ? 'disabled' : ''}><button type="button" class="btn btn-warning discount-promotion-add" data-promotion='${JSON.stringify(item).replaceAll("'", "&#39;")}' ${available < 1 ? 'disabled' : ''}><i class="bi bi-cart-plus"></i> Agregar</button></div>
-        ${available < 1 ? '<div class="small text-danger mt-2">Sin cupo promocional o existencia suficiente.</div>' : `<div class="small text-muted mt-2">Máximo disponible: ${available} paquete(s).</div>`}
+        ${available < 1 ? `<div class="small text-danger mt-2">${unavailableReason}</div>` : `<div class="small text-muted mt-2">Máximo disponible: ${available} paquete(s).</div>`}
       </div></div></div>`;
     }).join('') : '<div class="col-12 text-center text-muted py-5">No hay promociones activas con cupo.</div>';
   };

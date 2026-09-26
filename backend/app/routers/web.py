@@ -26659,7 +26659,7 @@ def data_discount_promotions_add(request: Request, producto_id: int = Form(...),
         return RedirectResponse("/data", status_code=303)
     product = db.query(Producto).filter(Producto.id == producto_id, Producto.activo.is_(True)).first()
     packages = cupo_paquetes.to_integral_value(rounding=ROUND_HALF_UP)
-    quota = packages * Decimal("2")
+    requested_units = packages * Decimal("2")
     branch = db.query(Branch).filter(Branch.id == branch_id, Branch.activo.is_(True)).first()
     if not product or not branch or precio_paquete_usd <= 0 or packages < 1:
         return RedirectResponse("/data/promociones-descuento?error=Revise+el+producto,+precio+y+cantidad+de+cupos", status_code=303)
@@ -26669,7 +26669,7 @@ def data_discount_promotions_add(request: Request, producto_id: int = Form(...),
         db.add(item)
     item.cantidad_paquete = 2
     item.precio_paquete_usd = precio_paquete_usd
-    item.cupo_unidades = quota
+    item.cupo_unidades = requested_units
     item.nota = (nota or "").strip()[:240] or None
     item.activo = True
     db.flush()
@@ -26677,7 +26677,11 @@ def data_discount_promotions_add(request: Request, producto_id: int = Form(...),
     if not allocation:
         allocation = PromocionDescuentoSucursal(promocion_id=item.id, branch_id=branch.id)
         db.add(allocation)
-    allocation.cupo_unidades = quota
+    # El valor digitado representa cupos nuevos disponibles. Se conserva lo
+    # ya consumido historicamente para que una recarga de Esteli no nazca en
+    # cero por ventas anteriores.
+    used = _discount_promotion_used_units(db, item.id, branch.id)
+    allocation.cupo_unidades = used + requested_units
     allocation.precio_paquete_usd = precio_paquete_usd
     allocation.activo = True
     db.commit()
@@ -26695,13 +26699,13 @@ def data_discount_promotions_update(request: Request, item_id: int, precio_paque
     item = allocation.promocion
     used = _discount_promotion_used_units(db, item.id, allocation.branch_id)
     packages = cupo_paquetes.to_integral_value(rounding=ROUND_HALF_UP)
-    quota = packages * Decimal("2")
+    requested_units = packages * Decimal("2")
     wants_active = activo == "on"
-    if precio_paquete_usd <= 0 or quota < used or packages < 0 or (wants_active and packages < 1):
-        return RedirectResponse("/data/promociones-descuento?error=Los+cupos+no+pueden+ser+menores+a+los+paquetes+ya+vendidos", status_code=303)
+    if precio_paquete_usd <= 0 or packages < 0 or (wants_active and packages < 1):
+        return RedirectResponse("/data/promociones-descuento?error=La+cantidad+de+cupos+vigentes+no+es+valida", status_code=303)
     item.precio_paquete_usd = precio_paquete_usd
     allocation.precio_paquete_usd = precio_paquete_usd
-    allocation.cupo_unidades = quota
+    allocation.cupo_unidades = used + requested_units
     item.nota = (nota or "").strip()[:240] or None
     allocation.activo = wants_active
     item.activo = True
