@@ -26601,12 +26601,53 @@ def data_discount_promotions(request: Request, db: Session = Depends(get_db), us
             db.add(PromocionDescuentoSucursal(promocion_id=promotion.id, branch_id=fallback_branch.id, precio_paquete_usd=promotion.precio_paquete_usd or 0, cupo_unidades=promotion.cupo_unidades or 0, activo=promotion.activo))
         if legacy:
             db.commit()
+    # Materializar una fila administrativa por producto y sucursal. De esta
+    # forma Esteli siempre aparece en la matriz aunque su cupo inicie en cero.
+    all_promotions = db.query(PromocionDescuentoProducto).all()
+    existing_pairs = {
+        (int(promotion_id), int(branch_id))
+        for promotion_id, branch_id in db.query(
+            PromocionDescuentoSucursal.promocion_id,
+            PromocionDescuentoSucursal.branch_id,
+        ).all()
+    }
+    created_missing = False
+    for promotion in all_promotions:
+        for branch in branches:
+            if (int(promotion.id), int(branch.id)) in existing_pairs:
+                continue
+            db.add(
+                PromocionDescuentoSucursal(
+                    promocion_id=promotion.id,
+                    branch_id=branch.id,
+                    precio_paquete_usd=promotion.precio_paquete_usd or 0,
+                    cupo_unidades=0,
+                    activo=False,
+                )
+            )
+            created_missing = True
+    if created_missing:
+        db.commit()
     rows = db.query(PromocionDescuentoSucursal, PromocionDescuentoProducto, Producto, Branch).join(PromocionDescuentoProducto, PromocionDescuentoProducto.id == PromocionDescuentoSucursal.promocion_id).join(Producto, Producto.id == PromocionDescuentoProducto.producto_id).join(Branch, Branch.id == PromocionDescuentoSucursal.branch_id).order_by(Branch.name.asc(), Producto.descripcion.asc()).all()
+    branch_bodegas = {}
+    for branch in branches:
+        branch_bodegas[int(branch.id)] = (
+            db.query(Bodega)
+            .filter(Bodega.branch_id == branch.id, Bodega.activo.is_(True))
+            .order_by(Bodega.permite_facturacion.desc(), Bodega.id.asc())
+            .first()
+        )
+    product_ids = list({int(product.id) for _allocation, _promotion, product, _branch in rows})
+    bodega_ids = [int(bodega.id) for bodega in branch_bodegas.values() if bodega]
+    physical_balances = _balances_by_bodega(db, bodega_ids, product_ids) if bodega_ids and product_ids else {}
     promotions = []
     for allocation, promotion, product, branch in rows:
         used = _discount_promotion_used_units(db, promotion.id, branch.id)
         quota = Decimal(str(allocation.cupo_unidades or 0))
-        promotions.append({"allocation": allocation, "promotion": promotion, "product": product, "branch": branch, "used": used, "remaining": max(Decimal("0"), quota - used)})
+        bodega = branch_bodegas.get(int(branch.id))
+        stock = Decimal(str(physical_balances.get((int(product.id), int(bodega.id)), 0) or 0)) if bodega else Decimal("0")
+        remaining = max(Decimal("0"), quota - used)
+        promotions.append({"allocation": allocation, "promotion": promotion, "product": product, "branch": branch, "bodega": bodega, "stock": stock, "used": used, "remaining": remaining, "operable": max(Decimal("0"), min(stock, remaining))})
     return request.app.state.templates.TemplateResponse("data_discount_promotions.html", {"request": request, "user": user, "branches": branches, "promotions": promotions, "success": request.query_params.get("success") or "", "error": request.query_params.get("error") or "", "version": settings.UI_VERSION})
 
 
@@ -26652,13 +26693,14 @@ def data_discount_promotions_update(request: Request, item_id: int, precio_paque
     item = allocation.promocion
     used = _discount_promotion_used_units(db, item.id, allocation.branch_id)
     quota = cupo_unidades.to_integral_value(rounding=ROUND_HALF_UP)
-    if precio_paquete_usd <= 0 or quota < used or quota % 2:
+    wants_active = activo == "on"
+    if precio_paquete_usd <= 0 or quota < used or quota < 0 or quota % 2 or (wants_active and quota < 2):
         return RedirectResponse("/data/promociones-descuento?error=El+cupo+debe+ser+par+y+no+menor+al+consumo", status_code=303)
     item.precio_paquete_usd = precio_paquete_usd
     allocation.precio_paquete_usd = precio_paquete_usd
     allocation.cupo_unidades = quota
     item.nota = (nota or "").strip()[:240] or None
-    allocation.activo = activo == "on"
+    allocation.activo = wants_active
     item.activo = True
     db.commit()
     return RedirectResponse("/data/promociones-descuento?success=Promocion+actualizada", status_code=303)
