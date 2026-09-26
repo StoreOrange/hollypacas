@@ -3046,7 +3046,7 @@
     if (discountPromotionLoading) discountPromotionLoading.classList.remove('d-none');
     if (discountPromotionList) discountPromotionList.innerHTML = '';
     try {
-      const response = await fetch('/sales/discount-promotions');
+      const response = await fetch(`/sales/discount-promotions?_=${Date.now()}`, { cache: 'no-store' });
       const payload = await response.json();
       renderDiscountPromotions(payload.items || []);
     } catch (_) {

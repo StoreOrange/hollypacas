@@ -857,7 +857,16 @@ def _resolve_branch_bodega(db: Session, user: User) -> tuple[Optional[Branch], O
             .filter(func.lower(Branch.code).in_(allowed_codes))
             .first()
         )
-        if bodega and allowed_branch_ids and bodega.branch_id not in allowed_branch_ids:
+        # Los valores predeterminados constituyen el punto de venta operativo.
+        # En instalaciones antiguas puede faltar la fila de user_branches aun
+        # cuando default_branch/default_bodega ya apuntan correctamente a
+        # Esteli; no debemos sustituirla silenciosamente por Central.
+        explicit_default_scope = bool(
+            bodega
+            and user.default_branch_id
+            and int(bodega.branch_id) == int(user.default_branch_id)
+        )
+        if bodega and allowed_branch_ids and bodega.branch_id not in allowed_branch_ids and not explicit_default_scope:
             bodega = None
 
     branch = None
@@ -29263,7 +29272,16 @@ def sales_discount_promotions(request: Request, db: Session = Depends(get_db), u
             "physical_stock": float(stock),
             "available_packages": packages,
         })
-    return JSONResponse({"ok": True, "items": items})
+    return JSONResponse(
+        {
+            "ok": True,
+            "items": items,
+            "branch_id": int(bodega.branch_id),
+            "bodega_id": int(bodega.id),
+            "bodega_name": bodega.name,
+        },
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 @router.get("/sales/products/search")
