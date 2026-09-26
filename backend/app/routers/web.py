@@ -26647,20 +26647,22 @@ def data_discount_promotions(request: Request, db: Session = Depends(get_db), us
         bodega = branch_bodegas.get(int(branch.id))
         stock = Decimal(str(physical_balances.get((int(product.id), int(bodega.id)), 0) or 0)) if bodega else Decimal("0")
         remaining = max(Decimal("0"), quota - used)
-        promotions.append({"allocation": allocation, "promotion": promotion, "product": product, "branch": branch, "bodega": bodega, "stock": stock, "used": used, "remaining": remaining, "operable": max(Decimal("0"), min(stock, remaining))})
+        operable = max(Decimal("0"), min(stock, remaining))
+        promotions.append({"allocation": allocation, "promotion": promotion, "product": product, "branch": branch, "bodega": bodega, "stock": stock, "quota_packages": int(quota // 2), "used_packages": used / Decimal("2"), "remaining_packages": int(remaining // 2), "operable_packages": int(operable // 2)})
     return request.app.state.templates.TemplateResponse("data_discount_promotions.html", {"request": request, "user": user, "branches": branches, "promotions": promotions, "success": request.query_params.get("success") or "", "error": request.query_params.get("error") or "", "version": settings.UI_VERSION})
 
 
 @router.post("/data/promociones-descuento")
-def data_discount_promotions_add(request: Request, producto_id: int = Form(...), branch_id: int = Form(...), precio_paquete_usd: Decimal = Form(...), cupo_unidades: Decimal = Form(...), nota: Optional[str] = Form(None), db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+def data_discount_promotions_add(request: Request, producto_id: int = Form(...), branch_id: int = Form(...), precio_paquete_usd: Decimal = Form(...), cupo_paquetes: Decimal = Form(...), nota: Optional[str] = Form(None), db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
     _enforce_permission(request, user, "access.data.catalogs")
     if not _is_pacasholl_company():
         return RedirectResponse("/data", status_code=303)
     product = db.query(Producto).filter(Producto.id == producto_id, Producto.activo.is_(True)).first()
-    quota = cupo_unidades.to_integral_value(rounding=ROUND_HALF_UP)
+    packages = cupo_paquetes.to_integral_value(rounding=ROUND_HALF_UP)
+    quota = packages * Decimal("2")
     branch = db.query(Branch).filter(Branch.id == branch_id, Branch.activo.is_(True)).first()
-    if not product or not branch or precio_paquete_usd <= 0 or quota < 2 or quota % 2:
-        return RedirectResponse("/data/promociones-descuento?error=Revise+el+producto,+precio+y+cupo; el+cupo+debe+ser+par", status_code=303)
+    if not product or not branch or precio_paquete_usd <= 0 or packages < 1:
+        return RedirectResponse("/data/promociones-descuento?error=Revise+el+producto,+precio+y+cantidad+de+cupos", status_code=303)
     item = db.query(PromocionDescuentoProducto).filter(PromocionDescuentoProducto.producto_id == producto_id).first()
     if not item:
         item = PromocionDescuentoProducto(producto_id=producto_id, usuario_registro=(user.full_name or user.email or "")[:120])
@@ -26683,7 +26685,7 @@ def data_discount_promotions_add(request: Request, producto_id: int = Form(...),
 
 
 @router.post("/data/promociones-descuento/{item_id}/update")
-def data_discount_promotions_update(request: Request, item_id: int, precio_paquete_usd: Decimal = Form(...), cupo_unidades: Decimal = Form(...), nota: Optional[str] = Form(None), activo: Optional[str] = Form(None), db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+def data_discount_promotions_update(request: Request, item_id: int, precio_paquete_usd: Decimal = Form(...), cupo_paquetes: Decimal = Form(...), nota: Optional[str] = Form(None), activo: Optional[str] = Form(None), db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
     _enforce_permission(request, user, "access.data.catalogs")
     if not _is_pacasholl_company():
         return RedirectResponse("/data", status_code=303)
@@ -26692,10 +26694,11 @@ def data_discount_promotions_update(request: Request, item_id: int, precio_paque
         return RedirectResponse("/data/promociones-descuento?error=Promocion+no+encontrada", status_code=303)
     item = allocation.promocion
     used = _discount_promotion_used_units(db, item.id, allocation.branch_id)
-    quota = cupo_unidades.to_integral_value(rounding=ROUND_HALF_UP)
+    packages = cupo_paquetes.to_integral_value(rounding=ROUND_HALF_UP)
+    quota = packages * Decimal("2")
     wants_active = activo == "on"
-    if precio_paquete_usd <= 0 or quota < used or quota < 0 or quota % 2 or (wants_active and quota < 2):
-        return RedirectResponse("/data/promociones-descuento?error=El+cupo+debe+ser+par+y+no+menor+al+consumo", status_code=303)
+    if precio_paquete_usd <= 0 or quota < used or packages < 0 or (wants_active and packages < 1):
+        return RedirectResponse("/data/promociones-descuento?error=Los+cupos+no+pueden+ser+menores+a+los+paquetes+ya+vendidos", status_code=303)
     item.precio_paquete_usd = precio_paquete_usd
     allocation.precio_paquete_usd = precio_paquete_usd
     allocation.cupo_unidades = quota
@@ -29311,6 +29314,7 @@ def sales_discount_promotions(request: Request, db: Session = Depends(get_db), u
             "normal_unit_usd": float(prices.get("precio_venta1_usd", 0) or 0),
             "package_price_usd": float(allocation.precio_paquete_usd or 0),
             "remaining_units": float(remaining),
+            "remaining_packages": int(remaining // Decimal("2")),
             "physical_stock": float(stock),
             "available_packages": packages,
         })
