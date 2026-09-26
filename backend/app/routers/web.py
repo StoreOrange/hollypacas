@@ -29294,7 +29294,10 @@ def sales_discount_promotions(request: Request, db: Session = Depends(get_db), u
     _, bodega = _resolve_branch_bodega(db, user)
     if not bodega:
         return JSONResponse({"ok": True, "items": []})
-    rows = db.query(PromocionDescuentoSucursal, PromocionDescuentoProducto, Producto).join(PromocionDescuentoProducto, PromocionDescuentoProducto.id == PromocionDescuentoSucursal.promocion_id).join(Producto, Producto.id == PromocionDescuentoProducto.producto_id).filter(PromocionDescuentoSucursal.branch_id == bodega.branch_id, PromocionDescuentoSucursal.activo.is_(True), PromocionDescuentoProducto.activo.is_(True), Producto.activo.is_(True)).order_by(Producto.descripcion.asc()).all()
+    # La asignacion por sucursal es la fuente de verdad. El indicador activo
+    # del registro maestro es legado y podia ocultar una promocion valida de
+    # Esteli aunque su asignacion, precio y cupo estuvieran activos.
+    rows = db.query(PromocionDescuentoSucursal, PromocionDescuentoProducto, Producto).join(PromocionDescuentoProducto, PromocionDescuentoProducto.id == PromocionDescuentoSucursal.promocion_id).join(Producto, Producto.id == PromocionDescuentoProducto.producto_id).filter(PromocionDescuentoSucursal.branch_id == bodega.branch_id, PromocionDescuentoSucursal.activo.is_(True), PromocionDescuentoSucursal.cupo_unidades >= 2, Producto.activo.is_(True)).order_by(Producto.descripcion.asc()).all()
     product_ids = [product.id for _, _, product in rows]
     balances = _balances_by_bodega(db, [bodega.id], product_ids) if bodega and product_ids else {}
     items = []
@@ -29323,6 +29326,7 @@ def sales_discount_promotions(request: Request, db: Session = Depends(get_db), u
             "ok": True,
             "items": items,
             "branch_id": int(bodega.branch_id),
+            "branch_name": bodega.branch.name if bodega.branch else "Sucursal",
             "bodega_id": int(bodega.id),
             "bodega_name": bodega.name,
         },
@@ -35504,7 +35508,7 @@ async def sales_create_invoice(
                 .with_for_update()
                 .first()
             )
-            if not promotion or not promotion.activo or int(promotion.producto_id) != int(parents[0]["product_id"]):
+            if not promotion or int(promotion.producto_id) != int(parents[0]["product_id"]):
                 db.rollback()
                 return RedirectResponse("/sales?error=La+promocion+ya+no+esta+activa", status_code=303)
             allocation = (

@@ -3044,15 +3044,25 @@
   };
 
   const loadDiscountPromotions = async () => {
-    if (discountPromotionLoading) discountPromotionLoading.classList.remove('d-none');
+    if (discountPromotionLoading) {
+      discountPromotionLoading.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Cargando promociones...';
+      discountPromotionLoading.classList.remove('d-none');
+    }
     if (discountPromotionList) discountPromotionList.innerHTML = '';
     try {
       const response = await fetch(`/sales/discount-promotions?_=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
       renderDiscountPromotions(payload.items || []);
+      const scope = [payload.branch_name, payload.bodega_name].filter(Boolean).join(' · ');
+      if (discountPromotionLoading && scope) {
+        discountPromotionLoading.innerHTML = `<i class="bi bi-geo-alt-fill text-primary"></i> Cupos vigentes de ${scope}`;
+        discountPromotionLoading.classList.remove('d-none');
+      } else if (discountPromotionLoading) {
+        discountPromotionLoading.classList.add('d-none');
+      }
     } catch (_) {
       if (discountPromotionList) discountPromotionList.innerHTML = '<div class="col-12 alert alert-danger">No fue posible cargar las promociones.</div>';
-    } finally {
       if (discountPromotionLoading) discountPromotionLoading.classList.add('d-none');
     }
   };
