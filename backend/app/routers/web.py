@@ -38,6 +38,7 @@ from jose import JWTError, jwt
 from sqlalchemy import String, and_, create_engine, func, or_
 from sqlalchemy.orm import Session, aliased, joinedload, object_session
 
+from ..core.inventory_report_costs import consolidated_cost
 from ..core.commission_assignment_state import whole_quantity, assignment_revision
 from ..core.commission_rates import commission_rate, is_special_price_sale, parse_commission_amount
 
@@ -22612,6 +22613,7 @@ def _inventory_consolidated_data(
     rows: list[dict] = []
     total_qty = Decimal("0")
     total_cost = Decimal("0")
+    adjust_costs = _is_pacasholl_company()
     for producto in productos:
         qty = Decimal("0")
         for bodega_id in bodega_ids:
@@ -22619,7 +22621,9 @@ def _inventory_consolidated_data(
         if qty == 0:
             continue
         costo_unit = Decimal(str(producto.costo_producto or 0))
-        costo_total = costo_unit * qty
+        costo_total, ajuste_pct = consolidated_cost(
+            producto.cod_producto, costo_unit, qty, enabled=adjust_costs
+        )
         rows.append(
             {
                 "codigo": producto.cod_producto,
@@ -22627,6 +22631,7 @@ def _inventory_consolidated_data(
                 "cantidad": qty,
                 "costo_unitario": costo_unit,
                 "costo_total": costo_total,
+                "ajuste_costo_pct": ajuste_pct,
             }
         )
         total_qty += qty
@@ -24757,6 +24762,11 @@ def report_inventory_consolidated_pdf(
     c.setFillColor(colors.black)
     y = date_y - 46
 
+    if any(row.get("ajuste_costo_pct") for row in rows):
+        c.setFont("Times-Roman", 8)
+        c.drawString(margin, y, "* Costo total con aumento indicado; costo unitario original sin cambios.")
+        y -= 16
+
     row_height = 15
 
     def draw_header():
@@ -24786,10 +24796,13 @@ def report_inventory_consolidated_pdf(
             y = height - 36
             draw_header()
         c.drawString(margin + 4, y, trunc(row.get("codigo") or "", 10))
-        c.drawString(margin + 82, y, trunc(row.get("descripcion") or "", 52))
+        adjustment = row.get("ajuste_costo_pct")
+        suffix = f" (+{adjustment}%)*" if adjustment else ""
+        description = trunc(row.get("descripcion") or "", 38 - len(suffix)) + suffix
+        c.drawString(margin + 82, y, description)
         c.drawRightString(margin + 330, y, f"{float(row.get('cantidad') or 0):,.2f}")
         c.drawRightString(margin + 430, y, f"C$ {float(row.get('costo_unitario') or 0):,.2f}")
-        c.drawRightString(width - margin, y, f"C$ {float(row.get('costo_total') or 0):,.2f}")
+        c.drawRightString(width - margin, y, f"C$ {float(row.get('costo_total') or 0):,.0f}")
         y -= row_height
 
     if y < 60:
@@ -24803,12 +24816,12 @@ def report_inventory_consolidated_pdf(
     c.setFont("Times-Bold", 11)
     c.drawString(margin + 4, y, "Totales")
     c.drawRightString(margin + 360, y, f"{float(total_qty or 0):,.2f}")
-    c.drawRightString(width - margin, y, f"C$ {float(total_cost or 0):,.2f}")
+    c.drawRightString(width - margin, y, f"C$ {float(total_cost or 0):,.0f}")
     if total_usd is not None:
         y -= 14
         c.setFont("Times-Roman", 10)
         c.setFillColor(colors.HexColor("#16a34a"))
-        c.drawRightString(width - margin, y, f"Equivalencia USD: $ {float(total_usd):,.2f}")
+        c.drawRightString(width - margin, y, f"Equivalencia USD: $ {float(total_usd):,.0f}")
         c.setFillColor(colors.black)
 
     c.showPage()

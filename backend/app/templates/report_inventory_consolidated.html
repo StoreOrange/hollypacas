@@ -15,7 +15,7 @@
               </ol>
             </nav>
             <div class="odoo-title mt-2 text-xl">Inventario consolidado</div>
-            <div class="odoo-subtitle mt-1 text-sm">Existencias sumadas entre bodegas principales.</div>
+            <div class="odoo-subtitle mt-1 text-sm">Existencias sumadas entre bodegas principales. Totales mostrados en números enteros.</div>
             <div class="text-sm text-slate mt-1">Sucursal: <strong class="text-ink">{{ branch_label }}</strong></div>
           </div>
           <div class="d-flex flex-wrap align-items-center gap-2">
@@ -33,7 +33,7 @@
             </div>
             <div class="odoo-pill primary">
               <i class="bi bi-cash-stack"></i>
-              Total: C$ {{ "%.2f"|format(total_cost or 0) }}
+              Total: C$ {{ "{:,.0f}".format(total_cost or 0) }}
             </div>
           </div>
         </div>
@@ -105,7 +105,7 @@
                 <td>{{ row.descripcion }}</td>
                 <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.costo_unitario or 0) }}</td>
-                <td class="text-end">C$ {{ "%.2f"|format(row.costo_total or 0) }}</td>
+                <td class="text-end">C$ {{ "{:,.0f}".format(row.costo_total or 0) }}{% if row.ajuste_costo_pct %}<div class="small text-muted">Incluye +{{ row.ajuste_costo_pct }}%</div>{% endif %}</td>
               </tr>
               {% endfor %}
               {% if rows|length == 0 %}
@@ -119,12 +119,12 @@
                 <th colspan="2" class="text-end">Totales</th>
                 <th class="text-end">{{ "%.2f"|format(total_qty or 0) }}</th>
                 <th></th>
-                <th class="text-end">C$ {{ "%.2f"|format(total_cost or 0) }}</th>
+                <th class="text-end">C$ {{ "{:,.0f}".format(total_cost or 0) }}</th>
               </tr>
               {% if total_usd is not none %}
               <tr>
                 <th colspan="4" class="text-end">Equivalencia USD{% if rate_value %} (tasa {{ "%.4f"|format(rate_value) }}){% endif %}</th>
-                <th class="text-end">$ {{ "%.2f"|format(total_usd or 0) }}</th>
+                <th class="text-end">$ {{ "{:,.0f}".format(total_usd or 0) }}</th>
               </tr>
               {% endif %}
             </tfoot>
