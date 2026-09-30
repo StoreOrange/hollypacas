@@ -50,3 +50,13 @@ th[aria-sort=ascending] .commission-sort-header::after{content:'↑';color:#2563
 #commission-workbench .toolbar-page{flex:1;display:flex;align-items:center;justify-content:center;min-height:32px}
 #commission-workbench .grid-tools>div:last-child{font-size:11px;color:#64748b;margin-top:8px}
 #commission-workbench .assignment-grid{--bs-table-hover-bg:#edf5ff;--bs-table-striped-bg:#f9fbfd}
+
+/* Let seller names and descriptions determine row height without clipping. */
+.commission-summary-wrap .commission-grid{table-layout:auto;min-width:0;width:100%}
+.commission-summary-wrap .commission-grid th{letter-spacing:0;white-space:normal}
+.commission-summary-wrap .commission-grid td:first-child{width:100%;white-space:normal;overflow-wrap:anywhere}
+.commission-summary-wrap [data-show-vendor]{white-space:normal;text-align:left;overflow-wrap:anywhere;max-width:100%;line-height:1.45}
+.commission-summary-wrap .commission-grid td:not(:first-child){white-space:nowrap;word-break:normal;font-variant-numeric:tabular-nums}
+.commission-summary-wrap .commission-earned,.commission-summary-wrap tfoot th:last-child{color:#166534;background:#f0fdf4}
+.commission-summary-wrap tfoot th{position:sticky;bottom:0;background:#f1f5f9;z-index:2}
+#commission-workbench .cell-clip{display:block;-webkit-line-clamp:unset;max-height:none;white-space:normal;overflow:visible;overflow-wrap:anywhere}

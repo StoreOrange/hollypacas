@@ -90,14 +90,14 @@
     el('assign-total-diff').className = qty !== sold ? 'text-danger fw-bold' : 'text-success fw-bold';
     el('assign-total-rows').textContent = rows().length;
     el('assign-total-facturas').textContent = invoices.size;
-    el('assign-total-ventas-usd').textContent = money(sales);
     el('assign-total-comision').textContent = money(commission) + (pending ? ' · parcial' : '');
     if (el('commission-pending-notice')) el('commission-pending-notice').hidden = !pending;
     el('assign-vendor-summary-body').innerHTML = [...vendors].sort((a,b) => a[1].name.localeCompare(b[1].name)).map(([id,v]) =>
-      `<tr><td><button type="button" class="btn btn-link btn-sm p-0" data-show-vendor="${esc(id)}">${esc(v.name)}</button></td><td class="text-end">${v.sold}</td><td class="text-end">${v.assigned}</td><td class="text-end">${money(v.sales)}</td><td class="text-end">${money(v.commission)}${v.pending ? ' · parcial' : ''}</td></tr>`).join('');
+      `<tr><td><button type="button" class="btn btn-link btn-sm p-0" data-show-vendor="${esc(id)}">${esc(v.name)}</button></td><td class="text-end">${v.sold}</td><td class="text-end">${v.assigned}</td><td class="text-end fw-bold commission-earned">${money(v.commission)}${v.pending ? ' · parcial' : ''}</td></tr>`).join('');
+    el('assign-vendor-summary-total').textContent = money(commission) + (pending ? ' · parcial' : '');
     for (const button of body.querySelectorAll('[data-toggle-vendor]')) {
       const v = vendors.get(button.dataset.toggleVendor);
-      if (v) button.querySelector('.group-totals').textContent = `${v.assigned} bultos · ${money(v.commission)}${v.pending ? ' · parcial' : ''}`;
+      if (v) button.querySelector('.group-totals').textContent = `Comisión ganada: ${money(v.commission)}${v.pending ? ' · parcial' : ''}`;
     }
     status();
   };

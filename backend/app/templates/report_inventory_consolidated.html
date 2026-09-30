@@ -15,7 +15,7 @@
               </ol>
             </nav>
             <div class="odoo-title mt-2 text-xl">Inventario consolidado</div>
-            <div class="odoo-subtitle mt-1 text-sm">Existencias sumadas entre bodegas principales. Totales mostrados en números enteros.</div>
+            <div class="odoo-subtitle mt-1 text-sm">Existencias sumadas entre bodegas principales.</div>
             <div class="text-sm text-slate mt-1">Sucursal: <strong class="text-ink">{{ branch_label }}</strong></div>
           </div>
           <div class="d-flex flex-wrap align-items-center gap-2">
@@ -105,7 +105,7 @@
                 <td>{{ row.descripcion }}</td>
                 <td class="text-end">{{ "%.2f"|format(row.cantidad or 0) }}</td>
                 <td class="text-end">C$ {{ "%.2f"|format(row.costo_unitario or 0) }}</td>
-                <td class="text-end">C$ {{ "{:,.0f}".format(row.costo_total or 0) }}{% if row.ajuste_costo_pct %}<div class="small text-muted">Incluye +{{ row.ajuste_costo_pct }}%</div>{% endif %}</td>
+                <td class="text-end">C$ {{ "{:,.0f}".format(row.costo_total or 0) }}</td>
               </tr>
               {% endfor %}
               {% if rows|length == 0 %}

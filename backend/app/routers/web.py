@@ -38,7 +38,7 @@ from jose import JWTError, jwt
 from sqlalchemy import String, and_, create_engine, func, or_
 from sqlalchemy.orm import Session, aliased, joinedload, object_session
 
-from ..core.inventory_report_costs import consolidated_cost
+from ..core.inventory_report_costs import branch_cost_increases
 from ..core.commission_assignment_state import whole_quantity, assignment_revision
 from ..core.commission_rates import commission_rate, is_special_price_sale, parse_commission_amount
 
@@ -22614,6 +22614,19 @@ def _inventory_consolidated_data(
     total_qty = Decimal("0")
     total_cost = Decimal("0")
     adjust_costs = _is_pacasholl_company()
+    # Calculate each branch independently so "Ambas" equals the branch reports.
+    for branch in branches:
+        branch_bodegas = [b.id for b in bodegas if b.branch_id == branch.id]
+        if not branch_bodegas:
+            continue
+        branch_items = [
+            {"id": p.id, "codigo": p.cod_producto,
+             "costo_unitario": Decimal(str(p.costo_producto or 0)),
+             "cantidad": sum((balances.get((p.id, bid), Decimal("0")) for bid in branch_bodegas), Decimal("0"))}
+            for p in productos
+        ]
+        total_cost += sum((item["costo_unitario"] * item["cantidad"] for item in branch_items), Decimal("0"))
+        total_cost += sum(branch_cost_increases(branch.code, branch_items, enabled=adjust_costs).values(), Decimal("0"))
     for producto in productos:
         qty = Decimal("0")
         for bodega_id in bodega_ids:
@@ -22621,21 +22634,16 @@ def _inventory_consolidated_data(
         if qty == 0:
             continue
         costo_unit = Decimal(str(producto.costo_producto or 0))
-        costo_total, ajuste_pct = consolidated_cost(
-            producto.cod_producto, costo_unit, qty, enabled=adjust_costs
-        )
         rows.append(
             {
                 "codigo": producto.cod_producto,
                 "descripcion": producto.descripcion,
                 "cantidad": qty,
                 "costo_unitario": costo_unit,
-                "costo_total": costo_total,
-                "ajuste_costo_pct": ajuste_pct,
+                "costo_total": costo_unit * qty,
             }
         )
         total_qty += qty
-        total_cost += costo_total
     return rows, total_qty, total_cost, branches, selected_branch, bodegas
 
 
@@ -24762,11 +24770,6 @@ def report_inventory_consolidated_pdf(
     c.setFillColor(colors.black)
     y = date_y - 46
 
-    if any(row.get("ajuste_costo_pct") for row in rows):
-        c.setFont("Times-Roman", 8)
-        c.drawString(margin, y, "* Costo total con aumento indicado; costo unitario original sin cambios.")
-        y -= 16
-
     row_height = 15
 
     def draw_header():
@@ -24796,10 +24799,7 @@ def report_inventory_consolidated_pdf(
             y = height - 36
             draw_header()
         c.drawString(margin + 4, y, trunc(row.get("codigo") or "", 10))
-        adjustment = row.get("ajuste_costo_pct")
-        suffix = f" (+{adjustment}%)*" if adjustment else ""
-        description = trunc(row.get("descripcion") or "", 38 - len(suffix)) + suffix
-        c.drawString(margin + 82, y, description)
+        c.drawString(margin + 82, y, trunc(row.get("descripcion") or "", 52))
         c.drawRightString(margin + 330, y, f"{float(row.get('cantidad') or 0):,.2f}")
         c.drawRightString(margin + 430, y, f"C$ {float(row.get('costo_unitario') or 0):,.2f}")
         c.drawRightString(width - margin, y, f"C$ {float(row.get('costo_total') or 0):,.0f}")

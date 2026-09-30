@@ -549,10 +549,6 @@
               <div class="fw-bold text-ink" id="assign-total-facturas">{{ total_facturas or 0 }}</div>
             </div>
             <div class="p-3 rounded-xl border border-slate-200 bg-white">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total vendido USD</div>
-              <div class="fw-bold text-ink" id="assign-total-ventas-usd">${{ "{:,.2f}".format(total_ventas_usd or 0) }}</div>
-            </div>
-            <div class="p-3 rounded-xl border border-slate-200 bg-white">
               <div class="text-xs uppercase tracking-[0.2em] text-slate">Total comision USD</div>
               <div class="fw-bold text-ink" id="assign-total-comision">${{ "{:,.2f}".format(total_comision_usd or 0) }}</div>
             </div>
@@ -568,11 +564,11 @@
                     <th>Vendedor</th>
                     <th class="text-end">Bultos facturados</th>
                     <th class="text-end">Bultos asignados</th>
-                    <th class="text-end">Total venta USD</th>
-                    <th class="text-end">Comision USD</th>
+                    <th class="text-end">Comisión ganada USD</th>
                   </tr>
                 </thead>
-                <tbody id="assign-vendor-summary-body">                </tbody>
+                <tbody id="assign-vendor-summary-body"></tbody>
+                <tfoot><tr><th colspan="3" class="text-end">Total comisión ganada USD</th><th id="assign-vendor-summary-total" class="text-end"></th></tr></tfoot>
               </table>
             </div>
           </div>
@@ -898,7 +894,7 @@
   })();
 </script>
 <script id="commission-editor-config" type="application/json">{{ {"vendors": commission_vendors, "start": start_date, "end": end_date, "branch": selected_branch, "originVendor": selected_vendedor_facturacion, "productQuery": producto_asig_q}|tojson }}</script>
-<link rel="stylesheet" href="/static/commission_grid.css?v=2">
-<script src="/static/commission_editor.js?v=2"></script>
+<link rel="stylesheet" href="/static/commission_grid.css?v=3">
+<script src="/static/commission_editor.js?v=3"></script>
 <script src="/static/commission_grid.js?v=2"></script>
 {% endblock %}
