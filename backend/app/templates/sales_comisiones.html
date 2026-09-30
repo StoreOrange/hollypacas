@@ -320,7 +320,7 @@
     }
   }
 </style>
-<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+<div id="layout" class="commission-layout min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
   <main class="p-6 lg:p-8 text-[16px] commission-module">
@@ -668,13 +668,13 @@
                   <th>Factura</th>
                   <th>Cliente</th>
                   <th>Descripcion</th>
-                  <th class="text-end">Cant.<br>vendida</th>
-                  <th class="text-end">Cantidad</th>
+                  <th class="text-end">Vendidos</th>
+                  <th class="text-end">Asignados</th>
                   <th class="text-end">Precio vendido</th>
-                  <th class="text-end">Comision unit USD</th>
-                  <th class="text-end">Comision total USD</th>
-                  <th>Vendedor facturacion</th>
-                  <th>Vendedor asignado</th>
+                  <th class="text-end">Comisión/u USD</th>
+                  <th class="text-end">Comisión USD</th>
+                  <th>Facturó</th>
+                  <th>Asignado a</th>
                   <th class="text-end">Accion</th>
                 </tr>
               </thead>
@@ -894,7 +894,7 @@
   })();
 </script>
 <script id="commission-editor-config" type="application/json">{{ {"vendors": commission_vendors, "start": start_date, "end": end_date, "branch": selected_branch, "originVendor": selected_vendedor_facturacion, "productQuery": producto_asig_q}|tojson }}</script>
-<link rel="stylesheet" href="/static/commission_grid.css?v=3">
+<link rel="stylesheet" href="/static/commission_grid.css?v=4">
 <script src="/static/commission_editor.js?v=3"></script>
-<script src="/static/commission_grid.js?v=2"></script>
+<script src="/static/commission_grid.js?v=4"></script>
 {% endblock %}

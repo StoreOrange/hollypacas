@@ -60,3 +60,70 @@ th[aria-sort=ascending] .commission-sort-header::after{content:'↑';color:#2563
 .commission-summary-wrap .commission-earned,.commission-summary-wrap tfoot th:last-child{color:#166534;background:#f0fdf4}
 .commission-summary-wrap tfoot th{position:sticky;bottom:0;background:#f1f5f9;z-index:2}
 #commission-workbench .cell-clip{display:block;-webkit-line-clamp:unset;max-height:none;white-space:normal;overflow:visible;overflow-wrap:anywhere}
+/* Keep tables inside the available page width, including a visible sidebar. */
+.commission-layout{min-width:0;max-width:100%}
+.commission-module{min-width:0;max-width:100%;padding:clamp(10px,1.5vw,22px)!important}
+.commission-module .odoo-page{width:100%;max-width:1600px;min-width:0;margin-inline:auto}
+.commission-module .odoo-card,.commission-module form,.commission-module .table-responsive,#commission-workbench{min-width:0;max-width:100%}
+.commission-module .commission-kpis{grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}
+.commission-module .commission-kpis>div{padding:9px!important}
+.commission-module .commission-kpis .fw-bold{font-size:1.05rem}
+.commission-module .commission-kpis .text-xs{font-size:10px;letter-spacing:.04em;overflow-wrap:anywhere}
+.commission-summary-wrap{max-height:220px}
+.commission-summary-wrap .commission-grid{table-layout:fixed}
+.commission-summary-wrap .commission-grid th:first-child,.commission-summary-wrap .commission-grid td:first-child{width:40%}
+.commission-summary-wrap .commission-grid td:not(:first-child){white-space:normal;overflow-wrap:anywhere}
+#commission-workbench .assignment-grid{width:100%;max-width:100%}
+#commission-workbench .assignment-grid th,#commission-workbench .assignment-grid td{min-width:0!important;white-space:normal;overflow-wrap:anywhere;word-break:normal}
+#commission-workbench .assignment-grid td{padding:6px;font-size:12px}
+#commission-workbench .assignment-grid input,#commission-workbench .assignment-grid select{min-width:0;width:100%;max-width:100%;font-size:12px;padding-inline:4px}
+#commission-workbench .assignment-grid select{padding-right:20px}
+#commission-workbench .assignment-grid .badge{white-space:normal;line-height:1.3;max-width:100%}
+#commission-workbench .assignment-grid .btn{padding:3px 5px;margin-block:2px}
+#commission-workbench .commission-sort-header{padding:6px;min-width:0;font-size:11px;gap:2px;overflow-wrap:anywhere}
+#commission-workbench .commission-sort-header::after{flex-shrink:0}
+#commission-workbench .commission-group-toggle{flex-wrap:wrap;gap:4px 12px;padding:8px}
+#commission-workbench .group-totals{white-space:normal}
+#commission-workbench .commission-grid-wrap{max-height:52vh;overscroll-behavior:auto}
+#commission-workbench>.grid-tools>div:first-child{grid-template-columns:minmax(160px,2fr) repeat(5,minmax(0,1fr))}
+#commission-workbench .toolbar-field{min-width:0}
+#commission-workbench .flow-grid-control,#commission-workbench .flow-grid-btn{max-width:100%;min-width:0}
+.commission-grid-actions label{min-width:0;max-width:100%;flex-wrap:wrap}
+.commission-grid-actions select{min-width:0;max-width:100%}
+.commission-module .commission-grid thead th{letter-spacing:0}
+#commission-workbench.commission-focused{max-width:none;overflow:auto}
+@media(min-width:1024px){.commission-layout{grid-template-columns:260px minmax(0,1fr)!important}}
+@media(max-width:1200px){#commission-workbench>.grid-tools>div:first-child{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){
+ .commission-module .commission-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .commission-summary-wrap .commission-grid th,.commission-summary-wrap .commission-grid td{font-size:11px;padding:6px 4px}
+ .commission-summary-wrap .commission-grid th:first-child,.commission-summary-wrap .commission-grid td:first-child{width:34%}
+ #commission-workbench>.grid-tools>div:first-child{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #commission-workbench .assignment-grid,#commission-workbench .assignment-grid tbody{display:block;width:100%}
+ #commission-workbench .assignment-grid colgroup,#commission-workbench .assignment-grid thead{display:none}
+ #commission-workbench .assignment-grid tr[data-assignment-row]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:8px;margin:8px;border:1px solid #dbe4ef;border-radius:8px;gap:6px;background:#fff}
+ #commission-workbench .assignment-grid tr[data-assignment-row] td{display:block;position:static!important;width:auto!important;min-width:0;border:0;padding:5px;text-align:left!important}
+ #commission-workbench .assignment-grid tr[data-assignment-row] td::before{content:attr(data-label);display:block;font-size:10px;font-weight:600;color:#64748b;margin-bottom:4px}
+ #commission-workbench .assignment-grid tr[data-assignment-row] td:nth-child(3){grid-column:1/-1}
+ #commission-workbench .assignment-group-row,#commission-workbench .assignment-group-row td{display:block;width:100%}
+ #commission-workbench .commission-group-toggle{font-size:11px}
+ #commission-workbench .commission-grid-wrap{max-height:60vh}
+ #commission-workbench.commission-focused .commission-grid-wrap{flex:1 0 160px}
+ .commission-module .top-filters{min-width:0}
+}
+
+#commission-workbench{container-type:inline-size}
+@container(max-width:740px){
+ #commission-workbench .assignment-grid,#commission-workbench .assignment-grid tbody{display:block;width:100%}
+ #commission-workbench .assignment-grid colgroup,#commission-workbench .assignment-grid thead{display:none}
+ #commission-workbench .assignment-grid tr[data-assignment-row]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:8px;margin:8px;border:1px solid #dbe4ef;border-radius:8px;gap:6px;background:#fff}
+ #commission-workbench .assignment-grid tr[data-assignment-row] td{display:block;position:static!important;width:auto!important;min-width:0;border:0;padding:5px;text-align:left!important}
+ #commission-workbench .assignment-grid tr[data-assignment-row] td::before{content:attr(data-label);display:block;font-size:10px;font-weight:600;color:#64748b;margin-bottom:4px}
+ #commission-workbench .assignment-grid tr[data-assignment-row] td:nth-child(3){grid-column:1/-1}
+ #commission-workbench .assignment-group-row,#commission-workbench .assignment-group-row td{display:block;width:100%}
+ #commission-workbench .commission-group-toggle{font-size:11px}
+ #commission-workbench .commission-grid-wrap{max-height:60vh}
+ #commission-workbench.commission-focused .commission-grid-wrap{flex:1 0 160px}
+
+}
+.commission-module .top-filters .form-label{white-space:normal;overflow-wrap:anywhere;letter-spacing:.03em;font-size:11px}

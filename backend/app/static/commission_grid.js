@@ -13,10 +13,11 @@
   const save=()=>{try{localStorage.setItem(key,JSON.stringify({widths,hidden:[...hidden],density:shell.dataset.density}));}catch(_){}};
   const refresh=()=>document.dispatchEvent(new CustomEvent('commission:grid-refresh'));
   const layout=()=>{
-    table.style.width=widths.reduce((n,w,i)=>n+(hidden.has(i)?0:w),0)+'px';
-    cols.forEach((col,i)=>{col.style.width=widths[i]+'px';col.style.display=hidden.has(i)?'none':'';});
+    const totalWidth=widths.reduce((n,w,i)=>n+(hidden.has(i)?0:w),0);
+    table.style.width='100%';
+    cols.forEach((col,i)=>{col.style.width=(100*widths[i]/totalWidth)+'%';col.style.display=hidden.has(i)?'none':'';});
     for(const row of table.rows){
-      if(row.cells.length===11)[...row.cells].forEach((cell,i)=>cell.style.display=hidden.has(i)?'none':'');
+      if(row.cells.length===11)[...row.cells].forEach((cell,i)=>{cell.style.display=hidden.has(i)?'none':'';if(row.hasAttribute('data-assignment-row'))cell.dataset.label=heads[i].querySelector('button')?.textContent||heads[i].textContent.trim();});
       else if(row.cells.length===1)row.cells[0].colSpan=11-hidden.size;
     }
     heads.forEach((head,i)=>{if(fields[i])head.setAttribute('aria-sort',el('assignment-grid-sort').value===fields[i]?(el('assignment-grid-dir').dataset.dir==='desc'?'descending':'ascending'):'none');});
@@ -44,7 +45,7 @@
     option.append(check,document.createTextNode(label));el('commission-column-options').append(option);
   });
   const reset=document.createElement('button');reset.type='button';reset.textContent='Restablecer columnas';reset.addEventListener('click',()=>{widths=[...defaults];hidden.clear();el('commission-column-options').querySelectorAll('input').forEach(c=>c.checked=true);heads.forEach((h,i)=>h.querySelector('.commission-resizer').setAttribute('aria-valuenow',widths[i]));layout();save();});el('commission-column-options').append(reset);
-  shell.dataset.density=prefs.density==='compact'?'compact':'comfortable';el('commission-density').value=shell.dataset.density;
+  shell.dataset.density=prefs.density==='comfortable'?'comfortable':'compact';el('commission-density').value=shell.dataset.density;
   el('commission-density').addEventListener('change',event=>{shell.dataset.density=event.target.value;save();});
   el('commission-sale-filter').addEventListener('change',refresh);
   el('commission-clear-search').addEventListener('click',()=>{el('assignment-grid-search').value='';el('commission-sale-filter').value='';el('commission-vendor-view').value='';refresh();});
