@@ -319,6 +319,7 @@
         <div class="summary-box">
           <div class="label">Comision USD</div>
           <div class="value">$ {{ summary.total_comision_usd }}</div>
+          {% if summary.pending_commissions %}<div class="label">Total parcial: promociones sin comision configurada</div>{% endif %}
           <div class="hint">Monto final a pagar</div>
         </div>
         <div class="summary-box">
@@ -345,6 +346,7 @@
           <div class="compare-item">
             <div class="compare-label">Comision USD anterior</div>
             <div class="compare-value">$ {{ previous_summary.total_comision_usd }}</div>
+            {% if previous_summary.pending_commissions %}<div class="label">Total parcial: promociones pendientes</div>{% endif %}
           </div>
         </div>
       </div>
@@ -404,7 +406,7 @@
                 </div>
                 <div class="cell">
                   <div class="label">Comision</div>
-                  <div class="value">$ {{ detail.comision_total_usd }}</div>
+                  <div class="value">{% if detail.comision_pendiente %}Pendiente{% else %}$ {{ detail.comision_total_usd }}{% endif %}</div>
                 </div>
                 <div class="cell">
                   <div class="label">Fuente</div>
@@ -412,7 +414,8 @@
                 </div>
                 <div class="cell">
                   <div class="label">Comision unit</div>
-                  <div class="value">$ {{ detail.comision_unit_usd }}</div>
+                  <div class="value">{% if detail.comision_pendiente %}Sin configurar{% else %}$ {{ detail.comision_unit_usd }}{% endif %}</div>
+                  {% if detail.tipo_comision == "2 por precio especial" %}<div class="label">2 por precio especial</div>{% endif %}
                 </div>
                 <div class="cell">
                   <div class="label">Venta USD</div>

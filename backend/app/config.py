@@ -102,7 +102,10 @@ def get_company_profiles() -> list[dict[str, str]]:
         database_url = _env_get(values, f"COMPANY_{env_key}_DATABASE_URL")
         if not database_url:
             continue
-        profiles.append({"key": key, "name": name, "database_url": database_url})
+        app_port = _env_get(values, f"COMPANY_{env_key}_APP_PORT")
+        if app_port and (not app_port.isdigit() or not 1 <= int(app_port) <= 65535):
+            raise ValueError(f"Puerto de aplicacion invalido para {key}")
+        profiles.append({"key": key, "name": name, "database_url": database_url, "app_port": app_port})
 
     # Fallback: si el archivo no estaba poblado, usar DATABASE_URL actual.
     if not profiles:
@@ -163,6 +166,8 @@ def upsert_company_profile(*, key: str, name: str, database_url: str, activate: 
         keys.append(normalized_key)
 
     env_key = _to_company_env_key(normalized_key)
+    if activate and normalized_key != get_active_company_key() and _env_get(current, f"COMPANY_{env_key}_APP_PORT"):
+        raise ValueError("Este entorno tiene su propia instalacion. Usa su boton Activar en la lista de entornos.")
     updates = {
         "COMPANY_KEYS": ",".join(keys),
         f"COMPANY_{env_key}_NAME": profile_name,
@@ -187,6 +192,9 @@ def set_active_company(company_key: str) -> dict[str, str]:
     profile = next((p for p in profiles if p["key"] == normalized_key), None)
     if not profile:
         raise ValueError("Empresa no registrada")
+
+    if profile.get("app_port") and normalized_key != get_active_company_key():
+        raise ValueError("Este entorno tiene su propia instalacion. Usa su boton Activar en la lista de entornos.")
 
     _update_env_file(COMPANIES_ENV_PATH, {"ACTIVE_COMPANY": normalized_key})
     _update_env_file(

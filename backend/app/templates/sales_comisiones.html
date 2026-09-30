@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block extra_head %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flowbite@2.5.2/dist/flowbite.min.css" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/daisyui.css" />
@@ -9,6 +9,18 @@
 {% endblock %}
 {% block content %}
 <style>
+  .commission-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+  .commission-kpis > div { border:1px solid #dbe3ef; border-radius:12px; padding:12px !important; background:#fff; }
+  .commission-kpis .fw-bold { font-size:1.2rem; margin-top:5px; }
+  @media(max-width:800px) { .commission-kpis {grid-template-columns:repeat(2,minmax(0,1fr));} }
+
+  .commission-summary-wrap { max-height: 280px; overflow:auto; }
+  .commission-summary-wrap thead { position:sticky; top:0; z-index:1; background:#f1f5f9; }
+  .commission-group-toggle { width:100%; border:0; background:transparent; text-align:left; padding:10px; color:inherit; display:flex; justify-content:space-between; gap:16px; }
+  .commission-dirty td { box-shadow: inset 0 -2px #eab308; }
+  .commission-invalid td { background:#fff1f2 !important; }
+  .commission-group-toggle:focus-visible { outline:2px solid #2563eb; }
+
   :root {
     --grid-border: #d8e0ea;
     --grid-head-bg: #f1f5fb;
@@ -375,13 +387,14 @@
           <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
             <div>
               <div class="odoo-section-title mb-1">Registro de precios de comision por producto</div>
-              <div class="text-sm text-slate">Digita comision por producto y guarda para registrar/actualizar.</div>
+              <div id="commission-prices-status" class="small" role="status" aria-live="polite">Guardado automatico al editar</div>
+              <div class="text-sm text-slate">Edita el importe; se valida y guarda automaticamente.{% if promotion_commissions_enabled %} La comision por promocion se paga por cada unidad vendida con «2 por precio especial». Dejala vacia si aun no esta configurada; 0.00 significa sin comision.{% endif %}</div>
             </div>
             <div class="d-flex gap-2 align-items-center">
               <input id="product-live-filter" class="form-control form-control-sm" type="text" placeholder="Buscar codigo o descripcion">
               <button class="btn btn-primary btn-sm" type="submit">
                 <i class="bi bi-save2"></i>
-                Guardar comisiones
+                Reintentar guardado
               </button>
             </div>
           </div>
@@ -394,7 +407,8 @@
                   <th>Descripcion</th>
                   <th class="text-end">Costo producto</th>
                   <th class="text-end">Precio venta USD</th>
-                  <th class="text-end">Comision USD</th>
+                  <th class="text-end">Comision normal USD</th>
+                  {% if promotion_commissions_enabled %}<th class="text-end">Comision por promocion USD</th>{% endif %}
                 </tr>
               </thead>
               <tbody id="commission-products-body">
@@ -414,11 +428,19 @@
                       value="{{ "%.2f"|format(row.comision or 0) }}"
                     >
                   </td>
+                  {% if promotion_commissions_enabled %}
+                  <td class="text-end" style="min-width: 170px;">
+                    <input class="form-control form-control-sm text-end" type="number" step="0.01" min="0"
+                      name="comision_promocion_{{ row.id }}" placeholder="Sin configurar"
+                      aria-label="Comision por promocion de {{ row.codigo }}"
+                      value="{{ '%.2f'|format(row.comision_promocion) if row.comision_promocion is not none else '' }}">
+                  </td>
+                  {% endif %}
                 </tr>
                 {% endfor %}
                 {% if product_rows|length == 0 %}
                 <tr>
-                  <td colspan="5" class="text-center text-slate py-3">Sin productos.</td>
+                  <td colspan="{{ 6 if promotion_commissions_enabled else 5 }}" class="text-center text-slate py-3">Sin productos.</td>
                 </tr>
                 {% endif %}
               </tbody>
@@ -479,6 +501,9 @@
           </form>
         </div>
 
+        {% if pending_promotion_commissions %}
+        <div id="commission-pending-notice" class="alert alert-warning">Hay ventas de 2 por precio especial sin comision configurada. Define su importe en Precios de comision antes de cerrar el dia. Los totales aun no incluyen esas comisiones.</div>
+        {% endif %}
         <form id="assignment-form" class="odoo-card" method="post" action="/sales/comisiones/asignaciones">
           <input type="hidden" name="fecha" value="{{ start_date }}">
           <input type="hidden" name="start_date" value="{{ start_date }}">
@@ -497,76 +522,79 @@
                   {{ day_status.label }}
                 </span>
               </div>
-              <div class="text-sm text-slate">Actualiza el vendedor asignado por cada venta/item. Las filas con cambio quedan coloreadas.</div>
+              <div class="text-sm text-slate">Los cambios de vendedor y reparto se validan y guardan automaticamente. La suma debe coincidir con los bultos vendidos.</div>
             </div>
-            <div class="d-flex gap-2">
-              <button
-                class="btn btn-outline-secondary btn-sm"
-                type="submit"
-                formaction="/sales/comisiones/asignaciones/sanear"
-                formmethod="post"
-                id="sanitize-day-btn"
-              >
-                <i class="bi bi-bandaid"></i>
-                Depurar asignaciones
-              </button>
-              <button
-                class="btn btn-outline-info btn-sm"
-                type="submit"
-                formaction="/sales/comisiones/asignaciones/restaurar-corte"
-                formmethod="post"
-                id="restore-cutoff-btn"
-              >
-                <i class="bi bi-clock-history"></i>
-                Recuperar pre 4 PM
-              </button>
-              <button
-                class="btn btn-outline-warning btn-sm"
-                type="submit"
-                formaction="/sales/comisiones/asignaciones/validar-precios"
-                formmethod="post"
-                id="validate-prices-btn"
-              >
-                <i class="bi bi-shield-check"></i>
-                Validar precios comision
-              </button>
-              <button
-                class="btn btn-outline-danger btn-sm"
-                type="submit"
-                formaction="/sales/comisiones/asignaciones/regenerar"
-                formmethod="post"
-                id="regenerate-day-btn"
-              >
-                <i class="bi bi-arrow-clockwise"></i>
-                Regenerar ventas del dia
-              </button>
-              <button
-                class="btn btn-outline-success btn-sm"
-                type="submit"
-                formaction="/sales/comisiones/asignaciones/finalizar"
-                formmethod="post"
-                id="finalize-day-btn"
-              >
-                <i class="bi bi-check2-circle"></i>
-                Cerrar dia y enviar a comisiones finales
-              </button>
-              <button
-                class="btn btn-outline-dark btn-sm"
-                type="submit"
-                formaction="/sales/comisiones/asignaciones/reabrir"
-                formmethod="post"
-                id="reopen-day-btn"
-              >
-                <i class="bi bi-arrow-counterclockwise"></i>
-                Reabrir cierre del dia
-              </button>
-              <button class="btn btn-primary btn-sm" type="submit">
-                <i class="bi bi-save2"></i>
-                Registrar / actualizar asignaciones
-              </button>
+
+          </div>
+
+          <div class="commission-kpis my-3">
+            <div class="p-3 rounded-xl border border-slate-200 bg-white">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total bultos vendidos</div>
+              <div class="fw-bold text-ink" id="assign-total-vendidos">{{ "%.0f"|format(total_bultos_vendidos or 0) }}</div>
+            </div>
+            <div class="p-3 rounded-xl border border-slate-200 bg-white">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total bultos asignados</div>
+              <div class="fw-bold text-ink" id="assign-total-bultos">{{ "%.0f"|format(total_bultos or 0) }}</div>
+            </div>
+            <div class="p-3 rounded-xl border border-slate-200 bg-white">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Diferencia (asignados - vendidos)</div>
+              <div class="fw-bold text-ink" id="assign-total-diff">0</div>
+            </div>
+            <div class="p-3 rounded-xl border border-slate-200 bg-white">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total filas asignadas</div>
+              <div class="fw-bold text-ink" id="assign-total-rows">{{ total_rows or 0 }}</div>
+            </div>
+            <div class="p-3 rounded-xl border border-slate-200 bg-white">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Facturas incluidas</div>
+              <div class="fw-bold text-ink" id="assign-total-facturas">{{ total_facturas or 0 }}</div>
+            </div>
+            <div class="p-3 rounded-xl border border-slate-200 bg-white">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total vendido USD</div>
+              <div class="fw-bold text-ink" id="assign-total-ventas-usd">${{ "{:,.2f}".format(total_ventas_usd or 0) }}</div>
+            </div>
+            <div class="p-3 rounded-xl border border-slate-200 bg-white">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total comision USD</div>
+              <div class="fw-bold text-ink" id="assign-total-comision">${{ "{:,.2f}".format(total_comision_usd or 0) }}</div>
             </div>
           </div>
 
+          <div class="mt-3">
+            <div class="odoo-section-title mb-2">Resumen por vendedor · {{ start_date }} al {{ end_date }}</div>
+            <p class="small text-muted">Todos los vendedores del periodo y sucursal. Facturados identifica al vendedor original; asignados determina quien recibe la comision.</p>
+            <div class="table-responsive commission-summary-wrap">
+              <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
+                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                  <tr>
+                    <th>Vendedor</th>
+                    <th class="text-end">Bultos facturados</th>
+                    <th class="text-end">Bultos asignados</th>
+                    <th class="text-end">Total venta USD</th>
+                    <th class="text-end">Comision USD</th>
+                  </tr>
+                </thead>
+                <tbody id="assign-vendor-summary-body">                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <section id="commission-workbench" aria-label="Detalle de comisiones">
+          <div class="alert alert-light border d-flex flex-wrap align-items-center gap-2 my-3">
+                          <button id="assignment-retry" class="btn btn-primary btn-sm" type="button">
+                <i class="bi bi-save2"></i>
+                Reintentar guardado
+              </button>
+            <strong id="commission-save-status" role="status" aria-live="polite">Todo guardado</strong>
+            <span class="small text-muted">Las cifras se actualizan al editar. Solo «Guardado» confirma el registro.</span>
+          </div>
+          <div id="commission-save-errors" class="mb-2" role="alert"></div>
+          <div class="d-flex gap-2 mb-2">
+            <button type="button" id="commission-expand-all" class="btn btn-outline-secondary btn-sm">Desplegar todos</button>
+            <button type="button" id="commission-collapse-all" class="btn btn-outline-secondary btn-sm">Contraer todos</button>
+            <select id="commission-vendor-view" class="form-select form-select-sm" style="max-width:260px" aria-label="Ver detalle de un vendedor">
+              <option value="">Todos los vendedores</option>
+              {% for vendedor in vendedores %}<option value="{{ vendedor.id }}" {% if selected_vendedor_asignado == vendedor.id|string %}selected{% endif %}>{{ vendedor.nombre }}</option>{% endfor %}
+            </select>
+          </div>
           <div class="grid-tools flow-grid-tools mb-3">
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 xl:grid-cols-12 gap-2 items-end">
               <div class="toolbar-field xl:col-span-4">
@@ -581,7 +609,7 @@
                   <option value="descripcion">Descripcion</option>
                   <option value="cant_vendida">Cant. vendida</option>
                   <option value="cantidad">Cantidad</option>
-                  <option value="precio">Precio</option>
+                  <option value="precio">Precio</option><option value="comision_unit">Comisión unitaria</option><option value="comision_total">Comisión total</option>
                   <option value="vendedor_facturacion">Vendedor facturacion</option>
                   <option value="vendedor_asignado">Vendedor asignado</option>
                 </select>
@@ -593,7 +621,7 @@
                 </button>
               </div>
               <div class="toolbar-field xl:col-span-2">
-                <label class="form-label">Filas</label>
+                <label class="form-label">Vendedores por pagina</label>
                 <select id="assignment-grid-size" class="flow-grid-control w-full">
                   <option value="15">15</option>
                   <option value="25">25</option>
@@ -612,10 +640,18 @@
               </div>
             </div>
             <div class="text-xs text-slate mt-2">
-              Teclado: <strong>Enter</strong> baja fila, <strong>Shift+Enter</strong> sube fila, <strong>Ctrl + ↑/↓</strong> mueve entre filas en la misma columna.
+              Teclado: <strong>Enter</strong> avanza al siguiente campo; <strong>Shift+Enter</strong> vuelve al anterior. Los grupos cerrados conservan sus datos.
             </div>
           </div>
 
+          <div class="commission-grid-actions">
+            <label>Tipo de venta <select id="commission-sale-filter"><option value="">Todas</option><option value="normal">Normal</option><option value="promotion">Promoción 2 por precio especial</option><option value="pending">Comisión sin configurar</option></select></label>
+            <button type="button" id="commission-clear-search">Limpiar filtros de tabla</button>
+            <span class="commission-tools-spacer"></span>
+            <label>Filas <select id="commission-density"><option value="comfortable">Cómodas</option><option value="compact">Compactas</option></select></label>
+            <details class="commission-columns"><summary>Columnas</summary><div id="commission-column-options"></div></details>
+            <button type="button" id="commission-focus" aria-pressed="false">Ampliar tabla</button>
+          </div>
           <div class="table-responsive commission-grid-wrap ring-1 ring-slate-200">
             <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid assignment-grid">
               <colgroup>
@@ -658,6 +694,9 @@
                 <tr
                   data-assignment-row
                   data-temp-id="{{ row.temp_id }}"
+                  data-revision="{{ row.revision }}"
+                  data-producto-id="{{ row.producto_id }}"
+                  data-promotion="{{ '1' if row.comision_promocion else '0' }}"
                   data-venta-item-id="{{ row.venta_item_id }}"
                   data-factura-id="{{ row.factura_id }}"
                   data-vendedor-origen-id="{{ row.vendedor_origen_id or '' }}"
@@ -665,12 +704,15 @@
                   data-total-item="{{ "%.0f"|format(row.cantidad_total_item or row.cantidad or 0) }}"
                   data-cantidad="{{ "%.0f"|format(row.cantidad or 0) }}"
                   data-precio-usd-unit="{{ "%.4f"|format(row.precio_usd_unit or 0) }}"
+                  data-commission-pending="{{ '1' if row.comision_pendiente else '0' }}"
                   data-comision-unit="{{ "%.2f"|format(row.comision_unit_usd or 0) }}"
-                  data-commission-basis-unit="{{ "%.4f"|format(row.commission_basis_unit or 1) }}"
+                  data-commission-basis-unit="{{ "%.10f"|format(row.commission_basis_unit or 1) }}"
                 >
                   <td class="fw-semibold">{{ row.factura_numero }}</td>
                   <td><div class="cell-clip" title="{{ row.cliente }}">{{ row.cliente }}</div></td>
-                  <td><div class="cell-clip" title="{{ row.descripcion }}">{{ row.descripcion }}</div></td>
+                  <td><div class="cell-clip" title="{{ row.descripcion }}">{{ row.descripcion }}</div>
+                    {% if row.comision_promocion %}<span class="badge bg-warning text-dark">2 por precio especial</span>{% elif promotion_commissions_enabled %}<span class="small text-muted">Comision normal</span>{% endif %}
+                  </td>
                   <td class="text-end assignment-total-item">{{ "%.0f"|format(row.cantidad_total_item or row.cantidad or 0) }}</td>
                   <td class="text-end" style="width: 120px;">
                     <input
@@ -684,7 +726,7 @@
                     >
                   </td>
                   <td class="text-end">{{ row.precio_label }}{{ "{:,.2f}".format(row.precio or 0) }}</td>
-                  <td class="text-end assignment-commission-unit">${{ "{:,.2f}".format(row.comision_unit_usd or 0) }}</td>
+                  <td class="text-end assignment-commission-unit">{% if row.comision_pendiente %}<span class="text-warning">Sin configurar</span>{% else %}${{ "{:,.2f}".format(row.comision_unit_usd or 0) }}{% endif %}</td>
                   <td class="text-end assignment-commission-total">${{ "{:,.2f}".format(row.comision_total_usd or 0) }}</td>
                   <td><div class="cell-clip" title="{{ row.vendedor_origen }}">{{ row.vendedor_origen }}</div></td>
                   <td style="min-width: 170px;">
@@ -713,70 +755,10 @@
             </table>
           </div>
 
-          <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
-            <div class="p-3 rounded-xl border border-slate-200 bg-white">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total bultos vendidos</div>
-              <div class="fw-bold text-ink" id="assign-total-vendidos">{{ "%.0f"|format(total_bultos_vendidos or 0) }}</div>
-            </div>
-            <div class="p-3 rounded-xl border border-slate-200 bg-white">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total bultos asignados</div>
-              <div class="fw-bold text-ink" id="assign-total-bultos">{{ "%.0f"|format(total_bultos or 0) }}</div>
-            </div>
-            <div class="p-3 rounded-xl border border-slate-200 bg-white">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Diferencia (asignados - vendidos)</div>
-              <div class="fw-bold text-ink" id="assign-total-diff">0</div>
-            </div>
-            <div class="p-3 rounded-xl border border-slate-200 bg-white">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total filas asignadas</div>
-              <div class="fw-bold text-ink" id="assign-total-rows">{{ total_rows or 0 }}</div>
-            </div>
-            <div class="p-3 rounded-xl border border-slate-200 bg-white">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Facturas incluidas</div>
-              <div class="fw-bold text-ink" id="assign-total-facturas">{{ total_facturas or 0 }}</div>
-            </div>
-            <div class="p-3 rounded-xl border border-slate-200 bg-white">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total vendido USD</div>
-              <div class="fw-bold text-ink" id="assign-total-ventas-usd">${{ "{:,.2f}".format(total_ventas_usd or 0) }}</div>
-            </div>
-            <div class="p-3 rounded-xl border border-slate-200 bg-white">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total comision USD</div>
-              <div class="fw-bold text-ink" id="assign-total-comision">${{ "{:,.2f}".format(total_comision_usd or 0) }}</div>
-            </div>
-          </div>
-
-          <div class="mt-3">
-            <div class="odoo-section-title mb-2">Resumen por vendedor (periodo seleccionado)</div>
-            <div class="table-responsive commission-grid-wrap">
-              <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
-                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-                  <tr>
-                    <th>Vendedor</th>
-                    <th class="text-end">Items vendidos</th>
-                    <th class="text-end">Total venta USD</th>
-                    <th class="text-end">Comision USD</th>
-                  </tr>
-                </thead>
-                <tbody id="assign-vendor-summary-body">
-                  {% if by_vendor %}
-                  {% for vendedor_nombre, values in by_vendor.items() %}
-                  <tr>
-                    <td>{{ vendedor_nombre }}</td>
-                    <td class="text-end">{{ "%.0f"|format(values.items_vendidos or values.bultos or 0) }}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(values.ventas_usd or 0) }}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(values.comision_usd or 0) }}</td>
-                  </tr>
-                  {% endfor %}
-                  {% else %}
-                  <tr id="assign-vendor-summary-empty">
-                    <td colspan="4" class="text-center text-slate py-2">Sin datos para resumen.</td>
-                  </tr>
-                  {% endif %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="mt-3 p-3 rounded-xl border border-slate-200 bg-white">
+          <div id="commission-filter-empty" hidden>No hay filas que coincidan con los filtros de la tabla.</div>
+          <div class="commission-grid-footer"><span id="commission-grid-count" role="status"></span><span>Arrastra el borde de una columna para ajustar su ancho · Ctrl + ↑ / ↓ cambia de fila</span></div>
+          </section>
+          <details class="mt-3 p-3 rounded-xl border border-slate-200 bg-white"><summary>Resumen de ventas por fecha</summary>
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div class="odoo-section-title mb-0">Resumen de ventas del periodo validado</div>
               <span class="text-xs text-slate">Transparencia: solo facturas no anuladas</span>
@@ -811,252 +793,66 @@
                 </tbody>
               </table>
             </div>
-          </div>
+          </details>
 
-          <div class="mt-3 p-3 rounded-xl border border-emerald-200 bg-emerald-50">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div class="odoo-section-title mb-0">Ganancia en caliente por vendedor</div>
-              <span class="text-xs text-slate">Basado solo en asignacion actual (cantidad x comision)</span>
-            </div>
-            <div class="table-responsive commission-grid-wrap">
-              <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
-                <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-                  <tr>
-                    <th>Vendedor</th>
-                    <th class="text-end">Items asignados</th>
-                    <th class="text-end">Ganado USD</th>
-                  </tr>
-                </thead>
-                <tbody id="assign-vendor-earnings-body">
-                  {% if by_vendor %}
-                  {% for vendedor_nombre, values in by_vendor.items() %}
-                  <tr>
-                    <td>{{ vendedor_nombre }}</td>
-                    <td class="text-end">{{ "%.0f"|format(values.items_vendidos or values.bultos or 0) }}</td>
-                    <td class="text-end">${{ "{:,.2f}".format(values.comision_usd or 0) }}</td>
-                  </tr>
-                  {% endfor %}
-                  {% else %}
-                  <tr id="assign-vendor-earnings-empty">
-                    <td colspan="3" class="text-center text-slate py-2">Sin datos de ganancia en caliente.</td>
-                  </tr>
-                  {% endif %}
-                </tbody>
-              </table>
-            </div>
-          </div>
+            <section id="commission-bottom-tools" class="mt-4 pt-3 border-top" aria-label="Validaciones y cierre de comisiones"><h3 class="h6 mb-2">Validaciones y cierre de comisiones</h3><div class="d-flex flex-wrap gap-2 mt-2">
+              <button
+                class="btn btn-outline-secondary btn-sm"
+                type="submit"
+                formaction="/sales/comisiones/asignaciones/sanear"
+                formmethod="post"
+                id="sanitize-day-btn"
+              >
+                <i class="bi bi-bandaid"></i>
+                Depurar asignaciones
+              </button>
+
+              <button
+                class="btn btn-outline-warning btn-sm"
+                type="submit"
+                formaction="/sales/comisiones/asignaciones/validar-precios"
+                formmethod="post"
+                id="validate-prices-btn"
+              >
+                <i class="bi bi-shield-check"></i>
+                Validar precios comision
+              </button>
+              <button
+                class="btn btn-outline-danger btn-sm"
+                type="submit"
+                formaction="/sales/comisiones/asignaciones/regenerar"
+                formmethod="post"
+                id="regenerate-day-btn"
+              >
+                <i class="bi bi-arrow-clockwise"></i>
+                Regenerar ventas del dia
+              </button>
+              <button
+                class="btn btn-outline-success btn-sm"
+                type="submit"
+                formaction="/sales/comisiones/asignaciones/finalizar"
+                formmethod="post"
+                id="finalize-day-btn"
+              >
+                <i class="bi bi-check2-circle"></i>
+                Cerrar dia y enviar a comisiones finales
+              </button>
+              <button
+                class="btn btn-outline-dark btn-sm"
+                type="submit"
+                formaction="/sales/comisiones/asignaciones/reabrir"
+                formmethod="post"
+                id="reopen-day-btn"
+              >
+                <i class="bi bi-arrow-counterclockwise"></i>
+                Reabrir cierre del dia
+              </button>
+
+            </div></section>
         </form>
       </section>
 
-      <section id="tab-reportes" class="{% if active_tab != 'reportes' %}d-none{% endif %}">
-        <div class="odoo-card mb-3">
-          <form class="top-filters grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-12 gap-2 items-end" method="get" action="/sales/comisiones">
-            <input type="hidden" name="tab" value="reportes">
-            <input type="hidden" name="fecha" value="{{ fecha }}">
-            <input type="hidden" name="branch_id" value="{{ selected_branch }}">
-            <input type="hidden" name="vendedor_facturacion_id" value="{{ selected_vendedor_facturacion }}">
-            <input type="hidden" name="vendedor_asignado_id" value="{{ selected_vendedor_asignado }}">
-            <input type="hidden" name="producto_asig_q" value="{{ producto_asig_q }}">
-            <div class="xl:col-span-2 min-w-0">
-              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
-              <input name="rep_start_date" type="date" class="form-control form-control-sm" value="{{ rep_start_date }}">
-            </div>
-            <div class="xl:col-span-2 min-w-0">
-              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
-              <input name="rep_end_date" type="date" class="form-control form-control-sm" value="{{ rep_end_date }}">
-            </div>
-            <div class="xl:col-span-3 min-w-0">
-              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
-              <select name="rep_branch_id" class="form-select form-select-sm">
-                <option value="all" {% if rep_selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
-                {% for branch in branches %}
-                <option value="{{ branch.id }}" {% if rep_selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="xl:col-span-3 min-w-0">
-              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor</label>
-              <select name="rep_vendedor_id" class="form-select form-select-sm">
-                <option value="">Todos</option>
-                {% for vendedor in vendedores %}
-                <option value="{{ vendedor.id }}" {% if rep_selected_vendedor == vendedor.id|string %}selected{% endif %}>{{ vendedor.nombre }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="xl:col-span-1 min-w-0">
-              <button class="btn btn-outline-secondary btn-sm" type="submit">
-                <i class="bi bi-search"></i>
-                Filtrar
-              </button>
-            </div>
-            <div class="xl:col-span-1 min-w-0">
-              <a
-                class="btn btn-primary btn-sm"
-                target="_blank"
-                href="/sales/comisiones/reportes/pdf?rep_start_date={{ rep_start_date }}&rep_end_date={{ rep_end_date }}&rep_branch_id={{ rep_selected_branch }}&rep_vendedor_id={{ rep_selected_vendedor }}"
-              >
-                <i class="bi bi-file-earmark-pdf"></i>
-                PDF sabana
-              </a>
-            </div>
-            <div class="xl:col-span-1 min-w-0">
-              <a
-                class="btn btn-outline-success btn-sm"
-                href="/sales/comisiones/reportes/xlsx?rep_start_date={{ rep_start_date }}&rep_end_date={{ rep_end_date }}&rep_branch_id={{ rep_selected_branch }}&rep_vendedor_id={{ rep_selected_vendedor }}"
-              >
-                <i class="bi bi-file-earmark-excel"></i>
-                Excel sabana
-              </a>
-            </div>
-          </form>
-        </div>
-
-        <div class="odoo-card mb-3">
-          <div class="odoo-section-title mb-2">Detalle por vendedor y dia</div>
-          <div class="table-responsive commission-grid-wrap">
-            <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
-              <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-                <tr>
-                  <th>Fecha</th>
-                  <th>Sucursal</th>
-                  <th>Vendedor</th>
-                  <th>Factura</th>
-                  <th>Cliente</th>
-                  <th>Producto</th>
-                  <th class="text-end">Bultos</th>
-                  <th class="text-end">Venta USD</th>
-                  <th class="text-end">Comision unit USD</th>
-                  <th class="text-end">Comision total USD</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in rep_detail_rows %}
-                <tr>
-                  <td>{{ row.fecha_label }}</td>
-                  <td>{{ row.sucursal }}</td>
-                  <td>{{ row.vendedor }}</td>
-                  <td>{{ row.factura }}</td>
-                  <td>{{ row.cliente }}</td>
-                  <td>{{ row.producto }}</td>
-                  <td class="text-end">{{ row.cantidad }}</td>
-                  <td class="text-end">${{ "{:,.2f}".format(row.subtotal_usd or 0) }}</td>
-                  <td class="text-end">${{ "{:,.2f}".format(row.comision_unit_usd or 0) }}</td>
-                  <td class="text-end">${{ "{:,.2f}".format(row.comision_total_usd or 0) }}</td>
-                </tr>
-                {% endfor %}
-                {% if rep_detail_rows|length == 0 %}
-                <tr>
-                  <td colspan="10" class="text-center text-slate py-3">Sin datos para el rango seleccionado.</td>
-                </tr>
-                {% endif %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="odoo-card mb-3">
-          <div class="odoo-section-title mb-2">Resumen total por vendedor (periodo)</div>
-          <div class="table-responsive commission-grid-wrap">
-            <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
-              <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-                <tr>
-                  <th>Vendedor</th>
-                  <th class="text-end">Bultos</th>
-                  <th class="text-end">Ventas USD</th>
-                  <th class="text-end">Comision USD</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in rep_summary_rows %}
-                <tr>
-                  <td>{{ row.vendedor }}</td>
-                  <td class="text-end">{{ row.bultos }}</td>
-                  <td class="text-end">${{ "{:,.2f}".format(row.ventas_usd or 0) }}</td>
-                  <td class="text-end">${{ "{:,.2f}".format(row.comision_usd or 0) }}</td>
-                </tr>
-                {% endfor %}
-                {% if rep_summary_rows|length == 0 %}
-                <tr>
-                  <td colspan="4" class="text-center text-slate py-3">Sin datos para resumen.</td>
-                </tr>
-                {% endif %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="odoo-card">
-          <div class="odoo-section-title mb-2">Sabana pivote por dia y vendedor</div>
-          <div class="table-responsive commission-grid-wrap">
-            <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
-              <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
-                <tr>
-                  <th rowspan="2">Dia</th>
-                  {% for vendor_name in rep_pivot_vendors %}
-                  <th colspan="2" class="text-center">{{ vendor_name }}</th>
-                  {% endfor %}
-                  <th rowspan="2" class="text-end">Total bultos dia</th>
-                  <th rowspan="2" class="text-end">Total comision dia USD</th>
-                </tr>
-                <tr>
-                  {% for vendor_name in rep_pivot_vendors %}
-                  <th class="text-end">Bultos</th>
-                  <th class="text-end">Comision USD</th>
-                  {% endfor %}
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in rep_pivot_rows %}
-                <tr>
-                  <td>{{ row.fecha_label }}</td>
-                  {% for cell in row.cells %}
-                  <td class="text-end">{{ cell.bultos }}</td>
-                  <td class="text-end">${{ "{:,.2f}".format(cell.comision_usd or 0) }}</td>
-                  {% endfor %}
-                  <td class="text-end fw-semibold">{{ row.day_bultos }}</td>
-                  <td class="text-end fw-semibold">${{ "{:,.2f}".format(row.day_comision_usd or 0) }}</td>
-                </tr>
-                {% endfor %}
-                {% if rep_pivot_rows|length == 0 %}
-                <tr>
-                  <td colspan="{{ 3 + (rep_pivot_vendors|length * 2) }}" class="text-center text-slate py-3">
-                    Sin datos para sabana.
-                  </td>
-                </tr>
-                {% endif %}
-              </tbody>
-              {% if rep_pivot_rows|length > 0 %}
-              <tfoot>
-                <tr>
-                  <th>TOTAL</th>
-                  {% for vendor_name in rep_pivot_vendors %}
-                  {% set totals = rep_pivot_vendor_totals.get(vendor_name, {"bultos": 0, "comision_usd": 0}) %}
-                  <th class="text-end">{{ totals.bultos }}</th>
-                  <th class="text-end">${{ "{:,.2f}".format(totals.comision_usd or 0) }}</th>
-                  {% endfor %}
-                  <th class="text-end">{{ rep_total_bultos }}</th>
-                  <th class="text-end">${{ "{:,.2f}".format(rep_total_comision_usd or 0) }}</th>
-                </tr>
-              </tfoot>
-              {% endif %}
-            </table>
-          </div>
-          <div class="mt-2 d-flex flex-wrap gap-3">
-            <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[220px]">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total bultos periodo</div>
-              <div class="fw-bold text-ink">{{ rep_total_bultos }}</div>
-            </div>
-            <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[220px]">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total ventas USD periodo</div>
-              <div class="fw-bold text-ink">${{ "{:,.2f}".format(rep_total_ventas_usd or 0) }}</div>
-            </div>
-            <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[220px]">
-              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total comision USD periodo</div>
-              <div class="fw-bold text-ink">${{ "{:,.2f}".format(rep_total_comision_usd or 0) }}</div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {% include "partials/commission_reports.html" %}
     </div>
   </main>
 </div>
@@ -1066,7 +862,7 @@
     const tabs = document.querySelectorAll("[data-tab-target]");
     const tabPrecios = document.getElementById("tab-precios");
     const tabAsignacion = document.getElementById("tab-asignacion");
-    const tabReportes = document.getElementById("tab-reportes");
+
 
     const setTab = (name) => {
       const isPrecios = name === "precios";
@@ -1074,7 +870,7 @@
       const isReportes = name === "reportes";
       if (tabPrecios) tabPrecios.classList.toggle("d-none", !isPrecios);
       if (tabAsignacion) tabAsignacion.classList.toggle("d-none", !isAsignacion);
-      if (tabReportes) tabReportes.classList.toggle("d-none", !isReportes);
+      document.getElementById("tab-reportes")?.classList.toggle("d-none", !isReportes);
       tabs.forEach((btn) => {
         const active = btn.getAttribute("data-tab-target") === name;
         btn.classList.toggle("btn-primary", active);
@@ -1099,625 +895,10 @@
       });
     }
 
-    const assignmentBody = document.getElementById("assignment-body");
-    const assignmentForm = document.getElementById("assignment-form");
-    const assignmentGridSearch = document.getElementById("assignment-grid-search");
-    const assignmentGridSort = document.getElementById("assignment-grid-sort");
-    const assignmentGridDir = document.getElementById("assignment-grid-dir");
-    const assignmentGridSize = document.getElementById("assignment-grid-size");
-    const assignmentGridPrev = document.getElementById("assignment-grid-prev");
-    const assignmentGridNext = document.getElementById("assignment-grid-next");
-    const assignmentGridPage = document.getElementById("assignment-grid-page");
-    const pricesForm = document.querySelector('form[action="/sales/comisiones/precios"]');
-    const payloadInput = document.getElementById("rows-payload");
-    const regenerateBtn = document.getElementById("regenerate-day-btn");
-    const sanitizeBtn = document.getElementById("sanitize-day-btn");
-    const restoreCutoffBtn = document.getElementById("restore-cutoff-btn");
-    const finalizeBtn = document.getElementById("finalize-day-btn");
-    const reopenBtn = document.getElementById("reopen-day-btn");
-    const totalBultosEl = document.getElementById("assign-total-bultos");
-    const totalVendidosEl = document.getElementById("assign-total-vendidos");
-    const totalDiffEl = document.getElementById("assign-total-diff");
-    const totalRowsEl = document.getElementById("assign-total-rows");
-    const totalVentasUsdEl = document.getElementById("assign-total-ventas-usd");
-    const totalComisionEl = document.getElementById("assign-total-comision");
-    const vendorSummaryBody = document.getElementById("assign-vendor-summary-body");
-    const vendorEarningsBody = document.getElementById("assign-vendor-earnings-body");
-    const parseQty = (value) => {
-      const n = Number.parseInt(String(value || "").replace(/[^\d]/g, ""), 10);
-      return Number.isFinite(n) ? n : 0;
-    };
-
-    const parseMoney = (raw) => {
-      const cleaned = String(raw || "").replace(/[^\d.-]/g, "");
-      const n = Number.parseFloat(cleaned);
-      return Number.isFinite(n) ? n : 0;
-    };
-    const formatCurrency = (amount, symbol = "$") => {
-      const n = Number.isFinite(Number(amount)) ? Number(amount) : 0;
-      return `${symbol}${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    };
-
-    const parseIntSafe = (raw) => {
-      const n = Number.parseInt(String(raw || "").trim(), 10);
-      return Number.isFinite(n) ? n : 0;
-    };
-
-    const normalizeQtyInput = (input) => {
-      if (!input) return 0;
-      const qty = parseQty(input.value);
-      const safe = qty >= 0 ? qty : 0;
-      input.value = `${safe}`;
-      return safe;
-    };
-
-    const escapeHtml = (value) =>
-      String(value || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-
-    const assignmentGridState = {
-      search: "",
-      sortBy: "factura",
-      dir: "asc",
-      pageSize: 99999,
-      page: 1,
-    };
-
-    const applyRowState = (row) => {
-      const originId = parseIntSafe(row.getAttribute("data-vendedor-origen-id"));
-      const assignedId = parseIntSafe(row.querySelector(".assignment-vendedor")?.value);
-      const isPrimary = row.getAttribute("data-is-primary") === "1";
-      const qtyInput = row.querySelector(".assignment-qty");
-      const qty = parseQty(qtyInput?.value);
-      const totalQty = parseQty(row.getAttribute("data-total-item"));
-      const isUpdated =
-        (originId > 0 && assignedId > 0 && originId !== assignedId) ||
-        (!isPrimary && qty > 0) ||
-        (isPrimary && qty !== totalQty);
-      row.classList.toggle("assignment-row-updated", isUpdated);
-    };
-
-    const normalizeGroups = () => {
-      if (!assignmentBody) return false;
-      let invalid = false;
-      const rows = Array.from(assignmentBody.querySelectorAll("tr[data-assignment-row]"));
-      const byItem = {};
-      rows.forEach((row) => {
-        const itemId = row.getAttribute("data-venta-item-id");
-        if (!itemId) return;
-        if (!byItem[itemId]) byItem[itemId] = [];
-        byItem[itemId].push(row);
-      });
-      Object.values(byItem).forEach((groupRows) => {
-        const primary = groupRows.find((row) => row.getAttribute("data-is-primary") === "1");
-        // Si no existe fila principal visible, no rebalanceamos para no danar cantidades.
-        if (!primary) return;
-        const primaryInput = primary.querySelector(".assignment-qty");
-        const currentPrimaryQty = normalizeQtyInput(primaryInput);
-        let totalQty = parseQty(primary.getAttribute("data-total-item"));
-        // Evita colapsar a cero cuando el total viene inconsistente.
-        if (totalQty <= 0) {
-          totalQty = Math.max(
-            currentPrimaryQty,
-            ...groupRows.map((row) => parseQty(row.getAttribute("data-cantidad")))
-          );
-          primary.setAttribute("data-total-item", `${totalQty}`);
-        }
-        let sumOthers = 0;
-        groupRows.forEach((row) => {
-          if (row === primary) return;
-          const qtyInput = row.querySelector(".assignment-qty");
-          sumOthers += normalizeQtyInput(qtyInput);
-        });
-        const remaining = totalQty - sumOthers;
-        if (remaining < 0) {
-          invalid = true;
-          // No forzamos a cero para evitar perdida de datos visibles.
-          if (primaryInput) primaryInput.value = `${currentPrimaryQty}`;
-          primary.classList.add("table-danger");
-        } else {
-          if (primaryInput) primaryInput.value = `${remaining}`;
-          primary.classList.remove("table-danger");
-        }
-      });
-      return invalid;
-    };
-
-    const updateTotals = () => {
-      if (!assignmentBody) return;
-      const invalidSplit = normalizeGroups();
-      let qty = 0;
-      let rows = 0;
-      let totalComision = 0;
-      let totalVentasUsd = 0;
-      let soldQty = 0;
-      const byVendor = {};
-      const soldByItem = {};
-      assignmentBody.querySelectorAll("tr[data-assignment-row]").forEach((row) => {
-        const itemId = row.getAttribute("data-venta-item-id") || "";
-        const rowQty = parseQty(row.getAttribute("data-cantidad"));
-        const qtyInput = row.querySelector(".assignment-qty");
-        const rowQtyCurrent = parseQty(qtyInput?.value);
-        row.setAttribute("data-cantidad", `${rowQtyCurrent}`);
-        const comisionUnitAttr = row.getAttribute("data-comision-unit");
-        const precioUsdUnitAttr = row.getAttribute("data-precio-usd-unit");
-        const commissionBasisUnitAttr = row.getAttribute("data-commission-basis-unit");
-        const comisionUnitCell = row.querySelector(".assignment-commission-unit");
-        const comisionUnit = parseMoney(comisionUnitAttr || comisionUnitCell?.textContent || "0");
-        const precioUsdUnit = parseMoney(precioUsdUnitAttr || "0");
-        const commissionBasisUnit = parseMoney(commissionBasisUnitAttr || "1") || 1;
-        const rowComisionTotal = rowQtyCurrent * commissionBasisUnit * comisionUnit;
-        const rowVentaUsd = rowQtyCurrent * precioUsdUnit;
-        const rowComisionCell = row.querySelector(".assignment-commission-total");
-        if (rowComisionCell) rowComisionCell.textContent = formatCurrency(rowComisionTotal, "$");
-
-        const vendedorLabel =
-          row.querySelector(".assignment-vendedor option:checked")?.textContent?.trim() || "-";
-        if (!byVendor[vendedorLabel]) byVendor[vendedorLabel] = { items: 0, bultos: 0, ventas: 0, comision: 0 };
-        byVendor[vendedorLabel].items += rowQtyCurrent;
-        byVendor[vendedorLabel].bultos += rowQtyCurrent;
-        byVendor[vendedorLabel].ventas += rowVentaUsd;
-        byVendor[vendedorLabel].comision += rowComisionTotal;
-
-        qty += rowQtyCurrent;
-        totalVentasUsd += rowVentaUsd;
-        totalComision += rowComisionTotal;
-        rows += 1;
-        if (!soldByItem[itemId]) {
-          soldByItem[itemId] = parseQty(row.getAttribute("data-total-item"));
-          soldQty += soldByItem[itemId];
-        }
-        applyRowState(row);
-      });
-      if (totalBultosEl) totalBultosEl.textContent = `${qty}`;
-      if (totalVendidosEl) totalVendidosEl.textContent = `${soldQty}`;
-      if (totalDiffEl) {
-        const diff = qty - soldQty;
-        totalDiffEl.textContent = `${diff}`;
-        totalDiffEl.classList.toggle("text-danger", diff !== 0);
-        totalDiffEl.classList.toggle("text-success", diff === 0);
-      }
-      if (totalRowsEl) totalRowsEl.textContent = `${rows}`;
-      if (totalVentasUsdEl) totalVentasUsdEl.textContent = formatCurrency(totalVentasUsd, "$");
-      if (totalComisionEl) totalComisionEl.textContent = formatCurrency(totalComision, "$");
-      if (vendorSummaryBody) {
-        const names = Object.keys(byVendor).sort((a, b) => a.localeCompare(b));
-        if (!names.length) {
-          vendorSummaryBody.innerHTML = '<tr id="assign-vendor-summary-empty"><td colspan="4" class="text-center text-slate py-2">Sin datos para resumen.</td></tr>';
-        } else {
-          vendorSummaryBody.innerHTML = names
-            .map((name) => {
-              const rowData = byVendor[name];
-              return `
-                <tr>
-                  <td>${escapeHtml(name)}</td>
-                  <td class="text-end">${rowData.items}</td>
-                  <td class="text-end">${formatCurrency(rowData.ventas, "$")}</td>
-                  <td class="text-end">${formatCurrency(rowData.comision, "$")}</td>
-                </tr>
-              `;
-            })
-            .join("");
-        }
-      }
-      if (vendorEarningsBody) {
-        const names = Object.keys(byVendor).sort((a, b) => a.localeCompare(b));
-        if (!names.length) {
-          vendorEarningsBody.innerHTML = '<tr id="assign-vendor-earnings-empty"><td colspan="3" class="text-center text-slate py-2">Sin datos de ganancia en caliente.</td></tr>';
-        } else {
-          vendorEarningsBody.innerHTML = names
-            .map((name) => {
-              const rowData = byVendor[name];
-              return `
-                <tr>
-                  <td>${escapeHtml(name)}</td>
-                  <td class="text-end">${rowData.items}</td>
-                  <td class="text-end">${formatCurrency(rowData.comision, "$")}</td>
-                </tr>
-              `;
-            })
-            .join("");
-        }
-      }
-      assignmentBody.dataset.invalidSplit = invalidSplit ? "1" : "0";
-    };
-
-    const getRowText = (row, selector) =>
-      (row.querySelector(selector)?.textContent || "").trim();
-
-    const getAssignedVendorName = (row) =>
-      (
-        row.querySelector(".assignment-vendedor option:checked")?.textContent || "-"
-      ).trim();
-
-    const getSortValue = (row, sortBy) => {
-      if (sortBy === "factura") return getRowText(row, "td:nth-child(1)").toLowerCase();
-      if (sortBy === "cliente") return getRowText(row, "td:nth-child(2)").toLowerCase();
-      if (sortBy === "descripcion") return getRowText(row, "td:nth-child(3)").toLowerCase();
-      if (sortBy === "cant_vendida") return parseQty(getRowText(row, ".assignment-total-item"));
-      if (sortBy === "cantidad") return parseQty(row.querySelector(".assignment-qty")?.value);
-      if (sortBy === "precio") return parseMoney(getRowText(row, "td:nth-child(6)"));
-      if (sortBy === "vendedor_facturacion") return getRowText(row, "td:nth-child(9)").toLowerCase();
-      if (sortBy === "vendedor_asignado") {
-        return getAssignedVendorName(row).toLowerCase();
-      }
-      return getRowText(row, "td:nth-child(1)").toLowerCase();
-    };
-
-    const getRowSearchText = (row) => {
-      const factura = getRowText(row, "td:nth-child(1)");
-      const cliente = getRowText(row, "td:nth-child(2)");
-      const descripcion = getRowText(row, "td:nth-child(3)");
-      const vendFact = getRowText(row, "td:nth-child(9)");
-      const vendAsig = (
-        row.querySelector(".assignment-vendedor option:checked")?.textContent || ""
-      ).trim();
-      return `${factura} ${cliente} ${descripcion} ${vendFact} ${vendAsig}`.toLowerCase();
-    };
-
-    const removeDynamicGroupRows = () => {
-      if (!assignmentBody) return;
-      assignmentBody
-        .querySelectorAll('tr[data-dynamic-group="1"]')
-        .forEach((row) => row.remove());
-    };
-
-    const renderAssignmentGrid = () => {
-      if (!assignmentBody) return;
-      const allRows = Array.from(
-        assignmentBody.querySelectorAll("tr[data-assignment-row]")
-      );
-      if (!allRows.length) return;
-
-      removeDynamicGroupRows();
-
-      const term = (assignmentGridState.search || "").toLowerCase().trim();
-      let rows = allRows.filter((row) =>
-        !term ? true : getRowSearchText(row).includes(term)
-      );
-
-      rows.sort((a, b) => {
-        // Agrupa siempre por vendedor asignado para que los repartos queden bajo su bloque.
-        const vendorA = getAssignedVendorName(a).toLowerCase();
-        const vendorB = getAssignedVendorName(b).toLowerCase();
-        const vendorCmp = vendorA.localeCompare(vendorB);
-        if (vendorCmp !== 0) return vendorCmp;
-
-        const va = getSortValue(a, assignmentGridState.sortBy);
-        const vb = getSortValue(b, assignmentGridState.sortBy);
-        if (typeof va === "number" && typeof vb === "number") {
-          return assignmentGridState.dir === "asc" ? va - vb : vb - va;
-        }
-        const cmp = String(va).localeCompare(String(vb));
-        if (cmp !== 0) return assignmentGridState.dir === "asc" ? cmp : -cmp;
-
-        // Empate: conservar orden consistente por factura y temp-id.
-        const fa = getRowText(a, "td:nth-child(1)").toLowerCase();
-        const fb = getRowText(b, "td:nth-child(1)").toLowerCase();
-        const facturaCmp = fa.localeCompare(fb);
-        if (facturaCmp !== 0) return facturaCmp;
-        return parseIntSafe(a.getAttribute("data-temp-id")) - parseIntSafe(b.getAttribute("data-temp-id"));
-      });
-
-      const pageSize = Math.max(1, parseIntSafe(assignmentGridState.pageSize));
-      const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-      if (assignmentGridState.page > totalPages) assignmentGridState.page = totalPages;
-      if (assignmentGridState.page < 1) assignmentGridState.page = 1;
-      const startIdx = (assignmentGridState.page - 1) * pageSize;
-      const endIdx = startIdx + pageSize;
-      const visibleRows = rows.slice(startIdx, endIdx);
-      const visibleSet = new Set(visibleRows);
-
-      allRows.forEach((row) => {
-        row.style.display = visibleSet.has(row) ? "" : "none";
-      });
-
-      let currentVendor = null;
-      visibleRows.forEach((row) => {
-        const vendorName = (
-          row.querySelector(".assignment-vendedor option:checked")?.textContent || "-"
-        ).trim();
-        if (vendorName !== currentVendor) {
-          currentVendor = vendorName;
-          const groupRow = document.createElement("tr");
-          groupRow.className = "assignment-group-row";
-          groupRow.setAttribute("data-dynamic-group", "1");
-          groupRow.innerHTML = `<td colspan="11" class="assignment-group-title">Asignado: ${escapeHtml(vendorName)}</td>`;
-          assignmentBody.appendChild(groupRow);
-        }
-        assignmentBody.appendChild(row);
-      });
-
-      if (assignmentGridPage) {
-        assignmentGridPage.textContent = `${assignmentGridState.page} / ${totalPages}`;
-      }
-      if (assignmentGridPrev) assignmentGridPrev.disabled = assignmentGridState.page <= 1;
-      if (assignmentGridNext) assignmentGridNext.disabled = assignmentGridState.page >= totalPages;
-    };
-
-    const getVisibleAssignmentRows = () =>
-      Array.from(assignmentBody?.querySelectorAll("tr[data-assignment-row]") || []).filter(
-        (row) => row.style.display !== "none"
-      );
-
-    const focusRelativeRowControl = (currentRow, selector, direction) => {
-      const visibleRows = getVisibleAssignmentRows();
-      const idx = visibleRows.indexOf(currentRow);
-      if (idx < 0) return;
-      const target = visibleRows[idx + direction];
-      if (!target) return;
-      const control = target.querySelector(selector);
-      if (!control || control.disabled) return;
-      control.focus();
-      if (typeof control.select === "function") control.select();
-    };
-
-    const bindRowActions = (row) => {
-      const vendedorSelect = row.querySelector(".assignment-vendedor");
-      const qtyInput = row.querySelector(".assignment-qty");
-      const splitBtn = row.querySelector(".assignment-split");
-      const removeBtn = row.querySelector(".assignment-remove");
-
-      const setActiveRow = () => {
-        assignmentBody?.querySelectorAll("tr[data-assignment-row].assignment-row-active").forEach((r) => {
-          if (r !== row) r.classList.remove("assignment-row-active");
-        });
-        row.classList.add("assignment-row-active");
-      };
-
-      row.addEventListener("click", () => setActiveRow());
-      row.addEventListener("focusin", () => setActiveRow());
-
-      if (vendedorSelect) {
-        vendedorSelect.addEventListener("change", () => {
-          updateTotals();
-          renderAssignmentGrid();
-        });
-        vendedorSelect.addEventListener("keydown", (event) => {
-          if (event.ctrlKey && event.key === "ArrowDown") {
-            event.preventDefault();
-            focusRelativeRowControl(row, ".assignment-vendedor", 1);
-          }
-          if (event.ctrlKey && event.key === "ArrowUp") {
-            event.preventDefault();
-            focusRelativeRowControl(row, ".assignment-vendedor", -1);
-          }
-          if (event.key === "Enter") {
-            event.preventDefault();
-            focusRelativeRowControl(row, ".assignment-vendedor", event.shiftKey ? -1 : 1);
-          }
-        });
-      }
-      if (qtyInput) {
-        qtyInput.addEventListener("input", () => {
-          updateTotals();
-          if (assignmentGridState.sortBy === "cantidad") renderAssignmentGrid();
-        });
-        qtyInput.addEventListener("blur", () => {
-          normalizeQtyInput(qtyInput);
-          updateTotals();
-          if (assignmentGridState.sortBy === "cantidad") renderAssignmentGrid();
-        });
-        qtyInput.addEventListener("keydown", (event) => {
-          if (event.ctrlKey && event.key === "ArrowDown") {
-            event.preventDefault();
-            focusRelativeRowControl(row, ".assignment-qty", 1);
-          }
-          if (event.ctrlKey && event.key === "ArrowUp") {
-            event.preventDefault();
-            focusRelativeRowControl(row, ".assignment-qty", -1);
-          }
-          if (event.key === "Enter") {
-            event.preventDefault();
-            focusRelativeRowControl(row, ".assignment-qty", event.shiftKey ? -1 : 1);
-          }
-        });
-      }
-      if (splitBtn) {
-        splitBtn.addEventListener("click", () => {
-          const clone = row.cloneNode(true);
-          clone.setAttribute("data-is-primary", "0");
-          // New split rows must be treated as new records on save.
-          clone.setAttribute("data-temp-id", "0");
-          const cloneQtyInput = clone.querySelector(".assignment-qty");
-          if (cloneQtyInput) {
-            cloneQtyInput.readOnly = false;
-            cloneQtyInput.value = "0";
-          }
-          row.insertAdjacentElement("afterend", clone);
-          bindRowActions(clone);
-          updateTotals();
-          renderAssignmentGrid();
-        });
-      }
-      if (removeBtn) {
-        removeBtn.addEventListener("click", () => {
-          const isPrimary = row.getAttribute("data-is-primary") === "1";
-          if (isPrimary) {
-            window.alert("No puedes eliminar la fila principal de la venta. Usa reparto en las filas secundarias.");
-            return;
-          }
-          row.remove();
-          updateTotals();
-          renderAssignmentGrid();
-        });
-      }
-    };
-
-    if (assignmentBody) {
-      assignmentBody.querySelectorAll("tr.assignment-group-row:not([data-dynamic-group='1'])").forEach((row) => row.remove());
-      assignmentBody.querySelectorAll("tr[data-assignment-row]").forEach((row) => bindRowActions(row));
-      updateTotals();
-      renderAssignmentGrid();
-    }
-
-    if (assignmentGridSearch) {
-      assignmentGridSearch.addEventListener("input", () => {
-        assignmentGridState.search = assignmentGridSearch.value || "";
-        assignmentGridState.page = 1;
-        renderAssignmentGrid();
-      });
-    }
-    if (assignmentGridSort) {
-      assignmentGridSort.addEventListener("change", () => {
-        assignmentGridState.sortBy = assignmentGridSort.value || "factura";
-        assignmentGridState.page = 1;
-        renderAssignmentGrid();
-      });
-    }
-    if (assignmentGridDir) {
-      assignmentGridDir.addEventListener("click", () => {
-        assignmentGridState.dir = assignmentGridState.dir === "asc" ? "desc" : "asc";
-        assignmentGridDir.dataset.dir = assignmentGridState.dir;
-        assignmentGridDir.textContent =
-          assignmentGridState.dir === "asc" ? "Ascendente" : "Descendente";
-        assignmentGridState.page = 1;
-        renderAssignmentGrid();
-      });
-    }
-    if (assignmentGridSize) {
-      assignmentGridSize.addEventListener("change", () => {
-        assignmentGridState.pageSize = parseIntSafe(assignmentGridSize.value || "25") || 25;
-        assignmentGridState.page = 1;
-        renderAssignmentGrid();
-      });
-    }
-    if (assignmentGridPrev) {
-      assignmentGridPrev.addEventListener("click", () => {
-        assignmentGridState.page = Math.max(1, assignmentGridState.page - 1);
-        renderAssignmentGrid();
-      });
-    }
-    if (assignmentGridNext) {
-      assignmentGridNext.addEventListener("click", () => {
-        assignmentGridState.page = assignmentGridState.page + 1;
-        renderAssignmentGrid();
-      });
-    }
-
-    if (regenerateBtn) {
-      regenerateBtn.addEventListener("click", (event) => {
-        const ok = window.confirm(
-          "Esto borrara todas las asignaciones del dia seleccionado para iniciar desde cero. Deseas continuar?"
-        );
-        if (!ok) {
-          event.preventDefault();
-          return;
-        }
-      });
-    }
-
-    if (sanitizeBtn) {
-      sanitizeBtn.addEventListener("click", (event) => {
-        const ok = window.confirm(
-          "Esto depurara filas duplicadas o en cero de la tabla temporal para mostrar solo datos consistentes. Deseas continuar?"
-        );
-        if (!ok) {
-          event.preventDefault();
-          return;
-        }
-      });
-    }
-
-    if (restoreCutoffBtn) {
-      restoreCutoffBtn.addEventListener("click", (event) => {
-        const ok = window.confirm(
-          "Esto intentara recuperar la tabla temporal al estado previo a las 4:00 PM de hoy, eliminando cambios posteriores y reconstruyendo desde las ventas del dia. Deseas continuar?"
-        );
-        if (!ok) {
-          event.preventDefault();
-          return;
-        }
-      });
-    }
-
-    if (finalizeBtn) {
-      finalizeBtn.addEventListener("click", (event) => {
-        const ok = window.confirm(
-          "Esto tomara la tabla temporal del dia y la pasara a comisiones finales (reemplazando cierre previo del mismo dia/sucursal). Continuar?"
-        );
-        if (!ok) {
-          event.preventDefault();
-        }
-      });
-    }
-    if (reopenBtn) {
-      reopenBtn.addEventListener("click", (event) => {
-        const ok = window.confirm(
-          "Esto restaurara la tabla temporal desde comisiones finales del dia/sucursal seleccionado. Continuar?"
-        );
-        if (!ok) {
-          event.preventDefault();
-        }
-      });
-    }
-
-    if (assignmentForm && payloadInput && assignmentBody) {
-      assignmentForm.addEventListener("submit", (event) => {
-        updateTotals();
-        const submitAction =
-          event.submitter?.getAttribute("formaction") ||
-          assignmentForm.getAttribute("action") ||
-          "";
-        const isRegenerate = submitAction.includes("/sales/comisiones/asignaciones/regenerar");
-        const isRestoreCutoff = submitAction.includes("/sales/comisiones/asignaciones/restaurar-corte");
-        const isFinalize = submitAction.includes("/sales/comisiones/asignaciones/finalizar");
-        const isReopen = submitAction.includes("/sales/comisiones/asignaciones/reabrir");
-        const isValidate = submitAction.includes("/sales/comisiones/asignaciones/validar-precios");
-
-        if (isRegenerate || isRestoreCutoff || isFinalize || isReopen || isValidate) {
-          payloadInput.value = "[]";
-          return;
-        }
-
-        if (assignmentBody.dataset.invalidSplit === "1") {
-          event.preventDefault();
-          window.alert("Hay items donde la suma de reparto excede la cantidad vendida. Corrige antes de guardar.");
-          return;
-        }
-
-        const rows = [];
-        const groupMap = {};
-        assignmentBody.querySelectorAll("tr[data-assignment-row]").forEach((row) => {
-          const itemId = row.getAttribute("data-venta-item-id") || "";
-          if (!groupMap[itemId]) groupMap[itemId] = [];
-          groupMap[itemId].push(row);
-        });
-        for (const [itemId, groupRows] of Object.entries(groupMap)) {
-          const hasPrimary = groupRows.some((row) => row.getAttribute("data-is-primary") === "1");
-          if (!hasPrimary) {
-            event.preventDefault();
-            window.alert(
-              `No se puede guardar el item ${itemId} porque falta su fila principal en la vista. Quita el filtro de vendedor y vuelve a guardar.`
-            );
-            return;
-          }
-        }
-
-        assignmentBody.querySelectorAll("tr[data-assignment-row]").forEach((row) => {
-          const ventaItemId = Number.parseInt(row.getAttribute("data-venta-item-id") || "0", 10);
-          const vendedorId = Number.parseInt((row.querySelector(".assignment-vendedor")?.value || "0"), 10);
-          const cantidad = parseQty(row.querySelector(".assignment-qty")?.value);
-          if (!ventaItemId || !vendedorId || cantidad < 0) return;
-          rows.push({
-            temp_id: Number.parseInt(row.getAttribute("data-temp-id") || "0", 10),
-            venta_item_id: ventaItemId,
-            vendedor_id: vendedorId,
-            cantidad: `${cantidad}`,
-          });
-        });
-        if (!rows.length) {
-          event.preventDefault();
-          window.alert("No hay filas validas para guardar asignaciones.");
-          return;
-        }
-        payloadInput.value = JSON.stringify(rows);
-      });
-    }
   })();
 </script>
+<script id="commission-editor-config" type="application/json">{{ {"vendors": commission_vendors, "start": start_date, "end": end_date, "branch": selected_branch, "originVendor": selected_vendedor_facturacion, "productQuery": producto_asig_q}|tojson }}</script>
+<link rel="stylesheet" href="/static/commission_grid.css?v=2">
+<script src="/static/commission_editor.js?v=2"></script>
+<script src="/static/commission_grid.js?v=2"></script>
 {% endblock %}

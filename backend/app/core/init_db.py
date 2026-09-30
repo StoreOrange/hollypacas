@@ -1661,6 +1661,10 @@ def init_db() -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     with engine.begin() as conn:
+        if "productos_comisiones" in table_names:
+            columns = {col["name"] for col in inspector.get_columns("productos_comisiones")}
+            if "comision_promocion_usd" not in columns:
+                conn.execute(text("ALTER TABLE productos_comisiones ADD COLUMN comision_promocion_usd NUMERIC(14, 2)"))
         if "promociones_descuento_sucursales" in table_names:
             promotion_branch_columns = {col["name"] for col in inspect(engine).get_columns("promociones_descuento_sucursales")}
             if "precio_paquete_usd" not in promotion_branch_columns:

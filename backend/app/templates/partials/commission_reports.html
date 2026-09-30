@@ -1,0 +1,210 @@
+      <section id="tab-reportes" class="{% if active_tab != 'reportes' %}d-none{% endif %}">
+        {% if report_pending_commissions %}<div class="alert alert-warning">Totales parciales: hay comisiones por promocion sin configurar en este periodo.</div>{% endif %}
+        <div class="odoo-card mb-3">
+          <form class="top-filters grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-12 gap-2 items-end" method="get" action="/sales/comisiones">
+            <input type="hidden" name="tab" value="reportes">
+            <input type="hidden" name="fecha" value="{{ fecha }}">
+            <input type="hidden" name="branch_id" value="{{ selected_branch }}">
+            <input type="hidden" name="vendedor_facturacion_id" value="{{ selected_vendedor_facturacion }}">
+            <input type="hidden" name="vendedor_asignado_id" value="{{ selected_vendedor_asignado }}">
+            <input type="hidden" name="producto_asig_q" value="{{ producto_asig_q }}">
+            <div class="xl:col-span-2 min-w-0">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
+              <input name="rep_start_date" type="date" class="form-control form-control-sm" value="{{ rep_start_date }}">
+            </div>
+            <div class="xl:col-span-2 min-w-0">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
+              <input name="rep_end_date" type="date" class="form-control form-control-sm" value="{{ rep_end_date }}">
+            </div>
+            <div class="xl:col-span-3 min-w-0">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Sucursal</label>
+              <select name="rep_branch_id" class="form-select form-select-sm">
+                <option value="all" {% if rep_selected_branch in ["", "all"] %}selected{% endif %}>Todas</option>
+                {% for branch in branches %}
+                <option value="{{ branch.id }}" {% if rep_selected_branch == branch.id|string %}selected{% endif %}>{{ branch.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="xl:col-span-3 min-w-0">
+              <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Vendedor</label>
+              <select name="rep_vendedor_id" class="form-select form-select-sm">
+                <option value="">Todos</option>
+                {% for vendedor in vendedores %}
+                <option value="{{ vendedor.id }}" {% if rep_selected_vendedor == vendedor.id|string %}selected{% endif %}>{{ vendedor.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="xl:col-span-1 min-w-0">
+              <button class="btn btn-outline-secondary btn-sm" type="submit">
+                <i class="bi bi-search"></i>
+                Filtrar
+              </button>
+            </div>
+            <div class="xl:col-span-1 min-w-0">
+              <a
+                class="btn btn-primary btn-sm"
+                target="_blank"
+                href="/sales/comisiones/reportes/pdf?rep_start_date={{ rep_start_date }}&rep_end_date={{ rep_end_date }}&rep_branch_id={{ rep_selected_branch }}&rep_vendedor_id={{ rep_selected_vendedor }}"
+              >
+                <i class="bi bi-file-earmark-pdf"></i>
+                PDF sabana
+              </a>
+            </div>
+            <div class="xl:col-span-1 min-w-0">
+              <a
+                class="btn btn-outline-success btn-sm"
+                href="/sales/comisiones/reportes/xlsx?rep_start_date={{ rep_start_date }}&rep_end_date={{ rep_end_date }}&rep_branch_id={{ rep_selected_branch }}&rep_vendedor_id={{ rep_selected_vendedor }}"
+              >
+                <i class="bi bi-file-earmark-excel"></i>
+                Excel sabana
+              </a>
+            </div>
+          </form>
+        </div>
+
+        <div class="odoo-card mb-3">
+          <div class="odoo-section-title mb-2">Detalle por vendedor y dia</div>
+          <div class="table-responsive commission-grid-wrap">
+            <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
+              <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                <tr>
+                  <th>Fecha</th>
+                  <th>Sucursal</th>
+                  <th>Vendedor</th>
+                  <th>Factura</th>
+                  <th>Cliente</th>
+                  <th>Producto</th>
+                  <th class="text-end">Bultos</th>
+                  <th class="text-end">Venta USD</th>
+                  <th class="text-end">Comision unit USD</th>
+                  <th class="text-end">Comision total USD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in rep_detail_rows %}
+                <tr>
+                  <td>{{ row.fecha_label }}</td>
+                  <td>{{ row.sucursal }}</td>
+                  <td>{{ row.vendedor }}</td>
+                  <td>{{ row.factura }}</td>
+                  <td>{{ row.cliente }}</td>
+                  <td>{{ row.producto }}{% if row.comision_promocion %}<div class="badge bg-warning text-dark">2 por precio especial</div>{% endif %}{% if row.comision_pendiente %}<div class="text-warning">Comision sin configurar</div>{% endif %}</td>
+                  <td class="text-end">{{ row.cantidad }}</td>
+                  <td class="text-end">${{ "{:,.2f}".format(row.subtotal_usd or 0) }}</td>
+                  <td class="text-end">{% if row.comision_pendiente %}Sin configurar{% else %}${{ "{:,.2f}".format(row.comision_unit_usd or 0) }}{% endif %}</td>
+                  <td class="text-end">{% if row.comision_pendiente %}Pendiente{% else %}${{ "{:,.2f}".format(row.comision_total_usd or 0) }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+                {% if rep_detail_rows|length == 0 %}
+                <tr>
+                  <td colspan="10" class="text-center text-slate py-3">Sin datos para el rango seleccionado.</td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="odoo-card mb-3">
+          <div class="odoo-section-title mb-2">Resumen total por vendedor (periodo)</div>
+          <div class="table-responsive commission-grid-wrap">
+            <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
+              <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                <tr>
+                  <th>Vendedor</th>
+                  <th class="text-end">Bultos</th>
+                  <th class="text-end">Ventas USD</th>
+                  <th class="text-end">Comision USD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in rep_summary_rows %}
+                <tr>
+                  <td>{{ row.vendedor }}</td>
+                  <td class="text-end">{{ row.bultos }}</td>
+                  <td class="text-end">${{ "{:,.2f}".format(row.ventas_usd or 0) }}</td>
+                  <td class="text-end">${{ "{:,.2f}".format(row.comision_usd or 0) }}</td>
+                </tr>
+                {% endfor %}
+                {% if rep_summary_rows|length == 0 %}
+                <tr>
+                  <td colspan="4" class="text-center text-slate py-3">Sin datos para resumen.</td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="odoo-card">
+          <div class="odoo-section-title mb-2">Sabana pivote por dia y vendedor</div>
+          <div class="table-responsive commission-grid-wrap">
+            <table class="table table-sm table-hover odoo-table text-sm align-middle commission-grid">
+              <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">
+                <tr>
+                  <th rowspan="2">Dia</th>
+                  {% for vendor_name in rep_pivot_vendors %}
+                  <th colspan="2" class="text-center">{{ vendor_name }}</th>
+                  {% endfor %}
+                  <th rowspan="2" class="text-end">Total bultos dia</th>
+                  <th rowspan="2" class="text-end">Total comision dia USD</th>
+                </tr>
+                <tr>
+                  {% for vendor_name in rep_pivot_vendors %}
+                  <th class="text-end">Bultos</th>
+                  <th class="text-end">Comision USD</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in rep_pivot_rows %}
+                <tr>
+                  <td>{{ row.fecha_label }}</td>
+                  {% for cell in row.cells %}
+                  <td class="text-end">{{ cell.bultos }}</td>
+                  <td class="text-end">${{ "{:,.2f}".format(cell.comision_usd or 0) }}</td>
+                  {% endfor %}
+                  <td class="text-end fw-semibold">{{ row.day_bultos }}</td>
+                  <td class="text-end fw-semibold">${{ "{:,.2f}".format(row.day_comision_usd or 0) }}</td>
+                </tr>
+                {% endfor %}
+                {% if rep_pivot_rows|length == 0 %}
+                <tr>
+                  <td colspan="{{ 3 + (rep_pivot_vendors|length * 2) }}" class="text-center text-slate py-3">
+                    Sin datos para sabana.
+                  </td>
+                </tr>
+                {% endif %}
+              </tbody>
+              {% if rep_pivot_rows|length > 0 %}
+              <tfoot>
+                <tr>
+                  <th>TOTAL</th>
+                  {% for vendor_name in rep_pivot_vendors %}
+                  {% set totals = rep_pivot_vendor_totals.get(vendor_name, {"bultos": 0, "comision_usd": 0}) %}
+                  <th class="text-end">{{ totals.bultos }}</th>
+                  <th class="text-end">${{ "{:,.2f}".format(totals.comision_usd or 0) }}</th>
+                  {% endfor %}
+                  <th class="text-end">{{ rep_total_bultos }}</th>
+                  <th class="text-end">${{ "{:,.2f}".format(rep_total_comision_usd or 0) }}</th>
+                </tr>
+              </tfoot>
+              {% endif %}
+            </table>
+          </div>
+          <div class="mt-2 d-flex flex-wrap gap-3">
+            <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[220px]">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total bultos periodo</div>
+              <div class="fw-bold text-ink">{{ rep_total_bultos }}</div>
+            </div>
+            <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[220px]">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total ventas USD periodo</div>
+              <div class="fw-bold text-ink">${{ "{:,.2f}".format(rep_total_ventas_usd or 0) }}</div>
+            </div>
+            <div class="p-3 rounded-xl border border-slate-200 bg-white min-w-[220px]">
+              <div class="text-xs uppercase tracking-[0.2em] text-slate">Total comision USD periodo</div>
+              <div class="fw-bold text-ink">${{ "{:,.2f}".format(rep_total_comision_usd or 0) }}</div>
+            </div>
+          </div>
+        </div>
+      </section>

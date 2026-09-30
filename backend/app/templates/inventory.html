@@ -434,6 +434,9 @@
                     Comision USD
                   </span>
                 </th>
+                <th class="text-right px-4 py-3" title="Comision por cada unidad vendida con 2 por precio especial">
+                  Comision promocion USD<br><small>2 por precio especial</small>
+                </th>
                 {% endif %}
                 <th class="text-right px-4 py-3">
                   <span class="inline-flex items-center gap-2">
@@ -552,6 +555,15 @@
                     aria-label="Comision {{ p.cod_producto }}"
                   />
                 </td>
+                {% set promo_commission = product_promotion_commissions.get(p.id) %}
+                <td class="px-4 py-3 text-right">
+                  <input class="inventory-grid-input" type="number" step="0.01" min="0" inputmode="decimal"
+                    data-grid-field="comision_promocion" data-currency="USD" data-optional="1"
+                    data-original="{{ '%.2f'|format(promo_commission) if promo_commission is not none else '' }}"
+                    value="{{ '%.2f'|format(promo_commission) if promo_commission is not none else '' }}"
+                    placeholder="Sin configurar" title="USD por unidad. Vacio: sin configurar. 0.00: sin comision."
+                    aria-label="Comision por promocion {{ p.cod_producto }}" />
+                </td>
                 {% endif %}
                 <td class="px-4 py-3 text-right text-slate">{{ "%.2f"|format(current_bodega_saldos.get(p.id, 0)) }}</td>
                 <td class="px-4 py-3 text-center">
@@ -591,7 +603,7 @@
               {% endfor %}
             {% if productos|length == 0 %}
             <tr>
-              <td colspan="{% if product_images_enabled %}{% if inventory_cs_only %}{% if is_hollpacas_mode %}13{% else %}9{% endif %}{% else %}{% if is_hollpacas_mode %}13{% else %}10{% endif %}{% endif %}{% else %}{% if inventory_cs_only %}{% if is_hollpacas_mode %}12{% else %}8{% endif %}{% else %}{% if is_hollpacas_mode %}12{% else %}9{% endif %}{% endif %}{% endif %}" class="text-center text-slate py-4">Sin productos registrados</td>
+              <td colspan="{% if product_images_enabled %}{% if inventory_cs_only %}{% if is_hollpacas_mode %}14{% else %}9{% endif %}{% else %}{% if is_hollpacas_mode %}14{% else %}10{% endif %}{% endif %}{% else %}{% if inventory_cs_only %}{% if is_hollpacas_mode %}13{% else %}8{% endif %}{% else %}{% if is_hollpacas_mode %}13{% else %}9{% endif %}{% endif %}{% endif %}" class="text-center text-slate py-4">Sin productos registrados</td>
             </tr>
             {% endif %}
             </tbody>
@@ -1124,11 +1136,16 @@
     return Number.isFinite(number) ? number : 0;
   };
 
+  const gridInputValue = (input, value = input.value) => {
+    if (input.dataset.optional === "1" && String(value ?? "").trim() === "") return "";
+    return normalizeGridNumber(value).toFixed(2);
+  };
+
   const updateBulkGridState = () => {
     const dirtyRows = new Set();
     document.querySelectorAll(".inventory-grid-input").forEach((input) => {
-      const current = normalizeGridNumber(input.value).toFixed(2);
-      const original = normalizeGridNumber(input.dataset.original).toFixed(2);
+      const current = gridInputValue(input);
+      const original = gridInputValue(input, input.dataset.original);
       const dirty = current !== original;
       input.classList.toggle("is-dirty", dirty);
       const row = input.closest(".product-row");
@@ -1146,12 +1163,12 @@
     document.querySelectorAll(".product-row").forEach((row) => {
       const inputs = Array.from(row.querySelectorAll(".inventory-grid-input"));
       if (!inputs.length) return;
-      const hasDirty = inputs.some((input) => normalizeGridNumber(input.value).toFixed(2) !== normalizeGridNumber(input.dataset.original).toFixed(2));
+      const hasDirty = inputs.some((input) => gridInputValue(input) !== gridInputValue(input, input.dataset.original));
       if (!hasDirty) return;
       const byField = {};
       const currencyByField = {};
       inputs.forEach((input) => {
-        byField[input.dataset.gridField] = normalizeGridNumber(input.value).toFixed(2);
+        byField[input.dataset.gridField] = gridInputValue(input);
         currencyByField[input.dataset.gridField] = input.dataset.currency || "";
       });
       rows.push({
@@ -1162,6 +1179,8 @@
         precio_currency: currencyByField.precio,
         comision: byField.comision,
         comision_currency: currencyByField.comision,
+        comision_promocion: byField.comision_promocion,
+        comision_promocion_currency: currencyByField.comision_promocion,
       });
     });
     return rows;
@@ -1322,7 +1341,7 @@
           throw new Error(payload?.message || "No se pudo actualizar la grid");
         }
         document.querySelectorAll(".inventory-grid-input").forEach((input) => {
-          input.dataset.original = normalizeGridNumber(input.value).toFixed(2);
+          input.dataset.original = gridInputValue(input);
         });
         updateBulkGridState();
         if (typeof Swal !== "undefined") {

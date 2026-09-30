@@ -38,6 +38,9 @@ from jose import JWTError, jwt
 from sqlalchemy import String, and_, create_engine, func, or_
 from sqlalchemy.orm import Session, aliased, joinedload, object_session
 
+from ..core.commission_assignment_state import whole_quantity, assignment_revision
+from ..core.commission_rates import commission_rate, is_special_price_sale, parse_commission_amount
+
 from ..config import (
     get_active_company_key,
     get_company_profiles,
@@ -408,6 +411,7 @@ SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "inventory", "label": "Inventarios", "href": "/inventory", "icon": "bi-box-seam-fill", "perm": "menu.inventory", "alt_perm": None},
     {"id": "inventory_caliente", "label": "Mi inventario en Caliente", "href": "/inventory/caliente", "icon": "bi-lightning-charge-fill", "perm": "menu.inventory.caliente", "alt_perm": None},
     {"id": "inventory_ingresos", "label": "Ingresos Inventario", "href": "/inventory/ingresos", "icon": "bi-box-arrow-in-down", "perm": "menu.inventory.ingresos", "alt_perm": None},
+    {"id": "inventory_shoe_labels", "label": "Etiquetas de productos", "href": "/inventory/etiquetas-zapatos", "icon": "bi-upc-scan", "perm": "menu.inventory.ingresos", "alt_perm": None, "shoes_only": "1"},
     {"id": "inventory_egresos", "label": "Egresos Inventario", "href": "/inventory/egresos", "icon": "bi-box-arrow-up", "perm": "menu.inventory.egresos", "alt_perm": None},
     {"id": "inventory_production_labs", "label": "Laboratorio de produccion", "href": "/inventory/laboratorios-produccion", "icon": "bi-building-gear", "perm": "menu.inventory.egresos", "alt_perm": None, "hollpacas_only": "1"},
     {"id": "inventory_requisas", "label": "Gestion Bodega y Requisas", "href": "/inventory/gestion-bodega-requisas", "icon": "bi-clipboard2-data-fill", "perm": "menu.inventory.requisas", "alt_perm": None},
@@ -436,6 +440,8 @@ def _normalize_sidebar_menu_order(raw_ids: list[str]) -> list[str]:
         if default_id not in ordered:
             if default_id == "inventory_production_labs" and "inventory_egresos" in ordered:
                 ordered.insert(ordered.index("inventory_egresos") + 1, default_id)
+            elif default_id == "inventory_shoe_labels" and "inventory_ingresos" in ordered:
+                ordered.insert(ordered.index("inventory_ingresos") + 1, default_id)
             else:
                 ordered.append(default_id)
     return ordered
@@ -1255,6 +1261,7 @@ def _build_mobile_vendor_sales_data(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
 ) -> dict[str, object]:
+    promotion_enabled = _is_pacasholl_company()
     empty_payload: dict[str, object] = {
         "vendor_name": "",
         "product_rows": [],
@@ -1270,7 +1277,7 @@ def _build_mobile_vendor_sales_data(
         return empty_payload
 
     commission_map = {
-        int(row.producto_id): Decimal(str(row.comision_usd or 0))
+        int(row.producto_id): row
         for row in db.query(ProductoComision).all()
     }
 
@@ -1299,7 +1306,7 @@ def _build_mobile_vendor_sales_data(
     for venta_item, factura, producto, cliente, vendedor in sales_rows:
         qty = Decimal(str(venta_item.cantidad or 0))
         subtotal_usd = Decimal(str(venta_item.subtotal_usd or 0))
-        commission_unit = commission_map.get(int(venta_item.producto_id), Decimal("0"))
+        commission_unit = _commission_rate(commission_map.get(int(venta_item.producto_id)), venta_item, promotion_enabled=promotion_enabled) or Decimal("0")
         commission_basis_qty = _commission_billable_qty_for_item(producto, venta_item)
         sold_at = factura.fecha if factura and factura.fecha else None
         source_rows.append(
@@ -1309,7 +1316,7 @@ def _build_mobile_vendor_sales_data(
                 "descripcion": (producto.descripcion if producto else "") or "Producto",
                 "cantidad": qty,
                 "subtotal_usd": subtotal_usd,
-                "comision_total_usd": commission_unit * commission_basis_qty,
+                "comision_total_usd": _commission_amount(commission_unit, commission_basis_qty),
                 "factura_numero": (factura.numero if factura else "") or "-",
                 "cliente": (cliente.nombre if cliente else "") or "Consumidor final",
                 "sold_at": sold_at,
@@ -1421,6 +1428,7 @@ def _build_mobile_assigned_commission_data(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
 ) -> dict[str, object]:
+    promotion_enabled = _is_pacasholl_company()
     empty_payload: dict[str, object] = {
         "vendor_name": "",
         "product_rows": [],
@@ -1541,6 +1549,7 @@ def _build_mobile_assigned_commission_data(
         commission_unit: Decimal,
         commission_total: Decimal,
         source_label: str,
+        pending_rate: bool = False,
     ) -> None:
         nonlocal vendor_name, total_bultos, total_vendido_usd, total_comision_usd
         qty = Decimal(str(row.cantidad or 0))
@@ -1578,6 +1587,8 @@ def _build_mobile_assigned_commission_data(
                 "comision_unit_usd": _format_money(commission_unit),
                 "comision_total_usd": _format_money(commission_total),
                 "source_label": source_label,
+                "tipo_comision": "2 por precio especial" if is_special_price_sale(row.venta_item, enabled=promotion_enabled) else "Normal",
+                "comision_pendiente": pending_rate,
                 "_fecha": fecha_value,
             }
         )
@@ -1595,7 +1606,7 @@ def _build_mobile_assigned_commission_data(
     for final_row, factura, producto, cliente, origen, asignado in final_rows:
         final_commission_unit = Decimal(str(final_row.comision_unit_usd or 0))
         final_commission_total = (
-            final_commission_unit * _commission_row_billable_qty(final_row, producto, final_row.venta_item)
+            _commission_amount(final_commission_unit, _commission_row_billable_qty(final_row, producto, final_row.venta_item))
         )
         add_commission_row(
             final_row,
@@ -1610,7 +1621,7 @@ def _build_mobile_assigned_commission_data(
         )
 
     for temp_row, factura, producto, cliente, origen, asignado, producto_comision in temp_rows:
-        commission_unit = Decimal(str(producto_comision.comision_usd or 0)) if producto_comision else Decimal("0")
+        commission_unit = _commission_rate(producto_comision, temp_row.venta_item, promotion_enabled=promotion_enabled) or Decimal("0")
         commission_basis_qty = _commission_row_billable_qty(temp_row, producto, temp_row.venta_item)
         add_commission_row(
             temp_row,
@@ -1620,8 +1631,9 @@ def _build_mobile_assigned_commission_data(
             origen,
             asignado,
             commission_unit,
-            commission_unit * commission_basis_qty,
+            _commission_amount(commission_unit, commission_basis_qty),
             "Asignacion automatica",
+            _commission_rate(producto_comision, temp_row.venta_item, promotion_enabled=promotion_enabled) is None,
         )
 
     product_rows: list[dict[str, object]] = []
@@ -1662,6 +1674,7 @@ def _build_mobile_assigned_commission_data(
             "total_bultos": _format_qty(total_bultos),
             "total_vendido_usd": _format_money(total_vendido_usd),
             "total_comision_usd": _format_money(total_comision_usd),
+            "pending_commissions": any(d["comision_pendiente"] for p in product_rows for d in p["details"]),
             "total_facturas": len(facturas_unicas),
             "total_productos": len(product_rows),
             "total_dias": len(dias_unicos),
@@ -4140,8 +4153,15 @@ def home(
     comestibles_theme_enabled = sales_interface_code == "comestibles" or active_company_key == "comestibles"
     home_preventas: list[dict] = []
     home_laboratory_notifications: list[dict] = []
+    home_role_names = {
+        (role.name or "").strip().casefold()
+        for role in (user.roles or [])
+    }
+    can_view_laboratory_notifications = bool(
+        home_role_names.intersection({"administrador", "bodega"})
+    )
 
-    if _is_hollpacas_mode():
+    if _is_hollpacas_mode() and can_view_laboratory_notifications:
         latest_laboratories = (
             db.query(ProductionLaboratory)
             .order_by(ProductionLaboratory.created_at.desc(), ProductionLaboratory.id.desc())
@@ -4245,6 +4265,7 @@ def home(
             "version": settings.UI_VERSION,
             "home_preventas": home_preventas,
             "home_laboratory_notifications": home_laboratory_notifications,
+            "can_view_laboratory_notifications": can_view_laboratory_notifications,
             "sales_interface_code": sales_interface_code,
             "comestibles_theme_enabled": comestibles_theme_enabled,
         },
@@ -9390,10 +9411,9 @@ def inventory_page(
         .first()
     )
     product_ids = [p.id for p in productos]
-    product_commissions = {
-        row.producto_id: float(row.comision_usd or 0)
-        for row in db.query(ProductoComision).filter(ProductoComision.producto_id.in_(product_ids)).all()
-    } if product_ids else {}
+    commission_rows = db.query(ProductoComision).filter(ProductoComision.producto_id.in_(product_ids)).all() if product_ids else []
+    product_commissions = {row.producto_id: float(row.comision_usd or 0) for row in commission_rows}
+    product_promotion_commissions = {row.producto_id: row.comision_promocion_usd for row in commission_rows}
     bodega_ids = [b.id for b in bodegas]
     balances = _balances_by_bodega(db, bodega_ids, product_ids)
     selected_bodega_id: Optional[int] = None
@@ -9458,6 +9478,7 @@ def inventory_page(
             "user": user,
             "productos": productos,
             "product_commissions": product_commissions,
+            "product_promotion_commissions": product_promotion_commissions,
             "bodegas": bodegas,
             "current_bodega": current_bodega,
             "current_bodega_saldos": current_bodega_saldos,
@@ -14628,7 +14649,7 @@ def _sales_commissions_filters(request: Request):
     vendedor_facturacion_id = (request.query_params.get("vendedor_facturacion_id") or "").strip()
     vendedor_asignado_id = (request.query_params.get("vendedor_asignado_id") or "").strip()
     producto_asig_q = (request.query_params.get("producto_asig_q") or "").strip()
-    active_tab = (request.query_params.get("tab") or "precios").strip().lower()
+    active_tab = (request.query_params.get("tab") or "asignacion").strip().lower()
     if active_tab not in {"precios", "asignacion", "reportes"}:
         active_tab = "precios"
     today_value = local_today()
@@ -14768,6 +14789,25 @@ def _commission_branch_scope(branch_id: str | None) -> Optional[int]:
         return int(branch_id)
     except ValueError:
         return None
+
+
+def _commission_amount(rate, quantity):
+    return (Decimal(str(rate or 0)) * Decimal(str(quantity or 0))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _commission_rate(config, item, *, promotion_enabled=None):
+    enabled = _is_pacasholl_company() if promotion_enabled is None else promotion_enabled
+    return commission_rate(config, item, enabled=enabled)
+
+
+def _commission_sale_details(config, item, *, promotion_enabled=None) -> dict:
+    enabled = _is_pacasholl_company() if promotion_enabled is None else promotion_enabled
+    special = is_special_price_sale(item, enabled=enabled)
+    return {
+        "comision_promocion": special,
+        "comision_pendiente": _commission_rate(config, item, promotion_enabled=enabled) is None,
+        "tipo_comision": "2 por precio especial" if special else "Normal",
+    }
 
 
 def _commission_stock_qty(value: object) -> Decimal:
@@ -15026,6 +15066,7 @@ def _build_commission_assignment_rows(
     vendedor_asignado_id: str | None,
     producto_asig_q: str,
 ):
+    promotion_enabled = _is_pacasholl_company()
     _normalize_commission_temp_rows(
         db,
         start_date=start_date,
@@ -15039,13 +15080,6 @@ def _build_commission_assignment_rows(
     )
     if scope_branch_id:
         temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
-    if vendedor_asignado_id:
-        try:
-            temp_query = temp_query.filter(
-                VentaComisionAsignacion.vendedor_asignado_id == int(vendedor_asignado_id)
-            )
-        except ValueError:
-            pass
     source_rows = _commission_sales_rows_query_range(
         db,
         start_date,
@@ -15185,8 +15219,8 @@ def _build_commission_assignment_rows(
         if product_ids
         else []
     )
-    commission_map: dict[int, Decimal] = {
-        row.producto_id: Decimal(str(row.comision_usd or 0))
+    commission_map = {
+        row.producto_id: row
         for row in commission_rows
     }
 
@@ -15212,6 +15246,7 @@ def _build_commission_assignment_rows(
         )
         primary_ids.add(preferred.id)
 
+    revisions = {item_id: assignment_revision(rows) for item_id, rows in grouped_rows.items()}
     output_rows: list[dict] = []
     for row in temp_rows:
         producto = product_map.get(row.producto_id)
@@ -15224,15 +15259,17 @@ def _build_commission_assignment_rows(
             if (factura.moneda or "CS") == "USD"
             else Decimal(str(row.precio_unitario_cs or 0))
         )
-        comision_unit = commission_map.get(producto.id, Decimal("0"))
         precio_label = "$" if (factura.moneda or "CS") == "USD" else "C$"
         source_meta = source_meta_map.get(row.venta_item_id)
         source_item = source_meta[1] if source_meta else getattr(row, "venta_item", None)
+        commission_config = commission_map.get(producto.id)
+        comision_unit = _commission_rate(commission_config, source_item, promotion_enabled=promotion_enabled) or Decimal("0")
         qty_int = int(_commission_stock_qty(row.cantidad))
         commission_basis_qty = _commission_row_billable_qty(row, producto, source_item)
+        source_qty = _commission_stock_qty(source_item.cantidad) if source_item else Decimal("0")
         commission_basis_unit = (
-            commission_basis_qty / Decimal(str(qty_int))
-            if qty_int > 0
+            _commission_billable_qty_for_item(producto, source_item) / source_qty
+            if source_qty > 0 and _commission_uses_weight_basis(producto, source_item)
             else Decimal("1")
         )
         total_qty_int = source_qty_map.get(row.venta_item_id, qty_int)
@@ -15242,6 +15279,8 @@ def _build_commission_assignment_rows(
         )
         output_rows.append(
             {
+                **_commission_sale_details(commission_config, source_item, promotion_enabled=promotion_enabled),
+                "revision": revisions[row.venta_item_id],
                 "temp_id": row.id,
                 "venta_item_id": row.venta_item_id,
                 "factura_id": row.factura_id,
@@ -15256,7 +15295,7 @@ def _build_commission_assignment_rows(
                 "precio_usd_unit": float(row.precio_unitario_usd or 0),
                 "precio_label": precio_label,
                 "comision_unit_usd": float(comision_unit),
-                "comision_total_usd": float(comision_unit * commission_basis_qty),
+                "comision_total_usd": float(_commission_amount(comision_unit, commission_basis_qty)),
                 "subtotal_usd": float(row.subtotal_usd or 0),
                 "commission_basis_qty": float(commission_basis_qty),
                 "commission_basis_unit": float(commission_basis_unit),
@@ -15348,6 +15387,7 @@ def _commission_missing_prices(
     end_date: date,
     branch_id: str | None,
 ) -> list[dict]:
+    promotion_enabled = _is_pacasholl_company()
     scope_branch_id = _commission_branch_scope(branch_id)
     temp_query = db.query(VentaComisionAsignacion).filter(
         VentaComisionAsignacion.fecha >= start_date,
@@ -15355,32 +15395,26 @@ def _commission_missing_prices(
     )
     if scope_branch_id:
         temp_query = temp_query.filter(VentaComisionAsignacion.branch_id == scope_branch_id)
-    product_ids = {
-        row[0]
-        for row in temp_query.with_entities(VentaComisionAsignacion.producto_id)
-        .distinct()
-        .all()
-    }
+    temp_rows = temp_query.filter(VentaComisionAsignacion.cantidad > 0).all()
+    product_ids = {row.producto_id for row in temp_rows}
     if not product_ids:
         return []
-
-    commission_map = {
-        row.producto_id: Decimal(str(row.comision_usd or 0))
-        for row in db.query(ProductoComision)
-        .filter(ProductoComision.producto_id.in_(list(product_ids)))
-        .all()
-    }
-    missing_ids = [pid for pid in product_ids if commission_map.get(pid, Decimal("0")) <= 0]
-    if not missing_ids:
+    commission_map = {row.producto_id: row for row in db.query(ProductoComision)
+                      .filter(ProductoComision.producto_id.in_(list(product_ids))).all()}
+    missing = set()
+    for row in temp_rows:
+        config = commission_map.get(row.producto_id)
+        details = _commission_sale_details(config, row.venta_item, promotion_enabled=promotion_enabled)
+        rate = _commission_rate(config, row.venta_item, promotion_enabled=promotion_enabled)
+        if rate is None or (not details["comision_promocion"] and rate <= 0):
+            missing.add((row.producto_id, details["tipo_comision"]))
+    if not missing:
         return []
-
-    products = (
-        db.query(Producto)
-        .filter(Producto.id.in_(missing_ids))
-        .order_by(Producto.cod_producto, Producto.descripcion)
-        .all()
-    )
-    return [{"id": p.id, "codigo": p.cod_producto or "-", "descripcion": p.descripcion or "-"} for p in products]
+    products = db.query(Producto).filter(Producto.id.in_({pid for pid, _ in missing})).all()
+    product_map = {p.id: p for p in products}
+    return [{"id": pid, "codigo": product_map[pid].cod_producto or "-",
+             "descripcion": f"{product_map[pid].descripcion or '-'} / Comision: {kind}"}
+            for pid, kind in sorted(missing) if pid in product_map]
 
 
 def _build_commission_reports_data(
@@ -15389,13 +15423,11 @@ def _build_commission_reports_data(
     end_date: date,
     branch_id: str | None,
     vendedor_id: str | None,
+    *, normalize: bool = True,
 ) -> dict:
-    _normalize_commission_temp_rows(
-        db,
-        start_date=start_date,
-        end_date=end_date,
-        branch_id=branch_id,
-    )
+    promotion_enabled = _is_pacasholl_company()
+    if normalize:
+        _normalize_commission_temp_rows(db, start_date=start_date, end_date=end_date, branch_id=branch_id)
     query = (
         db.query(
             VentaComisionAsignacion,
@@ -15406,6 +15438,7 @@ def _build_commission_reports_data(
             Branch,
             ProductoComision,
         )
+        .options(joinedload(VentaComisionAsignacion.venta_item))
         .join(VentaFactura, VentaFactura.id == VentaComisionAsignacion.factura_id, isouter=True)
         .join(Producto, Producto.id == VentaComisionAsignacion.producto_id, isouter=True)
         .join(Cliente, Cliente.id == VentaComisionAsignacion.cliente_id, isouter=True)
@@ -15415,6 +15448,7 @@ def _build_commission_reports_data(
         .filter(
             VentaComisionAsignacion.fecha >= start_date,
             VentaComisionAsignacion.fecha <= end_date,
+            VentaFactura.estado != "ANULADA",
         )
     )
     if branch_id and branch_id != "all":
@@ -15446,14 +15480,15 @@ def _build_commission_reports_data(
     for temp_row, factura, producto, cliente, vendedor, branch, producto_comision in rows:
         qty = _commission_stock_qty(temp_row.cantidad)
         commission_basis_qty = _commission_row_billable_qty(temp_row, producto, temp_row.venta_item)
-        comision_unit = Decimal(str(producto_comision.comision_usd or 0)) if producto_comision else Decimal("0")
-        comision_total = comision_unit * commission_basis_qty
+        comision_unit = _commission_rate(producto_comision, temp_row.venta_item, promotion_enabled=promotion_enabled) or Decimal("0")
+        comision_total = _commission_amount(comision_unit, commission_basis_qty)
         subtotal_usd = Decimal(str(temp_row.subtotal_usd or 0))
         vendor_name = vendedor.nombre if vendedor else "Sin asignar"
         fecha_value = temp_row.fecha
 
         detail_rows.append(
             {
+                **_commission_sale_details(producto_comision, temp_row.venta_item, promotion_enabled=promotion_enabled),
                 "fecha": fecha_value,
                 "fecha_label": fecha_value.strftime("%d/%m/%Y") if fecha_value else "-",
                 "sucursal": branch.name if branch else "-",
@@ -15675,7 +15710,7 @@ def sales_comisiones(
     )
     product_ids = [p.id for p in productos]
     commission_map = {
-        row.producto_id: float(row.comision_usd or 0)
+        row.producto_id: row
         for row in db.query(ProductoComision)
         .filter(ProductoComision.producto_id.in_(product_ids))
         .all()
@@ -15687,7 +15722,8 @@ def sales_comisiones(
             "descripcion": producto.descripcion,
             "costo_producto": float(producto.costo_producto or 0),
             "precio_venta_usd": float(producto.precio_venta1_usd or 0),
-            "comision": float(commission_map.get(producto.id, 0) or 0),
+            "comision": float(getattr(commission_map.get(producto.id), "comision_usd", 0) or 0),
+            "comision_promocion": getattr(commission_map.get(producto.id), "comision_promocion_usd", None),
         }
         for producto in productos
     ]
@@ -15709,9 +15745,9 @@ def sales_comisiones(
         start_date,
         end_date,
         branch_id,
-        vendedor_facturacion_id,
-        vendedor_asignado_id,
-        producto_asig_q,
+        None,
+        None,
+        "",
     )
     if start_date == end_date:
         day_status = _commission_day_status(db, start_date, branch_id)
@@ -15742,7 +15778,11 @@ def sales_comisiones(
             "branches": branches,
             "vendedores": vendedores,
             "product_rows": product_rows,
+            "promotion_commissions_enabled": _is_pacasholl_company(),
+            "pending_promotion_commissions": any(r["comision_pendiente"] for r in assignment_rows),
+            "report_pending_commissions": any(r["comision_pendiente"] for r in reports_data["detail_rows"]),
             "assignment_rows": assignment_rows,
+            "commission_vendors": [{"id": v.id, "name": v.nombre} for v in vendedores],
             "total_bultos": total_bultos,
             "total_rows": total_rows,
             "total_bultos_vendidos": total_bultos_vendidos,
@@ -15963,41 +16003,37 @@ async def sales_comisiones_save_prices(
     vendedor_asignado_id = str(form.get("vendedor_asignado_id") or "").strip()
     producto_asig_q = str(form.get("producto_asig_q") or "").strip()
     updates = 0
+    # Validate the complete request before changing any rates.
+    changes = {}
+    try:
+        for key, value in form.items():
+            promo = key.startswith("comision_promocion_")
+            if promo and not _is_pacasholl_company():
+                continue
+            prefix = "comision_promocion_" if promo else "comision_"
+            if not key.startswith(prefix):
+                continue
+            suffix = key[len(prefix):]
+            if not suffix.isdigit() or int(suffix) <= 0:
+                continue
+            field = "comision_promocion_usd" if promo else "comision_usd"
+            changes.setdefault(int(suffix), {})[field] = parse_commission_amount(value, optional=promo)
+    except ValueError as exc:
+        if getattr(request, "headers", {}).get("X-Requested-With") == "fetch":
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+        params = {"tab": "precios", "fecha": fecha_raw, "start_date": start_raw,
+                  "end_date": end_raw, "branch_id": branch_id,
+                  "error": str(exc)}
+        return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
 
-    def parse_amount(raw: Optional[str]) -> Decimal:
-        val = str(raw or "").strip()
-        if not val:
-            return Decimal("0")
-        val = val.replace(",", "")
-        try:
-            return Decimal(val)
-        except Exception:
-            return Decimal("0")
-
-    for key, value in form.items():
-        if not key.startswith("comision_"):
-            continue
-        try:
-            product_id = int(key.replace("comision_", ""))
-        except ValueError:
-            continue
-        comision = parse_amount(value)
-        row = (
-            db.query(ProductoComision)
-            .filter(ProductoComision.producto_id == product_id)
-            .first()
-        )
-        if row:
-            row.comision_usd = comision
-            row.usuario_registro = user.full_name
-        else:
-            db.add(
-                ProductoComision(
-                    producto_id=product_id,
-                    comision_usd=comision,
-                    usuario_registro=user.full_name,
-                )
-            )
+    for product_id, fields in changes.items():
+        row = db.query(ProductoComision).filter(ProductoComision.producto_id == product_id).first()
+        if row is None:
+            row = ProductoComision(producto_id=product_id, comision_usd=Decimal("0"))
+            db.add(row)
+        for field, value in fields.items():
+            setattr(row, field, value)
+        row.usuario_registro = user.full_name
         updates += 1
 
     db.commit()
@@ -16017,7 +16053,133 @@ async def sales_comisiones_save_prices(
         "vendedor_asignado_id": vendedor_asignado_id,
         "producto_asig_q": producto_asig_q,
     }
+    if getattr(request, "headers", {}).get("X-Requested-With") == "fetch":
+        return JSONResponse({"ok": True, "message": msg,
+                             "rates": {str(pid): {field: str(value) if value is not None else None
+                                                  for field, value in fields.items()}
+                                       for pid, fields in changes.items()}})
     return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
+
+@router.get("/sales/comisiones/asignaciones/estado/{item_id}")
+def sales_comisiones_assignment_state(
+    request: Request, item_id: int, db: Session = Depends(get_db), user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    item = db.query(VentaItem).filter(VentaItem.id == item_id).first()
+    if not item or not item.factura or item.factura.estado == "ANULADA":
+        return JSONResponse({"ok": False, "message": "La venta no existe o fue anulada."}, status_code=409)
+    branch_id = item.factura.bodega.branch_id if item.factura.bodega else None
+    if branch_id not in _user_scoped_branch_ids(db, user):
+        return JSONResponse({"ok": False, "message": "No tienes acceso a esta sucursal."}, status_code=403)
+    rows = db.query(VentaComisionAsignacion).filter(VentaComisionAsignacion.venta_item_id == item_id).order_by(VentaComisionAsignacion.id).all()
+    if not rows:
+        return JSONResponse({"ok": False, "message": "El reparto ya no existe. Revisa los filtros del periodo."}, status_code=409)
+    config = db.query(ProductoComision).filter(ProductoComision.producto_id == item.producto_id).first()
+    rate = _commission_rate(config, item)
+    return JSONResponse({"ok": True, "revision": assignment_revision(rows), "sold_quantity": whole_quantity(item.cantidad),
+        "comision_unit_usd": str(rate) if rate is not None else None,
+        "rows": [{"temp_id": row.id, "vendedor_id": row.vendedor_asignado_id, "cantidad": whole_quantity(row.cantidad)} for row in rows]})
+
+
+@router.post("/sales/comisiones/asignaciones/autoguardar")
+async def sales_comisiones_autosave(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_user_web),
+):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    if not _is_pacasholl_company():
+        return JSONResponse({"ok": False, "message": "Disponible en Pacas Hollywood"}, status_code=403)
+    def fail(message, status=400):
+        db.rollback()
+        return JSONResponse({"ok": False, "message": message}, status_code=status)
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError
+        item_id = whole_quantity(payload.get("item_id"))
+        incoming = payload.get("rows")
+        if not item_id or not isinstance(incoming, list) or not incoming or len(incoming) > 500:
+            raise ValueError
+    except (ValueError, TypeError):
+        return fail("Reparto invalido. No se guardaron cambios.")
+
+    # Serialize edits of this sale item, including two concurrent browser sessions.
+    item = db.query(VentaItem).filter(VentaItem.id == item_id).with_for_update().first()
+    if not item or not item.factura or item.factura.estado == "ANULADA":
+        return fail("La venta no existe o fue anulada.", 409)
+    factura = item.factura
+    branch_id = factura.bodega.branch_id if factura.bodega else None
+    allowed = _user_scoped_branch_ids(db, user)
+    if not branch_id or branch_id not in allowed:
+        return fail("No tienes acceso a la sucursal de esta venta.", 403)
+    current = db.query(VentaComisionAsignacion).filter(
+        VentaComisionAsignacion.venta_item_id == item_id
+    ).order_by(VentaComisionAsignacion.id).with_for_update().all()
+    if not current or payload.get("revision") != assignment_revision(current):
+        return fail("Este reparto cambio en otra sesion. No se sobrescribio. Revisa la version actual antes de volver a editar.", 409)
+    current_map = {r.id: r for r in current}
+    seen_ids, seen_clients, parsed = set(), set(), []
+    try:
+        for entry in incoming:
+            if not isinstance(entry, dict):
+                raise ValueError("Fila de reparto invalida.")
+            row_id = whole_quantity(entry.get("temp_id", 0))
+            vendor_id = whole_quantity(entry.get("vendedor_id"))
+            qty = whole_quantity(entry.get("cantidad"))
+            client_id = str(entry.get("client_id") or "")
+            if not vendor_id or not client_id or len(client_id) > 100 or client_id in seen_clients:
+                raise ValueError("Vendedor o identificador de fila invalido.")
+            if row_id and (row_id not in current_map or row_id in seen_ids):
+                raise ValueError("Una fila no pertenece a esta venta o esta duplicada.")
+            seen_clients.add(client_id)
+            if row_id:
+                seen_ids.add(row_id)
+            parsed.append((row_id, vendor_id, qty, client_id))
+        sold = whole_quantity(item.cantidad)
+        if not sold or sum(row[2] for row in parsed) != sold:
+            raise ValueError("La suma del reparto debe ser exactamente igual a los bultos vendidos.")
+    except ValueError as exc:
+        return fail(str(exc))
+    vendor_ids = {r[1] for r in parsed}
+    valid_vendors = {v.id for v in db.query(Vendedor).filter(Vendedor.id.in_(vendor_ids), Vendedor.activo.is_(True)).all()}
+    if vendor_ids != valid_vendors:
+        return fail("Selecciona vendedores activos y validos.")
+    producto = item.producto
+    config = db.query(ProductoComision).filter(ProductoComision.producto_id == item.producto_id).first()
+    rate = _commission_rate(config, item)
+    price_usd, price_cs = _commission_effective_unit_prices(item, producto)
+    saved = []
+    for row_id, vendor_id, qty, client_id in parsed:
+        row = current_map.get(row_id)
+        if row is None:
+            row = VentaComisionAsignacion(venta_item_id=item.id, factura_id=factura.id,
+                branch_id=branch_id, bodega_id=factura.bodega_id, cliente_id=factura.cliente_id,
+                producto_id=item.producto_id, fecha=factura.fecha.date(), vendedor_origen_id=factura.vendedor_id)
+            db.add(row)
+        row.vendedor_asignado_id = vendor_id
+        row.cantidad = Decimal(qty)
+        row.precio_unitario_usd, row.precio_unitario_cs = price_usd, price_cs
+        row.subtotal_usd, row.subtotal_cs = price_usd * qty, price_cs * qty
+        row.usuario_registro = user.full_name
+        saved.append((row, client_id))
+    for row in current:
+        if row.id not in seen_ids:
+            db.delete(row)
+    db.flush()
+    result = []
+    for row, client_id in saved:
+        basis = _commission_row_billable_qty(row, producto, item)
+        result.append({"client_id": client_id, "temp_id": row.id, "cantidad": int(row.cantidad),
+                       "vendedor_id": row.vendedor_asignado_id,
+                       "comision_total_usd": str(_commission_amount(rate, basis)),
+                       "subtotal_usd": str(row.subtotal_usd)})
+    revision = assignment_revision([row for row, _ in saved])
+    db.commit()
+    return JSONResponse({"ok": True, "revision": revision, "rows": result,
+                         "comision_unit_usd": str(rate) if rate is not None else None,
+                         "message": "Reparto guardado"})
 
 
 @router.post("/sales/comisiones/asignaciones")
@@ -16125,7 +16287,7 @@ async def sales_comisiones_save_assignments(
             temp_id = int(row.get("temp_id"))
             venta_item_id = int(row.get("venta_item_id"))
             row_vendedor_asignado_id = int(row.get("vendedor_id"))
-            cantidad = int(Decimal(str(row.get("cantidad") or "0")))
+            cantidad = whole_quantity(row.get("cantidad"))
         except Exception:
             continue
         if temp_id > 0:
@@ -16530,7 +16692,7 @@ async def sales_comisiones_finalize_day(
 
     product_ids = list({row.producto_id for row in temp_rows})
     commission_map = {
-        row.producto_id: Decimal(str(row.comision_usd or 0))
+        row.producto_id: row
         for row in db.query(ProductoComision)
         .filter(ProductoComision.producto_id.in_(product_ids))
         .all()
@@ -16540,6 +16702,17 @@ async def sales_comisiones_finalize_day(
         for p in db.query(Producto).filter(Producto.id.in_(product_ids)).all()
     } if product_ids else {}
 
+    pending = [row for row in temp_rows if _commission_stock_qty(row.cantidad) > 0
+               and _commission_rate(commission_map.get(row.producto_id), row.venta_item) is None]
+    if pending:
+        codes = sorted({str(products_map[row.producto_id].cod_producto) for row in pending if row.producto_id in products_map})
+        params = {"tab": "asignacion", "fecha": fecha_value.isoformat(),
+                  "start_date": start_date.isoformat(), "end_date": end_date.isoformat(),
+                  "branch_id": branch_id, "vendedor_facturacion_id": vendedor_facturacion_id,
+                  "vendedor_asignado_id": vendedor_asignado_id, "producto_asig_q": producto_asig_q,
+                  "error": "Configura la comision por promocion antes de cerrar: " + ", ".join(codes)}
+        return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
+
     final_query = db.query(VentaComisionFinal).filter(VentaComisionFinal.fecha == fecha_value)
     if scope_branch_id:
         final_query = final_query.filter(VentaComisionFinal.branch_id == scope_branch_id)
@@ -16548,9 +16721,9 @@ async def sales_comisiones_finalize_day(
     inserted = 0
     for row in temp_rows:
         qty = _commission_stock_qty(row.cantidad)
-        comision_unit = commission_map.get(row.producto_id, Decimal("0"))
+        comision_unit = _commission_rate(commission_map.get(row.producto_id), row.venta_item) or Decimal("0")
         producto = products_map.get(row.producto_id)
-        comision_total = comision_unit * _commission_row_billable_qty(row, producto, row.venta_item)
+        comision_total = _commission_amount(comision_unit, _commission_row_billable_qty(row, producto, row.venta_item))
         db.add(
             VentaComisionFinal(
                 fecha=row.fecha,
@@ -16691,6 +16864,26 @@ async def sales_comisiones_reopen_day(
     return RedirectResponse("/sales/comisiones?" + urlencode(params), status_code=303)
 
 
+@router.get("/sales/comisiones/reportes/vista")
+def sales_comisiones_report_view(request: Request, db: Session = Depends(get_db), user: User = Depends(_require_user_web)):
+    _enforce_permission(request, user, "access.sales.comisiones")
+    start, end, branch_id, vendor_id = _sales_commissions_report_filters(request)
+    for day in _commission_dates_in_range(start, end):
+        _ensure_commission_temp_snapshot(db, day, branch_id)
+    data = _build_commission_reports_data(db, start, end, branch_id, vendor_id, normalize=False)
+    context = {"request": request, "active_tab": "reportes", "start_date": request.query_params.get("start_date", str(start)),
+        "end_date": request.query_params.get("end_date", str(end)), "selected_branch": request.query_params.get("branch_id", "all"),
+        "selected_vendedor_facturacion": request.query_params.get("vendedor_facturacion_id", ""),
+        "selected_vendedor_asignado": request.query_params.get("vendedor_asignado_id", ""),
+        "producto_asig_q": request.query_params.get("producto_asig_q", ""),
+        "rep_start_date": str(start), "rep_end_date": str(end), "rep_selected_branch": branch_id or "all",
+        "rep_selected_vendedor": vendor_id or "", "report_pending_commissions": any(r["comision_pendiente"] for r in data["detail_rows"]),
+        "branches": _scoped_branches_query(db).order_by(Branch.name).all(),
+        "vendedores": db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre).all()}
+    context.update({"rep_" + key: value for key, value in data.items()})
+    return request.app.state.templates.TemplateResponse("partials/commission_reports.html", context)
+
+
 @router.get("/sales/comisiones/reportes/pdf")
 def sales_comisiones_reports_pdf(
     request: Request,
@@ -16741,6 +16934,11 @@ def sales_comisiones_reports_pdf(
             header_y - 28,
             f"Vendedor filtro: {rep_vendedor_id or 'Todos'} | Total bultos: {reports_data['total_bultos']} | Total comision USD: ${reports_data['total_comision_usd']:,.2f}",
         )
+        if any(row["comision_pendiente"] for row in reports_data["detail_rows"]):
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(margin, header_y - 41, "TOTAL PARCIAL: hay comisiones por promocion sin configurar.")
+            c.line(margin, header_y - 47, page_w - margin, header_y - 47)
+            return header_y - 61
         c.line(margin, header_y - 34, page_w - margin, header_y - 34)
         return header_y - 48
 
@@ -16913,6 +17111,8 @@ def sales_comisiones_reports_xlsx(
         f"Total bultos: {int(reports_data['total_bultos'])} | "
         f"Total comision USD: {float(reports_data['total_comision_usd']):,.2f}"
     )
+    if any(row["comision_pendiente"] for row in reports_data["detail_rows"]):
+        ws["A3"] = str(ws["A3"].value) + " | TOTAL PARCIAL: comisiones por promocion sin configurar"
     ws["A1"].font = Font(bold=True, size=13)
     ws["A2"].font = Font(size=10)
     ws["A3"].font = Font(size=10)
@@ -16967,6 +17167,8 @@ def sales_comisiones_reports_xlsx(
         "Venta USD",
         "Comision unit USD",
         "Comision total USD",
+        "Tipo de comision",
+        "Estado de tarifa",
     ]
     ws_detail.append(detail_headers)
     for col in range(1, len(detail_headers) + 1):
@@ -16984,8 +17186,10 @@ def sales_comisiones_reports_xlsx(
                 row.get("producto", "-"),
                 int(row.get("cantidad", 0) or 0),
                 float(row.get("subtotal_usd", 0) or 0),
-                float(row.get("comision_unit_usd", 0) or 0),
-                float(row.get("comision_total_usd", 0) or 0),
+                None if row.get("comision_pendiente") else float(row.get("comision_unit_usd", 0) or 0),
+                None if row.get("comision_pendiente") else float(row.get("comision_total_usd", 0) or 0),
+                row.get("tipo_comision", "Normal"),
+                "Sin configurar" if row.get("comision_pendiente") else "Configurada",
             ]
         )
 
@@ -27532,6 +27736,11 @@ def data_entornos_activate(
     if not profile:
         return RedirectResponse("/data/entornos?error=Empresa+no+registrada", status_code=303)
 
+    if profile.get("app_port"):
+        # Each local installation retains its code, settings and database.
+        target = request.url.replace(port=int(profile["app_port"]), path="/data/entornos", query="", fragment="")
+        return RedirectResponse(str(target), status_code=303)
+
     connect_error = _validate_database_url(profile["database_url"])
     if connect_error:
         return RedirectResponse(f"/data/entornos?{urlencode({'error': connect_error})}", status_code=303)
@@ -30481,6 +30690,190 @@ def _ingreso_labels_payload(ingreso: IngresoInventario) -> tuple[list[dict[str, 
     return items, total_labels
 
 
+@router.get("/inventory/etiquetas-zapatos")
+def inventory_shoe_labels_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.ingresos")
+    if not _is_shoes_mode():
+        raise HTTPException(status_code=404, detail="Disponible únicamente en el entorno Zapatos")
+    return request.app.state.templates.TemplateResponse(
+        "inventory_shoe_labels.html",
+        {
+            "request": request,
+            "user": user,
+            "label_width_cm": 7.62,
+            "label_height_cm": 5.08,
+            "version": settings.UI_VERSION,
+        },
+    )
+
+
+@router.get("/inventory/etiquetas-zapatos/search")
+def inventory_shoe_labels_search(
+    request: Request,
+    q: str = "",
+    limit: int = 40,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.ingresos")
+    if not _is_shoes_mode():
+        raise HTTPException(status_code=404, detail="Disponible únicamente en el entorno Zapatos")
+    query_text = (q or "").strip()
+    if len(query_text) < 1:
+        return JSONResponse({"ok": True, "items": []})
+    like = f"%{query_text.lower()}%"
+    rows = (
+        db.query(ShoeProductVariant, Producto, ColorCatalog)
+        .join(Producto, Producto.id == ShoeProductVariant.producto_id)
+        .join(ColorCatalog, ColorCatalog.id == ShoeProductVariant.color_id)
+        .filter(
+            ShoeProductVariant.activo.is_(True),
+            Producto.activo.is_(True),
+            or_(
+                func.lower(ShoeProductVariant.cod_variante).like(like),
+                func.lower(Producto.cod_producto).like(like),
+                func.lower(Producto.descripcion).like(like),
+                func.lower(ColorCatalog.nombre).like(like),
+                func.lower(ShoeProductVariant.talla).like(like),
+            ),
+        )
+        .order_by(Producto.descripcion, ColorCatalog.nombre, ShoeProductVariant.talla)
+        .limit(max(1, min(int(limit or 40), 100)))
+        .all()
+    )
+    variant_ids = [int(variant.id) for variant, _, _ in rows]
+    allowed_branch_ids = _user_scoped_branch_ids(db, user)
+    stock_query = (
+        db.query(ShoeVariantStock.variante_id, func.sum(ShoeVariantStock.existencia))
+        .join(Bodega, Bodega.id == ShoeVariantStock.bodega_id)
+        .filter(ShoeVariantStock.variante_id.in_(variant_ids), Bodega.activo.is_(True))
+    )
+    if allowed_branch_ids:
+        stock_query = stock_query.filter(Bodega.branch_id.in_(allowed_branch_ids))
+    stock_rows = stock_query.group_by(ShoeVariantStock.variante_id).all() if variant_ids else []
+    stocks = {int(variant_id): float(quantity or 0) for variant_id, quantity in stock_rows}
+    items = []
+    for variant, product, color in rows:
+        prices = _product_price_map(product)
+        items.append(
+            {
+                "variant_id": int(variant.id),
+                "code": variant.cod_variante,
+                "scan_code": variant.cod_variante,
+                "product_code": product.cod_producto,
+                "name": product.descripcion,
+                "color": color.nombre,
+                "size": variant.talla,
+                "stock": stocks.get(int(variant.id), 0.0),
+                "price_cs": float(prices.get("precio_venta1", 0) or 0),
+            }
+        )
+    return JSONResponse({"ok": True, "items": items})
+
+
+@router.post("/inventory/etiquetas-zapatos/pdf")
+async def inventory_shoe_labels_pdf(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.inventory.ingresos")
+    if not _is_shoes_mode():
+        raise HTTPException(status_code=404, detail="Disponible únicamente en el entorno Zapatos")
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Solicitud de etiquetas inválida") from exc
+    requested = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(requested, list) or not requested:
+        raise HTTPException(status_code=400, detail="Agrega al menos un producto para imprimir")
+    quantities: dict[int, int] = {}
+    for row in requested[:100]:
+        try:
+            variant_id = int(row.get("variant_id") or 0)
+            quantity = max(1, min(int(row.get("quantity") or 1), 500))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if variant_id > 0:
+            quantities[variant_id] = min(500, quantities.get(variant_id, 0) + quantity)
+    if not quantities or sum(quantities.values()) > 1000:
+        raise HTTPException(status_code=400, detail="La tirada debe contener entre 1 y 1,000 etiquetas")
+    variants = (
+        db.query(ShoeProductVariant, Producto, ColorCatalog)
+        .join(Producto, Producto.id == ShoeProductVariant.producto_id)
+        .join(ColorCatalog, ColorCatalog.id == ShoeProductVariant.color_id)
+        .filter(ShoeProductVariant.id.in_(quantities), ShoeProductVariant.activo.is_(True))
+        .all()
+    )
+    by_id = {int(variant.id): (variant, product, color) for variant, product, color in variants}
+    show_price = bool(payload.get("show_price", True))
+    try:
+        from reportlab.graphics.barcode.code128 import Code128
+        from reportlab.lib.units import cm, mm
+        from reportlab.pdfgen import canvas
+    except ImportError as exc:
+        raise HTTPException(status_code=500, detail="ReportLab no está instalado") from exc
+    page_w, page_h = 7.62 * cm, 5.08 * cm
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=(page_w, page_h))
+    printed = 0
+    for variant_id, quantity in quantities.items():
+        data = by_id.get(variant_id)
+        if not data:
+            continue
+        variant, product, color = data
+        prices = _product_price_map(product)
+        price_cs = Decimal(str(prices.get("precio_venta1", 0) or 0))
+        for _ in range(quantity):
+            if printed:
+                pdf.showPage()
+            printed += 1
+            code = (variant.cod_variante or "").strip()
+            pdf.setFillColorRGB(0.05, 0.09, 0.16)
+            pdf.setFont("Helvetica-Bold", 11)
+            product_name = (product.descripcion or code)[:38]
+            pdf.drawCentredString(page_w / 2, page_h - 8 * mm, product_name)
+            pdf.setFont("Helvetica-Bold", 9)
+            detail = f"{color.nombre}  |  Talla {variant.talla}"
+            pdf.drawCentredString(page_w / 2, page_h - 13 * mm, detail[:46])
+            # Barras altas y zona silenciosa amplia para lectura estable en la
+            # Zebra GK420t, aprovechando el formato físico de 76.2 x 50.8 mm.
+            barcode_height = 24 * mm
+            barcode = Code128(code, barHeight=barcode_height, barWidth=0.38 * mm, humanReadable=False)
+            max_bar_width = page_w - 12 * mm
+            if barcode.width > max_bar_width:
+                barcode = Code128(
+                    code,
+                    barHeight=barcode_height,
+                    barWidth=max(0.21 * mm, 0.38 * mm * (max_bar_width / float(barcode.width))),
+                    humanReadable=False,
+                )
+            barcode.drawOn(pdf, (page_w - barcode.width) / 2, 10.5 * mm)
+            pdf.setFont("Helvetica-Bold", 8)
+            pdf.drawCentredString(page_w / 2, 7.2 * mm, code[:64])
+            pdf.setFont("Helvetica", 7)
+            pdf.drawString(5 * mm, 2.7 * mm, f"Ref. {(product.cod_producto or '-')[:24]}")
+            if show_price:
+                pdf.setFont("Helvetica-Bold", 9)
+                pdf.drawRightString(page_w - 5 * mm, 2.7 * mm, f"C$ {price_cs:,.2f}")
+    if printed <= 0:
+        raise HTTPException(status_code=400, detail="No se encontraron variantes válidas")
+    pdf.save()
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "inline; filename=etiquetas_zapatos_762x508.pdf",
+            "X-Total-Labels": str(printed),
+        },
+    )
+
+
 @router.get("/inventory/ingresos/{ingreso_id}/labels/preview")
 def inventory_ingreso_labels_preview(
     request: Request,
@@ -31971,8 +32364,20 @@ async def inventory_grid_bulk_update(
             raise ValueError(f"{field_label} no puede ser negativo")
         return amount.quantize(Decimal("0.01"))
 
+    # Validate optional promotion rates for the whole batch before changing prices.
+    promotion_rates = {}
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or "comision_promocion" not in row:
+            continue
+        try:
+            if str(row.get("comision_promocion_currency") or "USD").strip().upper() != "USD":
+                raise ValueError("La comision por promocion debe estar en USD")
+            promotion_rates[index] = parse_commission_amount(row["comision_promocion"], optional=True)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "message": f"Comision por promocion: {exc}"}, status_code=400)
+
     updated = 0
-    for row in rows:
+    for index, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
         try:
@@ -32009,17 +32414,13 @@ async def inventory_grid_bulk_update(
         producto.tasa_cambio = tasa
 
         commission_row = db.query(ProductoComision).filter(ProductoComision.producto_id == producto.id).first()
-        if commission_row:
-            commission_row.comision_usd = comision_input
-            commission_row.usuario_registro = user.full_name or user.email
-        else:
-            db.add(
-                ProductoComision(
-                    producto_id=producto.id,
-                    comision_usd=comision_input,
-                    usuario_registro=user.full_name or user.email,
-                )
-            )
+        if commission_row is None:
+            commission_row = ProductoComision(producto_id=producto.id)
+            db.add(commission_row)
+        commission_row.comision_usd = comision_input
+        if index in promotion_rates:
+            commission_row.comision_promocion_usd = promotion_rates[index]
+        commission_row.usuario_registro = user.full_name or user.email
         updated += 1
 
     if updated <= 0:
@@ -32548,7 +32949,7 @@ def inventory_create_proveedor(
 ):
     nombre = nombre.strip()
     if not nombre:
-        if request.headers.get("X-Requested-With") == "fetch":
+        if getattr(request, "headers", {}).get("X-Requested-With") == "fetch":
             return JSONResponse({"ok": False, "message": "Nombre requerido"}, status_code=400)
         return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
     exists = db.query(Proveedor).filter(func.lower(Proveedor.nombre) == nombre.lower()).first()
@@ -32556,7 +32957,7 @@ def inventory_create_proveedor(
         proveedor = Proveedor(nombre=nombre, tipo=tipo, activo=activo == "on")
         db.add(proveedor)
         db.commit()
-        if request.headers.get("X-Requested-With") == "fetch":
+        if getattr(request, "headers", {}).get("X-Requested-With") == "fetch":
             return JSONResponse(
                 {
                     "ok": True,
@@ -32566,7 +32967,7 @@ def inventory_create_proveedor(
                     "activo": proveedor.activo,
                 }
             )
-    if request.headers.get("X-Requested-With") == "fetch":
+    if getattr(request, "headers", {}).get("X-Requested-With") == "fetch":
         return JSONResponse({"ok": False, "message": "Proveedor ya existe"}, status_code=409)
     return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
 
@@ -32588,7 +32989,7 @@ def inventory_update_proveedor(
         proveedor_obj.tipo = tipo
         proveedor_obj.activo = activo == "on"
         db.commit()
-        if request.headers.get("X-Requested-With") == "fetch":
+        if getattr(request, "headers", {}).get("X-Requested-With") == "fetch":
             return JSONResponse(
                 {
                     "ok": True,
@@ -32598,7 +32999,7 @@ def inventory_update_proveedor(
                     "activo": proveedor_obj.activo,
                 }
             )
-    if request.headers.get("X-Requested-With") == "fetch":
+    if getattr(request, "headers", {}).get("X-Requested-With") == "fetch":
         return JSONResponse({"ok": False, "message": "Proveedor no encontrado"}, status_code=404)
     return RedirectResponse(redirect_to or "/inventory/ingresos", status_code=303)
 

@@ -7,7 +7,7 @@
 <script id="sidebar-menu-data" type="application/json">[
 {% set menu_ns = namespace(first=true) %}
 {% for item in menu_links %}
-  {% set company_visible = not item.hollpacas_only or 'pacas' in company_key or 'holl' in company_key %}
+  {% set company_visible = (not item.hollpacas_only or 'pacas' in company_key or 'holl' in company_key) and (not item.shoes_only or company_key == 'bdzapatos' or 'zapato' in company_key) %}
   {% if company_visible and (not has_perms or item.perm in perms or (item.alt_perm and item.alt_perm in perms)) %}
     {% if not menu_ns.first %},{% endif %}{{ {'id': item.id, 'label': item.label, 'href': item.href, 'icon': item.icon, 'keywords': (item.id ~ ' ' ~ item.label)} | tojson }}
     {% set menu_ns.first = false %}
