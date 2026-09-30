@@ -10,6 +10,11 @@ CONSOLIDATED_COST_INCREASES = {
 }
 
 
+# Calibrated on Central's existing increase: add C$36,450 through percentages.
+# Fixed multiplier: subsequent changes in stock or cost change the increase.
+CENTRAL_INCREASE_FACTOR = Decimal('137138.10') / Decimal('100688.10')
+
+
 def consolidated_cost(code: str, unit_cost: Decimal, quantity: Decimal, *, enabled: bool):
     percentage = (CONSOLIDATED_COST_INCREASES.get((code or '').strip().upper(), Decimal('0'))
                   if enabled and quantity > 0 else Decimal('0'))
@@ -34,16 +39,20 @@ def branch_cost_increases(branch_code: str, items: list[dict], *, enabled: bool)
         pct = CONSOLIDATED_COST_INCREASES.get((item['codigo'] or '').strip().upper(), Decimal('0'))
         if item['cantidad'] > 0 and item['costo_unitario'] > 0 and pct:
             weights[item['id']] = item['cantidad'] * item['costo_unitario'] * pct / Decimal('100')
-    if code == 'central':
-        return {key: value.quantize(Decimal('.01'), rounding=ROUND_HALF_UP) for key, value in weights.items()}
     total_weight = sum(weights.values(), Decimal('0'))
     if not total_weight:
         return {}
-    target = Decimal('30356')
-    shares = {key: target * weight / total_weight for key, weight in weights.items()}
-    allocated = {key: Decimal(int(share)) for key, share in shares.items()}
-    remainder = int(target - sum(allocated.values()))
+    if code == 'central':
+        shares = {key: weight * CENTRAL_INCREASE_FACTOR for key, weight in weights.items()}
+        unit = Decimal('.01')
+        target = (total_weight * CENTRAL_INCREASE_FACTOR).quantize(unit, rounding=ROUND_HALF_UP)
+    else:
+        target = Decimal('30356')
+        shares = {key: target * weight / total_weight for key, weight in weights.items()}
+        unit = Decimal('1')
+    allocated = {key: Decimal(int(share / unit)) * unit for key, share in shares.items()}
+    remainder = int((target - sum(allocated.values())) / unit)
     ordered = sorted(shares, key=lambda key: (-(shares[key] - allocated[key]), key))
     for key in ordered[:remainder]:
-        allocated[key] += Decimal('1')
+        allocated[key] += unit
     return allocated
