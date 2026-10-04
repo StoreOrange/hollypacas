@@ -703,7 +703,7 @@
             <i class="bi bi-box-seam text-emerald-600"></i>
             Productos
           </div>
-          <strong>{{ productos|length }}</strong>
+          <strong>{{ inventory_catalog_total }}</strong>
         </div>
         <div class="odoo-kpi">
           <div class="text-[11px] uppercase tracking-[0.2em] text-slate inline-flex items-center gap-2">
@@ -1375,8 +1375,8 @@
     if (itemsCountLive) itemsCountLive.textContent = `${countItems}`;
     if (summaryBultos) summaryBultos.textContent = sumBultos.toFixed(2);
     if (summaryItems) summaryItems.textContent = `${countItems}`;
-    totalUsd.textContent = `$ ${sumUsd.toFixed(2)}`;
-    totalCs.textContent = `C$ ${sumCs.toFixed(2)}`;
+    if (totalUsd) totalUsd.textContent = `$ ${sumUsd.toFixed(2)}`;
+    if (totalCs) totalCs.textContent = `C$ ${sumCs.toFixed(2)}`;
   };
 
   const updateResultTotals = () => {
@@ -1400,7 +1400,35 @@
     if (resultTotalCsLive) resultTotalCsLive.textContent = `C$ ${sumCs.toFixed(2)}`;
   };
 
+  {% if active_company == 'bdzapatos' or shoes_mode %}
+  let catalogueTimer;
+  let catalogueGeneration = 0;
+  const searchRemoteCatalogue = (value) => {
+    clearTimeout(catalogueTimer);
+    const generation = ++catalogueGeneration;
+    const query = value.trim();
+    if (!query) { productList.innerHTML = ""; return; }
+    catalogueTimer = setTimeout(async () => {
+      try {
+        const response = await fetch('/inventory/catalog/search?mode=egresos&q=' + encodeURIComponent(query));
+        if (!response.ok || response.redirected) throw new Error('search');
+        const data = await response.json();
+        if (generation !== catalogueGeneration) return;
+        productList.innerHTML = data.html;
+        productList.querySelectorAll('.product-pick-row').forEach(wireProductRow);
+        updateSaldoCells();
+        if (!data.html) productList.innerHTML = '<tr><td colspan="7">Sin resultados. Busca por código o descripción.</td></tr>';
+      } catch (_) {
+        if (generation === catalogueGeneration) productList.innerHTML = '<tr><td colspan="7">No se pudo buscar. Intenta nuevamente.</td></tr>';
+      }
+    }, 200);
+  };
+  {% endif %}
   const filterProductRows = (value) => {
+    {% if active_company == 'bdzapatos' or shoes_mode %}
+    searchRemoteCatalogue(value);
+    return;
+    {% endif %}
     const normalized = value.toLowerCase().trim();
     productList.querySelectorAll(".product-pick-row").forEach((row) => {
       if (!normalized) {
@@ -1412,7 +1440,23 @@
     });
   };
 
+  let resultSearchTimer;
+  let resultSearchGeneration = 0;
   const filterResultProductRows = (value) => {
+    {% if active_company == 'bdzapatos' %}
+    clearTimeout(resultSearchTimer);
+    const generation = ++resultSearchGeneration;
+    if (!value.trim()) { resultProductList.innerHTML = ''; return; }
+    resultSearchTimer = setTimeout(async () => {
+      try {
+        const response = await fetch('/inventory/catalog/search?mode=resultado&q=' + encodeURIComponent(value.trim()));
+        if (!response.ok || response.redirected) return;
+        const data = await response.json();
+        if (generation === resultSearchGeneration) resultProductList.innerHTML = data.html;
+      } catch (_) {}
+    }, 200);
+    return;
+    {% endif %}
     if (!resultProductList) return;
     const normalized = value.toLowerCase().trim();
     resultProductList.querySelectorAll(".result-product-pick-row").forEach((row) => {
@@ -2299,19 +2343,15 @@
       saveDraft();
     };
 
-    resultProductList.querySelectorAll(".add-result-item").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        handleAddResultItem(event.currentTarget);
-      });
+    resultProductList.addEventListener('click', event => {
+      const button = event.target.closest('.add-result-item');
+      if (button) handleAddResultItem(button);
     });
-    resultProductList.querySelectorAll(".result-qty-input").forEach((input) => {
-      input.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter") return;
-        event.preventDefault();
-        const row = input.closest("tr");
-        const button = row?.querySelector(".add-result-item");
-        if (button) handleAddResultItem(button);
-      });
+    resultProductList.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || !event.target.matches('.result-qty-input')) return;
+      event.preventDefault();
+      const button = event.target.closest('tr').querySelector('.add-result-item');
+      if (button) handleAddResultItem(button);
     });
   }
 

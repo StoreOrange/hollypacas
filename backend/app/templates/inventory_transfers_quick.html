@@ -202,6 +202,7 @@
                 <td>{{ mov.bodega_destino.name if mov.bodega_destino else "-" }}</td>
                 <td class="text-end">{{ "%.2f"|format(mov.total_cs or 0) }}</td>
                 <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm" href="/inventory/egresos/{{ mov.id }}/ticket/print?copies=1&amp;return_to=/inventory/traslados-rapidos">Recibo POS</a>
                   <a class="btn btn-outline-secondary btn-sm" href="/inventory/egresos/{{ mov.id }}/pdf" target="_blank" rel="noopener">PDF</a>
                 </td>
               </tr>
@@ -631,10 +632,13 @@
 
   {% if print_id %}
   const transferPrintUrl = "/inventory/egresos/{{ print_id }}/ticket/print?copies=1&return_to=/inventory/traslados-rapidos";
-  if (window.erpOpenPrintable) {
-    window.erpOpenPrintable(transferPrintUrl, { fallbackSameTab: true });
+  const openTransferReceipt = () => {
+    window.location.assign(transferPrintUrl);
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", openTransferReceipt, { once: true });
   } else {
-    window.open(transferPrintUrl, "_blank", "noopener");
+    openTransferReceipt();
   }
   {% endif %}
 })();

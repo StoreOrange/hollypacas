@@ -1073,7 +1073,7 @@
             </div>
             <div class="inventory-hero-stat">
               <div class="label"><i class="bi bi-box-seam"></i> Productos</div>
-              <strong>{{ productos|length }}</strong>
+              <strong>{{ inventory_catalog_total }}</strong>
             </div>
             <div class="inventory-hero-stat">
               <div class="label"><i class="bi bi-building"></i> Proveedores</div>
@@ -1115,7 +1115,7 @@
             <i class="bi bi-box-seam text-emerald-600"></i>
             Productos
           </div>
-          <strong>{{ productos|length }}</strong>
+          <strong>{{ inventory_catalog_total }}</strong>
           <div class="kpi-note">Catalogo disponible para carga inmediata.</div>
         </div>
         <div class="inventory-kpi-card">
@@ -4013,7 +4013,35 @@
     });
   }
 
+  {% if active_company == 'bdzapatos' or shoes_mode %}
+  let catalogueTimer;
+  let catalogueGeneration = 0;
+  const searchRemoteCatalogue = (value) => {
+    clearTimeout(catalogueTimer);
+    const generation = ++catalogueGeneration;
+    const query = value.trim();
+    if (!query) { productList.innerHTML = ""; return; }
+    catalogueTimer = setTimeout(async () => {
+      try {
+        const response = await fetch('/inventory/catalog/search?mode=ingresos&q=' + encodeURIComponent(query));
+        if (!response.ok || response.redirected) throw new Error('search');
+        const data = await response.json();
+        if (generation !== catalogueGeneration) return;
+        productList.innerHTML = data.html;
+        productList.querySelectorAll('.product-pick-row').forEach(wireProductRow);
+        updateSaldoCells();
+        if (!data.html) productList.innerHTML = '<tr><td colspan="7">Sin resultados. Busca por código o descripción.</td></tr>';
+      } catch (_) {
+        if (generation === catalogueGeneration) productList.innerHTML = '<tr><td colspan="7">No se pudo buscar. Intenta nuevamente.</td></tr>';
+      }
+    }, 200);
+  };
+  {% endif %}
   const filterProductRows = (value) => {
+    {% if active_company == 'bdzapatos' or shoes_mode %}
+    searchRemoteCatalogue(value);
+    return;
+    {% endif %}
     const normalized = value.toLowerCase().trim();
     productList.querySelectorAll(".product-pick-row").forEach((row) => {
       if (!normalized) {
@@ -5135,6 +5163,37 @@
       }
     });
   })();
+</script>
+{% endif %}
+
+{% if shoes_mode %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const select = document.getElementById('edit-product-select');
+  if (!select) return;
+  const input = document.createElement('input');
+  input.className = 'form-control mb-2';
+  input.placeholder = 'Buscar artículo por código o descripción';
+  select.before(input);
+  let timer, generation = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(timer); const current = ++generation;
+    timer = setTimeout(async () => {
+      try {
+        const response = await fetch('/inventory/catalog/search?q=' + encodeURIComponent(input.value));
+        if (!response.ok || response.redirected) return;
+        const data = await response.json();
+        if (current !== generation) return;
+        select.replaceChildren(new Option('Selecciona', ''));
+        for (const item of data.items) {
+          const option = new Option(item.text, item.id);
+          Object.assign(option.dataset, {cod:item.cod, desc:item.desc, linea:item.linea, segmento:item.segmento, tipoProducto:item.tipo_producto, activo:item.activo, unidadMedidaId:item.unidad_medida_id});
+          select.add(option);
+        }
+      } catch (_) {}
+    }, 200);
+  });
+});
 </script>
 {% endif %}
 {% endblock %}

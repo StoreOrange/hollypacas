@@ -3,7 +3,7 @@ from threading import Lock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-from .config import get_active_database_url
+from .config import get_active_database_url, get_active_company_key
 
 Base = declarative_base()
 
@@ -14,7 +14,7 @@ _current_database_url = ""
 
 
 def _build_engine(database_url: str):
-    return create_engine(database_url, echo=True, pool_pre_ping=True)
+    return create_engine(database_url, echo=get_active_company_key() != "bdzapatos", pool_pre_ping=True)
 
 
 def refresh_engine(force: bool = False):

@@ -17,9 +17,17 @@
       .item { margin-bottom: 6px; }
       .item-code { font-weight: 700; }
       .item-meta { font-size: 11px; color: #222; }
+      .print-controls { margin: 16px auto; max-width: 440px; padding: 12px; text-align: center; background: #f1f5f9; }
+      .print-controls button, .print-controls a { display: inline-block; padding: 10px 16px; margin: 4px; font-size: 15px; }
+      @media print { .print-controls { display: none !important; } }
     </style>
   </head>
   <body>
+    <div class="print-controls">
+      <button type="button" onclick="window.print()">Imprimir recibo POS</button>
+      <a href="{{ return_to }}">Volver a traslados</a>
+      <div>Si no aparece el diálogo automáticamente, pulsa Imprimir recibo POS y selecciona tu impresora.</div>
+    </div>
     <div class="ticket">
       <div class="center bold">REMISION DE TRASLADO</div>
       <div class="center bold">{{ company_name.upper() }}</div>

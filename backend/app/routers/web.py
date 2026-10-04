@@ -9423,6 +9423,21 @@ def inventory_page(
     productos_query = db.query(Producto).order_by(Producto.descripcion)
     if not show_inactive:
         productos_query = productos_query.filter(Producto.activo.is_(True))
+    shoes_import_mode = _is_shoes_mode()
+    inventory_search = (request.query_params.get("q") or "").strip()
+    inventory_page_number = 1
+    inventory_total_products = 0
+    inventory_pages = 1
+    if shoes_import_mode:
+        db.get_bind().echo = False
+        if inventory_search:
+            term = "%" + inventory_search + "%"
+            productos_query = productos_query.filter(or_(Producto.cod_producto.ilike(term), Producto.descripcion.ilike(term), Producto.marca.ilike(term), Producto.referencia_producto.ilike(term)))
+        inventory_total_products = productos_query.count()
+        inventory_pages = max(1, (inventory_total_products + 99) // 100)
+        raw_page = request.query_params.get("page", "1")
+        inventory_page_number = min(inventory_pages, max(1, int(raw_page) if raw_page.isdigit() else 1))
+        productos_query = productos_query.options(joinedload(Producto.linea), joinedload(Producto.segmento), joinedload(Producto.saldo), joinedload(Producto.unidad_medida)).offset((inventory_page_number - 1) * 100).limit(100)
     productos = productos_query.all()
     bodegas = _scoped_bodegas_query(db).order_by(Bodega.id).all()
     lineas = db.query(Linea).order_by(Linea.linea).all()
@@ -9500,6 +9515,22 @@ def inventory_page(
             if any(balances.get((p.id, bodega.id), Decimal("0")) > 0 for bodega in bodegas)
         }
     )
+    if shoes_import_mode:
+        stock_query = db.query(ShoeVariantStock.bodega_id, func.sum(ShoeVariantStock.existencia), func.count(func.distinct(ShoeProductVariant.producto_id))).join(ShoeProductVariant, ShoeProductVariant.id == ShoeVariantStock.variante_id).join(Producto, Producto.id == ShoeProductVariant.producto_id).filter(ShoeVariantStock.bodega_id.in_(bodega_ids), ShoeVariantStock.existencia > 0)
+        if not show_inactive:
+            stock_query = stock_query.filter(Producto.activo.is_(True))
+        summaries = {ident: (qty, count) for ident, qty, count in stock_query.group_by(ShoeVariantStock.bodega_id).all()}
+        for card in bodega_summary_cards:
+            qty, count = summaries.get(card["id"], (0, 0))
+            card["qty"] = float(qty); card["items"] = count
+        total_global_qty = sum(Decimal(str(card["qty"])) for card in bodega_summary_cards)
+        distinct_query = db.query(func.count(func.distinct(ShoeProductVariant.producto_id))).join(ShoeVariantStock, ShoeVariantStock.variante_id == ShoeProductVariant.id).join(Producto, Producto.id == ShoeProductVariant.producto_id).filter(ShoeVariantStock.bodega_id.in_(bodega_ids), ShoeVariantStock.existencia > 0)
+        if not show_inactive:
+            distinct_query = distinct_query.filter(Producto.activo.is_(True))
+        total_global_items = distinct_query.scalar() or 0
+    page_params = {"q": inventory_search, "bodega_id": str(current_bodega.id) if current_bodega else "", "show_inactive": "1" if show_inactive else "0"}
+    inventory_previous_url = "/inventory?" + urlencode(dict(page_params, page=max(1, inventory_page_number - 1)))
+    inventory_next_url = "/inventory?" + urlencode(dict(page_params, page=min(inventory_pages, inventory_page_number + 1)))
     inventory_cs_only = _inventory_cs_only_mode(db)
     recipe_explosion_on_ingreso = _recipe_explosion_on_ingreso_mode(db)
     weighted_inventory_enabled = _weighted_inventory_enabled_mode(db)
@@ -9512,6 +9543,12 @@ def inventory_page(
         {
             "request": request,
             "user": user,
+            "inventory_search": inventory_search,
+            "inventory_page_number": inventory_page_number,
+            "inventory_pages": inventory_pages,
+            "inventory_total_products": inventory_total_products,
+            "inventory_previous_url": inventory_previous_url,
+            "inventory_next_url": inventory_next_url,
             "productos": productos,
             "product_commissions": product_commissions,
             "product_promotion_commissions": product_promotion_commissions,
@@ -11084,7 +11121,7 @@ def inventory_ingresos_page(
     )
     bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
     proveedores = db.query(Proveedor).order_by(Proveedor.nombre).all()
-    productos = (
+    productos = [] if _is_shoes_mode() else (
         _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
         .order_by(Producto.descripcion)
         .all()
@@ -11146,6 +11183,8 @@ def inventory_ingresos_page(
     return request.app.state.templates.TemplateResponse(
         "inventory_ingresos.html",
         {
+            "inventory_catalog_total": db.query(func.count(Producto.id)).filter(Producto.activo.is_(True)).scalar() if _is_shoes_mode() else len(productos),
+            "active_company": get_active_company_key(),
             "request": request,
             "user": user,
             "ingresos": ingresos,
@@ -11676,7 +11715,7 @@ def inventory_egresos_page(
         tipos_query = tipos_query.filter(func.lower(EgresoTipo.nombre) != "traslado entre bodegas")
     tipos = tipos_query.order_by(EgresoTipo.nombre).all()
     bodegas = _scoped_bodegas_query(db).order_by(Bodega.name).all()
-    productos = (
+    productos = [] if _is_shoes_mode() else (
         db.query(Producto)
         .filter(Producto.activo.is_(True))
         .order_by(Producto.descripcion)
@@ -11716,6 +11755,8 @@ def inventory_egresos_page(
     return request.app.state.templates.TemplateResponse(
         "inventory_egresos.html",
         {
+            "inventory_catalog_total": db.query(func.count(Producto.id)).filter(Producto.activo.is_(True)).scalar() if _is_shoes_mode() else len(productos),
+            "active_company": get_active_company_key(),
             "request": request,
             "user": user,
             "egresos": egresos,
@@ -11827,6 +11868,24 @@ def inventory_quick_transfers_page(
             "version": settings.UI_VERSION,
         },
     )
+
+
+@router.get("/inventory/catalog/search")
+def inventory_catalog_search(request: Request, q: str = "", mode: str = "ingresos", db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+    _enforce_permission(request, user, "access.inventory.egresos" if mode in {"egresos", "resultado"} else "access.inventory.ingresos")
+    if not _is_shoes_mode():
+        raise HTTPException(status_code=404)
+    q = q.strip()
+    if not q:
+        return JSONResponse({"html": "", "items": []})
+    term = "%" + q.replace("%", r"\%").replace("_", r"\_") + "%"
+    products = db.query(Producto).options(joinedload(Producto.unidad_medida)).filter(Producto.activo.is_(True), or_(Producto.cod_producto.ilike(term, escape="\\"), Producto.descripcion.ilike(term, escape="\\"))).order_by(Producto.descripcion).limit(50).all()
+    bodegas = _scoped_bodegas_query(db).all()
+    balances = _balances_by_bodega(db, [b.id for b in bodegas], [p.id for p in products])
+    template = request.app.state.templates.env.get_template("partials/shoe_catalog_" + (mode if mode in {"egresos", "resultado"} else "ingresos") + ".html")
+    rendered = template.render(productos=products, inventory_cs_only=_inventory_cs_only_mode(db), saldos_por_bodega={p.id: {b.id: float(balances.get((p.id, b.id), 0)) for b in bodegas} for p in products})
+    items = [dict(id=p.id, text=p.cod_producto + " - " + p.descripcion, cod=p.cod_producto, desc=p.descripcion, linea=p.linea_id or "", segmento=p.segmento_id or "", tipo_producto=p.tipo_producto or "DIRECTO", activo=1 if p.activo else 0, unidad_medida_id=p.unidad_medida_id or "") for p in products]
+    return JSONResponse({"html": rendered, "items": items})
 
 
 @router.get("/inventory/traslados-rapidos/search")
@@ -11946,7 +12005,7 @@ def sales_page(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales")
-    productos = (
+    productos = [] if _is_shoes_mode() else (
         _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
         .order_by(Producto.descripcion)
         .all()
@@ -37960,6 +38019,24 @@ def inventory_import_products(
 ):
     _enforce_permission(request, user, "access.inventory.productos")
     active_company = (get_active_company_key() or "").strip().lower()
+    if active_company == "bdzapatos":
+        from ..core.shoe_inventory_import import parse, apply
+        target = "/inventory"
+        try:
+            if not file.filename or not file.filename.lower().endswith(".xlsx"):
+                raise ValueError("Archivo Excel (.xlsx) requerido")
+            rows = parse(file.file.read())
+            rate = db.query(ExchangeRate).filter(ExchangeRate.effective_date <= local_today()).order_by(ExchangeRate.effective_date.desc()).first()
+            created = apply(db, rows, _scoped_bodegas_query(db).all(), Decimal(str(rate.rate)) if rate else Decimal("0"), local_today(), str(getattr(user, "username", "Importador")))
+            db.commit()
+            message = f"Carga Miss Zapatos completa: {len(rows)} articulos; {created} nuevos. Saldos existentes verificados sin sumar unidades."
+            return RedirectResponse(target + "?success=" + quote_plus(message), status_code=303)
+        except ValueError as exc:
+            db.rollback()
+            return RedirectResponse(target + "?error=" + quote_plus(str(exc)), status_code=303)
+        except Exception:
+            db.rollback()
+            raise
     racing_mode = active_company == "racingmoto"
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         target = redirect_to or "/inventory"
@@ -38208,6 +38285,9 @@ def inventory_import_template(
 ):
     _enforce_permission(request, user, "access.inventory.productos")
     active_company = (get_active_company_key() or "").strip().lower()
+    if active_company == "bdzapatos":
+        from ..core.shoe_inventory_import import template
+        return StreamingResponse(template(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=inventario_miss_zapatos.xlsx"})
     headers = [
         "codigo",
         "descripcion",
@@ -38253,6 +38333,18 @@ def inventory_import_preview(
         return HTMLResponse(
             "<div class='alert alert-warning py-2 px-3'>Archivo vacio.</div>"
         )
+    if _is_shoes_mode():
+        from ..core.shoe_inventory_import import parse, HEADERS
+        try:
+            parsed = parse(content)
+        except ValueError as exc:
+            return HTMLResponse("<div class='alert alert-warning'>" + html_lib.escape(str(exc)) + "</div>", status_code=400)
+        headers = HEADERS + ["COSTO"]
+        table = "<div class='alert alert-info'>Formato validado: " + str(len(parsed)) + " artículos. Esta vista no guarda datos. La importación verificará los saldos existentes.</div>"
+        table += "<div class='table-responsive'><table class='table table-sm'><thead><tr>" + "".join("<th>" + html_lib.escape(h) + "</th>" for h in headers) + "</tr></thead><tbody>"
+        for row in parsed[:100]:
+            table += "<tr>" + "".join("<td>" + html_lib.escape(str(row.get(h) if row.get(h) is not None else "")) + "</td>" for h in headers) + "</tr>"
+        return HTMLResponse(table + "</tbody></table></div><p>Se muestran hasta 100 artículos.</p>")
     wb = load_workbook(io.BytesIO(content), data_only=True)
     ws = wb.active
     headers = [str(cell.value).strip() if cell.value is not None else "" for cell in ws[1]]

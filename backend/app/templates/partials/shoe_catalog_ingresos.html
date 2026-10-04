@@ -1,0 +1,35 @@
+{% for p in productos %}
+                    <tr class="product-pick-row border-b border-slate-50"  data-name="{{ p.descripcion }}" data-code="{{ p.cod_producto }}" data-saldos='{{ saldos_por_bodega[p.id]|tojson }}' data-es-por-peso="{{ 1 if p.es_por_peso else 0 }}" data-unidad-medida="{{ p.unidad_medida.abreviatura if p.unidad_medida else 'lb' }}">
+                      <td class="px-3 py-2 font-semibold text-ink">{{ p.cod_producto }}</td>
+                      <td class="px-3 py-2 text-slate">{{ p.descripcion }}</td>
+                      <td class="px-3 py-2 text-right text-slate">
+                        {% if inventory_cs_only %}
+                        C$ {{ "%.2f"|format(p.costo_producto or 0) }}
+                        {% else %}
+                        $ {% if p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0.00{% endif %}
+                        {% endif %}
+                      </td>
+                      <td class="px-3 py-2 text-right text-slate">{% if inventory_cs_only %}C$ {{ "%.2f"|format(p.precio_venta1 or 0) }}{% else %}$ {{ "%.2f"|format(p.precio_venta1_usd or 0) }}{% endif %}</td>
+                      <td class="px-3 py-2 text-right text-slate saldo-cell">0</td>
+      <td class="px-3 py-2 text-right">
+        <input class="qty-input w-16 rounded-lg border border-slate-200 px-2 py-1 text-right bg-white" type="number" step="{% if p.es_por_peso %}0.01{% else %}1{% endif %}" min="0.01" value="{% if p.es_por_peso %}0.50{% else %}1{% endif %}" />
+      </td>
+                      <td class="px-3 py-2 text-center">
+                        <button
+                          class="add-item inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-ink hover:bg-slate-50 shadow-sm"
+                          type="button"
+                          data-product-id="{{ p.id }}"
+                          data-code="{{ p.cod_producto }}"
+                          data-name="{{ p.descripcion }}"
+                          data-cost-usd="{% if p.tasa_cambio %}{{ "%.2f"|format((p.costo_producto or 0) / p.tasa_cambio) }}{% else %}0{% endif %}"
+                          data-cost-cs="{{ "%.2f"|format(p.costo_producto or 0) }}"
+                          data-price-usd="{{ "%.2f"|format(p.precio_venta1_usd or 0) }}"
+                          data-price-cs="{{ "%.2f"|format(p.precio_venta1 or 0) }}"
+                          data-es-por-peso="{{ 1 if p.es_por_peso else 0 }}"
+                          data-unidad-medida="{{ p.unidad_medida.abreviatura if p.unidad_medida else 'lb' }}"
+                        >
+                          <i class="bi bi-plus"></i>
+                        </button>
+                      </td>
+                    </tr>
+                    {% endfor %}
