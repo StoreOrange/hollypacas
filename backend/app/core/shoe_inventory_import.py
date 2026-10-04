@@ -169,6 +169,10 @@ def apply(db, rows, warehouses, rate, day, username):
         values = dict(descripcion=row['DESCRIPCION'], marca=row['MARCA'], linea_id=lines[row['LINEA'].lower()].id,
                       referencia_producto=row['CODBARRA'], precio_venta1=row['PRECIO'],
                       precio_venta1_usd=row['PRECIO']/rate if rate > 0 else None, tasa_cambio=rate if rate > 0 else None)
+        for tier in range(2, 8):
+            price = max(Decimal('0'), row['PRECIO'] - Decimal(10) * (tier - 1))
+            values[f'precio_venta{tier}'] = price
+            values[f'precio_venta{tier}_usd'] = price / rate if rate > 0 else None
         if row['COSTO'] is not None: values['costo_producto'] = row['COSTO']
         product = products.get(row['CODPRODUCTO'])
         if product:

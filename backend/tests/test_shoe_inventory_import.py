@@ -57,6 +57,18 @@ class ImportTests(unittest.TestCase):
         rows[0]['COSTO']=None
         apply(self.db,rows,self.stores,Decimal('36'),date.today(),'test');self.db.commit()
         self.assertEqual(self.db.query(Producto).first().costo_producto,464)
+    def test_all_seven_prices_initial_and_reimport(self):
+        rows=self.rows();rows[0]['PRECIO']=Decimal('500');rows[1]['PRECIO']=Decimal('20')
+        apply(self.db,rows,self.stores,Decimal('37'),date.today(),'test');self.db.commit()
+        products=self.db.query(Producto).order_by(Producto.id).all()
+        self.assertEqual([getattr(products[0],f'precio_venta{i}') for i in range(1,8)],[500,490,480,470,460,450,440])
+        self.assertEqual([getattr(products[1],f'precio_venta{i}') for i in range(1,8)],[20,10,0,0,0,0,0])
+        self.assertEqual(products[0].precio_venta7_usd,(Decimal('440')/37).quantize(Decimal('.01')))
+        rows[0]['PRECIO']=Decimal('600')
+        apply(self.db,rows,self.stores,Decimal('37'),date.today(),'test');self.db.commit()
+        self.db.refresh(products[0]);self.assertEqual(products[0].precio_venta2,590)
+        self.assertEqual(self.db.query(IngresoItem).count(),2)
+
     def test_invalid_and_duplicate_rows_rejected(self):
         raw=['SKU','Shoe','Brand',6,'Black','Line','BASE',200,1,0,0]
         for value in ['bad',-1,1.5,'NaN']:
