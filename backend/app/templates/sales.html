@@ -4359,6 +4359,22 @@
     });
   }
 
+  {% if active_company == 'bdzapatos' %}
+  if (new URLSearchParams(window.location.search).get("scan_ready") === "1") {
+    const focusForScanning = () => {
+      if (productSearch) {
+        productSearch.value = "";
+        productSearch.focus();
+      }
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("scan_ready");
+      window.history.replaceState(null, "", cleanUrl.pathname + cleanUrl.search);
+    };
+    if (document.readyState === "complete") setTimeout(focusForScanning, 100);
+    else window.addEventListener("load", () => setTimeout(focusForScanning, 100), { once: true });
+  }
+  {% endif %}
+
   {% if error %}
   try {
     if (sessionStorage.getItem("erpPendingSalesPrint") === "1") {
@@ -4400,6 +4416,7 @@
 
     if (!isMobileViewport) {
       if (printUrl) {
+        {% if active_company != 'bdzapatos' %}
         const reloadAfterPrint = () => {
           window.removeEventListener("focus", reloadAfterPrint);
           setTimeout(() => {
@@ -4407,6 +4424,7 @@
           }, 300);
         };
         window.addEventListener("focus", reloadAfterPrint, { once: true });
+        {% endif %}
         let printResult = null;
         if (window.erpOpenPrintable) {
           printResult = window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
@@ -4415,9 +4433,11 @@
           printResult = { opened: Boolean(popup), popup };
         }
         sessionStorage.removeItem("erpPendingSalesPrint");
+        {% if active_company != 'bdzapatos' %}
         setTimeout(() => {
           window.location.replace("/sales");
         }, 12000);
+        {% endif %}
       }
       return;
     }

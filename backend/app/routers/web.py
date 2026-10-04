@@ -35,7 +35,7 @@ from PIL import Image, ImageDraw, ImageFont
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from jose import JWTError, jwt
-from sqlalchemy import String, and_, create_engine, func, or_
+from sqlalchemy import String, and_, create_engine, func, or_, text as sql_text
 from sqlalchemy.orm import Session, aliased, joinedload, object_session
 
 from ..core.inventory_report_costs import branch_cost_increases
@@ -466,7 +466,12 @@ def get_sidebar_menu_layout(db: Session) -> list[dict[str, str | None]]:
             order_ids = []
     normalized_ids = _normalize_sidebar_menu_order(order_ids)
     by_id = {str(item["id"]): item for item in SIDEBAR_MENU_ITEMS}
-    return [by_id[item_id] for item_id in normalized_ids if item_id in by_id]
+    items = [dict(by_id[item_id]) for item_id in normalized_ids if item_id in by_id]
+    if company_key == "bdzapatos":
+        for item in items:
+            if item["id"] == "inventory_traslados":
+                item.update(perm="menu.inventory.traslados", alt_perm="menu.inventory.egresos")
+    return items
 
 
 def to_decimal(value: Optional[float]) -> Decimal:
@@ -562,7 +567,10 @@ def _get_user_from_cookie(request: Request, db: Session) -> Optional[User]:
 
 
 def _permission_names(user: User) -> set[str]:
-    return {perm.name for perm in (user.permissions or [])}
+    names = {perm.name for perm in (user.permissions or [])}
+    if _is_shoes_mode() and any(role.name == "cajero" for role in user.roles or []):
+        names.update({"menu.inventory.traslados", "access.inventory.traslados"})
+    return names
 
 
 def _has_permission(user: User, perm: str) -> bool:
@@ -759,6 +767,7 @@ PERMISSION_GROUPS = [
         "items": [
             {"name": "menu.inventory.ingresos", "label": "Ingresos de inventario"},
             {"name": "menu.inventory.egresos", "label": "Egresos de inventario"},
+            {"name": "menu.inventory.traslados", "label": "Traslados rápidos de zapatos"},
             {"name": "menu.inventory.requisas", "label": "Gestion de bodega y requisas"},
         ],
     },
@@ -783,6 +792,7 @@ PERMISSION_GROUPS = [
             {"name": "access.inventory.caliente", "label": "Inventario en caliente"},
             {"name": "access.inventory.ingresos", "label": "Ingresos de inventario"},
             {"name": "access.inventory.egresos", "label": "Egresos de inventario"},
+            {"name": "access.inventory.traslados", "label": "Registrar traslados rápidos de zapatos"},
             {"name": "access.inventory.requisas", "label": "Gestion de bodega y requisas"},
             {"name": "access.inventory.productos", "label": "Crear/editar productos"},
             {"name": "access.finance", "label": "Acceso a finanzas"},
@@ -1724,6 +1734,37 @@ def _get_or_create_consumidor_final(db: Session) -> Cliente:
     db.add(cliente)
     db.flush()
     return cliente
+
+
+def _next_shoe_invoice_number(db: Session, branch_code: str, bodega_id: int, *, reserve: bool = False) -> tuple[int, str]:
+    prefix = _branch_sales_series_letter(branch_code)
+    if reserve and db.get_bind().dialect.name == "postgresql":
+        lock_key = int(hashlib.sha256(("shoe-invoice:" + prefix).encode()).hexdigest()[:14], 16)
+        db.execute(sql_text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+    latest = db.query(func.max(VentaFactura.secuencia)).filter(or_(VentaFactura.bodega_id == bodega_id, VentaFactura.numero.like(prefix + "-%"))).scalar() or 0
+    seq = int(latest) + 1
+    while db.query(VentaFactura.id).filter(VentaFactura.numero == f"{prefix}-{seq:06d}").first():
+        seq += 1
+    return seq, f"{prefix}-{seq:06d}"
+
+
+def _is_shoe_cashier(user: User) -> bool:
+    roles = {role.name for role in user.roles or []}
+    return _is_shoes_mode() and "cajero" in roles and "administrador" not in roles
+
+
+def _quick_transfer_branch_bodega(db: Session, user: User):
+    if _is_shoe_cashier(user) and not (
+        user.default_bodega_id or user.default_branch_id or user.branches
+    ):
+        raise HTTPException(status_code=403, detail="El cajero requiere una bodega asignada activa")
+    return _resolve_branch_bodega(db, user)
+
+
+def _enforce_quick_transfer(request: Request, user: User) -> None:
+    if _is_shoes_mode() and _has_permission(user, "access.inventory.traslados"):
+        return
+    _enforce_permission(request, user, "access.inventory.egresos")
 
 
 def _branch_sales_series_letter(branch_code: Optional[str]) -> str:
@@ -2816,6 +2857,16 @@ def _product_price_map(producto: Producto) -> dict[str, float]:
         values[f"precio_venta{idx}"] = float(getattr(producto, f"precio_venta{idx}", 0) or 0)
         values[f"precio_venta{idx}_usd"] = float(getattr(producto, f"precio_venta{idx}_usd", 0) or 0)
     return values
+
+
+def _shoe_admin_all_stores(user: User) -> bool:
+    return _is_shoes_mode() and any(role.name == "administrador" for role in user.roles or [])
+
+
+def _utility_branch_ids(db: Session, user: User) -> set[int]:
+    if _shoe_admin_all_stores(user):
+        return {int(branch.id) for branch in _scoped_branches_query(db).all()}
+    return _user_scoped_branch_ids(db, user)
 
 
 def _user_scoped_branch_ids(db: Session, user: User) -> set[int]:
@@ -11789,7 +11840,7 @@ def inventory_quick_transfers_page(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
-    _enforce_permission(request, user, "access.inventory.egresos")
+    _enforce_quick_transfer(request, user)
     if not _is_shoes_mode():
         return RedirectResponse("/inventory/egresos?error=Vista+rapida+disponible+solo+en+modo+zapatos", status_code=303)
 
@@ -11821,14 +11872,19 @@ def inventory_quick_transfers_page(
                 return item
         return None
 
-    bodega_origen = _find_bodega_by_code("central") or bodegas[0]
-    preferred_dest = _find_bodega_by_code("kg") or _find_bodega_by_code("kgf")
+    _, assigned_bodega = _quick_transfer_branch_bodega(db, user)
+    bodega_origen = next((b for b in bodegas if assigned_bodega and b.id == assigned_bodega.id), None)
+    if not bodega_origen:
+        if _is_shoe_cashier(user):
+            raise HTTPException(status_code=403, detail="El cajero requiere una bodega asignada activa")
+        bodega_origen = _find_bodega_by_code("central") or bodegas[0]
+    preferred_dest = _find_bodega_by_code("central")
     if preferred_dest and preferred_dest.id != bodega_origen.id:
         bodega_destino = preferred_dest
     else:
         bodega_destino = next((b for b in bodegas if b.id != bodega_origen.id), bodega_origen)
 
-    transfers = (
+    transfers_query = (
         db.query(EgresoInventario)
         .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id, isouter=True)
         .filter(
@@ -11838,9 +11894,10 @@ def inventory_quick_transfers_page(
             )
         )
         .order_by(EgresoInventario.fecha.desc(), EgresoInventario.id.desc())
-        .limit(80)
-        .all()
     )
+    if _is_shoe_cashier(user):
+        transfers_query = transfers_query.filter(EgresoInventario.bodega_id == bodega_origen.id)
+    transfers = transfers_query.limit(80).all()
 
     error = request.query_params.get("error")
     success = request.query_params.get("success")
@@ -11857,6 +11914,7 @@ def inventory_quick_transfers_page(
             "request": request,
             "user": user,
             "bodegas": bodegas,
+            "origin_bodegas": [bodega_origen] if _is_shoe_cashier(user) else bodegas,
             "traslado_tipo_id": traslado_tipo.id,
             "default_origen_id": bodega_origen.id if bodega_origen else None,
             "default_destino_id": bodega_destino.id if bodega_destino else None,
@@ -11900,10 +11958,15 @@ def inventory_quick_transfers_search(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
-    _enforce_permission(request, user, "access.inventory.egresos")
+    _enforce_quick_transfer(request, user)
     if not _is_shoes_mode():
         return JSONResponse({"ok": True, "items": []})
 
+    if _is_shoe_cashier(user):
+        _, assigned = _quick_transfer_branch_bodega(db, user)
+        if not assigned or (bodega_id is not None and str(bodega_id) != str(assigned.id)):
+            raise HTTPException(status_code=403, detail="Solo puedes consultar tu bodega de origen")
+        bodega_id = assigned.id
     query = (q or "").strip()
     color_filter = (color or "").strip()
     talla_filter = (talla or "").strip()
@@ -12040,6 +12103,8 @@ def sales_page(
         )
         next_seq = (last_factura.secuencia if last_factura else 0) + 1
         prefix = _branch_sales_series_letter(branch.code)
+        if _is_shoes_mode():
+            next_seq, _ = _next_shoe_invoice_number(db, branch.code, bodega.id)
         width = 6
         next_invoice = f"{prefix}-{next_seq:0{width}d}"
     pos_print = (
@@ -14586,7 +14651,7 @@ def sales_utilitario(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.utilitario")
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _utility_branch_ids(db, user)
     def _parse_date(value: Optional[str]) -> Optional[date]:
         if not value:
             return None
@@ -14650,7 +14715,7 @@ def sales_utilitario(
     _, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
     vendedores_utilitario = db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre).all()
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _utility_branch_ids(db, user)
     branches = (
         _scoped_branches_query(db)
         .filter(Branch.id.in_(scoped_branch_ids))
@@ -14667,6 +14732,7 @@ def sales_utilitario(
             "vendedores": vendedores,
             "vendedores_utilitario": vendedores_utilitario,
             "branches": branches,
+            "can_filter_stores": not _is_shoes_mode() or _shoe_admin_all_stores(user),
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
             "branch_id": branch_id,
@@ -26291,7 +26357,10 @@ async def sales_reversion_request(
         return JSONResponse({"ok": False, "message": "No se puede anular con abonos aplicados"}, status_code=400)
 
     _, bodega = _resolve_branch_bodega(db, user)
-    if bodega and factura.bodega_id != bodega.id:
+    if _shoe_admin_all_stores(user):
+        if not factura.bodega or factura.bodega.branch_id not in _utility_branch_ids(db, user):
+            return JSONResponse({"ok": False, "message": "Factura fuera de Miss Zapatos"}, status_code=403)
+    elif bodega and factura.bodega_id != bodega.id:
         return JSONResponse({"ok": False, "message": "Factura fuera de tu bodega"}, status_code=403)
 
     config = db.query(EmailConfig).first()
@@ -26430,7 +26499,10 @@ async def sales_reversion_confirm(
         return JSONResponse({"ok": False, "message": "No se puede anular con abonos aplicados"}, status_code=400)
 
     _, bodega = _resolve_branch_bodega(db, user)
-    if bodega and factura.bodega_id != bodega.id:
+    if _shoe_admin_all_stores(user):
+        if not factura.bodega or factura.bodega.branch_id not in _utility_branch_ids(db, user):
+            return JSONResponse({"ok": False, "message": "Factura fuera de Miss Zapatos"}, status_code=403)
+    elif bodega and factura.bodega_id != bodega.id:
         return JSONResponse({"ok": False, "message": "Factura fuera de tu bodega"}, status_code=403)
 
     token_row = (
@@ -31318,7 +31390,7 @@ def inventory_egreso_ticket_print(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
-    _enforce_permission(request, user, "access.inventory.egresos")
+    _enforce_quick_transfer(request, user)
     copies_value = request.query_params.get("copies", "1")
     try:
         copies = max(int(copies_value), 1)
@@ -31331,6 +31403,11 @@ def inventory_egreso_ticket_print(
     egreso = db.query(EgresoInventario).filter(EgresoInventario.id == egreso_id).first()
     if not egreso:
         raise HTTPException(status_code=404, detail="Egreso no encontrado")
+
+    if _is_shoe_cashier(user):
+        _, assigned = _quick_transfer_branch_bodega(db, user)
+        if not assigned or egreso.bodega_id != assigned.id:
+            raise HTTPException(status_code=403, detail="El traslado pertenece a otra bodega")
 
     profile = _company_profile_payload(db)
     branch = egreso.bodega.branch if egreso.bodega else None
@@ -31917,6 +31994,7 @@ def sales_ticket_print(
             "format_amount": format_amount,
             "copies": copies,
             "page_height_mm": page_height_mm,
+            "fit_shoe_ticket": _is_shoes_mode(),
             "compact_ticket": is_amajo_mode,
             "lock_ticket_font": _is_pacasholl_company() or is_hollpacas_mode,
             "show_sale_type": show_sale_type,
@@ -33924,8 +34002,20 @@ async def inventory_create_egreso(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
-    _enforce_permission(request, user, "access.inventory.egresos")
     form = await request.form()
+    transfer_access = _is_shoes_mode() and _has_permission(user, "access.inventory.traslados")
+    if not transfer_access:
+        _enforce_permission(request, user, "access.inventory.egresos")
+    else:
+        type_raw = str(form.get("tipo_id") or "")
+        transfer_type = db.query(EgresoTipo).filter(EgresoTipo.id == int(type_raw)).first() if type_raw.isdigit() else None
+        if not transfer_type or "traslado" not in (transfer_type.nombre or "").lower():
+            _enforce_permission(request, user, "access.inventory.egresos")
+        if _is_shoe_cashier(user):
+            _, assigned = _quick_transfer_branch_bodega(db, user)
+            if not assigned or str(form.get("bodega_id")) != str(assigned.id):
+                raise HTTPException(status_code=403, detail="Solo puedes trasladar desde tu bodega asignada")
+
     redirect_to = (form.get("redirect_to") or "/inventory/egresos").strip()
     if not redirect_to.startswith("/"):
         redirect_to = "/inventory/egresos"
@@ -35672,6 +35762,7 @@ async def sales_create_invoice(
     item_qtys = form.getlist("item_cantidad")
     item_peso_lbs = form.getlist("item_peso_lbs")
     item_prices = form.getlist("item_precio")
+    item_price_tiers = form.getlist("item_price_tier")
     item_discount_pcts = form.getlist("item_descuento_pct")
     item_roles = form.getlist("item_role")
     item_combo_groups = form.getlist("item_combo_group")
@@ -35756,6 +35847,8 @@ async def sales_create_invoice(
     prefix = _branch_sales_series_letter(branch.code)
     width = 6
     numero = f"{prefix}-{next_seq:0{width}d}"
+    if _is_shoes_mode():
+        next_seq, numero = _next_shoe_invoice_number(db, branch.code, bodega.id, reserve=True)
 
     now_local = local_now().replace(second=0, microsecond=0)
     if pacasholl_libreado_enabled and preventa_id_raw:
@@ -35815,6 +35908,7 @@ async def sales_create_invoice(
                     "price_usd": None,
                     "price_cs": None,
                     "price_input": to_float(item_prices[index] if index < len(item_prices) else 0),
+                    "price_tier": _normalize_price_tier(item_price_tiers[index] if index < len(item_price_tiers) else "1"),
                     "discount_pct": _discount_percent_value(item_discount_pcts[index] if index < len(item_discount_pcts) else "0"),
                     "role": item_roles[index] if index < len(item_roles) else None,
                     "combo_group": item_combo_groups[index] if index < len(item_combo_groups) else None,
@@ -36195,6 +36289,17 @@ async def sales_create_invoice(
                 precio_cs = precio_usd * tasa
         else:
             price = to_float(str(src.get("price_input") or 0))
+            if _is_shoes_mode() and not is_gift_item and not (
+                combo_role_raw in {"parent", "discount"}
+                and str(src.get("combo_group") or "").strip() in combo_parent_prices
+            ):
+                tier = _normalize_price_tier(str(src.get("price_tier") or "1"))
+                field = f"precio_venta{tier}" + ("_usd" if moneda == "USD" else "")
+                minimum = Decimal(str(getattr(producto, field, 0) or 0)).quantize(Decimal("0.01"))
+                if not Decimal(str(price)).is_finite() or Decimal(str(price)).quantize(Decimal("0.01")) < minimum:
+                    db.rollback()
+                    message = f"El precio de {producto.cod_producto} no puede ser menor a {minimum:.2f} de la lista P{tier}. Selecciona otra lista de precios."
+                    return RedirectResponse("/sales?error=" + quote_plus(message), status_code=303)
             if moneda == "USD":
                 precio_usd = price
                 precio_cs = price * tasa

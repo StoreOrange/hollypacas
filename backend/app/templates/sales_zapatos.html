@@ -1910,6 +1910,7 @@
         <span class="text-brand fw-bold">${payload.code}</span>
         ${badgeHtml}
         <input type="hidden" name="item_producto_id" value="${payload.productId}" />
+        <input type="hidden" name="item_price_tier" value="${row.dataset.priceTier}" />
         <input type="hidden" name="item_variante_id" value="${payload.variantId || ""}" />
         <input type="hidden" name="item_cantidad" value="${payload.qtyValue}" />
         <input type="hidden" name="item_role" value="${payload.role || ""}" />
@@ -3523,6 +3524,17 @@
       refreshVisibleProductBalances();
       refreshVariantBalances();
     });
+    itemsTable.addEventListener("change", (event) => {
+      if (!event.target.matches(".row-price")) return;
+      const row = event.target.closest("tr");
+      const minimum = Number(row.dataset.minimumPrice || 0);
+      if (!Number.isFinite(Number(event.target.value)) || Number(event.target.value) < minimum) {
+        event.target.value = minimum.toFixed(2);
+        event.target.setCustomValidity("");
+        event.target.dispatchEvent(new Event("input", { bubbles: true }));
+        if (typeof Swal !== "undefined") Swal.fire({ icon: "warning", title: "Precio inferior a la lista", text: `El mínimo es ${minimum.toFixed(2)} en P${row.dataset.priceTier}. Selecciona la lista requerida y agrega nuevamente el producto.` });
+      }
+    });
     itemsTable.addEventListener("input", (event) => {
       const row = event.target.closest("tr");
       if (!row) return;
@@ -3545,6 +3557,10 @@
         qtyHidden.value = Math.trunc(qty).toFixed(2);
         qtyInput.value = Math.trunc(qty).toString();
       }
+      const minimum = Number(row.dataset.minimumPrice || 0);
+      const validPrice = Number(priceInput?.value || 0);
+      priceInput?.setCustomValidity(!Number.isFinite(validPrice) || validPrice < minimum
+        ? `El precio mínimo de la lista P${row.dataset.priceTier} es ${minimum.toFixed(2)}. Selecciona otra lista para cobrar menos.` : "");
       const price = parseFloat(priceInput ? priceInput.value : 0);
       const moneda = monedaField.value || "USD";
       const subtotal = price * qty;
@@ -4563,6 +4579,18 @@
     }, SCAN_IDLE_RESET);
   });
 
+  if (new URLSearchParams(window.location.search).get("scan_ready") === "1") {
+    const focusForScanning = () => {
+      productSearch.value = "";
+      productSearch.focus();
+      const url = new URL(window.location.href);
+      url.searchParams.delete("scan_ready");
+      history.replaceState(null, "", url.pathname + url.search);
+    };
+    if (document.readyState === "complete") setTimeout(focusForScanning, 100);
+    else window.addEventListener("load", () => setTimeout(focusForScanning, 100), { once: true });
+  }
+
   {% if error %}
   if (typeof Swal !== "undefined") {
     Swal.fire({
@@ -4600,15 +4628,13 @@
     };
     const openPrint = () => {
       if (!printUrl) return;
-      window.addEventListener("focus", reloadAfterPrint, { once: true });
+
       if (window.erpOpenPrintable) {
         window.erpOpenPrintable(printUrl, { fallbackSameTab: true });
       } else {
         window.open(printUrl, "erp_print_window", "width=520,height=780,resizable=yes,scrollbars=yes");
       }
-      setTimeout(() => {
-        window.location.replace("/sales");
-      }, 12000);
+
     };
 
     printLink.addEventListener("click", (event) => {

@@ -93,12 +93,21 @@
         color: #fff;
         border-color: #111827;
       }
+      {% if fit_shoe_ticket %}
+      /* Miss Zapatos: compact branding, keeping the sale text readable. */
+      .ticket.shoe-ticket .logo { width: auto; height: auto; max-width: 70mm; max-height: 16mm; margin: 0 auto 4px; }
+      .ticket.shoe-ticket .top-meta { margin-bottom: 3px; }
+      .ticket.shoe-ticket .footer { margin-top: 5px; }
+      {% endif %}
       @media print {
         .screen-actions { display: none !important; }
         html, body { width: 80mm !important; min-width: 80mm !important; overflow: visible !important; }
         .ticket { width: 76mm !important; max-width: 76mm !important; margin: 0 auto !important; transform: none !important; zoom: 1 !important; overflow: visible !important; page-break-inside: auto !important; break-inside: auto !important; }
         .ticket, .ticket * { max-width: 100% !important; }
         .item-block { break-inside: avoid-page !important; page-break-inside: avoid !important; }
+        {% if fit_shoe_ticket %}
+        html, body { width: 76mm !important; min-width: 76mm !important; }
+        {% endif %}
         .ticket.lock-font { font-size: 14px !important; }
         .ticket.lock-font .small { font-size: 12px !important; }
       }
@@ -115,7 +124,7 @@
         <button class="screen-btn" type="button" id="ticket-refresh-return">Nueva venta</button>
       </div>
     </div>
-    <div class="ticket{% if compact_ticket %} compact{% endif %}{% if lock_ticket_font %} lock-font{% endif %}">
+    <div class="ticket{% if fit_shoe_ticket %} shoe-ticket{% endif %}{% if compact_ticket %} compact{% endif %}{% if lock_ticket_font %} lock-font{% endif %}">
       <div class="top-meta">
         <span class="left">{{ factura.numero }} - TICKET</span>
         <span class="right">{{ branding.get("website") or branding.get("trade_name", "Empresa") }}</span>
@@ -228,6 +237,87 @@
           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         };
 
+        {% if fit_shoe_ticket %}
+        // Measure the actual receipt after images and fonts load, instead of
+        // estimating its roll length from the number of lines.
+        const fitReceiptPaper = () => {
+          const ticket = document.querySelector(".ticket");
+          if (!ticket) return;
+          const measured = ticket.cloneNode(true);
+          measured.setAttribute("aria-hidden", "true");
+          Object.assign(measured.style, {
+            position: "absolute", left: "-10000px", top: "0",
+            width: "76mm", maxWidth: "76mm", margin: "0", visibility: "hidden"
+          });
+          document.body.appendChild(measured);
+          const heightMm = Math.ceil(measured.getBoundingClientRect().height * 25.4 / 96 + 3);
+          measured.remove();
+          let paperStyle = document.getElementById("shoe-receipt-paper");
+          if (!paperStyle) {
+            paperStyle = document.createElement("style");
+            paperStyle.id = "shoe-receipt-paper";
+            document.head.appendChild(paperStyle);
+          }
+          paperStyle.textContent = `@page { size: 80mm ${heightMm}mm; margin: 1mm 2mm; }`;
+        };
+        window.addEventListener("beforeprint", fitReceiptPaper);
+        {% endif %}
+
+        {% if fit_shoe_ticket %}
+        let printed = 0;
+        let printing = false;
+        let printRequestedAt = 0;
+        let nextPrintTimer = null;
+        const returnUrl = {{ (return_to or '/sales')|tojson }};
+        const salesReturnUrl = new URL(returnUrl, window.location.origin);
+        salesReturnUrl.searchParams.set("scan_ready", "1");
+
+        const finishFlow = () => {
+          if (exited) return;
+          exited = true;
+          clearTimeout(nextPrintTimer);
+          if (window.opener && !window.opener.closed) {
+            try {
+              window.opener.location.replace(salesReturnUrl.href);
+              window.opener.focus();
+              window.close();
+            } catch (_) {}
+          }
+          // Also return when the ticket was opened in this tab, or the
+          // browser does not allow closing its window.
+          setTimeout(() => {
+            if (!window.closed) window.location.replace(salesReturnUrl.href);
+          }, 180);
+        };
+
+        const completeCopy = () => {
+          if (exited || !printing) return;
+          printing = false;
+          printed += 1;
+          if (printed >= copies) {
+            finishFlow();
+          } else {
+            nextPrintTimer = setTimeout(triggerPrint, 280);
+          }
+        };
+
+        const triggerPrint = () => {
+          if (exited || printing || printed >= copies) return;
+          printing = true;
+          printRequestedAt = Date.now();
+          fitReceiptPaper();
+          window.print();
+          // Some browsers omit afterprint but return from a blocking dialog.
+          if (printing && Date.now() - printRequestedAt > 600) completeCopy();
+        };
+        window.addEventListener("afterprint", completeCopy);
+        window.addEventListener("focus", () => {
+          if (printing && Date.now() - printRequestedAt > 600) {
+            setTimeout(completeCopy, 0);
+          }
+        });
+
+        {% else %}
         let printed = 0;
         let printing = false;
         let printRequestedAt = 0;
@@ -246,6 +336,7 @@
               finishFlow();
             }
           }, Math.max(3500, copies * 2200));
+          {% if fit_shoe_ticket %}fitReceiptPaper();{% endif %}
           window.print();
         };
 
@@ -287,6 +378,7 @@
           }
         }, 30000);
 
+        {% endif %}
         if (printNowBtn) {
           printNowBtn.addEventListener("click", () => triggerPrint());
         }
@@ -297,6 +389,7 @@
         }
 
         waitForTicketReady().finally(() => {
+          {% if fit_shoe_ticket %}fitReceiptPaper();{% endif %}
           setTimeout(() => triggerPrint(), 180);
         });
       });
