@@ -2144,11 +2144,44 @@
 {% if active_company == 'bdzapatos' %}
 <script>
 document.querySelectorAll('form[action="/inventory/import"]').forEach(form => {
-  form.addEventListener('submit', () => {
-    form.querySelectorAll('button').forEach(button => {
-      button.disabled = true;
-      if (button.type === 'submit') button.textContent = 'Importando… espera la confirmación';
+  let sending = false;
+  const status = document.createElement('div');
+  status.className = 'small text-primary mt-2';
+  status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', 'polite');
+  form.after(status);
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (sending || !form.reportValidity()) return;
+    sending = true;
+    const buttons = Array.from(form.querySelectorAll('button'));
+    const originalLabels = buttons.map(button => button.innerHTML);
+    buttons.forEach(button => { button.disabled = true; });
+    status.textContent = 'Subiendo archivo… 0%';
+    const restore = message => {
+      sending = false;
+      status.textContent = message;
+      buttons.forEach((button, index) => { button.disabled = false; button.innerHTML = originalLabels[index]; });
+    };
+    const upload = new XMLHttpRequest();
+    upload.open('POST', form.action);
+    upload.upload.addEventListener('progress', event => {
+      if (event.lengthComputable) status.textContent = 'Subiendo archivo… ' + Math.round(event.loaded * 100 / event.total) + '%';
     });
+    upload.upload.addEventListener('load', () => {
+      status.textContent = 'Archivo enviado. Validando y guardando inventario; espera la confirmación.';
+    });
+    upload.addEventListener('load', () => {
+      const target = new URL(upload.responseURL || form.action, window.location.href);
+      if (upload.status >= 200 && upload.status < 400 && target.pathname !== '/inventory/import') {
+        window.location.assign(target.href);
+      } else {
+        restore('El servidor no confirmó la importación (HTTP ' + upload.status + '). Verifica el estado antes de volver a enviar.');
+      }
+    });
+    upload.addEventListener('error', () => restore('Se perdió la conexión. Verifica si el inventario se guardó antes de volver a enviar.'));
+    upload.addEventListener('abort', () => restore('Envío interrumpido. Verifica el inventario antes de volver a enviar.'));
+    upload.send(new FormData(form));
   });
 });
 async function previewShoeImport(button) {
