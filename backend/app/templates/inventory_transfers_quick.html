@@ -122,6 +122,7 @@
               <button id="scan-add" class="btn btn-primary" type="button">Agregar</button>
             </div>
           </div>
+          <div id="scan-status" class="col-12 small" role="status" aria-live="polite"></div>
           <div class="col-12 col-lg-4 d-flex align-items-end">
             <button type="button" class="btn btn-outline-secondary btn-sm w-100" data-bs-toggle="modal" data-bs-target="#variant-search-modal">
               <i class="bi bi-search me-1"></i> Buscar variante manual
@@ -273,6 +274,14 @@
   const variantSearchStatus = document.getElementById("variant-search-status");
 
   const items = new Map();
+  const scanStatus = document.getElementById("scan-status");
+  const setScanStatus = (message, error = false) => {
+    scanStatus.textContent = message;
+    scanStatus.className = `col-12 small ${error ? "text-danger fw-bold" : "text-success"}`;
+  };
+  const exactMatches = (rows, code) => rows.filter(row =>
+    [row.cod_variante, row.scan_code].some(value => String(value || "").trim().toUpperCase() === code.trim().toUpperCase()));
+  let scanChain = Promise.resolve(), scansPending = 0, scanGeneration = 0;
   let manualRowsCache = [];
   let manualTimer = null;
   let variantTimer = null;
@@ -343,12 +352,19 @@
     }
   };
 
-  const addVariantItem = (variant) => {
+  const addVariantItem = (variant, fromScanner = false) => {
     if (!variant || !variant.variant_id) return;
     const key = String(variant.variant_id);
+    const available = Number(variant.existencia || 0);
+    const current = Number(items.get(key)?.cantidad || 0);
+    if (!Number.isFinite(available) || current + 1 > available) {
+      setScanStatus(`Saldo insuficiente para ${variant.cod_variante}. Disponible: ${available}; en traslado: ${current}.`, true);
+      return false;
+    }
     if (items.has(key)) {
       const row = items.get(key);
-      row.cantidad = Math.min(Number(row.existencia || 0), Number(row.cantidad || 0) + 1);
+      row.existencia = available;
+      row.cantidad = current + 1;
     } else {
       items.set(key, {
         variant_id: Number(variant.variant_id),
@@ -365,7 +381,9 @@
       });
     }
     updateRows();
-    resetSearchAndFocusScanner();
+    if (!fromScanner) resetSearchAndFocusScanner();
+    setScanStatus(`Agregado: ${variant.cod_variante}. Cantidad: ${current + 1}.`);
+    return true;
   };
 
   const resetSearchAndFocusScanner = () => {
@@ -496,30 +514,39 @@
     }
   };
 
-  const addByScan = async () => {
-    const code = (scanInput.value || "").trim();
-    if (!code) return;
-    const selectedBodega = (origenEl?.value || "").trim();
-    const params = new URLSearchParams();
-    params.set("q", code);
-    params.set("limit", "10");
-    if (selectedBodega) params.set("bodega_id", selectedBodega);
+  const resolveScan = async (code, selectedBodega, generation) => {
+    if (generation !== scanGeneration) return;
+    const params = new URLSearchParams({q: code, limit: "10", exact: "true", bodega_id: selectedBodega});
     try {
       const resp = await fetch(`/inventory/traslados-rapidos/search?${params.toString()}`, {
         headers: { "X-Requested-With": "fetch" },
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok) throw new Error("No se pudo verificar el codigo y su existencia.");
       const data = await resp.json();
-      const rows = data.items || [];
-      const exact = rows.find((r) => String(r.cod_variante || "").toLowerCase() === code.toLowerCase()) || rows[0];
-      if (exact && Number(exact.existencia || 0) > 0) {
-        addVariantItem(exact);
-      } else {
-        manualSearchStatus.textContent = "No se encontro variante con stock para ese codigo.";
+      if (generation !== scanGeneration || origenEl.value !== selectedBodega) return;
+      if (!data.ok || String(data.bodega_id) !== selectedBodega) throw new Error("No se pudo verificar la bodega de origen.");
+      const matches = exactMatches(data.items || [], code);
+      if (matches.length !== 1) {
+        setScanStatus(matches.length ? `Codigo ambiguo: ${code}. No se agrego ningun articulo.` : `Codigo inexistente: ${code}. No se agrego ningun articulo.`, true);
+        return;
       }
+      addVariantItem(matches[0], true);
+    } catch (error) {
+      if (generation === scanGeneration) setScanStatus(`${error.message} No se agrego ningun articulo.`, true);
     } finally {
-      if (scanInput) scanInput.focus();
+      if (!document.querySelector(".modal.show") && [scanInput, scanAdd, document.body].includes(document.activeElement)) scanInput.focus({preventScroll:true});
     }
+  };
+  const addByScan = () => {
+    const code = (scanInput.value || "").trim();
+    if (!code) return;
+    const selectedBodega = (origenEl?.value || "").trim();
+    if (!selectedBodega) { setScanStatus("Selecciona la bodega de origen.", true); return; }
+    const generation = scanGeneration;
+    scanInput.value = "";
+    scanInput.focus({preventScroll:true});
+    scansPending++;
+    scanChain = scanChain.then(() => resolveScan(code, selectedBodega, generation)).finally(() => { scansPending--; });
   };
 
   scanAdd?.addEventListener("click", addByScan);
@@ -552,6 +579,7 @@
     });
   });
   clearBtn?.addEventListener("click", () => {
+    scanGeneration++;
     items.clear();
     updateRows();
     scanInput?.focus();
@@ -565,20 +593,26 @@
   manualSearchInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      const first = manualRowsCache.find((r) => Number(r.existencia || 0) > 0);
-      if (first) {
-        addVariantItem(first);
+      const matches = exactMatches(manualRowsCache, manualSearchInput.value || "");
+      if (matches.length === 1) {
+        addVariantItem(matches[0]);
         return;
       }
       searchManual();
     }
   });
   origenEl?.addEventListener("change", () => {
+    scanGeneration++;
     items.clear();
     updateRows();
     searchManual();
   });
   form?.addEventListener("submit", (e) => {
+    if (scansPending) {
+      e.preventDefault();
+      setScanStatus("Espera a que terminen las lecturas antes de guardar o imprimir.", true);
+      return;
+    }
     if (!items.size) {
       e.preventDefault();
       alert("Agrega al menos una variante al traslado.");

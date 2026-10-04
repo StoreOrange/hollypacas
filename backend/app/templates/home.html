@@ -606,6 +606,8 @@
         </div>
       </div>
 
+      {% if shoe_home %}{% include "partials/shoe_home_dashboard.html" %}{% endif %}
+
       {% if can_view_laboratory_notifications and home_laboratory_notifications %}
       <section class="home-lab-alerts" aria-labelledby="labAlertsTitle">
         <div class="home-lab-alerts-head">

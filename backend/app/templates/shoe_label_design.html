@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+.label-workspace{background:#e9eef4;border:1px solid #d4dde9;border-radius:16px;padding:24px;overflow:auto;min-height:330px}
+#label-board{display:block;background:white;box-shadow:0 6px 22px #14213726;margin:auto;max-width:none;touch-action:none;user-select:none}
+.label-node{cursor:grab;outline:none}.label-node.dragging{cursor:grabbing}.label-node .node-hit{fill:transparent;stroke:transparent;stroke-width:.2}
+.label-node:hover .node-hit{stroke:#93c5fd}.label-node.selected .node-hit,.label-node:focus .node-hit{stroke:#2563eb;stroke-dasharray:.7 .4}
+.label-node.related .node-hit{stroke:#a855f7}.label-node.colliding .node-hit{stroke:#dc2626;fill:#fee2e240}.label-guides{pointer-events:none}
+.label-node text,.label-node .bars{pointer-events:none}.canvas-panel{position:sticky;top:16px}
+@media(max-width:991px){.canvas-panel{position:static}.label-workspace{padding:12px}}
+</style>
+{% endblock %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+{% include "partials/sidebar.html" %}
+<main class="container-fluid p-3 p-lg-4" style="min-width:0;max-width:1600px">
+<nav class="d-flex gap-2 mb-3"><a class="btn btn-outline-secondary btn-sm" href="/data">← Datos</a><a class="btn btn-outline-primary btn-sm" href="/inventory/etiquetas-zapatos">Imprimir etiquetas</a></nav>
+<h1 class="h3">Diseño y calibración de etiquetas</h1>
+<p class="text-muted">Arrastre los textos y las barras para ubicarlos. Referencia a la izquierda y precio a la derecha por defecto.</p>
+<div class="d-flex gap-2 flex-wrap mb-3">
+<button id="save-design" class="btn btn-primary">Guardar diseño</button><button id="undo" class="btn btn-outline-secondary" disabled>Deshacer</button><button id="preview" class="btn btn-outline-secondary">Ver PDF real</button><button id="reset" class="btn btn-outline-secondary">Restaurar diseño base</button>
+</div>
+<div id="status" class="small mb-3" role="status" aria-live="polite">Cargando lienzo…</div>
+<div class="row g-3">
+<section class="col-xl-8 col-lg-7"><div class="canvas-panel">
+<div class="card card-body mb-3"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><strong>Lienzo editable</strong><label class="small"><input id="show-guides" type="checkbox" checked> Guías inteligentes</label><label>Zoom <select id="zoom" class="form-select form-select-sm d-inline-block" style="width:auto"><option value="1">Ajustar</option><option value="1.5">150%</option><option value="2">200%</option></select></label></div>
+<div class="label-workspace" id="board-container"><svg id="label-board" role="group" aria-label="Lienzo de etiqueta: seleccione y arrastre los elementos"></svg></div>
+<div class="small text-muted mt-2">Azul: alineación. Verde: distancia en mm. Rojo: superposición o separación menor de 0.5 mm. Las guías no se imprimen. Movimiento libre sin imanes; una posición que choque se descarta al soltar. Flechas: 0.1 mm; Mayús + flechas: 1 mm. El lienzo se edita derecho; el giro se aplica al PDF.</div>
+<div id="alignment-status" class="small text-primary mt-2" role="status">Seleccione un elemento para ver sus guías.</div>
+<div id="geometry-errors" class="small text-danger mt-2" role="status"></div>
+</div>
+<div id="pdf-panel" class="card card-body" hidden><div class="d-flex justify-content-between"><strong>PDF real de salida</strong><button id="close-pdf" class="btn btn-sm btn-outline-secondary">Cerrar</button></div><p class="small text-muted mt-2">Revise el giro y la posición final. El lienzo usa el mismo cálculo de posiciones que este PDF.</p><iframe id="preview-frame" title="PDF real de la etiqueta" style="width:100%;height:420px;border:0"></iframe></div>
+</div></section>
+<section class="col-xl-4 col-lg-5"><form id="design-form" class="card card-body">
+<h2 class="h5">Elemento seleccionado</h2>
+<label class="form-label" for="element">Elemento</label><select class="form-select mb-3" id="element"></select>
+<div class="row g-2"><div class="col-6"><label for="element-x" class="form-label">Posición X (mm)</label><input id="element-x" class="form-control" type="number" step="any" min="0" max="150" required></div><div class="col-6"><label for="element-y" class="form-label">Posición Y (mm)</label><input id="element-y" class="form-control" type="number" step="any" min="0" max="150" required></div></div>
+<div class="small text-muted mt-2">X corresponde al punto de alineación; Y a la base del texto o al borde superior de las barras.</div>
+<div id="text-controls" class="mt-3"><label for="element-size" class="form-label">Tamaño del texto (pt)</label><input id="element-size" class="form-control mb-2" type="number" min="4" max="32" step="0.5"><label for="element-align" class="form-label">Alineación</label><select id="element-align" class="form-select mb-2"><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select><div class="d-flex gap-3"><label><input id="element-bold" type="checkbox"> Negrita</label><label><input id="element-visible" type="checkbox"> Mostrar</label></div></div>
+<button id="center-element" type="button" class="btn btn-outline-primary btn-sm mt-3">Centrar este elemento</button>
+<hr><h2 class="h6">Etiqueta</h2><div class="row g-2" id="dimensions"></div>
+<label for="font" class="form-label mt-3">Tipografía general</label><select id="font" class="form-select"><option value="Helvetica">Helvetica · Sans serif</option><option value="Times">Times · Serif</option><option value="Courier">Courier · Monoespaciada</option></select>
+<label for="rotation" class="form-label mt-3">Giro de impresión</label><select id="rotation" class="form-select"><option value="0">Normal (0°)</option><option value="180">Girar 180°</option></select>
+<details class="mt-3"><summary>Ajustes de barras y desplazamiento</summary><div id="advanced" class="row g-2 mt-1"></div></details>
+<p class="small text-muted mt-3 mb-0">Los cambios se guardan solo al pulsar Guardar diseño. Se conservan los márgenes y se comprueban las superposiciones.</p>
+</form></section>
+</div>
+</main></div>
+<script id="label-design-data" type="application/json">{{ design|tojson }}</script>
+<script id="label-default-data" type="application/json">{{ defaults|tojson }}</script>
+<script src="/static/shoe_label_guides.js?v=1"></script>
+<script src="/static/shoe_label_editor.js?v=2"></script>
+{% endblock %}

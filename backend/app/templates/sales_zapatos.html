@@ -1942,7 +1942,7 @@
     updateTotals();
     refreshVisibleProductBalances();
     const qtyInput = row.querySelector(".row-qty");
-    if (qtyInput) {
+    if (qtyInput && !barcodeQueueRunning) {
       qtyInput.focus();
       qtyInput.select();
     }
@@ -1996,10 +1996,8 @@
     if (typeof Swal === "undefined") return;
     productNavMode = "paused";
     Swal.fire(config).then(() => {
-      productNavMode = "panel";
-      if (productListPanel) {
-        productListPanel.focus();
-      }
+      productNavMode = "search";
+      focusScannerInput(true, true);
     });
   };
 
@@ -2134,7 +2132,8 @@
   };
 
   const addVariantToInvoice = (variant, qtyValueRaw) => {
-    const qty = parseQty(qtyValueRaw || 1);
+    const qty = Number(qtyValueRaw ?? 1);
+    if (!Number.isSafeInteger(qty) || qty <= 0) return false;
     const maxQty = Number(variant.existencia || 0);
     if (!maxQty || maxQty <= 0) {
       pauseNavForAlert({ icon: "warning", title: "Sin existencia", text: "No hay saldo para esta variante." });
@@ -2143,7 +2142,14 @@
     const variantId = String(variant.variant_id || "");
     if (!variantId) return false;
     const existingRow = findInvoiceRow(variant.producto_id, variantId);
+    const inInvoice = getInvoiceVariantQty(variant.producto_id, variantId);
+    if (!Number.isFinite(maxQty) || inInvoice + qty > maxQty) {
+      pauseNavForAlert({icon: "warning", title: "Saldo insuficiente",
+        text: `Disponible: ${maxQty} | En factura: ${inInvoice}`});
+      return false;
+    }
     if (existingRow) {
+      existingRow.dataset.maxQty = String(maxQty);
       const qtyHidden = existingRow.querySelector("input[name='item_cantidad']");
       const qtyInputRow = existingRow.querySelector(".row-qty");
       const currentQty = parseFloat(qtyHidden?.value || 0);
@@ -3243,7 +3249,9 @@
           productSearch.select();
         }, 0);
       }
+      return added;
     }
+    return false;
   };
 
   const handleProductNav = (event) => {
@@ -4376,7 +4384,7 @@
   const shouldKeepScannerFocus = () => {
     if (!productSearch) return false;
     if (document.hidden) return false;
-    if (document.querySelector(".modal.show")) return false;
+    if (document.querySelector(".modal.show, .swal2-container")) return false;
     const vendedorModal = document.getElementById("vendedor-modal");
     if (vendedorModal && window.getComputedStyle(vendedorModal).display !== "none") {
       return false;
@@ -4384,10 +4392,10 @@
     return true;
   };
 
-  const focusScannerInput = (selectText = false) => {
+  const focusScannerInput = (selectText = false, afterScan = false) => {
     if (!shouldKeepScannerFocus()) return;
     const active = document.activeElement;
-    if (active && active !== productSearch && isEditableElement(active)) return;
+    if (!afterScan && active && active !== productSearch && isEditableElement(active)) return;
     if (active !== productSearch) {
       productSearch.focus({ preventScroll: true });
     }
@@ -4429,6 +4437,10 @@
   const queueBarcode = (code) => {
     const normalized = (code || "").toUpperCase().trim();
     if (!normalized || normalized.length < SCAN_MIN_LEN) return;
+    clearTimeout(searchTimer);
+    productSearch.value = "";
+    productNavMode = "search";
+    focusScannerInput(false, true);
     barcodeQueue.push(normalized);
     processBarcodeQueue();
   };
@@ -4439,7 +4451,6 @@
     }
     const normalized = code.toUpperCase().trim();
     clearTimeout(searchTimer);
-    productSearch.value = normalized;
     productSearch.classList.add("barcode-ready");
     updateScannerBadge("working", `Leyendo ${normalized}`);
     updateScannerLast(normalized);
@@ -4456,7 +4467,7 @@
           const addedVariant = addVariantToInvoice(exact, 1);
           productSearch.classList.remove("barcode-ready");
           updateScannerBadge(addedVariant ? "ready" : "error", addedVariant ? "Lector listo" : "Sin stock en variante");
-          setTimeout(() => focusScannerInput(true), 0);
+          setTimeout(() => focusScannerInput(false), 0);
           return { ok: Boolean(addedVariant), reason: addedVariant ? "ok_variant" : "variant_no_stock" };
         }
       }
@@ -4477,11 +4488,15 @@
       const codeValue = (row.dataset.code || "").toUpperCase().trim();
       return codeValue === normalized;
     });
-    setActiveProduct(exactIndex >= 0 ? exactIndex : 0);
+    if (exactIndex < 0) {
+      updateScannerBadge("error", "Codigo no encontrado");
+      return { ok: false, reason: "not_found" };
+    }
+    setActiveProduct(exactIndex);
     const added = await addActiveProduct();
     productSearch.classList.remove("barcode-ready");
     updateScannerBadge(added ? "ready" : "error", added ? "Lector listo" : "No se pudo agregar");
-    setTimeout(() => focusScannerInput(true), 0);
+    setTimeout(() => focusScannerInput(false), 0);
     return { ok: Boolean(added), reason: added ? "ok" : "add_failed" };
   };
 
@@ -4496,6 +4511,10 @@
         console.error("Error agregando codigo de barra", error);
         updateScannerBadge("error", "Error de lector");
         setTimeout(() => updateScannerBadge("ready", "Lector listo"), 900);
+      } finally {
+        productSearch.classList.remove("barcode-ready");
+        // Do not select or clear text from a new scan already being captured.
+        focusScannerInput(false);
       }
     }
     barcodeQueueRunning = false;
@@ -4505,7 +4524,8 @@
     if (paymentModal && paymentModal.classList.contains("show")) return;
     if (comboModal && comboModal.classList.contains("show")) return;
     if (event.ctrlKey || event.altKey || event.metaKey) return;
-    if (!productSearch) return;
+    if (!productSearch || !shouldKeepScannerFocus()) return;
+    if (event.target !== productSearch && isEditableElement(event.target)) return;
 
     if (event.key === "Enter") {
       if (scannerBurstActive && barcodeBuffer.length >= SCAN_MIN_LEN) {

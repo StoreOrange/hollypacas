@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<script src="/static/vendor/qz-tray-2.2.5.js"></script>
+<script src="/static/shoe_label_printer.js?v=3"></script>
+{% if embedded %}<style>.mobile-global-nav{display:none!important}body{padding-top:0!important}</style>{% endif %}
+{% endblock %}
+{% block content %}
+{% if not embedded %}<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">{% include "partials/sidebar.html" %}{% endif %}
+<main class="p-3" style="min-width:0">
+{% if not embedded %}<a class="btn btn-outline-secondary btn-sm mb-3" href="/inventory/ingresos">← Volver a ingresos</a>{% endif %}
+<h1 class="h4">Etiquetas del ingreso #{{ receipt.id }}</h1>
+<p class="text-muted mb-2">{{ receipt.fecha }} · {{ receipt.bodega.name if receipt.bodega else '' }} · {{ design.width }} × {{ design.height }} mm</p>
+<div class="alert alert-info py-2">Las cantidades son las unidades registradas en este ingreso, una etiqueta por unidad. Puede desmarcar variantes; las cantidades no se editan. Volver a imprimir no modifica el inventario.</div>
+<div class="card card-body mb-3">
+<div class="row g-2">
+<div class="col-md-5"><label class="form-label" for="receipt-printer-source">Impresora conectada a</label><select id="receipt-printer-source" class="form-select"><option value="client">Esta PC — QZ Tray (Windows / Mac)</option><option value="server">Servidor local — pruebas Mac / Linux</option></select></div>
+<div class="col-md-7"><label class="form-label" for="receipt-printer">Impresora</label><div class="input-group"><select id="receipt-printer" class="form-select"><option value="">Conecte para elegir impresora</option></select><button id="receipt-connect" class="btn btn-outline-primary" type="button">Conectar / actualizar</button></div></div>
+</div>
+<div id="receipt-printer-status" class="small text-muted mt-2">Para envío directo, abra QZ Tray en la PC de la impresora y permita la conexión.</div>
+<div class="d-flex gap-2 flex-wrap align-items-center mt-3"><button id="receipt-print" class="btn btn-primary" disabled>Imprimir seleccionadas</button><button id="receipt-preview" class="btn btn-outline-secondary" disabled>Ver PDF seleccionado</button><label class="ms-2"><input id="receipt-show-price" type="checkbox" checked> Mostrar precio</label></div>
+<div id="receipt-job-status" class="small mt-2" role="status" aria-live="polite"></div>
+</div>
+<div class="d-flex justify-content-between flex-wrap gap-2 mb-2"><label class="fw-semibold"><input id="receipt-select-all" type="checkbox" checked {% if not rows %}disabled{% endif %}> Seleccionar todas las variantes</label><strong id="receipt-selected-total">{{ total }} etiquetas seleccionadas</strong></div>
+{% for product_id, items in rows|groupby('product_id') %}
+<section class="card mb-3 receipt-model" data-model="{{ product_id }}">
+<div class="card-header d-flex justify-content-between gap-2 flex-wrap"><label><input class="receipt-model-check" data-model="{{ product_id }}" type="checkbox" checked> <strong>Modelo {{ items[0].model }}</strong> · {{ items[0].name }}</label><span>{{ items|sum(attribute='quantity') }} unidades ingresadas</span></div>
+<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Imprimir</th><th>Variante</th><th>Color</th><th>Talla</th><th>Código de barras</th><th class="text-end">Unidades / etiquetas</th></tr></thead><tbody>
+{% for item in items %}<tr><td><input class="receipt-variant-check" type="checkbox" checked data-variant="{{ item.variant_id }}" data-model="{{ product_id }}" data-quantity="{{ item.quantity }}" aria-label="Imprimir {{ item.model }} {{ item.color }} talla {{ item.size }}"></td><td>{{ item.code }}</td><td>{{ item.color }}</td><td>{{ item.size }}</td><td><code>{{ item.scan_code }}</code></td><td class="text-end fw-bold">{{ item.quantity }}</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% else %}<div class="alert alert-warning">Este ingreso no contiene unidades de variantes para imprimir.</div>{% endfor %}
+<p class="small text-muted">Total original del ingreso: {{ total }} etiquetas. Al reabrir esta tabla, todas las variantes vuelven a estar seleccionadas. Cada envío vuelve a imprimir las unidades seleccionadas.</p>
+</main>{% if not embedded %}</div>{% endif %}
+<script id="receipt-label-config" type="application/json">{{ {"receipt_id":receipt.id}|tojson }}</script>
+<script src="/static/shoe_receipt_labels.js?v=1"></script>
+{% endblock %}

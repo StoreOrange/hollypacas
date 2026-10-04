@@ -1,0 +1,17 @@
+<link rel="stylesheet" href="/static/shoe_home.css?v=1">
+<section id="shoe-home" class="shoe-home" aria-label="Resumen de las tiendas">
+  <header class="sh-heading"><div><span class="sh-eyebrow">MISS ZAPATOS · HOY</span><h2>Así van tus tiendas</h2><p id="sh-date"></p></div><button id="sh-refresh" type="button">↻ Actualizar</button></header>
+  <p id="sh-status" class="sh-status" role="status" aria-live="polite"></p>
+  {% if shoe_home.can_sales %}
+  <section class="sh-section" aria-labelledby="sh-sales-title"><div class="sh-section-head"><h3 id="sh-sales-title">Ventas en caliente</h3><span>Ventas del día · Córdobas</span></div><div id="sh-sales" class="sh-store-grid"></div><div class="sh-total">Total vendido hoy <strong id="sh-sales-total"></strong></div></section>
+  {% endif %}
+  {% if shoe_home.can_cash %}
+  <section class="sh-section" aria-labelledby="sh-cash-title"><div class="sh-section-head"><h3 id="sh-cash-title">Caja por tienda</h3><span>Arqueos y cobros</span></div><div id="sh-cash" class="sh-store-grid"></div><div class="sh-total"><span>Total efectivo recibido en ventas · antes del vuelto</span><strong id="sh-received-total"></strong></div><div class="sh-total"><span>Total contado en arqueos</span><strong id="sh-cash-total"></strong></div><p class="sh-note">Se muestra el último arqueo registrado hoy en cada tienda. El efectivo recibido en ventas corresponde al importe entregado por el cliente, antes del vuelto; no representa el saldo disponible en caja.</p></section>
+  {% endif %}
+  {% if shoe_home.can_inventory %}
+  <section class="sh-section" aria-labelledby="sh-inventory-title"><div class="sh-section-head"><h3 id="sh-inventory-title">Inventario en caliente</h3><span>Existencias por tienda</span></div><form id="sh-inventory-form" class="sh-search"><label for="sh-code">Código de modelo, variante o etiqueta</label><div><input id="sh-code" type="search" maxlength="100" placeholder="Escribe el código…" autocomplete="off"><button type="submit">Consultar</button></div></form><p id="sh-inventory-status" class="sh-note" role="status">Busca un código para consultar talla, color y saldo en cada tienda.</p><div id="sh-inventory-results"></div></section>
+  {% endif %}
+  <noscript>Activa JavaScript para consultar este resumen. También puedes abrir los módulos desde el menú.</noscript>
+</section>
+<script id="shoe-home-data" type="application/json">{{ shoe_home|tojson }}</script>
+<script src="/static/shoe_home.js?v=1"></script>

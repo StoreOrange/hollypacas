@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block extra_head %}
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="/static/vendor/qz-tray-2.2.5.js"></script>
+<script src="/static/shoe_label_printer.js?v=3"></script>
 <style>
   .shoe-label-page{min-height:100vh;background:linear-gradient(145deg,#f8fafc,#eef3f9)}
   .shoe-label-shell{max-width:1420px;margin:auto;padding:1.2rem}
@@ -20,16 +21,36 @@
 </style>
 {% endblock %}
 {% block content %}
-<div class="shoe-label-page">
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+  <main class="shoe-label-page" style="min-width:0">
   <div class="shoe-label-shell">
+    <nav aria-label="Navegación de etiquetas" class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <a class="btn btn-outline-secondary btn-sm" href="/inventory/ingresos"><i class="bi bi-arrow-left me-1"></i>Volver a inventario</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/home">Inicio</a>
+      <a class="btn btn-outline-primary btn-sm" href="/data/etiquetas-zapatos">Diseño y calibración</a>
+    </nav>
     <section class="shoe-label-hero p-3 p-lg-4 mb-3">
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
         <div><div class="small text-uppercase opacity-75 fw-bold">Inventario · Exclusivo entorno Zapatos</div><h1 class="h3 fw-bold mb-1"><i class="bi bi-upc-scan me-2"></i>Centro de impresión de etiquetas</h1><div class="opacity-75">Preparado para ZDesigner GK420t · Etiqueta {{ label_width_cm }} × {{ label_height_cm }} cm</div></div>
-        <div class="d-flex gap-2"><span class="badge rounded-pill text-bg-light text-primary px-3 py-2"><i class="bi bi-rulers me-1"></i>76.2 × 50.8 mm</span><a class="btn btn-outline-light btn-sm" href="/inventory/ingresos"><i class="bi bi-arrow-left me-1"></i>Ingresos</a></div>
+        <div class="d-flex gap-2"><span class="badge rounded-pill text-bg-light text-primary px-3 py-2"><i class="bi bi-rulers me-1"></i>{{ label_design.width }} × {{ label_design.height }} mm</span><a class="btn btn-outline-light btn-sm" href="/inventory/ingresos"><i class="bi bi-arrow-left me-1"></i>Ingresos</a></div>
       </div>
     </section>
 
-    <div class="printer-note p-3 mb-3 d-flex align-items-start gap-3"><i class="bi bi-printer fs-4"></i><div><strong>Selección segura de impresora</strong><div class="small">Al presionar imprimir se abrirá el diálogo del sistema. Seleccione <b>ZDesigner GK420t</b>, papel personalizado <b>76.2 × 50.8 mm</b>, escala <b>100%</b>, sin márgenes ni “ajustar a página”. El navegador no permite elegir silenciosamente una impresora USB.</div></div></div>
+    <section class="shoe-label-card p-3 mb-3">
+      <h2 class="h6 fw-bold">Configuración de impresión</h2>
+      <div class="row g-3">
+        <div class="col-md-6"><label for="printer-source" class="form-label">Dónde está conectada</label><select id="printer-source" class="form-select"><option value="client">Esta PC — Windows / Mac (QZ Tray)</option><option value="server">Equipo servidor local — pruebas Mac / Linux</option></select><div class="small mt-1"><a href="https://qz.io/download/" target="_blank" rel="noopener">Instalar QZ Tray</a> en la PC que tiene la impresora. Manténgalo abierto y permita las solicitudes de conexión e impresión.</div></div>
+        <div class="col-md-6"><label for="printer-select" class="form-label">Impresora para envío directo</label><div class="input-group"><select id="printer-select" class="form-select"><option value="">Pulse Conectar / actualizar</option></select><button id="refresh-printers" type="button" class="btn btn-outline-secondary">Conectar / actualizar</button></div><div id="printer-status" class="small text-muted mt-1" role="status"></div></div>
+        <div class="col-md-6"><label for="default-quantity" class="form-label">Etiquetas al agregar un producto</label><input id="default-quantity" class="form-control" type="number" min="1" max="500" step="1" value="1"><button id="apply-quantity" type="button" class="btn btn-outline-secondary btn-sm mt-2">Aplicar cantidad a toda la cola</button></div>
+        <div class="col-md-6 small text-muted align-self-center">Puede ajustar cada cantidad en la cola. Máximo 500 por producto y 1,000 por envío. Formato: {{ label_design.width }} × {{ label_design.height }} mm, escala 100%. En vista previa, elija la impresora desde el visor PDF. El envío directo con QZ Tray utiliza las impresoras de la PC que está abriendo esta página. No abre el PDF; QZ Tray puede pedir autorización.</div>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-3 border-top mt-3 pt-3">
+        <button id="generate-pdf" type="button" class="btn btn-primary btn-lg px-4" disabled><i class="bi bi-printer me-2" aria-hidden="true"></i><span id="print-button-label">Imprimir directo</span></button>
+        <button id="preview-pdf" type="button" class="btn btn-outline-secondary btn-lg" disabled>Ver vista previa PDF</button>
+        <div><div id="print-ready-hint" class="small fw-semibold">Agregue un producto a la cola para habilitar la impresión.</div><div role="status" aria-live="polite" id="print-status" class="small text-muted">Prepare la cola para continuar.</div></div>
+      </div>
+    </section>
 
     <div class="row g-3">
       <div class="col-xl-5">
@@ -46,11 +67,12 @@
           <div class="table-responsive"><table class="table table-sm align-middle shoe-queue-table mb-0"><thead class="table-light"><tr><th>Código</th><th>Producto</th><th>Color / talla</th><th class="text-end">Existencia</th><th style="width:110px">Etiquetas</th><th></th></tr></thead><tbody id="queue-body"><tr><td colspan="6" class="text-center text-muted py-4">Agregue un producto desde el buscador.</td></tr></tbody><tfoot><tr class="table-light"><th colspan="4" class="text-end">Total a imprimir</th><th id="queue-total">0</th><th></th></tr></tfoot></table></div>
         </section>
         <section class="shoe-label-card p-3">
-          <div class="row g-3 align-items-center"><div class="col-lg-7"><div id="label-preview" class="label-preview"><div class="preview-name">Vista previa</div><div class="preview-meta">Seleccione un producto</div><svg id="preview-barcode"></svg><div class="preview-bottom"><span>Ref. —</span><span>C$ 0.00</span></div></div></div><div class="col-lg-5"><div class="small text-muted mb-2">Formato bloqueado para proteger la calibración:</div><div class="border rounded-3 p-2 mb-3"><div class="d-flex justify-content-between"><span>Ancho</span><strong>{{ label_width_cm }} cm</strong></div><div class="d-flex justify-content-between"><span>Alto</span><strong>{{ label_height_cm }} cm</strong></div><div class="d-flex justify-content-between"><span>Tipo</span><strong>Code128</strong></div></div><button id="generate-pdf" class="btn btn-primary w-100 mb-2" disabled><i class="bi bi-file-earmark-pdf me-1"></i>Generar e imprimir etiquetas</button><div id="print-status" class="small text-muted text-center">Prepare la cola para continuar.</div></div></div>
+          <div class="row g-3 align-items-center"><div class="col-lg-7"><div id="label-preview" class="border rounded-3 p-2"><div id="label-preview-status" class="small text-muted mb-2" role="status">Seleccione un producto</div><iframe id="label-preview-pdf" title="Vista previa real de la etiqueta" style="width:100%;height:320px;border:0" hidden></iframe></div></div><div class="col-lg-5"><div class="small text-muted mb-2"><a href="/data/etiquetas-zapatos">Editar diseño y calibración en Datos</a></div><div class="border rounded-3 p-2 mb-3"><div class="d-flex justify-content-between"><span>Ancho</span><strong>{{ label_width_cm }} cm</strong></div><div class="d-flex justify-content-between"><span>Alto</span><strong>{{ label_height_cm }} cm</strong></div><div class="d-flex justify-content-between"><span>Tipo</span><strong>Code128</strong></div></div></div></div>
         </section>
       </div>
     </div>
   </div>
+  </main>
 </div>
 <script>
 (() => {
@@ -62,46 +84,119 @@
   const generateBtn = document.getElementById('generate-pdf');
   const printStatus = document.getElementById('print-status');
   const showPrice = document.getElementById('show-price');
+  const previewBtn = document.getElementById('preview-pdf');
+  const printer = document.getElementById('printer-select');
+  const source = document.getElementById('printer-source');
+  let loadingPrinters = false;
+  const printerStatus = document.getElementById('printer-status');
+  const defaultQuantity = document.getElementById('default-quantity');
+  let busy = false;
+  const quantityValue = () => Math.max(1, Math.min(500, Math.floor(Number(defaultQuantity.value) || 1)));
+  function updateButton(){
+    const total = [...queue.values()].reduce((sum,item)=>sum+item.quantity,0);
+    generateBtn.disabled = busy || loadingPrinters || !total || total > 1000 || !printer.value;
+    previewBtn.disabled = busy || loadingPrinters || !total || total > 1000;
+    source.disabled = busy || loadingPrinters;
+    document.getElementById('refresh-printers').disabled = busy || loadingPrinters;
+    document.getElementById('print-button-label').textContent = busy ? 'Procesando…' : 'Imprimir directo';
+    document.getElementById('print-ready-hint').textContent = !total ? 'Agregue un producto a la cola para habilitar la impresión.' : total > 1000 ? 'Reduzca la cola a un máximo de 1,000 etiquetas.' : !printer.value ? 'Conecte y seleccione una impresora para imprimir directo. También puede ver el PDF.' : `${total} etiqueta(s) para enviar a la impresora seleccionada.`;
+  }
+  async function loadPrinters(){
+    const previous = printer.value;
+    loadingPrinters = true;
+    printer.disabled = true;
+    updateButton();
+    try {
+      let data;
+      if(source.value === 'client') {
+        data = {printers: await ShoeLabelPrinter.list()};
+      } else {
+        const response = await fetch('/inventory/etiquetas-zapatos/printers', {headers:{'X-Requested-With':'fetch'}});
+        if(response.redirected) throw new Error('Su sesión expiró. Inicie sesión nuevamente.');
+        data = await response.json();
+        if(!response.ok) throw new Error(data.detail || 'No se pudieron consultar las impresoras.');
+      }
+      printer.innerHTML = '<option value="">Seleccione una impresora</option>';
+      for(const p of data.printers){const option = new Option(p.name + (p.enabled ? '' : ' (deshabilitada)'), p.id);option.disabled=!p.enabled;printer.add(option);}
+      let saved = previous;
+      try {saved = saved || localStorage.getItem('miss-zapatos-printer-' + source.value);} catch(_) {}
+      if([...printer.options].some(o=>o.value===saved && !o.disabled)) printer.value=saved;
+      printerStatus.textContent=data.printers.length ? 'Seleccione el destino para impresión directa.' : 'No hay impresoras instaladas. Puede usar la vista previa PDF.';
+    } catch(err){printer.innerHTML='<option value="">Impresión directa no disponible</option>';printerStatus.textContent=err.message;}
+    finally {loadingPrinters=false;printer.disabled=false;updateButton();}
+  }
+  source.addEventListener('change',()=>{printer.innerHTML='<option value="">Pulse Conectar / actualizar</option>';printerStatus.textContent='Conecte para consultar las impresoras del equipo seleccionado.';updateButton();});
+  printer.addEventListener('change',()=>{try{localStorage.setItem('miss-zapatos-printer-' + source.value,printer.value);}catch(_){}updateButton();});
+  document.getElementById('refresh-printers').addEventListener('click',loadPrinters);
+  document.getElementById('apply-quantity').addEventListener('click',()=>{defaultQuantity.value=quantityValue();for(const item of queue.values())item.quantity=quantityValue();renderQueue();});
   const queue = new Map();
   let timer = null;
   let lastPreview = null;
   const esc = (value) => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
   const money = value => Number(value || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-  function renderPreview(item){
-    lastPreview = item;
-    const card = document.getElementById('label-preview');
-    card.querySelector('.preview-name').textContent = item?.name || 'Vista previa';
-    card.querySelector('.preview-meta').textContent = item ? `${item.color} | Talla ${item.size}` : 'Seleccione un producto';
-    const bottom = card.querySelector('.preview-bottom');
-    bottom.innerHTML = `<span>Ref. ${esc(item?.product_code || '—')}</span><span>${showPrice.checked && item ? `C$ ${money(item.price_cs)}` : ''}</span>`;
-    const svg = document.getElementById('preview-barcode');
-    svg.innerHTML = '';
-    if(item?.code && window.JsBarcode){ try{ JsBarcode(svg,item.code,{format:'CODE128',width:1.9,height:108,margin:0,marginLeft:10,marginRight:10,displayValue:true,fontSize:12,textMargin:3}); }catch(_err){} }
+  let previewController;
+  let previewUrl;
+  let previewVersion=0;
+  async function renderPreview(item){
+    lastPreview=item;
+    const version=++previewVersion;
+    if(previewController)previewController.abort();
+    const frame=document.getElementById('label-preview-pdf');
+    const message=document.getElementById('label-preview-status');
+    frame.hidden=true;frame.removeAttribute('src');
+    if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}
+    if(!item){message.textContent='Seleccione un producto para ver su etiqueta real.';return;}
+    previewController=new AbortController();message.textContent='Generando vista previa…';
+    try{
+      const response=await fetch('/inventory/etiquetas-zapatos/pdf',{method:'POST',signal:previewController.signal,headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify({show_price:showPrice.checked,items:[{variant_id:item.variant_id,quantity:1}]})});
+      if(response.redirected)throw new Error('Su sesión expiró. Inicie sesión nuevamente.');
+      if(!response.ok){const data=await response.json();throw new Error(data.detail||'No se pudo generar la vista previa.');}
+      const blob=await response.blob();if(version!==previewVersion)return;
+      previewUrl=URL.createObjectURL(blob);frame.src=previewUrl;frame.hidden=false;
+      message.textContent='PDF real · misma distribución que la impresión. Escala de pantalla del visor.';
+    }catch(err){if(err.name!=='AbortError' && version===previewVersion)message.textContent=err.message;}
   }
   function renderQueue(){
     const items=[...queue.values()];
     if(!items.length){queueBody.innerHTML='<tr><td colspan="6" class="text-center text-muted py-4">Agregue un producto desde el buscador.</td></tr>';}
     else queueBody.innerHTML=items.map(item=>`<tr><td class="fw-bold text-primary">${esc(item.code)}</td><td class="shoe-queue-name">${esc(item.name)}</td><td>${esc(item.color)} · ${esc(item.size)}</td><td class="text-end">${money(item.stock)}</td><td><input class="form-control form-control-sm queue-qty" data-id="${item.variant_id}" type="number" min="1" max="500" step="1" value="${item.quantity}"></td><td><button class="btn btn-outline-danger btn-sm queue-remove" data-id="${item.variant_id}"><i class="bi bi-x-lg"></i></button></td></tr>`).join('');
-    const total=items.reduce((sum,item)=>sum+Number(item.quantity||0),0);queueTotal.textContent=total;generateBtn.disabled=total<1;printStatus.textContent=total?`${total} etiqueta(s) listas en formato 76.2 × 50.8 mm.`:'Prepare la cola para continuar.';
-    queueBody.querySelectorAll('.queue-qty').forEach(input=>input.addEventListener('change',()=>{const item=queue.get(Number(input.dataset.id));if(item){item.quantity=Math.max(1,Math.min(500,Number(input.value||1)));renderQueue();}}));
+    const total=items.reduce((sum,item)=>sum+Number(item.quantity||0),0);queueTotal.textContent=total;updateButton();printStatus.textContent=total>1000?'Reduzca la cola a un máximo de 1,000 etiquetas.':total?`${total} etiqueta(s) listas en formato {{ label_design.width }} × {{ label_design.height }} mm.`:'Prepare la cola para continuar.';
+    queueBody.querySelectorAll('.queue-qty').forEach(input=>input.addEventListener('change',()=>{const item=queue.get(Number(input.dataset.id));if(item){item.quantity=Math.max(1,Math.min(500,Math.floor(Number(input.value)||1)));renderQueue();}}));
     queueBody.querySelectorAll('.queue-remove').forEach(btn=>btn.addEventListener('click',()=>{queue.delete(Number(btn.dataset.id));renderQueue();renderPreview([...queue.values()][0]||null);}));
   }
-  function addItem(item){const current=queue.get(item.variant_id);if(current)current.quantity=Math.min(500,current.quantity+1);else queue.set(item.variant_id,{...item,quantity:1});renderQueue();renderPreview(queue.get(item.variant_id));}
+  function addItem(item){const current=queue.get(item.variant_id);if(current)current.quantity=Math.min(500,current.quantity+quantityValue());else queue.set(item.variant_id,{...item,quantity:quantityValue()});renderQueue();renderPreview(queue.get(item.variant_id));}
   async function runSearch(){
     const q=search.value.trim();if(!q){results.innerHTML='<div class="text-center text-muted py-5"><i class="bi bi-upc-scan fs-2 d-block mb-2"></i>Los resultados aparecerán aquí.</div>';status.textContent='Digite al menos un carácter para iniciar.';return;}
     status.textContent='Buscando…';
-    try{const response=await fetch(`/inventory/etiquetas-zapatos/search?q=${encodeURIComponent(q)}`,{headers:{'X-Requested-With':'fetch'}});const data=await response.json();if(!response.ok)throw new Error(data.detail||'No se pudo buscar');const items=data.items||[];status.textContent=`${items.length} resultado(s). Toque uno para agregarlo.`;results.innerHTML=items.length?items.map((item,index)=>`<div class="shoe-result" data-index="${index}"><div><div class="shoe-result-code">${esc(item.code)}</div><div class="fw-semibold">${esc(item.name)}</div><div class="shoe-result-meta">${esc(item.product_code)} · ${esc(item.color)} · Talla ${esc(item.size)}</div></div><div class="text-end"><span class="badge text-bg-light">Stock ${money(item.stock)}</span><div class="fw-bold text-success mt-2">C$ ${money(item.price_cs)}</div></div></div>`).join(''):'<div class="text-center text-muted py-5">No se encontraron coincidencias.</div>';results.querySelectorAll('.shoe-result').forEach(row=>row.addEventListener('click',()=>addItem(items[Number(row.dataset.index)])));}catch(err){status.textContent=err.message;results.innerHTML='<div class="text-center text-danger py-5">Error al consultar productos.</div>';}
+    try{const response=await fetch(`/inventory/etiquetas-zapatos/search?q=${encodeURIComponent(q)}`,{headers:{'X-Requested-With':'fetch'}});const data=await response.json();if(!response.ok)throw new Error(data.detail||'No se pudo buscar');const items=data.items||[];status.textContent=`${items.length} resultado(s). Toque uno para agregarlo.`;results.innerHTML=items.length?items.map((item,index)=>`<div class="shoe-result" data-index="${index}"><div><div class="shoe-result-code">${esc(item.code)}</div><div class="fw-semibold">${esc(item.name)}</div><div class="shoe-result-meta">${esc(item.product_code)} · Barras: ${esc(item.scan_code)} · ${esc(item.color)} · Talla ${esc(item.size)}</div></div><div class="text-end"><span class="badge text-bg-light">Stock ${money(item.stock)}</span><div class="fw-bold text-success mt-2">C$ ${money(item.price_cs)}</div></div></div>`).join(''):'<div class="text-center text-muted py-5">No se encontraron coincidencias.</div>';results.querySelectorAll('.shoe-result').forEach(row=>row.addEventListener('click',()=>addItem(items[Number(row.dataset.index)])));}catch(err){status.textContent=err.message;results.innerHTML='<div class="text-center text-danger py-5">Error al consultar productos.</div>';}
   }
   search.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(runSearch,280)});
   search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();clearTimeout(timer);runSearch();}});
   document.getElementById('clear-search').addEventListener('click',()=>{search.value='';runSearch();search.focus();});
   document.getElementById('clear-queue').addEventListener('click',()=>{queue.clear();renderQueue();renderPreview(null);});
   showPrice.addEventListener('change',()=>renderPreview(lastPreview));
-  generateBtn.addEventListener('click',async()=>{
-    const previewWindow=window.open('','_blank');generateBtn.disabled=true;printStatus.textContent='Generando PDF calibrado…';
-    try{const response=await fetch('/inventory/etiquetas-zapatos/pdf',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify({show_price:showPrice.checked,items:[...queue.values()].map(item=>({variant_id:item.variant_id,quantity:item.quantity}))})});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.detail||'No se pudo generar el PDF');}const blob=await response.blob();const url=URL.createObjectURL(blob);if(previewWindow)previewWindow.location.href=url;else window.location.href=url;setTimeout(()=>URL.revokeObjectURL(url),120000);printStatus.textContent='PDF listo. Seleccione ZDesigner GK420t, escala 100% y tamaño 76.2 × 50.8 mm.';}catch(err){if(previewWindow)previewWindow.close();printStatus.textContent=err.message;}finally{generateBtn.disabled=queue.size===0;}
-  });
+  async function processLabels(direct){
+    if(busy || (direct ? generateBtn.disabled : previewBtn.disabled)) return;
+    const clientDirect = direct && source.value === 'client';
+    const previewWindow = direct ? null : window.open('','_blank');
+    if(!direct && !previewWindow){printStatus.textContent='Permita ventanas emergentes para abrir la vista previa.';return;}
+    busy=true;updateButton();
+    printStatus.textContent=direct?'Enviando etiquetas…':'Generando PDF…';
+    const payload={printer:printer.value,show_price:showPrice.checked,items:[...queue.values()].map(item=>({variant_id:item.variant_id,quantity:item.quantity}))};
+    try {
+      const response=await fetch('/inventory/etiquetas-zapatos/'+(direct && !clientDirect?'print':'pdf'),{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'fetch'},body:JSON.stringify(payload)});
+      if(response.redirected) throw new Error('Su sesión expiró. Inicie sesión nuevamente.');
+      if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.detail||'No se pudo completar la solicitud');}
+      if(clientDirect){await ShoeLabelPrinter.print(await response.blob(), payload.printer, Number(response.headers.get("X-Label-Width-Mm")), Number(response.headers.get("X-Label-Height-Mm")));printStatus.textContent=`Etiquetas enviadas a ${payload.printer}. Revise la cola y la salida de la impresora.`;}
+      else if(direct){const data=await response.json();printStatus.textContent=`${data.total} etiqueta(s) enviadas a la cola. Trabajo: ${data.job}. Revise la salida en la impresora.`;}
+      else {const blob=await response.blob();const url=URL.createObjectURL(blob);previewWindow.location.href=url;setTimeout(()=>URL.revokeObjectURL(url),300000);printStatus.textContent='PDF listo. Use el botón de imprimir del visor: papel {{ label_design.width }} × {{ label_design.height }} mm y escala 100%.';}
+    } catch(err){if(previewWindow)previewWindow.close();printStatus.textContent=err.message+(direct?' Revise la cola de la impresora antes de volver a enviar.':'');}
+    finally {busy=false;updateButton();}
+  }
+  generateBtn.addEventListener('click',()=>processLabels(true));
+  previewBtn.addEventListener('click',()=>processLabels(false));
+  printerStatus.textContent='Para detectar las impresoras de esta PC, abra QZ Tray y pulse Conectar / actualizar.';
   renderQueue();renderPreview(null);search.focus();
 })();
 </script>

@@ -22,3 +22,7 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Calibración local de etiquetas (se conserva entre actualizaciones)
+backend/settings/miss_zapatos_labels.json
+backend/settings/miss_zapatos_labels.before_*.json

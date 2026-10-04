@@ -2332,9 +2332,9 @@
                 PDF
               </a>
               {% if shoes_mode %}
-              <a class="btn btn-outline-dark btn-sm" href="/inventory/ingresos/{{ ingreso.id }}/labels/preview" data-open-labels-preview="{{ ingreso.id }}" title="Reimprimir etiquetas de este ingreso">
+              <a class="btn btn-outline-dark btn-sm" href="/inventory/ingresos/{{ ingreso.id }}/labels/preview" data-open-labels-preview="{{ ingreso.id }}" title="Seleccionar e imprimir etiquetas de este ingreso">
                 <i class="bi bi-upc-scan"></i>
-                Reimprimir etiquetas
+                Etiquetas del ingreso
               </a>
               {% endif %}
             </div>
@@ -2358,9 +2358,9 @@
     <div class="modal-content border-0 shadow-lg">
       <div class="modal-header border-0 pb-0">
         <div>
-          <div class="text-uppercase text-muted small">Inventario / Reimpresion de etiquetas</div>
-          <h5 class="modal-title mb-1">Reimprimir etiquetas Code128</h5>
-          <div class="small text-muted">Vista previa antes de volver a imprimir.</div>
+          <div class="text-uppercase text-muted small">Inventario / Etiquetas del ingreso</div>
+          <h5 class="modal-title mb-1">Seleccionar etiquetas del ingreso</h5>
+          <div class="small text-muted">Seleccione modelos y variantes. Las cantidades corresponden al ingreso registrado.</div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
@@ -2368,17 +2368,14 @@
         <div class="labels-preview-modal-card p-3">
           <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
             <div class="small text-muted">
-              Revisa el diseno y la cantidad de etiquetas antes de volver a imprimir.
+              Una etiqueta por unidad ingresada. Desmarque las variantes que no desea imprimir.
             </div>
             <div class="d-flex flex-wrap gap-2">
               <a id="labels-preview-open-page" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener">
                 <i class="bi bi-box-arrow-up-right me-1"></i>
                 Abrir pagina
               </a>
-              <a id="labels-preview-print-btn" class="btn btn-primary btn-sm" target="_blank" rel="noopener">
-                <i class="bi bi-printer me-1"></i>
-                Imprimir PDF
-              </a>
+
             </div>
           </div>
           <iframe id="labels-preview-frame" class="labels-preview-frame" loading="lazy"></iframe>
@@ -3087,7 +3084,10 @@
       placeholder: "Selecciona",
       allowClear: true,
     });
-    $("#edit-product-select").select2("destroy");
+    const editProductSelect = $("#edit-product-select");
+    if (editProductSelect.length && editProductSelect.data("select2")) {
+      editProductSelect.select2("destroy");
+    }
   }
   restoreDraft();
   if (editSelect && loadEditProductFn && editSelect.value) {
@@ -3186,19 +3186,16 @@
   const labelsPreviewModalEl = document.getElementById("labels-preview-modal");
   const labelsPreviewFrame = document.getElementById("labels-preview-frame");
   const labelsPreviewPageBtn = document.getElementById("labels-preview-open-page");
-  const labelsPreviewPrintBtn = document.getElementById("labels-preview-print-btn");
   const labelsPreviewModal = labelsPreviewModalEl && typeof bootstrap !== "undefined"
     ? new bootstrap.Modal(labelsPreviewModalEl)
     : null;
   const buildLabelsPreviewUrl = (ingresoId) => `/inventory/ingresos/${ingresoId}/labels/preview`;
-  const buildLabelsPdfUrl = (ingresoId) => `/inventory/ingresos/${ingresoId}/labels/pdf`;
   const openLabelsPreview = (ingresoId) => {
     const normalizedId = Number(ingresoId || 0);
     if (!normalizedId || !labelsPreviewFrame || !labelsPreviewModal) return;
     const previewUrl = buildLabelsPreviewUrl(normalizedId);
-    labelsPreviewFrame.setAttribute("src", previewUrl);
+    labelsPreviewFrame.setAttribute("src", previewUrl + "?embed=1");
     labelsPreviewPageBtn?.setAttribute("href", previewUrl);
-    labelsPreviewPrintBtn?.setAttribute("href", buildLabelsPdfUrl(normalizedId));
     labelsPreviewModal.show();
   };
 
@@ -3215,7 +3212,8 @@
   });
 
   {% if print_labels_id %}
-  openLabelsPreview({{ print_labels_id }});
+  openLabelsPreview({{ print_labels_id|tojson }});
+  const receiptUrl = new URL(window.location.href);receiptUrl.searchParams.delete("print_labels_id");history.replaceState(null, "", receiptUrl);
   {% endif %}
   {% endif %}
 

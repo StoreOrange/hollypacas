@@ -1,0 +1,61 @@
+{
+  "width": 50.0,
+  "height": 25.0,
+  "margin": 2.0,
+  "font": "Helvetica",
+  "offset_x": 0.0,
+  "offset_y": 0.0,
+  "rotation": 0,
+  "barcode_max_width": 36.0,
+  "barcode_height": 8.6,
+  "barcode_top": 9.628027839660644,
+  "barcode_width": 0.25,
+  "barcode_x": 25.0,
+  "fields": {
+    "name": {
+      "label": "Producto",
+      "size": 6.0,
+      "top": 4.202947282791138,
+      "bold": true,
+      "visible": true,
+      "align": "center",
+      "x": 25.22757339477539
+    },
+    "detail": {
+      "label": "Color / talla",
+      "size": 6.5,
+      "top": 8.077266597747803,
+      "bold": false,
+      "visible": true,
+      "align": "center",
+      "x": 24.978254318237305
+    },
+    "code": {
+      "label": "Código",
+      "size": 4.0,
+      "top": 20.356496620178223,
+      "bold": true,
+      "visible": true,
+      "align": "center",
+      "x": 25.3455753326416
+    },
+    "reference": {
+      "label": "Referencia",
+      "size": 5.0,
+      "top": 21.696866989135742,
+      "bold": false,
+      "visible": true,
+      "align": "left",
+      "x": 3.005868434906006
+    },
+    "price": {
+      "label": "Precio",
+      "size": 5.0,
+      "top": 21.73939609527588,
+      "bold": true,
+      "visible": true,
+      "align": "right",
+      "x": 46.97541046142578
+    }
+  }
+}

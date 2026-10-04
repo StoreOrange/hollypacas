@@ -41,6 +41,9 @@
       <div class="card border-0 shadow-sm">
         <div class="card-body">
           <div id="data-catalog-grid" class="d-flex flex-column gap-4">
+            {% if shoe_label_design_enabled %}
+            <section class="border rounded-3 p-3" data-catalog-group><h2 class="h6">Miss Zapatos · Impresión</h2><div data-catalog-item><a class="btn btn-outline-primary" href="/data/etiquetas-zapatos"><i class="bi bi-fonts me-2"></i>Diseño y calibración de etiquetas</a><p class="text-muted mt-2 mb-0">Lienzo, medidas, tipografía, tamaños de texto y código de barras.</p></div></section>
+            {% endif %}
             <section class="border rounded-3 p-3" data-catalog-group>
               <div class="d-flex align-items-center justify-content-between mb-3">
                 <h2 class="h6 mb-0">Navegacion general</h2>

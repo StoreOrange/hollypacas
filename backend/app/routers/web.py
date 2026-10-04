@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session, aliased, joinedload, object_session
 from ..core.inventory_report_costs import branch_cost_increases
 from ..core.commission_assignment_state import whole_quantity, assignment_revision
 from ..core.commission_rates import commission_rate, is_special_price_sale, parse_commission_amount
+from ..core.shoe_home import snapshot as shoe_home_snapshot, inventory as shoe_home_inventory
 
 from ..config import (
     get_active_company_key,
@@ -403,7 +404,7 @@ SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "sales_cobranza", "label": "Gestion de cobranza", "href": "/sales/cobranza", "icon": "bi-wallet-fill", "perm": "menu.sales.cobranza", "alt_perm": None},
     {"id": "sales_cierre", "label": "Cierre de caja", "href": "/sales/cierre", "icon": "bi-cash-stack", "perm": "menu.sales.cierre", "alt_perm": None},
     {"id": "sales_utilitario", "label": "Utilitario Ventas", "href": "/sales/utilitario", "icon": "bi-wrench-adjustable-circle", "perm": "menu.sales.utilitario", "alt_perm": None},
-    {"id": "sales_etiquetas", "label": "Impresion de etiquetas", "href": "/sales/etiquetas", "icon": "bi-upc-scan", "perm": "menu.sales.etiquetas", "alt_perm": None},
+    {"id": "sales_etiquetas", "label": "Impresion de etiquetas", "href": "/sales/etiquetas", "icon": "bi-upc-scan", "perm": "menu.sales.etiquetas", "alt_perm": None, "hollpacas_only": "1"},
     {"id": "sales_roc", "label": "Recibos de caja", "href": "/sales/roc", "icon": "bi-file-earmark-text", "perm": "menu.sales.roc", "alt_perm": None},
     {"id": "sales_depositos", "label": "Registro de depositos", "href": "/sales/depositos", "icon": "bi-bank2", "perm": "menu.sales.depositos", "alt_perm": None},
     {"id": "sales_comisiones", "label": "Registro de comisiones", "href": "/sales/comisiones", "icon": "bi-trophy-fill", "perm": "menu.sales.comisiones", "alt_perm": None},
@@ -4136,6 +4137,39 @@ def root():
     return RedirectResponse("/home", status_code=302)
 
 
+def _shoe_home_stores(db, user):
+    query = _scoped_bodegas_query(db)
+    if not any((role.name or "").lower() == "administrador" for role in (user.roles or [])):
+        query = query.filter(Bodega.branch_id.in_(_user_scoped_branch_ids(db, user)))
+    return query.order_by(Bodega.id).all()
+
+
+def _shoe_home_snapshot(db, user):
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("America/Managua"))
+    data = shoe_home_snapshot(db, _shoe_home_stores(db, user), now.date(),
+        sales=_has_permission(user, "access.sales.caliente"), cash=_has_permission(user, "access.sales.cierre"))
+    data["can_inventory"] = _has_permission(user, "access.inventory.caliente")
+    data["updated"] = now.strftime("%H:%M:%S")
+    return data
+
+
+@router.get("/home/zapatos/resumen")
+def shoe_home_summary(request: Request, db: Session = Depends(get_db), user: User = Depends(_require_user_web)):
+    if not _is_shoes_mode():
+        return JSONResponse({"ok": False}, status_code=404)
+    return JSONResponse({"ok": True, "data": _shoe_home_snapshot(db, user)})
+
+
+@router.get("/home/zapatos/inventario")
+def shoe_home_inventory_search(request: Request, q: str = "", db: Session = Depends(get_db), user: User = Depends(_require_user_web)):
+    if not _is_shoes_mode():
+        return JSONResponse({"ok": False}, status_code=404)
+    _enforce_permission(request, user, "access.inventory.caliente")
+    items = shoe_home_inventory(db, _shoe_home_stores(db, user), q[:100])
+    return JSONResponse({"ok": True, "items": items[:40], "more": len(items) > 40})
+
+
 @router.get("/home")
 def home(
     request: Request,
@@ -4265,6 +4299,7 @@ def home(
             "user": user,
             "version": settings.UI_VERSION,
             "home_preventas": home_preventas,
+            "shoe_home": _shoe_home_snapshot(db, user) if _is_shoes_mode() else None,
             "home_laboratory_notifications": home_laboratory_notifications,
             "can_view_laboratory_notifications": can_view_laboratory_notifications,
             "sales_interface_code": sales_interface_code,
@@ -11802,6 +11837,7 @@ def inventory_quick_transfers_search(
     color: Optional[str] = None,
     talla: Optional[str] = None,
     limit: int = 120,
+    exact: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
@@ -11826,6 +11862,8 @@ def inventory_quick_transfers_search(
             bodega_id_int = None
     if bodega_id_int and bodega_id_int in scoped_ids:
         selected_bodega = next((b for b in scoped_bodegas if int(b.id) == bodega_id_int), None)
+    if exact and not selected_bodega:
+        return JSONResponse({"ok": False, "message": "Selecciona una bodega de origen valida.", "items": []}, status_code=400)
     if not selected_bodega:
         selected_bodega = scoped_bodegas[0] if scoped_bodegas else None
     if not selected_bodega:
@@ -11846,15 +11884,22 @@ def inventory_quick_transfers_search(
     )
     if query:
         like = f"%{query.lower()}%"
-        query_rows = query_rows.filter(
-            or_(
-                func.lower(ShoeProductVariant.cod_variante).like(like),
-                func.lower(Producto.cod_producto).like(like),
-                func.lower(Producto.descripcion).like(like),
-                func.lower(ColorCatalog.nombre).like(like),
-                func.lower(ShoeProductVariant.talla).like(like),
+        scan_id = int(query[1:]) if re.fullmatch(r"V\d{1,10}", query.upper()) else 0
+        if exact:
+            code_match = func.lower(ShoeProductVariant.cod_variante) == query.lower()
+            if scan_id and _variant_scan_code(scan_id) == query.upper():
+                code_match = or_(code_match, ShoeProductVariant.id == scan_id)
+            query_rows = query_rows.filter(code_match)
+        else:
+            query_rows = query_rows.filter(
+                (ShoeProductVariant.id == scan_id) if re.fullmatch(r"V\d{1,10}", query.upper()) else or_(
+                    func.lower(ShoeProductVariant.cod_variante).like(like),
+                    func.lower(Producto.cod_producto).like(like),
+                    func.lower(Producto.descripcion).like(like),
+                    func.lower(ColorCatalog.nombre).like(like),
+                    func.lower(ShoeProductVariant.talla).like(like),
+                )
             )
-        )
     if color_filter:
         color_like = f"%{color_filter.lower()}%"
         query_rows = query_rows.filter(func.lower(ColorCatalog.nombre).like(color_like))
@@ -11877,6 +11922,7 @@ def inventory_quick_transfers_search(
         items.append(
             {
                 "variant_id": int(variant.id),
+                "scan_code": _variant_scan_code(variant.id),
                 "producto_id": int(producto.id),
                 "cod_variante": variant.cod_variante,
                 "cod_producto": producto.cod_producto,
@@ -26575,8 +26621,52 @@ def data_home(
             "active_company": (get_active_company_key() or "").strip().lower(),
             "version": settings.UI_VERSION,
             "attendance_policy": attendance_policy,
+            "shoe_label_design_enabled": _is_shoes_mode(),
         },
     )
+
+
+@router.get("/data/etiquetas-zapatos")
+def shoe_label_design_page(request: Request, user: User = Depends(_require_admin_web)):
+    from ..core.shoe_label_design import load, DEFAULT
+    _enforce_permission(request, user, "access.data")
+    if not _is_shoes_mode():
+        raise HTTPException(404, "Disponible únicamente en Miss Zapatos")
+    return request.app.state.templates.TemplateResponse("shoe_label_design.html", {
+        "request": request, "user": user, "design": load(), "defaults": DEFAULT,
+        "version": settings.UI_VERSION,
+    })
+
+
+@router.post("/data/etiquetas-zapatos/{action}")
+async def shoe_label_design_action(action: str, request: Request, user: User = Depends(_require_admin_web)):
+    from ..core.shoe_label_design import save, validate, render, layout
+    _enforce_permission(request, user, "access.data")
+    if not _is_shoes_mode():
+        raise HTTPException(404, "Disponible únicamente en Miss Zapatos")
+    if action not in {"save", "preview", "layout"}:
+        raise HTTPException(404, "Acción inválida")
+    if request.headers.get("x-requested-with") != "fetch":
+        raise HTTPException(403, "Solicitud inválida")
+    try:
+        design = validate(await request.json())
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    example = {"name": "Zapato de ejemplo", "detail": "Negro | Talla 38",
+        "code": "V000003", "reference": "Ref. XENIAS-SDDSSO", "price": "C$ 850.00"}
+    if action == "layout":
+        try:
+            return layout(example, design)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+    try:
+        content, _ = render([{"name": "Zapato de ejemplo", "detail": "Negro | Talla 38",
+            "code": "V000003", "reference": "Ref. XENIAS-SDDSSO", "price": "C$ 850.00"}], design)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if action == "save":
+        return {"ok": True, "design": save(design)}
+    return Response(content=content, media_type="application/pdf")
 
 
 @router.get("/data/setato")
@@ -29736,8 +29826,7 @@ def sales_shoes_variants_search(
             variant_id_exact = int(query_upper[1:])
         except ValueError:
             variant_id_exact = 0
-        if variant_id_exact > 0:
-            q_variants = q_variants.filter(ShoeProductVariant.id == variant_id_exact)
+        q_variants = q_variants.filter(ShoeProductVariant.id == variant_id_exact)
     elif query:
         like = f"%{query.lower()}%"
         q_variants = q_variants.filter(
@@ -30712,13 +30801,16 @@ def inventory_shoe_labels_page(
     _enforce_permission(request, user, "access.inventory.ingresos")
     if not _is_shoes_mode():
         raise HTTPException(status_code=404, detail="Disponible únicamente en el entorno Zapatos")
+    from ..core.shoe_label_design import load
+    design = load()
     return request.app.state.templates.TemplateResponse(
         "inventory_shoe_labels.html",
         {
             "request": request,
             "user": user,
-            "label_width_cm": 7.62,
-            "label_height_cm": 5.08,
+            "label_width_cm": design["width"] / 10,
+            "label_design": design,
+            "label_height_cm": design["height"] / 10,
             "version": settings.UI_VERSION,
         },
     )
@@ -30739,6 +30831,7 @@ def inventory_shoe_labels_search(
     if len(query_text) < 1:
         return JSONResponse({"ok": True, "items": []})
     like = f"%{query_text.lower()}%"
+    scan_id = int(query_text[1:]) if re.fullmatch(r"V\d{1,10}", query_text.upper()) else 0
     rows = (
         db.query(ShoeProductVariant, Producto, ColorCatalog)
         .join(Producto, Producto.id == ShoeProductVariant.producto_id)
@@ -30746,7 +30839,7 @@ def inventory_shoe_labels_search(
         .filter(
             ShoeProductVariant.activo.is_(True),
             Producto.activo.is_(True),
-            or_(
+            (ShoeProductVariant.id == scan_id) if re.fullmatch(r"V\d{1,10}", query_text.upper()) else or_(
                 func.lower(ShoeProductVariant.cod_variante).like(like),
                 func.lower(Producto.cod_producto).like(like),
                 func.lower(Producto.descripcion).like(like),
@@ -30776,7 +30869,7 @@ def inventory_shoe_labels_search(
             {
                 "variant_id": int(variant.id),
                 "code": variant.cod_variante,
-                "scan_code": variant.cod_variante,
+                "scan_code": _variant_scan_code(variant.id),
                 "product_code": product.cod_producto,
                 "name": product.descripcion,
                 "color": color.nombre,
@@ -30788,6 +30881,17 @@ def inventory_shoe_labels_search(
     return JSONResponse({"ok": True, "items": items})
 
 
+@router.get("/inventory/etiquetas-zapatos/printers")
+def inventory_shoe_label_printers(request: Request, user: User = Depends(_require_admin_web)):
+    from ..core.local_label_printing import require_local, printers
+    _enforce_permission(request, user, "access.inventory.ingresos")
+    if not _is_shoes_mode():
+        raise HTTPException(404, "Disponible únicamente en el entorno Zapatos")
+    require_local(request)
+    return {"printers": printers()}
+
+
+@router.post("/inventory/etiquetas-zapatos/print")
 @router.post("/inventory/etiquetas-zapatos/pdf")
 async def inventory_shoe_labels_pdf(
     request: Request,
@@ -30801,20 +30905,25 @@ async def inventory_shoe_labels_pdf(
         payload = await request.json()
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Solicitud de etiquetas inválida") from exc
+    direct = request.url.path.endswith("/print")
+    if direct:
+        from ..core.local_label_printing import require_local
+        require_local(request)
     requested = payload.get("items") if isinstance(payload, dict) else None
     if not isinstance(requested, list) or not requested:
         raise HTTPException(status_code=400, detail="Agrega al menos un producto para imprimir")
+    if len(requested) > 100:
+        raise HTTPException(400, "Máximo 100 productos por tirada")
     quantities: dict[int, int] = {}
-    for row in requested[:100]:
-        try:
-            variant_id = int(row.get("variant_id") or 0)
-            quantity = max(1, min(int(row.get("quantity") or 1), 500))
-        except (TypeError, ValueError, AttributeError):
-            continue
-        if variant_id > 0:
-            quantities[variant_id] = min(500, quantities.get(variant_id, 0) + quantity)
-    if not quantities or sum(quantities.values()) > 1000:
-        raise HTTPException(status_code=400, detail="La tirada debe contener entre 1 y 1,000 etiquetas")
+    for row in requested:
+        if not isinstance(row, dict):
+            raise HTTPException(400, "Producto inválido")
+        variant_id, quantity = row.get("variant_id"), row.get("quantity")
+        if type(variant_id) is not int or variant_id < 1 or type(quantity) is not int or not 1 <= quantity <= 500:
+            raise HTTPException(400, "Use cantidades enteras entre 1 y 500 por producto")
+        quantities[variant_id] = quantities.get(variant_id, 0) + quantity
+    if sum(quantities.values()) > 1000 or any(q > 500 for q in quantities.values()):
+        raise HTTPException(400, "Máximo 500 etiquetas por producto y 1,000 por tirada")
     variants = (
         db.query(ShoeProductVariant, Producto, ColorCatalog)
         .join(Producto, Producto.id == ShoeProductVariant.producto_id)
@@ -30823,213 +30932,128 @@ async def inventory_shoe_labels_pdf(
         .all()
     )
     by_id = {int(variant.id): (variant, product, color) for variant, product, color in variants}
+    if set(by_id) != set(quantities):
+        raise HTTPException(400, "Hay productos no disponibles. Actualice la cola antes de imprimir.")
     show_price = bool(payload.get("show_price", True))
-    try:
-        from reportlab.graphics.barcode.code128 import Code128
-        from reportlab.lib.units import cm, mm
-        from reportlab.pdfgen import canvas
-    except ImportError as exc:
-        raise HTTPException(status_code=500, detail="ReportLab no está instalado") from exc
-    page_w, page_h = 7.62 * cm, 5.08 * cm
-    buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=(page_w, page_h))
-    printed = 0
+    from ..core.shoe_label_design import load, render
+    design = load()
+    rows = []
     for variant_id, quantity in quantities.items():
-        data = by_id.get(variant_id)
-        if not data:
-            continue
-        variant, product, color = data
-        prices = _product_price_map(product)
-        price_cs = Decimal(str(prices.get("precio_venta1", 0) or 0))
-        for _ in range(quantity):
-            if printed:
-                pdf.showPage()
-            printed += 1
-            code = (variant.cod_variante or "").strip()
-            pdf.setFillColorRGB(0.05, 0.09, 0.16)
-            pdf.setFont("Helvetica-Bold", 11)
-            product_name = (product.descripcion or code)[:38]
-            pdf.drawCentredString(page_w / 2, page_h - 8 * mm, product_name)
-            pdf.setFont("Helvetica-Bold", 9)
-            detail = f"{color.nombre}  |  Talla {variant.talla}"
-            pdf.drawCentredString(page_w / 2, page_h - 13 * mm, detail[:46])
-            # Barras altas y zona silenciosa amplia para lectura estable en la
-            # Zebra GK420t, aprovechando el formato físico de 76.2 x 50.8 mm.
-            barcode_height = 24 * mm
-            barcode = Code128(code, barHeight=barcode_height, barWidth=0.38 * mm, humanReadable=False)
-            max_bar_width = page_w - 12 * mm
-            if barcode.width > max_bar_width:
-                barcode = Code128(
-                    code,
-                    barHeight=barcode_height,
-                    barWidth=max(0.21 * mm, 0.38 * mm * (max_bar_width / float(barcode.width))),
-                    humanReadable=False,
-                )
-            barcode.drawOn(pdf, (page_w - barcode.width) / 2, 10.5 * mm)
-            pdf.setFont("Helvetica-Bold", 8)
-            pdf.drawCentredString(page_w / 2, 7.2 * mm, code[:64])
-            pdf.setFont("Helvetica", 7)
-            pdf.drawString(5 * mm, 2.7 * mm, f"Ref. {(product.cod_producto or '-')[:24]}")
-            if show_price:
-                pdf.setFont("Helvetica-Bold", 9)
-                pdf.drawRightString(page_w - 5 * mm, 2.7 * mm, f"C$ {price_cs:,.2f}")
-    if printed <= 0:
-        raise HTTPException(status_code=400, detail="No se encontraron variantes válidas")
-    pdf.save()
+        variant, product, color = by_id[variant_id]
+        price = Decimal(str(_product_price_map(product).get("precio_venta1", 0) or 0))
+        rows.append({"name": product.descripcion or variant.cod_variante,
+            "detail": f"{color.nombre}  |  Talla {variant.talla}", "code": _variant_scan_code(variant.id),
+            "reference": f"Ref. {product.cod_producto or '-'}", "price": f"C$ {price:,.2f}", "quantity": quantity})
+    try:
+        content, printed = render(rows, design, show_price)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    buffer = io.BytesIO(content)
+    if direct:
+        from ..core.local_label_printing import submit_pdf
+        printer = payload.get("printer")
+        if not isinstance(printer, str):
+            raise HTTPException(400, "Seleccione una impresora")
+        job = submit_pdf(buffer.getvalue(), printer, design["width"], design["height"])
+        return {"ok": True, "job": job, "total": printed}
     buffer.seek(0)
     return StreamingResponse(
         buffer,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": "inline; filename=etiquetas_zapatos_762x508.pdf",
+            "Content-Disposition": "inline; filename=etiquetas_zapatos.pdf",
             "X-Total-Labels": str(printed),
+            "X-Label-Width-Mm": str(design["width"]),
+            "X-Label-Height-Mm": str(design["height"]),
         },
     )
+
+
+def _shoe_receipt_for_labels(request, ingreso_id, db, user):
+    _enforce_permission(request, user, "access.inventory.ingresos")
+    if not _is_shoes_mode():
+        raise HTTPException(404, "Disponible únicamente en Miss Zapatos")
+    receipt = db.query(IngresoInventario).filter(IngresoInventario.id == ingreso_id).first()
+    if not receipt:
+        raise HTTPException(404, "Ingreso no encontrado")
+    branches = _user_scoped_branch_ids(db, user)
+    if branches and (not receipt.bodega or receipt.bodega.branch_id not in branches):
+        raise HTTPException(403, "No tiene acceso a la bodega de este ingreso")
+    return receipt
 
 
 @router.get("/inventory/ingresos/{ingreso_id}/labels/preview")
-def inventory_ingreso_labels_preview(
-    request: Request,
-    ingreso_id: int,
-    width_cm: Optional[float] = None,
-    height_cm: Optional[float] = None,
-    db: Session = Depends(get_db),
-    user: User = Depends(_require_admin_web),
-):
-    _enforce_permission(request, user, "access.inventory.ingresos")
-    if not _is_shoes_mode():
-        raise HTTPException(status_code=404, detail="Vista de etiquetas disponible solo en modo zapatos")
-    ingreso = (
-        db.query(IngresoInventario)
-        .filter(IngresoInventario.id == ingreso_id)
-        .first()
-    )
-    if not ingreso:
-        raise HTTPException(status_code=404, detail="Ingreso no encontrado")
-    label_w_cm = max(2.0, min(12.0, float(width_cm or 3.0)))
-    label_h_cm = max(1.2, min(8.0, float(height_cm or 2.0)))
-    label_items, total_labels = _ingreso_labels_payload(ingreso)
-    return_to = (request.query_params.get("return_to") or "/inventory/ingresos").strip()
-    if not return_to.startswith("/"):
-        return_to = "/inventory/ingresos"
-    return request.app.state.templates.TemplateResponse(
-        "inventory_ingreso_labels_preview.html",
-        {
-            "request": request,
-            "user": user,
-            "ingreso": ingreso,
-            "label_items": label_items,
-            "total_labels": total_labels,
-            "label_w_cm": label_w_cm,
-            "label_h_cm": label_h_cm,
-            "return_to": return_to,
-            "version": settings.UI_VERSION,
-        },
-    )
+def inventory_ingreso_labels_preview(request: Request, ingreso_id: int,
+    db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+    from ..core.shoe_receipt_labels import receipt_rows
+    from ..core.shoe_label_design import load
+    receipt = _shoe_receipt_for_labels(request, ingreso_id, db, user)
+    try:
+        rows = receipt_rows(receipt, _variant_scan_code)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return request.app.state.templates.TemplateResponse("shoe_receipt_labels.html", {
+        "request": request, "user": user, "receipt": receipt, "rows": rows,
+        "total": sum(row["quantity"] for row in rows), "design": load(),
+        "embedded": request.query_params.get("embed") == "1", "version": settings.UI_VERSION,
+    })
+
+
+def _receipt_label_pdf(rows, receipt_id, show_price=True):
+    from ..core.shoe_receipt_labels import print_rows
+    from ..core.shoe_label_design import load, render
+    design = load()
+    try:
+        content, count = render(print_rows(rows), design, show_price)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    headers = {"Content-Disposition": f"inline; filename=ingreso_{receipt_id}_etiquetas.pdf",
+        "X-Total-Labels": str(count), "X-Label-Width-Mm": str(design["width"]),
+        "X-Label-Height-Mm": str(design["height"])}
+    return content, count, design, headers
+
+
+@router.post("/inventory/ingresos/{ingreso_id}/labels/jobs")
+async def inventory_ingreso_label_job(request: Request, ingreso_id: int,
+    db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+    from ..core.shoe_receipt_labels import receipt_rows, selected_rows
+    receipt = _shoe_receipt_for_labels(request, ingreso_id, db, user)
+    if request.headers.get("x-requested-with") != "fetch":
+        raise HTTPException(403, "Solicitud de impresión inválida")
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict) or set(payload)-{"variant_ids", "mode", "printer", "show_price"}:
+            raise ValueError("Solo puede seleccionar variantes; las cantidades provienen del ingreso guardado.")
+        mode = payload.get("mode", "pdf")
+        if mode not in {"pdf", "direct"} or type(payload.get("show_price", True)) is not bool:
+            raise ValueError("Opciones de impresión inválidas")
+        rows = selected_rows(receipt_rows(receipt, _variant_scan_code), payload.get("variant_ids"))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if mode == "direct":
+        from ..core.local_label_printing import require_local, submit_pdf
+        require_local(request)
+        if not isinstance(payload.get("printer"), str):
+            raise HTTPException(400, "Seleccione una impresora")
+    content, count, design, headers = _receipt_label_pdf(rows, receipt.id, payload.get("show_price", True))
+    if mode == "direct":
+        job = submit_pdf(content, payload["printer"], design["width"], design["height"])
+        return {"ok": True, "job": job, "total": count}
+    return Response(content=content, media_type="application/pdf", headers=headers)
 
 
 @router.get("/inventory/ingresos/{ingreso_id}/labels/pdf")
-def inventory_ingreso_labels_pdf(
-    request: Request,
-    ingreso_id: int,
-    width_cm: Optional[float] = None,
-    height_cm: Optional[float] = None,
-    gap_mm: Optional[float] = None,
-    db: Session = Depends(get_db),
-    user: User = Depends(_require_admin_web),
-):
-    _enforce_permission(request, user, "access.inventory.ingresos")
-    if not _is_shoes_mode():
-        raise HTTPException(status_code=404, detail="Impresion de etiquetas disponible solo en modo zapatos")
-    ingreso = (
-        db.query(IngresoInventario)
-        .filter(IngresoInventario.id == ingreso_id)
-        .first()
-    )
-    if not ingreso:
-        raise HTTPException(status_code=404, detail="Ingreso no encontrado")
-    label_items, total_labels = _ingreso_labels_payload(ingreso)
-    if not label_items:
-        raise HTTPException(status_code=400, detail="No hay etiquetas para imprimir")
+def inventory_ingreso_labels_pdf(request: Request, ingreso_id: int,
+    db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+    from ..core.shoe_receipt_labels import receipt_rows, selected_rows
+    receipt = _shoe_receipt_for_labels(request, ingreso_id, db, user)
     try:
-        from reportlab.graphics.barcode.code128 import Code128
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.units import cm, mm
-        from reportlab.pdfgen import canvas
-    except ImportError as exc:
-        raise HTTPException(status_code=500, detail="ReportLab no esta instalado") from exc
-
-    label_w = max(2.0, min(12.0, float(width_cm or 3.0))) * cm
-    label_h = max(1.2, min(8.0, float(height_cm or 2.0))) * cm
-    gap = max(1.0, min(10.0, float(gap_mm or 1.5))) * mm
-    page_w, page_h = letter
-    margin_x = 10 * mm
-    margin_y = 10 * mm
-    usable_w = max(label_w, page_w - (margin_x * 2))
-    usable_h = max(label_h, page_h - (margin_y * 2))
-    cols = max(1, int((usable_w + gap) // (label_w + gap)))
-    rows = max(1, int((usable_h + gap) // (label_h + gap)))
-    per_page = max(1, cols * rows)
-
-    expanded: list[dict[str, object]] = []
-    for item in label_items:
-        qty = int(item.get("qty") or 0)
-        for _ in range(max(0, qty)):
-            expanded.append(item)
-    if not expanded:
-        raise HTTPException(status_code=400, detail="No hay etiquetas para imprimir")
-
-    buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=letter)
-    for idx, item in enumerate(expanded):
-        slot = idx % per_page
-        if idx > 0 and slot == 0:
-            pdf.showPage()
-        row = slot // cols
-        col = slot % cols
-        x = margin_x + col * (label_w + gap)
-        y = page_h - margin_y - ((row + 1) * label_h) - (row * gap)
-
-        pdf.setLineWidth(0.4)
-        pdf.roundRect(x, y, label_w, label_h, 3, stroke=1, fill=0)
-
-        code_value = str(item.get("code") or "").strip()
-        product_name = str(item.get("name") or "").strip()
-        color_name = str(item.get("color") or "").strip()
-        talla_name = str(item.get("talla") or "").strip()
-        detail = " ".join([part for part in [color_name, talla_name] if part]).strip()
-
-        pdf.setFont("Helvetica-Bold", 7)
-        top_txt = product_name[:44] if product_name else code_value[:44]
-        pdf.drawString(x + 4, y + label_h - 10, top_txt)
-        if detail:
-            pdf.setFont("Helvetica", 6.5)
-            pdf.drawString(x + 4, y + label_h - 18, detail[:48])
-
-        barcode = Code128(code_value, barHeight=max(8 * mm, label_h * 0.34), barWidth=0.34 * mm, humanReadable=False)
-        bar_x = x + 4
-        bar_y = y + max(7 * mm, label_h * 0.2)
-        max_bar_w = label_w - 8
-        if barcode.width > max_bar_w:
-            shrink = max_bar_w / float(barcode.width)
-            barcode = Code128(
-                code_value,
-                barHeight=max(8 * mm, label_h * 0.34),
-                barWidth=max(0.19 * mm, (0.34 * mm) * shrink),
-                humanReadable=False,
-            )
-        barcode.drawOn(pdf, bar_x, bar_y)
-
-        pdf.setFont("Helvetica-Bold", 7)
-        pdf.drawCentredString(x + (label_w / 2), y + 3.6 * mm, code_value[:64])
-
-    pdf.save()
-    buffer.seek(0)
-    headers = {
-        "Content-Disposition": f"inline; filename=ingreso_{ingreso.id}_labels_code128.pdf",
-        "X-Total-Labels": str(total_labels),
-    }
-    return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
+        rows = receipt_rows(receipt, _variant_scan_code)
+        rows = selected_rows(rows, [row["variant_id"] for row in rows])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    content, _, _, headers = _receipt_label_pdf(rows, receipt.id)
+    return Response(content=content, media_type="application/pdf", headers=headers)
 
 
 @router.get("/inventory/egresos/{egreso_id}/pdf")
@@ -33324,6 +33348,16 @@ async def inventory_create_ingreso_zapatos(
     if not isinstance(matrix, dict) or not matrix:
         return RedirectResponse("/inventory/ingresos?error=No+se+definieron+cantidades+por+color+y+talla", status_code=303)
 
+    from ..core.shoe_receipt_labels import units
+    try:
+        for sizes_map in matrix.values():
+            if not isinstance(sizes_map, dict):
+                raise ValueError("Distribución de tallas inválida")
+            for quantity in sizes_map.values():
+                units(quantity)
+    except ValueError as exc:
+        return RedirectResponse(f"/inventory/ingresos?error={quote_plus(str(exc))}", status_code=303)
+
     rate_today = (
         db.query(ExchangeRate)
         .filter(ExchangeRate.effective_date <= local_today())
@@ -33513,7 +33547,7 @@ async def inventory_create_ingreso_zapatos(
     db.commit()
     if _is_shoes_mode():
         return RedirectResponse(
-            f"/inventory/ingresos/{ingreso.id}/labels/preview?return_to=/inventory/ingresos?success=Ingreso+zapatos+registrado%26clear_draft%3D1",
+            f"/inventory/ingresos?success=Ingreso+zapatos+registrado&clear_draft=1&print_labels_id={ingreso.id}",
             status_code=303,
         )
     return RedirectResponse(
@@ -33816,7 +33850,7 @@ async def inventory_create_ingreso(
     db.commit()
     if _is_shoes_mode():
         return RedirectResponse(
-            f"/inventory/ingresos/{ingreso.id}/labels/preview?return_to=/inventory/ingresos?success=Ingreso+registrado%26clear_draft%3D1",
+            f"/inventory/ingresos?success=Ingreso+registrado&clear_draft=1&print_labels_id={ingreso.id}",
             status_code=303,
         )
     return RedirectResponse(
