@@ -12336,14 +12336,13 @@ async def sales_preventas_notifications_stream(
                     .outerjoin(Cliente, Cliente.id == Preventa.cliente_id)
                     .filter(Preventa.estado == "PENDIENTE", Preventa.id > last_id, Preventa.is_frozen.is_(False))
                     .order_by(Preventa.id.asc())
-                    .limit(10)
                 )
                 if bodega_id:
                     query = query.filter(Preventa.bodega_id == bodega_id)
                 elif branch_id:
                     query = query.filter(Preventa.branch_id == branch_id)
 
-                rows = query.all()
+                rows = query.limit(10).all()
                 if release_idle_connection:
                     db.close()
                 for row in rows:
