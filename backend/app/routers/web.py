@@ -29863,11 +29863,19 @@ def sales_products_search(
                     func.lower(func.coalesce(Producto.referencia_producto, "")).like(like),
                 )
             )
-        filtered_candidates = product_query.filter(and_(*token_filters)).order_by(Producto.descripcion).limit(2500).all()
+        candidate_limit = 300 if _is_shoes_mode() else 2500
+        filtered_candidates = product_query.filter(and_(*token_filters)).order_by(Producto.descripcion).limit(candidate_limit).all()
     else:
         filtered_candidates = []
     if filtered_candidates:
         candidate_products = filtered_candidates
+    elif _is_shoes_mode():
+        # A partial or mistyped scanner query must not load and compare the
+        # entire shoe catalog for every keystroke.
+        candidate_products = (
+            product_query.filter(or_(*token_filters)).order_by(Producto.descripcion).limit(300).all()
+            if tokens else []
+        )
     else:
         candidate_products = product_query.order_by(Producto.descripcion).all()
     scored_products = []
