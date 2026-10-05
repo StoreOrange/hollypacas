@@ -18,10 +18,10 @@
     box-shadow: 0 0 0 .2rem rgba(30, 58, 95, .15);
   }
   .transfer-grid-sm {
-    font-size: 0.90rem;
+    font-size: 0.972rem;
   }
   .transfer-grid-sm thead th {
-    font-size: 0.82rem;
+    font-size: 0.886rem;
     letter-spacing: .02em;
     text-transform: uppercase;
     color: #334155;
@@ -32,12 +32,23 @@
     padding-bottom: .32rem;
   }
   .transfer-bodega-label {
-    font-size: 1rem;
+    font-size: 1.08rem;
     font-weight: 600;
   }
   .transfer-bodega-select {
-    font-size: 0.98rem;
+    font-size: 1.058rem;
   }
+
+  /* Slightly larger text throughout this page, including its dialogs. */
+  #layout main { font-size: 17px; }
+  :is(#layout main, .modal) .text-xs { font-size: .81rem; }
+  :is(#layout main, .modal) .text-sm { font-size: .95rem; }
+  :is(#layout main, .modal) .text-base { font-size: 1.08rem; }
+  :is(#layout main, .modal) .text-lg { font-size: 1.215rem; }
+  :is(#layout main, .modal) .text-xl { font-size: 1.35rem; }
+  :is(#layout main, .modal) :is(.btn-sm, .form-control-sm, .form-select-sm, .small) { font-size: .95rem; }
+  :is(#layout main, .modal) :is(label, .form-label, .nav-link) { font-size: .95rem; }
+  :is(#layout main, .modal) .text-\[16px\] { font-size: 17px; }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}

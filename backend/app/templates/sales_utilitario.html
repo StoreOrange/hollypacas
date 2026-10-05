@@ -146,10 +146,12 @@
                     <i class="bi bi-person-gear"></i>
                     Cambio ejecutivo
                   </button>
+                  {% if can_reverse_sales %}
                   <button class="btn btn-outline-danger btn-sm reversion-sale" data-id="{{ venta.id }}" data-numero="{{ venta.numero }}" type="button">
                     <i class="bi bi-arrow-counterclockwise"></i>
                     Reversion
                   </button>
+                  {% endif %}
                   {% endif %}
                 </td>
               </tr>

@@ -2863,6 +2863,15 @@ def _shoe_admin_all_stores(user: User) -> bool:
     return _is_shoes_mode() and any(role.name == "administrador" for role in user.roles or [])
 
 
+def _can_request_shoe_reversion(db: Session, user: User) -> bool:
+    if not _is_shoes_mode() or _shoe_admin_all_stores(user):
+        return True
+    if not (user.default_bodega_id or user.default_branch_id or user.branches):
+        return False
+    branch, bodega = _resolve_branch_bodega(db, user)
+    return bool(branch and bodega and (branch.code or "").strip().lower() == "central")
+
+
 def _utility_branch_ids(db: Session, user: User) -> set[int]:
     if _shoe_admin_all_stores(user):
         return {int(branch.id) for branch in _scoped_branches_query(db).all()}
@@ -14733,6 +14742,7 @@ def sales_utilitario(
             "vendedores_utilitario": vendedores_utilitario,
             "branches": branches,
             "can_filter_stores": not _is_shoes_mode() or _shoe_admin_all_stores(user),
+            "can_reverse_sales": _can_request_shoe_reversion(db, user),
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
             "branch_id": branch_id,
@@ -26343,6 +26353,8 @@ async def sales_reversion_request(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.reversion")
+    if not _can_request_shoe_reversion(db, user):
+        return JSONResponse({"ok": False, "message": "Solo Central o el administrador pueden realizar anulaciones"}, status_code=403)
     form = await request.form()
     motivo = (form.get("motivo") or "").strip()
     if not motivo:
@@ -26485,6 +26497,8 @@ async def sales_reversion_confirm(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.reversion")
+    if not _can_request_shoe_reversion(db, user):
+        return JSONResponse({"ok": False, "message": "Solo Central o el administrador pueden realizar anulaciones"}, status_code=403)
     form = await request.form()
     token = (form.get("token") or "").strip()
     if not token:
