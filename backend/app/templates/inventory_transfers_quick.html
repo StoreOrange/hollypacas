@@ -75,6 +75,35 @@
     font-weight: 700;
     min-height: 40px;
   }
+
+  #variant-search-modal .modal-body > .table-responsive {
+    max-height: 55vh;
+    overflow: auto;
+    border: 1px solid #dbe3ec;
+    border-radius: 8px;
+  }
+  #variant-search-modal table { border-collapse: separate; border-spacing: 0; }
+  #variant-search-modal thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #edf2f7;
+    border-bottom: 2px solid #cbd5e1;
+    white-space: nowrap;
+  }
+  #variant-search-modal :is(th, td) { padding: 10px 14px; }
+  #variant-search-modal :is(th, td):not(:last-child) { border-right: 1px solid #e2e8f0; }
+  #variant-search-modal td:nth-child(2) { min-width: 220px; }
+  .transfer-stock-positive, .transfer-stock-zero {
+    display: inline-block;
+    min-width: 48px;
+    padding: 5px 9px;
+    border-radius: 7px;
+    font-weight: 700;
+    text-align: center;
+  }
+  .transfer-stock-positive { background: #dbeafe; color: #1e4c82; }
+  .transfer-stock-zero { background: #fde2e2; color: #923c3c; }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
@@ -180,12 +209,12 @@
                     <th>Producto</th>
                     <th>Color</th>
                     <th>Talla</th>
-                    <th class="text-end">Exist.</th>
+                    <th class="text-end">Central</th><th class="text-end">KG</th><th class="text-end">KGF</th><th class="text-end">Origen</th>
                     <th class="text-end">Accion</th>
                   </tr>
                 </thead>
                 <tbody id="manual-search-body">
-                  <tr><td colspan="6" class="text-center text-muted py-2">Sin busqueda.</td></tr>
+                  <tr><td colspan="9" class="text-center text-muted py-2">Sin busqueda.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -262,6 +291,22 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
       <div class="modal-body">
+        <div class="row g-2 mb-3">
+          <div class="col-12 col-md-5">
+            <label for="search-bodega-origen" class="form-label">Bodega origen</label>
+            <select id="search-bodega-origen" class="form-select">
+              {% for b in origin_bodegas %}<option value="{{ b.id }}" {% if b.id == default_origen_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-5">
+            <label for="search-bodega-destino" class="form-label">Bodega destino</label>
+            <select id="search-bodega-destino" class="form-select">
+              {% for b in bodegas %}<option value="{{ b.id }}" {% if b.id == default_destino_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2 d-flex align-items-end"><button id="search-stock-refresh" type="button" class="btn btn-outline-primary w-100">Refrescar</button></div>
+        </div>
+        <p class="small text-muted">Los saldos por tienda son informativos. El producto se trasladará desde la bodega origen seleccionada.</p>
         <div class="row g-2 mb-2">
           <div class="col-12 col-md-5"><input id="variant-q" class="form-control form-control-sm" placeholder="Codigo, descripcion, color o talla" /></div>
           <div class="col-6 col-md-3"><input id="variant-color" class="form-control form-control-sm" placeholder="Color" /></div>
@@ -277,7 +322,7 @@
                 <th>Producto</th>
                 <th>Color</th>
                 <th>Talla</th>
-                <th class="text-end">Exist.</th>
+                <th class="text-end">Central</th><th class="text-end">KG</th><th class="text-end">KGF</th><th class="text-end">Origen</th>
                 <th class="text-end">Accion</th>
               </tr>
             </thead>
@@ -298,6 +343,9 @@
   const emptyRow = document.getElementById("empty-transfer-row");
   const origenEl = document.getElementById("bodega-origen");
   const destinoEl = document.getElementById("bodega-destino");
+  const searchOrigen = document.getElementById("search-bodega-origen");
+  const searchDestino = document.getElementById("search-bodega-destino");
+
   const clearBtn = document.getElementById("clear-transfer");
   const fechaEl = document.getElementById("fecha");
   const manualSearchInput = document.getElementById("manual-search-input");
@@ -436,7 +484,7 @@
 
     if (manualSearchInput) manualSearchInput.value = "";
     if (manualSearchStatus) manualSearchStatus.textContent = "Escribe para buscar variantes de forma manual.";
-    if (manualSearchBody) manualSearchBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-2">Sin busqueda.</td></tr>`;
+    if (manualSearchBody) manualSearchBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-2">Sin busqueda.</td></tr>`;
     manualRowsCache = [];
 
     if (variantQ) variantQ.value = "";
@@ -457,10 +505,12 @@
     return `/inventory/traslados-rapidos/search?${params.toString()}`;
   };
 
+  const stockBadge = (value) => `<span class="${Number(value || 0) > 0 ? 'transfer-stock-positive' : 'transfer-stock-zero'}">${fmt(value || 0)}</span>`;
+
   const renderManualRows = (rows) => {
     manualRowsCache = Array.isArray(rows) ? rows : [];
     if (!manualRowsCache.length) {
-      manualSearchBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-2">Sin resultados</td></tr>`;
+      manualSearchBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-2">Sin resultados</td></tr>`;
       return;
     }
     manualSearchBody.innerHTML = "";
@@ -471,7 +521,7 @@
         <td>${it.cod_producto || ""} - ${it.descripcion || ""}</td>
         <td>${it.color || ""}</td>
         <td>${it.talla || ""}</td>
-        <td class="text-end">${fmt(it.existencia)}</td>
+        <td class="text-end">${stockBadge(it.stock_bodegas?.central || 0)}</td><td class="text-end">${stockBadge(it.stock_bodegas?.kg || 0)}</td><td class="text-end">${stockBadge(it.stock_bodegas?.kgf || 0)}</td><td class="text-end">${stockBadge(it.existencia)}</td>
         <td class="text-end"><button type="button" class="btn btn-outline-primary btn-sm">+</button></td>
       `;
       const add = () => {
@@ -488,22 +538,24 @@
     const q = (manualSearchInput?.value || "").trim();
     if (q.length < 1) {
       manualSearchStatus.textContent = "Escribe para buscar variantes de forma manual.";
-      manualSearchBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-2">Sin busqueda.</td></tr>`;
+      manualSearchBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-2">Sin busqueda.</td></tr>`;
       manualRowsCache = [];
       return;
     }
     manualSearchStatus.textContent = "Buscando...";
     try {
+      const requestedOrigin = origenEl.value;
       const resp = await fetch(getSearchUrl(q), { headers: { "X-Requested-With": "fetch" } });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+      if (requestedOrigin !== origenEl.value) return;
       const rows = data.items || [];
       manualSearchStatus.textContent = rows.length ? `${rows.length} variantes encontradas.` : "Sin resultados.";
       renderManualRows(rows);
     } catch (err) {
       const msg = err && err.message ? err.message : "sin detalle";
       manualSearchStatus.textContent = `Error al buscar (${msg}).`;
-      manualSearchBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-2">Error al buscar</td></tr>`;
+      manualSearchBody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-2">Error al buscar</td></tr>`;
     }
   };
 
@@ -516,13 +568,15 @@
     }
     variantSearchStatus.textContent = "Buscando...";
     try {
+      const requestedOrigin = origenEl.value;
       const resp = await fetch(getSearchUrl(q), { headers: { "X-Requested-With": "fetch" } });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+      if (requestedOrigin !== origenEl.value) return;
       const rows = data.items || [];
       if (!rows.length) {
         variantSearchStatus.textContent = "Sin resultados.";
-        variantSearchBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-2">Sin resultados</td></tr>`;
+        variantSearchBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-2">Sin resultados</td></tr>`;
         return;
       }
       variantSearchStatus.textContent = `${rows.length} variantes encontradas`;
@@ -535,7 +589,7 @@
           <td>${it.cod_producto || ""} - ${it.descripcion || ""}</td>
           <td>${it.color || ""}</td>
           <td>${it.talla || ""}</td>
-          <td class="text-end">${fmt(it.existencia)}</td>
+          <td class="text-end">${stockBadge(it.stock_bodegas?.central || 0)}</td><td class="text-end">${stockBadge(it.stock_bodegas?.kg || 0)}</td><td class="text-end">${stockBadge(it.stock_bodegas?.kgf || 0)}</td><td class="text-end">${stockBadge(it.existencia)}</td>
           <td class="text-end"><button type="button" class="btn btn-outline-primary btn-sm variant-add">+</button></td>
         `;
         const add = () => {
@@ -645,6 +699,24 @@
     updateRows();
     searchManual();
   });
+  const syncModalWarehouses = () => {
+    searchOrigen.value = origenEl.value;
+    searchDestino.value = destinoEl.value;
+  };
+  document.getElementById("variant-search-modal").addEventListener("show.bs.modal", syncModalWarehouses);
+  searchOrigen.addEventListener("change", () => {
+    if (items.size && !window.confirm("Cambiar el origen quitará los productos cargados. ¿Continuar?")) {
+      searchOrigen.value = origenEl.value;
+      return;
+    }
+    origenEl.value = searchOrigen.value;
+    origenEl.dispatchEvent(new Event("change"));
+    searchVariants();
+  });
+  searchDestino.addEventListener("change", () => { destinoEl.value = searchDestino.value; });
+  destinoEl.addEventListener("change", syncModalWarehouses);
+  origenEl.addEventListener("change", syncModalWarehouses);
+  document.getElementById("search-stock-refresh").addEventListener("click", () => { searchVariants(); searchManual(); });
   form?.addEventListener("submit", (e) => {
     if (scansPending) {
       e.preventDefault();

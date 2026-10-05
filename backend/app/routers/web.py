@@ -12045,6 +12045,19 @@ def inventory_quick_transfers_search(
         .limit(max(10, min(int(limit or 120), 500)))
         .all()
     )
+    store_bodegas = {
+        int(b.id): (b.branch.code or "").strip().lower()
+        for b in scoped_bodegas if b.branch and (b.branch.code or "").strip().lower() in {"central", "kg", "kgf"}
+    }
+    store_stocks: dict[int, dict[str, float]] = {}
+    variant_ids = [int(row[0].id) for row in rows]
+    if variant_ids and store_bodegas:
+        for variant_id, warehouse_id, quantity in db.query(
+            ShoeVariantStock.variante_id, ShoeVariantStock.bodega_id, ShoeVariantStock.existencia
+        ).filter(ShoeVariantStock.variante_id.in_(variant_ids), ShoeVariantStock.bodega_id.in_(store_bodegas)).all():
+            stocks = store_stocks.setdefault(int(variant_id), {"central": 0.0, "kg": 0.0, "kgf": 0.0})
+            code = store_bodegas[int(warehouse_id)]
+            stocks[code] += float(quantity or 0)
     items: list[dict[str, object]] = []
     for variant, producto, color_row, stock_row in rows:
         existencia = float(stock_row.existencia or 0) if stock_row else 0.0
@@ -12062,6 +12075,7 @@ def inventory_quick_transfers_search(
                 "color": color_row.nombre,
                 "talla": variant.talla,
                 "existencia": existencia,
+                "stock_bodegas": store_stocks.get(int(variant.id), {"central": 0.0, "kg": 0.0, "kgf": 0.0}),
                 "costo_cs": costo_cs,
                 "costo_usd": costo_usd,
                 "selected_price_cs": float(prices.get("precio_venta1", 0) or 0),
