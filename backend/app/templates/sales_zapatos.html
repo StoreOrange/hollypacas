@@ -4345,12 +4345,62 @@
       setTimeout(() => focusScannerInput(true), 220);
     });
 
+  let balanceRefreshInProgress = false;
+  const refreshSearchStock = async () => {
+    if (document.hidden || balanceRefreshInProgress || saleSubmissionInProgress) return;
+    balanceRefreshInProgress = true;
+    try {
+      const query = (productSearch?.value || "").trim();
+      if (query.length >= 2 && productList?.querySelector(".product-pick-row")) {
+        const response = await fetch(buildProductSearchUrl(query), { cache: "no-store" });
+        const payload = await response.json();
+        if (payload.ok && query === (productSearch?.value || "").trim()) {
+          const byId = new Map((payload.items || []).map(item => [String(item.id), item]));
+          productList.querySelectorAll(".add-item").forEach(button => {
+            const item = byId.get(button.dataset.productId);
+            if (!item) return;
+            button.dataset.existencia = String(item.existencia ?? 0);
+            button.dataset.freeQty = String(item.free_qty ?? item.existencia ?? 0);
+            button.dataset.reservedDetails = encodeURIComponent(JSON.stringify(item.reserved_details || []));
+          });
+          refreshVisibleProductBalances();
+        }
+      }
+      if (variantModal?.classList.contains("show") && variantSearchBody?.querySelector(".variant-row")) {
+        const query = (variantSearchQ?.value || "").trim().toUpperCase();
+        const color = (variantSearchColor?.value || "").trim().toUpperCase();
+        const size = (variantSearchSize?.value || "").trim().toUpperCase();
+        const sequence = variantSearchSequence;
+        const response = await fetch(buildVariantSearchUrl(query, color, size), { cache: "no-store" });
+        const payload = await response.json();
+        if (payload.ok && sequence === variantSearchSequence) {
+          const byId = new Map((payload.items || []).map(item => [String(item.variant_id), item]));
+          variantSearchBody.querySelectorAll(".variant-row").forEach(row => {
+            const variant = JSON.parse(decodeURIComponent(row.dataset.variant || ""));
+            const item = byId.get(String(variant.variant_id));
+            if (!item) return;
+            variant.existencia = item.existencia ?? 0;
+            row.dataset.variant = encodeURIComponent(JSON.stringify(variant));
+          });
+          refreshVariantBalances();
+        }
+      }
+    } catch (_) {
+      // Keep the current invoice and search visible if connectivity is interrupted.
+    } finally {
+      balanceRefreshInProgress = false;
+    }
+  };
+  setInterval(refreshSearchStock, 15000);
+
   window.addEventListener("focus", () => {
+    refreshSearchStock();
     setTimeout(() => focusScannerInput(true), 40);
   });
 
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
+      refreshSearchStock();
       setTimeout(() => focusScannerInput(true), 40);
     }
   });
