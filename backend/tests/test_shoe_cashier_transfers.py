@@ -72,3 +72,21 @@ class ShoeCashierTests(unittest.TestCase):
    self.assertFalse(web._can_request_shoe_reversion(self.db,self.user))
    self.user.default_branch_id=1;self.user.default_bodega_id=1
    self.assertTrue(web._can_request_shoe_reversion(self.db,self.user))
+
+ def test_shoe_notifications_release_database_while_waiting(self):
+  import asyncio
+  from unittest.mock import AsyncMock,Mock
+  request=Mock(query_params={})
+  request.is_disconnected=AsyncMock(return_value=False)
+  self.user.roles=[Role(name='administrador')]
+  async def verify():
+   with patch.object(web,'get_active_company_key',return_value='bdzapatos'):
+    response=await web.sales_preventas_notifications_stream(request,self.db,self.user)
+    self.assertFalse(self.db.in_transaction())
+    ready=await response.body_iterator.__anext__()
+    self.assertIn('event: ready',ready)
+    ping=await response.body_iterator.__anext__()
+    self.assertIn('event: ping',ping)
+    self.assertFalse(self.db.in_transaction())
+    await response.body_iterator.aclose()
+  asyncio.run(verify())

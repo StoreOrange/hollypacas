@@ -12308,6 +12308,11 @@ async def sales_preventas_notifications_stream(
 ):
     _enforce_permission(request, user, "access.sales")
     branch, bodega = _resolve_branch_bodega(db, user)
+    branch_id = branch.id if branch else None
+    bodega_id = bodega.id if bodega else None
+    release_idle_connection = _is_shoes_mode()
+    if release_idle_connection:
+        db.close()
     last_id_raw = (request.query_params.get("last_id") or "0").strip()
     last_id = int(last_id_raw) if last_id_raw.isdigit() else 0
 
@@ -12333,12 +12338,14 @@ async def sales_preventas_notifications_stream(
                     .order_by(Preventa.id.asc())
                     .limit(10)
                 )
-                if bodega:
-                    query = query.filter(Preventa.bodega_id == bodega.id)
-                elif branch:
-                    query = query.filter(Preventa.branch_id == branch.id)
+                if bodega_id:
+                    query = query.filter(Preventa.bodega_id == bodega_id)
+                elif branch_id:
+                    query = query.filter(Preventa.branch_id == branch_id)
 
                 rows = query.all()
+                if release_idle_connection:
+                    db.close()
                 for row in rows:
                     last_id = max(last_id, int(row.id or 0))
                     payload = {
@@ -12353,6 +12360,8 @@ async def sales_preventas_notifications_stream(
 
                 yield "event: ping\ndata: {}\n\n"
             except Exception:
+                if release_idle_connection:
+                    db.close()
                 yield "event: error\ndata: {\"message\":\"stream_error\"}\n\n"
             await asyncio.sleep(8)
 
