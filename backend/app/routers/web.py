@@ -3320,31 +3320,40 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     content_width = 70 * mm
     width = 80 * mm
     margin = (width - content_width) / 2
-    top_margin = 6 * mm
-    bottom_margin = 6 * mm
+    shoe_ticket = _is_shoes_mode()
+    top_margin = (4 if shoe_ticket else 6) * mm
+    bottom_margin = (1.5 if shoe_ticket else 6) * mm
     logo_path = _resolve_logo_path(
         company_profile.get("logo_url", ""),
         prefer_pos=True,
         pos_logo_url=company_profile.get("pos_logo_url", ""),
     )
-    logo_height = 60 * mm if logo_path.exists() else 0
-    logo_spacing = 3 * mm if logo_height else 0
+    logo_width = (70 if shoe_ticket else 78) * mm
+    logo_height = (14 if shoe_ticket else 60) * mm if logo_path.exists() else 0
+    if shoe_ticket and logo_height:
+        try:
+            with Image.open(logo_path) as logo_image:
+                image_width, image_height = logo_image.size
+            ratio = image_width / max(image_height, 1)
+            logo_height = min(logo_height, logo_width / ratio)
+            logo_width = logo_height * ratio
+        except (OSError, ValueError):
+            pass
+    logo_spacing = (1 if shoe_ticket else 3) * mm if logo_height else 0
 
     def line_gap(size: int) -> float:
         return size + 4
 
     total_height = top_margin + bottom_margin + logo_height + logo_spacing
     total_height += sum(line_gap(size) for _, _, _, size in lines)
-    # Keep every logical PDF page within a size thermal drivers can print at
-    # 100%. Very tall custom pages are commonly reduced with "fit to page".
-    page_height = min(max(total_height, 120 * mm), 280 * mm)
+    # Shoe receipts use their content height, with 1 mm for rounding safety.
+    page_height = total_height + mm if shoe_ticket else min(max(total_height, 120 * mm), 280 * mm)
 
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=(width, page_height))
     y = page_height - top_margin
 
     if logo_height:
-        logo_width = 78 * mm
         pdf.drawImage(
             str(logo_path),
             (width - logo_width) / 2,

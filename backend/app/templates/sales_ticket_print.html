@@ -250,7 +250,7 @@
             width: "76mm", maxWidth: "76mm", margin: "0", visibility: "hidden"
           });
           document.body.appendChild(measured);
-          const heightMm = Math.ceil(measured.getBoundingClientRect().height * 25.4 / 96 + 3);
+          const heightMm = Math.ceil((measured.getBoundingClientRect().height * 25.4 / 96 + 1.5) * 10) / 10;
           measured.remove();
           let paperStyle = document.getElementById("shoe-receipt-paper");
           if (!paperStyle) {
@@ -258,7 +258,7 @@
             paperStyle.id = "shoe-receipt-paper";
             document.head.appendChild(paperStyle);
           }
-          paperStyle.textContent = `@page { size: 80mm ${heightMm}mm; margin: 1mm 2mm; }`;
+          paperStyle.textContent = `@page { size: 80mm ${heightMm}mm; margin: 0.5mm 2mm; }`;
         };
         window.addEventListener("beforeprint", fitReceiptPaper);
         {% endif %}
