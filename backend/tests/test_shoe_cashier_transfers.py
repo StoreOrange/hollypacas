@@ -62,11 +62,13 @@ class ShoeCashierTests(unittest.TestCase):
   with patch.object(web,'get_active_company_key',return_value='hollywood_pacas'):
    self.assertFalse(web._shoe_admin_all_stores(admin))
 
- def test_reversions_only_central_or_admin(self):
+ def test_reversions_only_central_even_for_admin(self):
   with patch.object(web,'get_active_company_key',return_value='bdzapatos'):
    self.assertFalse(web._can_request_shoe_reversion(self.db,self.user))
    self.user.default_branch_id=1;self.user.default_bodega_id=1
    self.assertTrue(web._can_request_shoe_reversion(self.db,self.user))
    self.user.default_branch_id=3;self.user.default_bodega_id=3
    self.user.roles=[Role(name='administrador')]
+   self.assertFalse(web._can_request_shoe_reversion(self.db,self.user))
+   self.user.default_branch_id=1;self.user.default_bodega_id=1
    self.assertTrue(web._can_request_shoe_reversion(self.db,self.user))

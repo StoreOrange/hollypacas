@@ -49,6 +49,32 @@
   :is(#layout main, .modal) :is(.btn-sm, .form-control-sm, .form-select-sm, .small) { font-size: .95rem; }
   :is(#layout main, .modal) :is(label, .form-label, .nav-link) { font-size: .95rem; }
   :is(#layout main, .modal) .text-\[16px\] { font-size: 17px; }
+
+  .transfer-search-box { width: 100%; max-width: 560px; }
+  #layout main .transfer-search-box :is(.form-control, .input-group-text, .btn) {
+    min-height: 54px;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .transfer-search-box .form-control { min-width: 0; padding: 10px 12px; }
+  #transfer-items-body tr:not(#empty-transfer-row) > td {
+    --bs-table-bg: #e6dfbd;
+    --bs-table-accent-bg: transparent;
+    background-color: #e6dfbd !important;
+    color: #302c1c;
+    font-size: 15px;
+    font-weight: 700;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #c4b987;
+  }
+  #transfer-items-body tr:not(#empty-transfer-row) input:not([type="hidden"]) {
+    background-color: #fffdf4;
+    border: 1px solid #9a8f5e;
+    font-size: 17px;
+    font-weight: 700;
+    min-height: 40px;
+  }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}

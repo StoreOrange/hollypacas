@@ -678,13 +678,13 @@
                   <span id="scanner-last-code" class="scanner-last">Ultimo: -</span>
                   <label for="price-list-select" class="text-xs text-slate fw-semibold mb-0">Lista:</label>
                   <select id="price-list-select" class="form-select form-select-sm odoo-input" style="min-width: 110px;">
-                    <option value="1" selected>P1</option>
-                    <option value="2">P2</option>
-                    <option value="3">P3</option>
-                    <option value="4">P4</option>
-                    <option value="5">P5</option>
-                    <option value="6">P6</option>
-                    <option value="7">P7</option>
+                    <option value="1" selected>{{ price_list_labels[1] }}</option>
+                    <option value="2">{{ price_list_labels[2] }}</option>
+                    <option value="3">{{ price_list_labels[3] }}</option>
+                    <option value="4">{{ price_list_labels[4] }}</option>
+                    <option value="5">{{ price_list_labels[5] }}</option>
+                    <option value="6">{{ price_list_labels[6] }}</option>
+                    <option value="7">{{ price_list_labels[7] }}</option>
                   </select>
                 </div>
               </div>
@@ -960,13 +960,13 @@
                   Lista de precio *
                 </label>
                 <select id="price-list-select-modal" class="mt-2 w-full odoo-input form-select">
-                  <option value="1" selected>Precio 1 (base)</option>
-                  <option value="2">Precio 2</option>
-                  <option value="3">Precio 3</option>
-                  <option value="4">Precio 4</option>
-                  <option value="5">Precio 5</option>
-                  <option value="6">Precio 6</option>
-                  <option value="7">Precio 7</option>
+                  <option value="1" selected>{{ price_list_labels[1] }}</option>
+                  <option value="2">{{ price_list_labels[2] }}</option>
+                  <option value="3">{{ price_list_labels[3] }}</option>
+                  <option value="4">{{ price_list_labels[4] }}</option>
+                  <option value="5">{{ price_list_labels[5] }}</option>
+                  <option value="6">{{ price_list_labels[6] }}</option>
+                  <option value="7">{{ price_list_labels[7] }}</option>
                 </select>
               </div>
               <div class="mt-4">
@@ -1343,13 +1343,13 @@
           <div class="col-md-2">
             <label class="form-label mb-1 text-xs uppercase text-slate">Lista precio</label>
             <select id="variant-price-list-select" class="form-select form-select-sm odoo-input">
-              <option value="1" selected>P1</option>
-              <option value="2">P2</option>
-              <option value="3">P3</option>
-              <option value="4">P4</option>
-              <option value="5">P5</option>
-              <option value="6">P6</option>
-              <option value="7">P7</option>
+              <option value="1" selected>{{ price_list_labels[1] }}</option>
+              <option value="2">{{ price_list_labels[2] }}</option>
+              <option value="3">{{ price_list_labels[3] }}</option>
+              <option value="4">{{ price_list_labels[4] }}</option>
+              <option value="5">{{ price_list_labels[5] }}</option>
+              <option value="6">{{ price_list_labels[6] }}</option>
+              <option value="7">{{ price_list_labels[7] }}</option>
             </select>
           </div>
           <div class="col-md-1 d-flex align-items-end">
@@ -3182,7 +3182,7 @@
               ${(Number(item.reserved_qty || 0) > 0) ? `<div class="small text-amber-700 fw-semibold">Reservado: ${item.reserved_qty}</div>` : `<div class="small text-slate">Resultado de busqueda</div>`}
             </td>
             <td class="text-end fw-bold ${visualFreeQty > 0 ? "text-red-600" : "text-slate"}">${visualFreeQty.toFixed(0)}</td>
-            <td><span class="rounded-full bg-[#efe7f0] text-brand text-xs fw-bold px-2 py-1">P${item.selected_price_tier || 1}</span></td>
+            <td><span class="rounded-full bg-[#efe7f0] text-brand text-xs fw-bold px-2 py-1">${({{ price_list_labels|tojson }})[item.selected_price_tier || 1]}</span></td>
             <td class="text-end fw-bold text-brand">${formatMoney(item.selected_price_usd ?? item.precio_venta1_usd, "USD")}</td>
             <td class="text-end fw-bold text-brand">${formatMoney(item.selected_price_cs ?? item.precio_venta1, "CS")}</td>
             <td class="text-end">
@@ -3569,7 +3569,7 @@
         event.target.value = minimum.toFixed(2);
         event.target.setCustomValidity("");
         event.target.dispatchEvent(new Event("input", { bubbles: true }));
-        if (typeof Swal !== "undefined") Swal.fire({ icon: "warning", title: "Precio inferior a la lista", text: `El mínimo es ${minimum.toFixed(2)} en P${row.dataset.priceTier}. Selecciona la lista requerida y agrega nuevamente el producto.` });
+        if (typeof Swal !== "undefined") Swal.fire({ icon: "warning", title: "Precio inferior a la lista", text: `El mínimo es ${minimum.toFixed(2)} en ${({{ price_list_labels|tojson }})[row.dataset.priceTier]}. Selecciona la lista requerida y agrega nuevamente el producto.` });
       }
     });
     itemsTable.addEventListener("input", (event) => {
@@ -3597,7 +3597,7 @@
       const minimum = Number(row.dataset.minimumPrice || 0);
       const validPrice = Number(priceInput?.value || 0);
       priceInput?.setCustomValidity(!Number.isFinite(validPrice) || validPrice < minimum
-        ? `El precio mínimo de la lista P${row.dataset.priceTier} es ${minimum.toFixed(2)}. Selecciona otra lista para cobrar menos.` : "");
+        ? `El precio mínimo de la lista ${({{ price_list_labels|tojson }})[row.dataset.priceTier]} es ${minimum.toFixed(2)}. Selecciona otra lista para cobrar menos.` : "");
       const price = parseFloat(priceInput ? priceInput.value : 0);
       const moneda = monedaField.value || "USD";
       const subtotal = price * qty;

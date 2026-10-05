@@ -1238,18 +1238,18 @@
                 <table class="table table-sm mb-0 shoe-price-preview">
                   <thead class="table-light">
                     <tr>
-                      <th>#</th>
+                      <th>LISTA DE PRECIO</th>
                       <th class="text-end">Precio C$</th>
                     </tr>
                   </thead>
                   <tbody id="shoe-price-scale-body">
-                    <tr><td>1</td><td class="text-end">0.00</td></tr>
-                    <tr><td>2</td><td class="text-end">0.00</td></tr>
-                    <tr><td>3</td><td class="text-end">0.00</td></tr>
-                    <tr><td>4</td><td class="text-end">0.00</td></tr>
-                    <tr><td>5</td><td class="text-end">0.00</td></tr>
-                    <tr><td>6</td><td class="text-end">0.00</td></tr>
-                    <tr><td>7</td><td class="text-end">0.00</td></tr>
+                    <tr><td>{{ price_list_labels[1] }}</td><td class="text-end">0.00</td></tr>
+                    <tr><td>{{ price_list_labels[2] }}</td><td class="text-end">0.00</td></tr>
+                    <tr><td>{{ price_list_labels[3] }}</td><td class="text-end">0.00</td></tr>
+                    <tr><td>{{ price_list_labels[4] }}</td><td class="text-end">0.00</td></tr>
+                    <tr><td>{{ price_list_labels[5] }}</td><td class="text-end">0.00</td></tr>
+                    <tr><td>{{ price_list_labels[6] }}</td><td class="text-end">0.00</td></tr>
+                    <tr><td>{{ price_list_labels[7] }}</td><td class="text-end">0.00</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1944,7 +1944,7 @@
                       <input id="new-product-margin" type="number" min="0" step="1" class="mt-2 w-full odoo-input form-control" placeholder="Ej: 25" />
                     </label>
                     <label class="block text-sm font-semibold text-ink">
-                      Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})
+                      {{ price_list_labels[1] }} ({% if inventory_cs_only %}C${% else %}USD{% endif %})
                       <input id="new-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
                     </label>
                     {% if weighted_inventory_enabled or weighted_sales_enabled %}
@@ -2109,7 +2109,7 @@
                 Lista actual
                 <select id="shoes-price-list-select" class="mt-2 w-full odoo-input form-select">
                   {% for tier in range(1, 8) %}
-                  <option value="{{ tier }}" {% if tier == 1 %}selected{% endif %}>Precio {{ tier }}</option>
+                  <option value="{{ tier }}" {% if tier == 1 %}selected{% endif %}>{{ price_list_labels[tier] }}</option>
                   {% endfor %}
                 </select>
               </label>
@@ -2121,7 +2121,7 @@
           <div class="row g-3 mb-3 price-grid">
             <div class="col-md-2">
               <label class="block text-sm font-semibold text-ink">
-                Base P1
+                BASE {{ price_list_labels[1] }}
                 <input id="shoes-price-base" type="number" step="0.01" min="0" class="mt-2 w-full odoo-input form-control" placeholder="0.00" />
               </label>
             </div>
@@ -2134,7 +2134,7 @@
             {% for tier in range(1, 8) %}
             <div class="col-md">
               <label class="block text-sm font-semibold text-ink">
-                P{{ tier }}
+                {{ price_list_labels[tier] }}
                 <input id="shoes-new-price-{{ tier }}" type="number" step="0.01" min="0" class="mt-2 w-full odoo-input form-control" placeholder="0.00" />
               </label>
             </div>
@@ -2530,7 +2530,7 @@
             </div>
             <div class="col-md-6">
               <label class="block text-sm font-semibold text-ink">
-                Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %}) *
+                {{ price_list_labels[1] }} ({% if inventory_cs_only %}C${% else %}USD{% endif %}) *
                 <input id="quick-product-precio" name="precio_venta1_usd" type="number" step="0.01" class="mt-2 w-full odoo-input form-control" required />
               </label>
             </div>
@@ -3335,7 +3335,7 @@
   };
 
   const shoesScaleSummary = (values, mode) => {
-    const rows = values.map((value, index) => `<span>P${index + 1}: ${shoesPriceCurrencyLabel} ${Number(value || 0).toFixed(2)}</span>`);
+    const rows = values.map((value, index) => `<span>${({{ price_list_labels|tojson }})[index + 1]}: ${shoesPriceCurrencyLabel} ${Number(value || 0).toFixed(2)}</span>`);
     return `<div class="price-scale-stack ${mode}">${rows.join("")}</div>`;
   };
 
@@ -3439,7 +3439,7 @@
     const base = parseFloat(shoesPriceBase?.value || "0");
     const step = parseFloat(shoesPriceStep?.value || "0");
     if (!Number.isFinite(base) || base <= 0) {
-      if (shoesPriceStatus) shoesPriceStatus.textContent = "Indica una base valida para Precio 1.";
+      if (shoesPriceStatus) shoesPriceStatus.textContent = "Indica una base valida para {{ price_list_labels[1] }}.";
       return;
     }
     if (!Number.isFinite(step) || step < 0) {
@@ -3672,7 +3672,7 @@
         const normalizedDesc = (config.descInput?.value || "").trim();
         if (!normalizedCode) missing.push("Codigo");
         if (!normalizedDesc) missing.push("Descripcion");
-        if (!config.precioInput?.value?.trim()) missing.push("Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})");
+        if (!config.precioInput?.value?.trim()) missing.push("{{ price_list_labels[1] }} ({% if inventory_cs_only %}C${% else %}USD{% endif %})");
         if (!config.costoInput?.value?.trim()) missing.push("Costo ({% if inventory_cs_only %}C${% else %}USD{% endif %})");
         if (missing.length) {
           if (typeof Swal !== "undefined") {
@@ -4708,7 +4708,7 @@
       const rows = [];
       for (let i = 0; i < 7; i += 1) {
         const price = Math.max(0, base - i * 10);
-        rows.push(`<tr><td>${i + 1}</td><td class="text-end">${price.toFixed(2)}</td></tr>`);
+        rows.push(`<tr><td>${({{ price_list_labels|tojson }})[i + 1]}</td><td class="text-end">${price.toFixed(2)}</td></tr>`);
       }
       priceScaleBody.innerHTML = rows.join("");
     }

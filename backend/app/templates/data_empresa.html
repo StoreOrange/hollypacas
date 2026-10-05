@@ -169,7 +169,7 @@
                   <input id="price-auto-from-cost-enabled" class="accent-brand" type="checkbox" name="price_auto_from_cost_enabled" {% if profile.price_auto_from_cost_enabled %}checked{% endif %} />
                   Auto calcular precio de venta desde costo
                 </label>
-                <div class="text-muted small mt-1">Si esta activo, en productos se calcula Precio 1 automaticamente usando el porcentaje de ganancia configurado.</div>
+                <div class="text-muted small mt-1">Si esta activo, en productos se calcula {{ price_list_labels[1] }} automaticamente usando el porcentaje de ganancia configurado.</div>
               </div>
               <div class="col-md-4">
                 <label class="odoo-field-label">Porcentaje de ganancia (%)</label>

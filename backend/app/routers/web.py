@@ -38,6 +38,7 @@ from jose import JWTError, jwt
 from sqlalchemy import String, and_, create_engine, func, or_, text as sql_text
 from sqlalchemy.orm import Session, aliased, joinedload, object_session
 
+from ..core.price_lists import PRICE_LIST_LABELS
 from ..core.inventory_report_costs import branch_cost_increases
 from ..core.commission_assignment_state import whole_quantity, assignment_revision
 from ..core.commission_rates import commission_rate, is_special_price_sale, parse_commission_amount
@@ -2864,7 +2865,7 @@ def _shoe_admin_all_stores(user: User) -> bool:
 
 
 def _can_request_shoe_reversion(db: Session, user: User) -> bool:
-    if not _is_shoes_mode() or _shoe_admin_all_stores(user):
+    if not _is_shoes_mode():
         return True
     if not (user.default_bodega_id or user.default_branch_id or user.branches):
         return False
@@ -14743,6 +14744,7 @@ def sales_utilitario(
             "branches": branches,
             "can_filter_stores": not _is_shoes_mode() or _shoe_admin_all_stores(user),
             "can_reverse_sales": _can_request_shoe_reversion(db, user),
+            "direct_shoe_reversion": _is_shoes_mode(),
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
             "branch_id": branch_id,
@@ -26354,7 +26356,9 @@ async def sales_reversion_request(
 ):
     _enforce_permission(request, user, "access.sales.reversion")
     if not _can_request_shoe_reversion(db, user):
-        return JSONResponse({"ok": False, "message": "Solo Central o el administrador pueden realizar anulaciones"}, status_code=403)
+        return JSONResponse({"ok": False, "message": "Las anulaciones solo se realizan desde Central"}, status_code=403)
+    if _is_shoes_mode():
+        return JSONResponse({"ok": False, "message": "En Central la anulacion es directa; no se envian codigos"}, status_code=400)
     form = await request.form()
     motivo = (form.get("motivo") or "").strip()
     if not motivo:
@@ -26498,13 +26502,13 @@ async def sales_reversion_confirm(
 ):
     _enforce_permission(request, user, "access.sales.reversion")
     if not _can_request_shoe_reversion(db, user):
-        return JSONResponse({"ok": False, "message": "Solo Central o el administrador pueden realizar anulaciones"}, status_code=403)
+        return JSONResponse({"ok": False, "message": "Las anulaciones solo se realizan desde Central"}, status_code=403)
     form = await request.form()
     token = (form.get("token") or "").strip()
-    if not token:
+    if not _is_shoes_mode() and not token:
         return JSONResponse({"ok": False, "message": "Codigo requerido"}, status_code=400)
 
-    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
+    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).with_for_update().first()
     if not factura:
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
     if factura.estado == "ANULADA":
@@ -26518,6 +26522,29 @@ async def sales_reversion_confirm(
             return JSONResponse({"ok": False, "message": "Factura fuera de Miss Zapatos"}, status_code=403)
     elif bodega and factura.bodega_id != bodega.id:
         return JSONResponse({"ok": False, "message": "Factura fuera de tu bodega"}, status_code=403)
+
+    if _is_shoes_mode():
+        motivo = str(form.get("motivo") or "").strip()
+        if not motivo:
+            return JSONResponse({"ok": False, "message": "Motivo requerido"}, status_code=400)
+        for item in factura.items:
+            if not item.variante_id:
+                continue
+            stock = db.query(ShoeVariantStock).filter(
+                ShoeVariantStock.variante_id == item.variante_id,
+                ShoeVariantStock.bodega_id == factura.bodega_id,
+            ).with_for_update().first()
+            if stock is None:
+                stock = ShoeVariantStock(variante_id=item.variante_id, bodega_id=factura.bodega_id, existencia=Decimal("0"))
+                db.add(stock)
+                db.flush()
+            stock.existencia = Decimal(str(stock.existencia or 0)) + Decimal(str(item.cantidad or 0))
+        factura.estado = "ANULADA"
+        factura.reversion_motivo = motivo
+        factura.revertida_por = user.full_name
+        factura.revertida_at = local_now_naive()
+        db.commit()
+        return JSONResponse({"ok": True, "message": "Factura anulada"})
 
     token_row = (
         db.query(ReversionToken)
@@ -36312,7 +36339,7 @@ async def sales_create_invoice(
                 minimum = Decimal(str(getattr(producto, field, 0) or 0)).quantize(Decimal("0.01"))
                 if not Decimal(str(price)).is_finite() or Decimal(str(price)).quantize(Decimal("0.01")) < minimum:
                     db.rollback()
-                    message = f"El precio de {producto.cod_producto} no puede ser menor a {minimum:.2f} de la lista P{tier}. Selecciona otra lista de precios."
+                    message = f"El precio de {producto.cod_producto} no puede ser menor a {minimum:.2f} de la lista {PRICE_LIST_LABELS[tier]}. Selecciona otra lista de precios."
                     return RedirectResponse("/sales?error=" + quote_plus(message), status_code=303)
             if moneda == "USD":
                 precio_usd = price

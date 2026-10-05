@@ -758,15 +758,15 @@
               <input id="field-margin" type="number" min="0" step="1" class="form-control odoo-input" placeholder="Ej: 25" />
             </div>
             <div class="col-md-6">
-              <label class="form-label odoo-field-label">Precio 1 ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
+              <label class="form-label odoo-field-label">{{ price_list_labels[1] }} ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
               <input id="field-precio1" name="precio_venta1_usd" type="number" step="0.01" class="form-control odoo-input" />
             </div>
             <div class="col-md-6">
-              <label class="form-label odoo-field-label">Precio 2 ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
+              <label class="form-label odoo-field-label">{{ price_list_labels[2] }} ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
               <input id="field-precio2" name="precio_venta2_usd" type="number" step="0.01" class="form-control odoo-input" />
             </div>
             <div class="col-md-6">
-              <label class="form-label odoo-field-label">Precio 3 ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
+              <label class="form-label odoo-field-label">{{ price_list_labels[3] }} ({% if inventory_cs_only %}C${% else %}USD{% endif %})</label>
               <input id="field-precio3" name="precio_venta3_usd" type="number" step="0.01" class="form-control odoo-input" />
             </div>
             <div class="col-md-6">
@@ -1921,7 +1921,7 @@
     const missing = [];
     if (!normalizedCode && !currentProductId) missing.push("Codigo");
     if (!normalizedDesc) missing.push("Descripcion");
-    if (!fieldPrecio1?.value?.trim()) missing.push("Precio 1");
+    if (!fieldPrecio1?.value?.trim()) missing.push("{{ price_list_labels[1] }}");
     if (!fieldCosto?.value?.trim()) missing.push("Costo");
     if ((fieldTipoProducto?.value || "DIRECTO") === "RECETA" && !currentRecipeItems.length) {
       missing.push("Receta");

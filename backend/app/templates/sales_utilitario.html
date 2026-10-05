@@ -264,6 +264,7 @@
             Motivo de reversion *
           </div>
           <textarea class="form-control odoo-input" id="reversion-motivo" rows="3" placeholder="Describe el motivo para anular la factura"></textarea>
+          {% if not direct_shoe_reversion %}
           <div class="d-flex justify-content-end mt-3">
             <button class="btn btn-outline-secondary" id="reversion-send-code" type="button">
               <i class="bi bi-envelope-at"></i>
@@ -277,6 +278,7 @@
             Codigo de autorizacion
           </div>
           <input class="form-control odoo-input" id="reversion-token" placeholder="Ingresa el codigo recibido" />
+          {% endif %}
           <div class="d-flex justify-content-end mt-3">
             <button class="btn btn-danger" id="reversion-confirm" type="button">
               <i class="bi bi-shield-check"></i>
@@ -525,7 +527,7 @@
       const numero = button.dataset.numero || "Factura";
       reversionTitle.textContent = numero;
       reversionMotivo.value = "";
-      reversionToken.value = "";
+      if (reversionToken) reversionToken.value = "";
       showReversionStatus("", false);
       if (window.bootstrap) {
         const modal = new bootstrap.Modal(reversionModal);
@@ -551,7 +553,7 @@
     });
   });
 
-  reversionSendCode.addEventListener("click", async () => {
+  reversionSendCode?.addEventListener("click", async () => {
     if (!currentReversionId) {
       return;
     }
@@ -578,13 +580,21 @@
     if (!currentReversionId) {
       return;
     }
-    const token = reversionToken.value.trim();
+    const token = reversionToken?.value.trim() || "";
+    {% if not direct_shoe_reversion %}
     if (!token) {
       showReversionStatus("Codigo requerido.", true);
       return;
     }
     const payload = new FormData();
     payload.append("token", token);
+    {% else %}
+    const motivo = reversionMotivo.value.trim();
+    if (!motivo) { showReversionStatus("Motivo requerido.", true); return; }
+    if (!window.confirm("¿Anular esta factura? Se devolverán los productos a su bodega de origen.")) return;
+    const payload = new FormData();
+    payload.append("motivo", motivo);
+    {% endif %}
     const response = await fetch(`/sales/${currentReversionId}/reversion/confirm`, {
       method: "POST",
       body: payload,

@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
 from .config import get_active_company_key
+from .core.price_lists import PRICE_LIST_LABELS
 from .core.init_db import init_db
 from .database import get_session_local
 from .models.sales import CompanyProfileSetting
@@ -35,6 +36,7 @@ app.include_router(web.router)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.state.templates = Jinja2Templates(directory="app/templates")
+app.state.templates.env.globals["price_list_labels"] = PRICE_LIST_LABELS
 _DEFAULT_LOGO_URL = "/static/logo_hollywood.png"
 
 
