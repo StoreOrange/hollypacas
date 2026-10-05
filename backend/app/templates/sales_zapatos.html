@@ -1912,6 +1912,8 @@
     }
     const row = document.createElement("tr");
     row.dataset.itemRow = "1";
+    row.dataset.minimumPrice = String(payload.priceValue);
+    row.dataset.priceTier = String(payload.priceTier || getActivePriceTier());
     row.dataset.productId = payload.productId;
     row.dataset.variantId = payload.variantId ? String(payload.variantId) : "";
     row.dataset.subtotalUsd = payload.subtotalUsd.toFixed(2);
@@ -2228,6 +2230,7 @@
     addItemRow({
       productId: variant.producto_id,
       variantId: variant.variant_id,
+      priceTier: variant.selected_price_tier || getActivePriceTier(),
       variantCode: variant.cod_variante,
       color: variant.color,
       size: variant.talla,
