@@ -301,10 +301,12 @@
           }
         };
 
-        const triggerPrint = () => {
-          if (exited || printing || printed >= copies) return;
+        const triggerPrint = (retry = false) => {
+          if (exited || printed >= copies || (printing && !retry)) return;
+          clearTimeout(nextPrintTimer);
           printing = true;
           printRequestedAt = Date.now();
+          window.focus();
           fitReceiptPaper();
           window.print();
           // Some browsers omit afterprint but return from a blocking dialog.
@@ -380,7 +382,7 @@
 
         {% endif %}
         if (printNowBtn) {
-          printNowBtn.addEventListener("click", () => triggerPrint());
+          printNowBtn.addEventListener("click", () => triggerPrint(true));
         }
         if (refreshReturnBtn) {
           refreshReturnBtn.addEventListener("click", () => {
