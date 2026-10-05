@@ -104,15 +104,30 @@
   }
   .transfer-stock-positive { background: #dbeafe; color: #1e4c82; }
   .transfer-stock-zero { background: #fde2e2; color: #923c3c; }
+
+  .transfer-compact-header { padding: 7px 12px !important; margin-bottom: 10px !important; }
+  .transfer-compact-header > .d-flex { gap: 6px !important; }
+  .transfer-header-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+  .transfer-compact-header .toggle-sidebar { margin: 0 !important; padding: 3px 8px; }
+  .transfer-compact-header :is(nav[aria-label="breadcrumb"], .odoo-subtitle) { display: none; }
+  .transfer-compact-header .odoo-title { margin: 0 !important; font-size: 18px; line-height: 1.2; }
+  .transfer-compact-header .odoo-pill { padding: 3px 8px; }
+  .transfer-compact-header .nav-tabs { margin-top: 5px !important; flex-wrap: nowrap; overflow-x: auto; }
+  .transfer-compact-header .nav-link { padding: 3px 8px; line-height: 1.25; white-space: nowrap; }
+  @media (max-width: 575.98px) { .transfer-compact-header .odoo-pill { display: none; } }
+
+  #layout main .transfer-manual-button { background: #e6dfbd; border: 1px solid #b5a877; color: #302c1c; font-weight: 700; min-height: 44px; }
+  #layout main .transfer-manual-button:hover { background: #d8cfa6; border-color: #958654; }
+  #layout main .transfer-manual-button:focus-visible { outline: 3px solid #958654; outline-offset: 2px; }
 </style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
   <main class="p-6 lg:p-8 text-[16px]">
     <div class="odoo-page">
-      <div class="odoo-header mb-3">
+      <div class="odoo-header transfer-compact-header mb-3">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-          <div>
+          <div class="transfer-header-heading">
             <button class="toggle-sidebar sidebar-toggle-show btn btn-sm btn-outline-secondary mb-2" type="button">
               <i class="bi bi-layout-sidebar"></i>
               Mostrar menu
@@ -123,7 +138,7 @@
                 <li class="breadcrumb-item active" aria-current="page">Traslados rapidos</li>
               </ol>
             </nav>
-            <div class="odoo-title mt-2">Traslados rapidos entre bodegas</div>
+            <div class="odoo-title mt-2">Traslados rápidos</div>
             <div class="odoo-subtitle mt-1">Escaneo por codigo de variante y carga en grid para traslado inmediato.</div>
           </div>
           {% if rate_today %}
@@ -190,36 +205,10 @@
           </div>
           <div id="scan-status" class="col-12 small" role="status" aria-live="polite"></div>
           <div class="col-12 col-lg-4 d-flex align-items-end">
-            <button type="button" class="btn btn-outline-secondary btn-sm w-100" data-bs-toggle="modal" data-bs-target="#variant-search-modal">
+            <button type="button" class="btn transfer-manual-button btn-sm w-100" data-bs-toggle="modal" data-bs-target="#variant-search-modal">
               <i class="bi bi-search me-1"></i> Buscar variante manual
             </button>
           </div>
-          <div class="col-12">
-            <label class="form-label">Busqueda manual rapida (como ventas)</label>
-            <div class="input-group input-group-sm transfer-search-box">
-              <span class="input-group-text"><i class="bi bi-search"></i></span>
-              <input id="manual-search-input" type="text" class="form-control" placeholder="Escribe codigo, descripcion, color o talla y Enter" autocomplete="off" />
-            </div>
-            <div id="manual-search-status" class="form-text">Escribe para buscar variantes de forma manual.</div>
-            <div class="table-responsive mt-2">
-              <table class="table table-sm align-middle mb-0 transfer-grid-sm">
-                <thead>
-                  <tr>
-                    <th>Codigo</th>
-                    <th>Producto</th>
-                    <th>Color</th>
-                    <th>Talla</th>
-                    <th class="text-end">Central</th><th class="text-end">KG</th><th class="text-end">KGF</th><th class="text-end">Origen</th>
-                    <th class="text-end">Accion</th>
-                  </tr>
-                </thead>
-                <tbody id="manual-search-body">
-                  <tr><td colspan="9" class="text-center text-muted py-2">Sin busqueda.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           <div class="col-12">
             <div class="table-responsive">
               <table class="table table-sm align-middle transfer-grid-sm">
@@ -348,9 +337,6 @@
 
   const clearBtn = document.getElementById("clear-transfer");
   const fechaEl = document.getElementById("fecha");
-  const manualSearchInput = document.getElementById("manual-search-input");
-  const manualSearchStatus = document.getElementById("manual-search-status");
-  const manualSearchBody = document.getElementById("manual-search-body");
 
   const variantQ = document.getElementById("variant-q");
   const variantColor = document.getElementById("variant-color");
@@ -368,8 +354,6 @@
   const exactMatches = (rows, code) => rows.filter(row =>
     [row.cod_variante, row.scan_code].some(value => String(value || "").trim().toUpperCase() === code.trim().toUpperCase()));
   let scanChain = Promise.resolve(), scansPending = 0, scanGeneration = 0;
-  let manualRowsCache = [];
-  let manualTimer = null;
   let variantTimer = null;
 
   if (fechaEl && !fechaEl.value) {
@@ -473,7 +457,6 @@
   };
 
   const resetSearchAndFocusScanner = () => {
-    if (manualTimer) clearTimeout(manualTimer);
     if (variantTimer) clearTimeout(variantTimer);
 
     if (scanInput) {
@@ -482,10 +465,6 @@
       try { scanInput.select(); } catch (_) {}
     }
 
-    if (manualSearchInput) manualSearchInput.value = "";
-    if (manualSearchStatus) manualSearchStatus.textContent = "Escribe para buscar variantes de forma manual.";
-    if (manualSearchBody) manualSearchBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-2">Sin busqueda.</td></tr>`;
-    manualRowsCache = [];
 
     if (variantQ) variantQ.value = "";
     if (variantColor) variantColor.value = "";
@@ -506,58 +485,6 @@
   };
 
   const stockBadge = (value) => `<span class="${Number(value || 0) > 0 ? 'transfer-stock-positive' : 'transfer-stock-zero'}">${fmt(value || 0)}</span>`;
-
-  const renderManualRows = (rows) => {
-    manualRowsCache = Array.isArray(rows) ? rows : [];
-    if (!manualRowsCache.length) {
-      manualSearchBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-2">Sin resultados</td></tr>`;
-      return;
-    }
-    manualSearchBody.innerHTML = "";
-    for (const it of manualRowsCache) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${it.cod_variante || ""}</td>
-        <td>${it.cod_producto || ""} - ${it.descripcion || ""}</td>
-        <td>${it.color || ""}</td>
-        <td>${it.talla || ""}</td>
-        <td class="text-end">${stockBadge(it.stock_bodegas?.central || 0)}</td><td class="text-end">${stockBadge(it.stock_bodegas?.kg || 0)}</td><td class="text-end">${stockBadge(it.stock_bodegas?.kgf || 0)}</td><td class="text-end">${stockBadge(it.existencia)}</td>
-        <td class="text-end"><button type="button" class="btn btn-outline-primary btn-sm">+</button></td>
-      `;
-      const add = () => {
-        if (Number(it.existencia || 0) <= 0) return;
-        addVariantItem(it);
-      };
-      tr.querySelector("button").addEventListener("click", add);
-      tr.addEventListener("dblclick", add);
-      manualSearchBody.appendChild(tr);
-    }
-  };
-
-  const searchManual = async () => {
-    const q = (manualSearchInput?.value || "").trim();
-    if (q.length < 1) {
-      manualSearchStatus.textContent = "Escribe para buscar variantes de forma manual.";
-      manualSearchBody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-2">Sin busqueda.</td></tr>`;
-      manualRowsCache = [];
-      return;
-    }
-    manualSearchStatus.textContent = "Buscando...";
-    try {
-      const requestedOrigin = origenEl.value;
-      const resp = await fetch(getSearchUrl(q), { headers: { "X-Requested-With": "fetch" } });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      if (requestedOrigin !== origenEl.value) return;
-      const rows = data.items || [];
-      manualSearchStatus.textContent = rows.length ? `${rows.length} variantes encontradas.` : "Sin resultados.";
-      renderManualRows(rows);
-    } catch (err) {
-      const msg = err && err.message ? err.message : "sin detalle";
-      manualSearchStatus.textContent = `Error al buscar (${msg}).`;
-      manualSearchBody.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-2">Error al buscar</td></tr>`;
-    }
-  };
 
   const searchVariants = async (queryOverride = null) => {
     const q = queryOverride !== null ? queryOverride : variantQ.value.trim();
@@ -676,28 +603,10 @@
     updateRows();
     scanInput?.focus();
   });
-  manualSearchInput?.addEventListener("input", () => {
-    if (manualTimer) clearTimeout(manualTimer);
-    manualTimer = setTimeout(() => {
-      searchManual();
-    }, 180);
-  });
-  manualSearchInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const matches = exactMatches(manualRowsCache, manualSearchInput.value || "");
-      if (matches.length === 1) {
-        addVariantItem(matches[0]);
-        return;
-      }
-      searchManual();
-    }
-  });
   origenEl?.addEventListener("change", () => {
     scanGeneration++;
     items.clear();
     updateRows();
-    searchManual();
   });
   const syncModalWarehouses = () => {
     searchOrigen.value = origenEl.value;
@@ -716,7 +625,7 @@
   searchDestino.addEventListener("change", () => { destinoEl.value = searchDestino.value; });
   destinoEl.addEventListener("change", syncModalWarehouses);
   origenEl.addEventListener("change", syncModalWarehouses);
-  document.getElementById("search-stock-refresh").addEventListener("click", () => { searchVariants(); searchManual(); });
+  document.getElementById("search-stock-refresh").addEventListener("click", () => { searchVariants(); });
   form?.addEventListener("submit", (e) => {
     if (scansPending) {
       e.preventDefault();
