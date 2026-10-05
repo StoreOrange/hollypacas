@@ -90,3 +90,18 @@ class ShoeCashierTests(unittest.TestCase):
     self.assertFalse(self.db.in_transaction())
     await response.body_iterator.aclose()
   asyncio.run(verify())
+
+ def test_shoe_start_page_is_sales_only_in_shoes(self):
+  with patch.object(web,'get_active_company_key',return_value='bdzapatos'):
+   self.assertEqual(web.root().headers['location'],'/sales')
+  with patch.object(web,'get_active_company_key',return_value='hollywood_pacas'):
+   self.assertEqual(web.root().headers['location'],'/home')
+ def test_shoe_login_redirects_to_sales(self):
+  from unittest.mock import Mock
+  user=User(email='login-test',full_name='Login test',hashed_password='test',is_active=True)
+  db=Mock();db.query.return_value.filter.return_value.first.return_value=user
+  request=Request({'type':'http','method':'POST','path':'/login','headers':[],'query_string':b'','scheme':'http','server':('localhost',8001)})
+  with patch.object(web,'get_active_company_key',return_value='bdzapatos'),patch.object(web,'verify_password',return_value=True):
+   result=web.login_action(request,username='login-test',password='test',remember=None,db=db)
+   self.assertEqual(result.headers['location'],'/sales')
+   self.assertIn('access_token=',result.headers['set-cookie'])

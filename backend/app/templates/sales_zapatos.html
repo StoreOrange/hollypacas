@@ -2207,6 +2207,18 @@
         qtyInputRow.value = Math.trunc(newQty).toString();
       }
       const priceInputRow = existingRow.querySelector(".row-price");
+      const selectedTier = Number(variant.selected_price_tier || getActivePriceTier());
+      if (Number(existingRow.dataset.priceTier) !== selectedTier) {
+        const currency = monedaField.value || "CS";
+        const selectedPrice = Number(currency === "USD"
+          ? (variant.selected_price_usd ?? variant.precio_venta1_usd ?? 0)
+          : (variant.selected_price_cs ?? variant.precio_venta1 ?? 0));
+        existingRow.dataset.priceTier = String(selectedTier);
+        existingRow.dataset.minimumPrice = selectedPrice.toFixed(2);
+        existingRow.querySelector('input[name="item_price_tier"]').value = String(selectedTier);
+        if (priceInputRow) { priceInputRow.value = selectedPrice.toFixed(2); priceInputRow.setCustomValidity(""); }
+      }
+
       const priceValue = parseFloat(priceInputRow?.value || 0);
       const moneda = monedaField.value || "USD";
       const subtotal = priceValue * newQty;
@@ -2221,8 +2233,8 @@
       return true;
     }
     const moneda = monedaField.value || "USD";
-    const priceUsd = parseFloat(variant.selected_price_usd || variant.precio_venta1_usd || 0);
-    const priceCs = parseFloat(variant.selected_price_cs || variant.precio_venta1 || 0);
+    const priceUsd = parseFloat(variant.selected_price_usd ?? variant.precio_venta1_usd ?? 0);
+    const priceCs = parseFloat(variant.selected_price_cs ?? variant.precio_venta1 ?? 0);
     const price = moneda === "USD" ? priceUsd : priceCs;
     const subtotal = price * qty;
     const subtotalUsd = moneda === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
@@ -2271,7 +2283,7 @@
             <td class="text-center">${escapeHtml(item.color)}</td>
             <td class="text-center">${escapeHtml(item.talla)}</td>
             <td class="text-end ${existencia > 0 ? "text-success" : "text-danger"} fw-semibold variant-balance-cell">${existencia.toFixed(0)}</td>
-            <td class="text-end">${formatMoney(item.selected_price_cs || item.precio_venta1, "CS")}</td>
+            <td class="text-end">${formatMoney(item.selected_price_cs ?? item.precio_venta1, "CS")}</td>
             <td class="text-center">
               <input class="form-control form-control-sm text-end variant-qty" type="number" min="1" step="1" max="${Math.max(1, Math.trunc(existencia))}" value="${defaultQty}" ${disabled ? "disabled" : ""} />
             </td>
@@ -2365,7 +2377,10 @@
     return false;
   };
 
+  let variantSearchSequence = 0;
   const runVariantSearch = async (force = false) => {
+    const sequence = ++variantSearchSequence;
+    const requestedTier = getActivePriceTier();
     if (!variantSearchQ || !variantSearchBody) return;
     const q = (variantSearchQ.value || "").trim().toUpperCase();
     const color = (variantSearchColor?.value || "").trim().toUpperCase();
@@ -2376,9 +2391,11 @@
       return;
     }
     if (variantSearchStatus) variantSearchStatus.textContent = "Buscando...";
+    variantSearchBody.innerHTML = `<tr><td colspan="8">Cargando precios de la lista seleccionada…</td></tr>`;
     try {
       const response = await fetch(buildVariantSearchUrl(q, color, size));
       const payload = await response.json().catch(() => null);
+      if (sequence !== variantSearchSequence || requestedTier !== getActivePriceTier()) return;
       const items = payload?.ok ? (payload.items || []) : [];
       renderVariantSearchRows(items);
       if (variantSearchStatus) {
@@ -2387,6 +2404,7 @@
           : "Sin resultados.";
       }
     } catch (error) {
+      if (sequence !== variantSearchSequence) return;
       if (variantSearchStatus) variantSearchStatus.textContent = "Error buscando variantes.";
       variantSearchBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">No se pudo buscar.</td></tr>`;
     }
@@ -2669,7 +2687,7 @@
       descripcion: item.descripcion,
       cantidad: Math.max(1, Math.round(item.cantidad || 1)),
       precioUsd: item.selected_price_usd || item.precio_venta1_usd || 0,
-      precioCs: item.selected_price_cs || item.precio_venta1 || 0,
+      precioCs: item.selected_price_cs ?? item.precio_venta1 ?? 0,
       existencia: item.existencia || 0,
       freeQty: item.free_qty ?? item.existencia ?? 0,
       reservedDetails: item.reserved_details || [],
@@ -3359,6 +3377,8 @@
   };
   const onPriceListChange = async (sourceEl) => {
     const tier = normalizeTierValue(sourceEl?.value || getActivePriceTier());
+    variantSearchSequence++;
+    if (variantSearchBody) variantSearchBody.innerHTML = "";
     if (priceListSelect && sourceEl !== priceListSelect) {
       priceListSelect.value = tier;
     }

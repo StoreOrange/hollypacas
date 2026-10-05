@@ -4161,7 +4161,7 @@ def login_action(
     # Keep sessions alive by default for POS usage (1 year).
     expires = timedelta(days=365)
     token = create_access_token({"sub": user.email}, expires_delta=expires)
-    response = RedirectResponse("/home", status_code=302)
+    response = RedirectResponse("/sales" if _is_shoes_mode() else "/home", status_code=302)
     max_age = int(expires.total_seconds())
     expires_at = datetime.now(timezone.utc) + expires
     host = request.url.hostname or ""
@@ -4195,7 +4195,7 @@ def logout(request: Request):
 
 @router.get("/")
 def root():
-    return RedirectResponse("/home", status_code=302)
+    return RedirectResponse("/sales" if _is_shoes_mode() else "/home", status_code=302)
 
 
 def _shoe_home_stores(db, user):
