@@ -3263,6 +3263,8 @@
 
   const renderProducts = (items) => {
     if (!productList) return;
+    const selectedRow = productList.querySelector(".product-pick-row.product-active");
+    const selectedKey = selectedRow ? `${selectedRow.dataset.productId}:${selectedRow.dataset.variantId}` : null;
     const visibleItems = items || [];
     if (!visibleItems.length) {
       productList.innerHTML = `<tr id="product-empty"><td colspan="8" class="text-center py-3 text-slate">Sin resultados.</td></tr>`;
@@ -3276,7 +3278,7 @@
         const visualFreeQty = Math.max(0, rawFreeQty - getInvoiceVariantQty(item.id, item.variant_id));
         const defaultQty = String(Math.min(1, Math.max(0, Math.floor(visualFreeQty))));
         return `
-          <tr class="product-pick-row" data-name="${item.descripcion}" data-code="${item.cod_producto}" role="option">
+          <tr class="product-pick-row" data-product-id="${item.id}" data-variant-id="${item.variant_id || ''}" data-name="${item.descripcion}" data-code="${item.cod_producto}" role="option">
             <td><span class="rm-code text-brand fw-bold">${item.cod_variante || item.cod_producto}</span></td>
             <td>
               <div class="fw-bold text-ink">${item.descripcion}</div>
@@ -3315,7 +3317,8 @@
       })
       .join("");
     refreshActiveRows();
-    setActiveProduct(0);
+    const selectedIndex = activeProductRows.findIndex(row => `${row.dataset.productId}:${row.dataset.variantId}` === selectedKey);
+    setActiveProduct(selectedIndex >= 0 ? selectedIndex : 0);
   };
 
   const mainFilters = { talla: document.getElementById("main-filter-size"), color: document.getElementById("main-filter-color"), marca: document.getElementById("main-filter-brand") };
@@ -3394,13 +3397,12 @@
         event.preventDefault();
         return;
       }
-      if (event.key === "Enter") {
-        event.preventDefault();
-        setActiveProduct(0);
+      if (["Enter", "ArrowDown", "ArrowUp"].includes(event.key)) {
         productNavMode = "panel";
-        if (productListPanel) {
-          setTimeout(() => productListPanel.focus(), 0);
-        }
+        handleProductNav(event);
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.key !== "Enter") productListPanel?.focus({preventScroll:true});
       }
     });
   }
@@ -3415,6 +3417,13 @@
     if (button) {
       const added = await handleAddItem(button);
       if (added && productSearch) {
+        clearTimeout(searchTimer);
+        productSearchAbort?.abort();
+        productSearchSequence += 1;
+        mainSearchItems = [];
+        mainSearchQuery = "";
+        Object.values(mainFilters).forEach(input => { if (input) input.value = ""; });
+        mainFilterBar?.classList.add("d-none");
         productSearch.value = "";
         if (productList && productEmptyRow) {
           productList.innerHTML = productEmptyRow.outerHTML;
@@ -3436,7 +3445,19 @@
   };
 
   const handleProductNav = (event) => {
-    if (productNavMode === "paused") return;
+    if (event.defaultPrevented || productNavMode === "paused") return;
+    if (event.target.closest?.("#main-search-filters")) {
+      if (event.key === "Enter") event.preventDefault();
+      return;
+    }
+    const targetRow = event.target.closest?.(".product-pick-row");
+    if (event.target.matches?.("input, select, textarea") && event.target !== productSearch && event.key !== "Enter") return;
+    if (targetRow) {
+      refreshActiveRows();
+      setActiveProduct(activeProductRows.indexOf(targetRow));
+    } else {
+      getActiveProductRow();
+    }
     refreshActiveRows();
     if (!activeProductRows.length) return;
     if (event.key === "ArrowDown") {
@@ -3467,7 +3488,7 @@
       if (index >= 0) {
         setActiveProduct(index);
         productNavMode = "panel";
-        productListPanel.focus();
+        if (!event.target.closest("input, button")) productListPanel.focus({preventScroll:true});
       }
     });
     productListPanel.addEventListener("dblclick", async (event) => {
@@ -3545,7 +3566,7 @@
     if (comboModal && comboModal.classList.contains("show")) {
       return;
     }
-    if (productNavMode !== "panel") return;
+    if (event.defaultPrevented || productNavMode !== "panel") return;
     if (!["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) return;
     const activeEl = document.activeElement;
     const isTypingField = activeEl instanceof HTMLElement && (
