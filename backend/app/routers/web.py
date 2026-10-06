@@ -12030,7 +12030,8 @@ def inventory_quick_transfers_search(
         like = f"%{query.lower()}%"
         scan_id = int(query[1:]) if re.fullmatch(r"V\d{1,10}", query.upper()) else 0
         if exact:
-            code_match = func.lower(ShoeProductVariant.cod_variante) == query.lower()
+            code_match = or_(func.lower(ShoeProductVariant.cod_variante) == query.lower(),
+                             func.lower(Producto.cod_producto) == query.lower())
             if scan_id and _variant_scan_code(scan_id) == query.upper():
                 code_match = or_(code_match, ShoeProductVariant.id == scan_id)
             query_rows = query_rows.filter(code_match)
@@ -12053,7 +12054,12 @@ def inventory_quick_transfers_search(
 
     rows = (
         query_rows
-        .order_by(Producto.descripcion.asc(), ColorCatalog.nombre.asc(), ShoeProductVariant.talla.asc())
+        .order_by(
+            (func.lower(ShoeProductVariant.cod_variante) == query.lower()).desc(),
+            (func.lower(Producto.cod_producto) == query.lower()).desc(),
+            (func.lower(Producto.cod_producto).like(f"{query.lower()}%")).desc(),
+            Producto.id.desc(), ColorCatalog.nombre.asc(), ShoeProductVariant.talla.asc(),
+        )
         .limit(max(10, min(int(limit or 120), 500)))
         .all()
     )

@@ -545,11 +545,21 @@
       if (generation !== scanGeneration || origenEl.value !== selectedBodega) return;
       if (!data.ok || String(data.bodega_id) !== selectedBodega) throw new Error("No se pudo verificar la bodega de origen.");
       const matches = exactMatches(data.items || [], code);
-      if (matches.length !== 1) {
-        setScanStatus(matches.length ? `Codigo ambiguo: ${code}. No se agrego ningun articulo.` : `Codigo inexistente: ${code}. No se agrego ningun articulo.`, true);
+      if (matches.length === 1) {
+        addVariantItem(matches[0], true);
         return;
       }
-      addVariantItem(matches[0], true);
+      const modelMatches = (data.items || []).filter(row => String(row.cod_producto || "").trim().toUpperCase() === code.trim().toUpperCase());
+      if (!matches.length && modelMatches.length === 1) {
+        addVariantItem(modelMatches[0], true);
+        return;
+      }
+      variantQ.value = code;
+      variantColor.value = "";
+      variantSize.value = "";
+      bootstrap.Modal.getOrCreateInstance(document.getElementById("variant-search-modal")).show();
+      await searchVariants(code);
+      setScanStatus(`Busca ${code} y selecciona la talla y el color para cargar al traslado.`);
     } catch (error) {
       if (generation === scanGeneration) setScanStatus(`${error.message} No se agrego ningun articulo.`, true);
     } finally {

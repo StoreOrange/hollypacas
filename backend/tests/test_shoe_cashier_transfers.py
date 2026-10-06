@@ -105,3 +105,19 @@ class ShoeCashierTests(unittest.TestCase):
    result=web.login_action(request,username='login-test',password='test',remember=None,db=db)
    self.assertEqual(result.headers['location'],'/sales')
    self.assertIn('access_token=',result.headers['set-cookie'])
+
+ def test_transfer_search_accepts_parent_product_code_without_picking_a_size(self):
+  import json
+  from app.models.inventory import Producto,ColorCatalog,ShoeProductVariant,ShoeVariantStock
+  self.db.add(Producto(id=900,cod_producto='PECHA03',descripcion='Sandalia FOREVER',activo=True))
+  self.db.add(ColorCatalog(id=900,nombre='BLACK',abreviatura='BLK'))
+  for ident,size in [(900,'6'),(901,'7')]:
+   self.db.add(ShoeProductVariant(id=ident,producto_id=900,color_id=900,talla=size,cod_variante='PECHA03-BLK-'+size,activo=True))
+   self.db.add(ShoeVariantStock(variante_id=ident,bodega_id=1,existencia=2))
+  self.db.commit()
+  request=Request({'type':'http','method':'GET','path':'/inventory/traslados-rapidos/search','headers':[],'query_string':b''})
+  with patch.object(web,'_is_shoes_mode',return_value=True),patch.object(web,'_enforce_quick_transfer'),patch.object(web,'_is_shoe_cashier',return_value=False):
+   data=json.loads(web.inventory_quick_transfers_search(request,q='PECHA03',bodega_id='1',color=None,talla=None,limit=120,exact=True,db=self.db,user=self.user).body)
+   self.assertEqual({item['variant_id'] for item in data['items']},{900,901})
+   data=json.loads(web.inventory_quick_transfers_search(request,q='PECHA03-BLK-7',bodega_id='1',color=None,talla=None,limit=120,exact=True,db=self.db,user=self.user).body)
+   self.assertEqual([item['variant_id'] for item in data['items']],[901])
