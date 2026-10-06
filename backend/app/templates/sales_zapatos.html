@@ -70,6 +70,19 @@
       font-size: 0.799rem !important;
     }
   {% endif %}
+  #product-list-panel { max-height: none !important; overflow: visible !important; }
+  #product-results-scroll { max-height: min(26vh, 220px); overflow-x: auto; overflow-y: scroll; scrollbar-gutter: stable; scrollbar-width: auto; scrollbar-color: #d88da5 #fcebf1; }
+  @supports selector(::-webkit-scrollbar) { #product-results-scroll { scrollbar-color: auto; } }
+  #product-results-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+  #product-results-scroll::-webkit-scrollbar-track { background: #fcebf1; border-radius: 12px; }
+  #product-results-scroll::-webkit-scrollbar-thumb { background: #d88da5; border: 2px solid #fcebf1; border-radius: 12px; }
+  #price-list-select, #price-list-select-modal, #variant-price-list-select,
+  #price-list-select option, #price-list-select-modal option, #variant-price-list-select option {
+    font-weight: 700 !important;
+  }
+  #layout #main-search-filters label, #layout #main-search-filters input,
+  #layout #main-search-filters button, #layout #main-filter-count { font-size: 16px !important; }
+  #main-search-filters input { min-height: 36px; }
   #product-search {
     font-size: 1.242rem !important;
     font-weight: 700 !important;
@@ -723,11 +736,46 @@
                       </td>
                     </tr>
                   </tbody>
+                </table>
+                <div id="main-search-filters" class="d-none" style="padding:6px 8px;background:#fff5f8;border-bottom:1px solid #f3dce5;">
+                  <div class="d-flex flex-wrap align-items-center gap-2">
+                    <label class="small mb-0">Talla <input id="main-filter-size" type="text" class="form-control form-control-sm d-inline-block" style="width:85px;" autocomplete="off"></label>
+                    <label class="small mb-0">Color <input id="main-filter-color" type="text" class="form-control form-control-sm d-inline-block" style="width:145px;" autocomplete="off"></label>
+                    <label class="small mb-0">Marca <input id="main-filter-brand" type="text" class="form-control form-control-sm d-inline-block" style="width:170px;" autocomplete="off"></label>
+                    <button id="main-filter-clear" type="button" class="btn btn-sm btn-outline-secondary">Limpiar filtros</button>
+                    <span id="main-filter-count" class="small text-muted ms-auto" aria-live="polite"></span>
+                  </div>
+                </div>
+                <div id="product-results-scroll" tabindex="0" aria-label="Resultados de búsqueda">
+                  <table class="table table-sm sales-unified-grid align-middle">
+                    <colgroup>
+                    <col style="width: 11%;">
+                    <col style="width: 29%;">
+                    <col style="width: 7%;">
+                    <col style="width: 8%;">
+                    <col style="width: 11%;">
+                    <col style="width: 13%;">
+                    <col style="width: 8%;">
+                    <col style="width: 13%;">
+                  </colgroup>
                   <tbody id="product-list" class="odoo-muted">
                     <tr id="product-empty">
                       <td colspan="8" class="text-center py-3 text-slate">Escribe para buscar productos.</td>
                     </tr>
                   </tbody>
+                  </table>
+                </div>
+                <table class="table table-sm sales-unified-grid align-middle">
+                  <colgroup>
+                    <col style="width: 11%;">
+                    <col style="width: 29%;">
+                    <col style="width: 7%;">
+                    <col style="width: 8%;">
+                    <col style="width: 11%;">
+                    <col style="width: 13%;">
+                    <col style="width: 8%;">
+                    <col style="width: 13%;">
+                  </colgroup>
                   <tbody>
                     <tr class="sales-grid-section-row">
                       <td colspan="8">Factura cargada: cantidad, precio, subtotal $ y total C$</td>
@@ -1316,8 +1364,25 @@
   </div>
 </div>
 
+
+<style>
+  #variant-search-modal .modal-dialog { width: calc(100% - 64px); max-width: 1100px; margin: 24px auto; min-height: calc(100% - 48px); }
+  #variant-search-modal .modal-content { min-height: 0; max-height: 76vh; border-radius: 16px; }
+  #variant-search-modal .modal-header, #variant-search-modal .modal-footer { padding: 10px 16px; }
+  #variant-search-modal .modal-body { padding: 12px 16px; }
+  #variant-search-modal .table-responsive { max-height: 38vh; overflow: auto; }
+  #variant-search-modal th { position: sticky; top: 0; z-index: 1; background: #f8fafc; white-space: nowrap; }
+  #variant-search-modal td, #variant-search-modal th { padding: 8px 10px; }
+  #variant-search-modal .warehouse-stock { color: #111; font-weight: 400; min-width: 72px; }
+  #variant-search-modal .warehouse-stock.active-warehouse { color: #1565c0; font-weight: 700; }
+  @media (max-width: 767px) {
+    #variant-search-modal .modal-dialog { width: calc(100% - 24px); margin: 12px auto; min-height: calc(100% - 24px); }
+    #variant-search-modal .modal-content { max-height: 85vh; }
+    #variant-search-modal table { min-width: 880px; }
+  }
+</style>
 <div class="modal fade" id="variant-search-modal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg">
       <div class="modal-header">
         <div>
@@ -1365,14 +1430,16 @@
                 <th>Producto</th>
                 <th class="text-center">Color</th>
                 <th class="text-center">Talla</th>
-                <th class="text-end">Existencia</th>
+                <th class="text-end warehouse-stock" data-warehouse="central">Central</th>
+                <th class="text-end warehouse-stock" data-warehouse="kg">KG</th>
+                <th class="text-end warehouse-stock" data-warehouse="kgf">KGF</th>
                 <th class="text-end">Precio</th>
                 <th class="text-center" style="width: 90px;">Cant.</th>
                 <th class="text-center">Cargar</th>
               </tr>
             </thead>
             <tbody id="variant-search-body">
-              <tr><td colspan="8" class="text-center text-slate">Escribe para buscar.</td></tr>
+              <tr><td colspan="10" class="text-center text-slate">Escribe para buscar.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1478,6 +1545,12 @@
   const preventaLiveBtn = document.getElementById("preventa-live-btn");
   const rateToday = Number({{ rate_today.rate if rate_today else 0 }}) || 0;
   const activeBodegaId = Number({{ user.default_bodega.id if user.default_bodega else 0 }}) || 0;
+  let activeWarehouseCode = {{ (user.default_bodega.branch.code if user.default_bodega and user.default_bodega.branch else '') | tojson }};
+  const highlightActiveWarehouse = () => {
+    variantModal?.querySelectorAll(".warehouse-stock").forEach(cell => {
+      cell.classList.toggle("active-warehouse", cell.dataset.warehouse === activeWarehouseCode);
+    });
+  };
   const initialPreventa = {{ (initial_preventa or None) | tojson }};
   let preventaLastId = Number(initialPreventa?.id || 0) || 0;
   let preventaLiveSource = null;
@@ -2118,13 +2191,13 @@
     }
   };
 
-  const refreshProductAvailability = async (productId, queryHint) => {
+  const refreshProductAvailability = async (productId, queryHint, variantId = null) => {
     const searchTerm = (queryHint || "").trim();
     if (!searchTerm) return null;
     const response = await fetch(buildProductSearchUrl(searchTerm));
     const payload = await response.json().catch(() => null);
     if (!payload?.ok) return null;
-    return (payload.items || []).find((item) => Number(item.id) === Number(productId)) || null;
+    return (payload.items || []).find((item) => Number(item.id) === Number(productId) && (!variantId || Number(item.variant_id) === Number(variantId))) || null;
   };
 
   const handleAddItem = async (button) => {
@@ -2150,7 +2223,7 @@
       });
       if (action !== "released") return false;
       if (action === "released") {
-        const refreshed = await refreshProductAvailability(button.dataset.productId, button.dataset.code || button.dataset.name || "");
+        const refreshed = await refreshProductAvailability(button.dataset.productId, button.dataset.code || button.dataset.name || "", button.dataset.variantId);
         if (refreshed) {
           button.dataset.existencia = String(refreshed.existencia || 0);
           button.dataset.freeQty = String(refreshed.free_qty ?? refreshed.existencia ?? 0);
@@ -2164,11 +2237,10 @@
       pauseNavForAlert({ icon: "warning", title: "Cantidad mayor al saldo", text: `Disponible libre: ${freeQty}` });
       return false;
     }
-    return openVariantPickerForProduct({
-      code: button.dataset.code,
-      name: button.dataset.name,
-      qty,
-    });
+    const variant = JSON.parse(decodeURIComponent(button.dataset.variant || "null"));
+    if (!variant?.variant_id) return false;
+    variant.existencia = maxQty;
+    return addVariantToInvoice({...variant, producto_id: variant.id}, qty);
   };
 
   const addVariantToInvoice = (variant, qtyValueRaw) => {
@@ -2264,7 +2336,7 @@
   const renderVariantSearchRows = (items) => {
     if (!variantSearchBody) return;
     if (!items || !items.length) {
-      variantSearchBody.innerHTML = `<tr><td colspan="8" class="text-center text-slate">Sin resultados.</td></tr>`;
+      variantSearchBody.innerHTML = `<tr><td colspan="10" class="text-center text-slate">Sin resultados.</td></tr>`;
       return;
     }
     variantSearchBody.innerHTML = items
@@ -2282,7 +2354,11 @@
             </td>
             <td class="text-center">${escapeHtml(item.color)}</td>
             <td class="text-center">${escapeHtml(item.talla)}</td>
-            <td class="text-end ${existencia > 0 ? "text-success" : "text-danger"} fw-semibold variant-balance-cell">${existencia.toFixed(0)}</td>
+            ${["central", "kg", "kgf"].map(code => {
+              const active = code === activeWarehouseCode;
+              const stock = active ? existencia : Number(item.stock_bodegas?.[code] ?? 0);
+              return `<td data-warehouse="${code}" class="text-end warehouse-stock ${active ? "active-warehouse variant-balance-cell" : ""}">${stock.toFixed(0)}</td>`;
+            }).join("")}
             <td class="text-end">${formatMoney(item.selected_price_cs ?? item.precio_venta1, "CS")}</td>
             <td class="text-center">
               <input class="form-control form-control-sm text-end variant-qty" type="number" min="1" step="1" max="${Math.max(1, Math.trunc(existencia))}" value="${defaultQty}" ${disabled ? "disabled" : ""} />
@@ -2313,10 +2389,12 @@
       const balanceCell = row.querySelector(".variant-balance-cell");
       const qtyInput = row.querySelector(".variant-qty");
       const addBtn = row.querySelector(".variant-add");
+      row.querySelectorAll(".warehouse-stock:not(.active-warehouse)").forEach(cell => {
+        cell.textContent = Number(variant.stock_bodegas?.[cell.dataset.warehouse] ?? 0).toFixed(0);
+      });
       if (balanceCell) {
         balanceCell.textContent = existencia.toFixed(0);
-        balanceCell.classList.toggle("text-success", existencia > 0);
-        balanceCell.classList.toggle("text-danger", existencia <= 0);
+
       }
       if (qtyInput) {
         qtyInput.max = String(Math.max(1, Math.trunc(existencia)));
@@ -2386,17 +2464,19 @@
     const color = (variantSearchColor?.value || "").trim().toUpperCase();
     const size = (variantSearchSize?.value || "").trim().toUpperCase();
     if (!force && q.length < 1 && !color && !size) {
-      variantSearchBody.innerHTML = `<tr><td colspan="8" class="text-center text-slate">Escribe para buscar.</td></tr>`;
+      variantSearchBody.innerHTML = `<tr><td colspan="10" class="text-center text-slate">Escribe para buscar.</td></tr>`;
       if (variantSearchStatus) variantSearchStatus.textContent = "Escribe para buscar variantes.";
       return;
     }
     if (variantSearchStatus) variantSearchStatus.textContent = "Buscando...";
-    variantSearchBody.innerHTML = `<tr><td colspan="8">Cargando precios de la lista seleccionada…</td></tr>`;
+    variantSearchBody.innerHTML = `<tr><td colspan="10">Cargando precios de la lista seleccionada…</td></tr>`;
     try {
       const response = await fetch(buildVariantSearchUrl(q, color, size));
       const payload = await response.json().catch(() => null);
       if (sequence !== variantSearchSequence || requestedTier !== getActivePriceTier()) return;
       const items = payload?.ok ? (payload.items || []) : [];
+      if (payload?.bodega_code) activeWarehouseCode = payload.bodega_code;
+      highlightActiveWarehouse();
       renderVariantSearchRows(items);
       if (variantSearchStatus) {
         variantSearchStatus.textContent = items.length
@@ -2406,7 +2486,7 @@
     } catch (error) {
       if (sequence !== variantSearchSequence) return;
       if (variantSearchStatus) variantSearchStatus.textContent = "Error buscando variantes.";
-      variantSearchBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">No se pudo buscar.</td></tr>`;
+      variantSearchBody.innerHTML = `<tr><td colspan="10" class="text-center text-danger">No se pudo buscar.</td></tr>`;
     }
   };
 
@@ -2718,7 +2798,7 @@
       const balanceCell = row.children[2];
       if (!button || !balanceCell) return;
       const freeQty = Number(button.dataset.freeQty || button.dataset.existencia || 0);
-      const visualFreeQty = getVisualFreeQty(button.dataset.productId, freeQty);
+      const visualFreeQty = Math.max(0, freeQty - getInvoiceVariantQty(button.dataset.productId, button.dataset.variantId));
       balanceCell.textContent = visualFreeQty.toFixed(0);
       balanceCell.classList.toggle("text-red-600", visualFreeQty > 0);
       balanceCell.classList.toggle("text-slate", visualFreeQty <= 0);
@@ -3193,14 +3273,16 @@
     productList.innerHTML = visibleItems
       .map((item) => {
         const rawFreeQty = Number(item.free_qty ?? item.existencia ?? 0);
-        const visualFreeQty = getVisualFreeQty(item.id, rawFreeQty);
+        const visualFreeQty = Math.max(0, rawFreeQty - getInvoiceVariantQty(item.id, item.variant_id));
         const defaultQty = String(Math.min(1, Math.max(0, Math.floor(visualFreeQty))));
         return `
           <tr class="product-pick-row" data-name="${item.descripcion}" data-code="${item.cod_producto}" role="option">
-            <td><span class="rm-code text-brand fw-bold">${item.cod_producto}</span></td>
+            <td><span class="rm-code text-brand fw-bold">${item.cod_variante || item.cod_producto}</span></td>
             <td>
               <div class="fw-bold text-ink">${item.descripcion}</div>
-              ${(Number(item.reserved_qty || 0) > 0) ? `<div class="small text-amber-700 fw-semibold">Reservado: ${item.reserved_qty}</div>` : `<div class="small text-slate">Resultado de busqueda</div>`}
+              <div class="small text-slate">${escapeHtml(item.marca || "")} · ${escapeHtml(item.color || "")} · Talla ${escapeHtml(item.talla || "")}</div>
+              <div class="d-flex flex-wrap gap-1 mt-1">${["central", "kg", "kgf"].map(code => `<span data-stock-warehouse="${code}" class="rounded px-1" style="font-size:11px;background:#f8fafc;border:1px solid #e2e8f0;color:${code===activeWarehouseCode ? "#1565c0" : "#111"};font-weight:${code===activeWarehouseCode ? "700" : "400"}">${({central:"Central",kg:"KG",kgf:"KGF"})[code]}: ${Number(item.stock_bodegas?.[code] ?? 0).toFixed(0)}</span>`).join("")}</div>
+              ${(Number(item.reserved_qty || 0) > 0) ? `<div class="small text-amber-700 fw-semibold">Reservado: ${item.reserved_qty}</div>` : ""}
             </td>
             <td class="text-end fw-bold ${visualFreeQty > 0 ? "text-red-600" : "text-slate"}">${visualFreeQty.toFixed(0)}</td>
             <td><span class="rounded-full bg-[#efe7f0] text-brand text-xs fw-bold px-2 py-1">${({{ price_list_labels|tojson }})[item.selected_price_tier || 1]}</span></td>
@@ -3214,6 +3296,8 @@
               class="add-item inline-flex items-center justify-center w-8 h-8 rounded-md border border-slate-200 bg-white text-brand hover:bg-slate-50 shadow-sm"
               type="button"
               data-add-item="1"
+              data-variant="${encodeURIComponent(JSON.stringify(item))}"
+              data-variant-id="${item.variant_id || ''}"
               data-product-id="${item.id}"
               data-code="${item.cod_producto}"
               data-name="${item.descripcion}"
@@ -3234,20 +3318,58 @@
     setActiveProduct(0);
   };
 
+  const mainFilters = { talla: document.getElementById("main-filter-size"), color: document.getElementById("main-filter-color"), marca: document.getElementById("main-filter-brand") };
+  const mainFilterBar = document.getElementById("main-search-filters");
+  let mainSearchItems = [];
+  let mainSearchQuery = "";
+  const normalizeMainFilter = value => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+  const filterMainItems = (excluded = "") => mainSearchItems.filter(item => Object.entries(mainFilters).every(([key, input]) => {
+    const term = normalizeMainFilter(input?.value);
+    if (key === excluded || !term) return true;
+    const value = normalizeMainFilter(item[key]);
+    return value.includes(term);
+  }));
+  const applyMainFilters = () => {
+    const items = filterMainItems();
+    renderProducts(items);
+    document.getElementById("main-filter-count").textContent = `${items.length} de ${mainSearchItems.length}`;
+  };
+  Object.entries(mainFilters).forEach(([key, input]) => input?.addEventListener('input', applyMainFilters));
+  document.getElementById('main-filter-clear')?.addEventListener('click', () => {
+    Object.values(mainFilters).forEach(input => { if(input) input.value = ''; });
+    applyMainFilters();
+    productSearch?.focus();
+  });
+  let productSearchAbort = null;
+  let productSearchSequence = 0;
   const fetchProducts = async (query) => {
+    const sequence = ++productSearchSequence;
+    const requestedTier = getActivePriceTier();
+    productSearchAbort?.abort();
+    if (query !== mainSearchQuery) {
+      mainSearchQuery = query;
+      Object.values(mainFilters).forEach(input => { if(input) input.value = ""; });
+    }
+    mainFilterBar?.classList.toggle("d-none", !query || query.length < 2);
     if (!query || query.length < 2) {
       if (productList && productEmptyRow) {
         productList.innerHTML = `<tr id="product-empty"><td colspan="8" class="text-center py-3 text-slate">Escribe para buscar productos.</td></tr>`;
       }
       return;
     }
-    const response = await fetch(buildProductSearchUrl(query));
+    productSearchAbort = new AbortController();
+    let response;
+    try { response = await fetch(buildProductSearchUrl(query), {signal: productSearchAbort.signal, cache: "no-store"}); }
+    catch(error) { if(error.name !== "AbortError" && sequence === productSearchSequence) renderProducts([]); return; }
     const payload = await response.json().catch(() => null);
+    if (sequence !== productSearchSequence || requestedTier !== getActivePriceTier()) return;
     if (!payload || !payload.ok) {
       renderProducts([]);
       return;
     }
-    renderProducts(payload.items || []);
+    if (payload.bodega_code) activeWarehouseCode = payload.bodega_code;
+    mainSearchItems = payload.items || [];
+    applyMainFilters();
     productNavMode = "panel";
   };
 
@@ -3349,6 +3471,7 @@
       }
     });
     productListPanel.addEventListener("dblclick", async (event) => {
+      if (event.target.closest("button, input")) return;
       const row = event.target.closest(".product-pick-row");
       if (!row) return;
       refreshActiveRows();
@@ -4355,13 +4478,21 @@
         const response = await fetch(buildProductSearchUrl(query), { cache: "no-store" });
         const payload = await response.json();
         if (payload.ok && query === (productSearch?.value || "").trim()) {
-          const byId = new Map((payload.items || []).map(item => [String(item.id), item]));
+          const byId = new Map((payload.items || []).map(item => [`${item.id}:${item.variant_id || ""}`, item]));
+          mainSearchItems.forEach(item => {
+            const fresh = byId.get(`${item.id}:${item.variant_id || ""}`);
+            if (fresh) { item.existencia = fresh.existencia; item.free_qty = fresh.free_qty; item.stock_bodegas = fresh.stock_bodegas; }
+          });
           productList.querySelectorAll(".add-item").forEach(button => {
-            const item = byId.get(button.dataset.productId);
+            const item = byId.get(`${button.dataset.productId}:${button.dataset.variantId || ""}`);
             if (!item) return;
             button.dataset.existencia = String(item.existencia ?? 0);
             button.dataset.freeQty = String(item.free_qty ?? item.existencia ?? 0);
             button.dataset.reservedDetails = encodeURIComponent(JSON.stringify(item.reserved_details || []));
+            button.closest('.product-pick-row')?.querySelectorAll('[data-stock-warehouse]').forEach(tag => {
+              const code = tag.dataset.stockWarehouse;
+              tag.textContent = `${({central:'Central',kg:'KG',kgf:'KGF'})[code]}: ${Number(item.stock_bodegas?.[code] ?? 0).toFixed(0)}`;
+            });
           });
           refreshVisibleProductBalances();
         }
@@ -4380,6 +4511,7 @@
             const item = byId.get(String(variant.variant_id));
             if (!item) return;
             variant.existencia = item.existencia ?? 0;
+            variant.stock_bodegas = item.stock_bodegas || {};
             row.dataset.variant = encodeURIComponent(JSON.stringify(variant));
           });
           refreshVariantBalances();
@@ -4391,6 +4523,7 @@
       balanceRefreshInProgress = false;
     }
   };
+  highlightActiveWarehouse();
   setInterval(refreshSearchStock, 15000);
 
   window.addEventListener("focus", () => {
@@ -4758,4 +4891,43 @@
   })();
   {% endif %}
 </script>
+
+{% if cash_opening_required or cash_is_closed %}
+<div class="modal" id="cash-opening-modal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="cash-opening-title">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:380px;width:calc(100% - 32px);margin-left:auto;margin-right:auto;">
+    <div class="modal-content" style="min-height:0;border-radius:16px;">
+      <div class="modal-header"><h5 id="cash-opening-title" class="mb-0">{{ 'Caja cerrada' if cash_is_closed else 'Apertura de caja' }}</h5></div>
+      <div class="modal-body">
+        <div class="small text-muted mb-3">{{ cash_opening_warehouse }} · {{ cash_opening_date }}</div>
+        {% if cash_is_closed %}
+        <p>La caja de hoy ya fue cerrada. El próximo día se solicitará una nueva apertura.</p>
+        <a href="/sales/cierre" class="btn btn-primary w-100">Ver cierre</a>
+        {% else %}
+        {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
+        <form method="post" action="/sales/apertura" id="cash-opening-form">
+          <label for="cash-opening-amount" class="form-label">Efectivo inicial en córdobas (C$)</label>
+          <input type="number" id="cash-opening-amount" name="monto_cs" class="form-control mb-3" min="0" max="999999999999.99" step="0.01" inputmode="decimal" required autocomplete="off">
+          <button type="submit" class="btn btn-primary w-100">Registrar apertura</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const sales = document.getElementById('sales-form');
+    if (sales) sales.inert = true;
+    const modal = document.getElementById('cash-opening-modal');
+    bootstrap.Modal.getOrCreateInstance(modal, {backdrop:'static', keyboard:false}).show();
+    modal.addEventListener('shown.bs.modal', () => document.getElementById('cash-opening-amount')?.focus());
+    document.getElementById('cash-opening-form')?.addEventListener('submit', event => {
+      const button = event.currentTarget.querySelector('button[type="submit"]');
+      button.disabled = true;
+      button.textContent = 'Registrando…';
+    });
+  });
+</script>
+{% endif %}
+
 {% endblock %}

@@ -188,14 +188,21 @@
               <div class="d-flex align-items-center gap-2">
                 <label class="text-xs text-slate mb-0">Moneda</label>
                 <select class="form-select form-select-sm odoo-input" id="cierre-moneda">
-                  <option value="USD">USD</option>
-                  <option value="CS">C$</option>
+                  <option value="USD" {% if not show_cash_opening %}selected{% endif %}>USD</option>
+                  <option value="CS" {% if show_cash_opening %}selected{% endif %}>C$</option>
                 </select>
               </div>
             </div>
             <div class="table-responsive">
               <table class="table table-sm odoo-table text-base">
                 <tbody>
+                  {% if show_cash_opening %}
+                  <tr style="color:#dc2626;" id="cash-opening-summary">
+                    <td class="fw-semibold" style="color:#dc2626;">Apertura de caja</td>
+                    <td class="text-end fw-semibold" style="color:#dc2626;">+ C$ {{ "%.2f"|format(apertura_cs) }}</td>
+                  </tr>
+                  {% endif %}
+
                   <tr>
                     <td>Ventas del dia</td>
                     <td class="text-end">
@@ -235,6 +242,10 @@
                 </tbody>
               </table>
             </div>
+            {% if show_cash_opening %}
+            <div class="mt-2 fw-semibold">Faltante / sobrante: <span id="cash-close-difference">C$ 0.00</span></div>
+            <div class="small text-muted">Cuenta todo el efectivo físico, incluyendo el fondo de apertura.</div>
+            {% endif %}
             <div class="mt-3 text-sm text-slate">
               Fecha del cierre: <strong>{{ fecha }}</strong>
             </div>
@@ -290,6 +301,13 @@
     document.getElementById("total-usd").textContent = formatAmount(totalUsd);
     const usdEquiv = totalUsd + (tasa ? totalCs / tasa : 0);
     document.getElementById("total-usd-equivalent").textContent = formatAmount(usdEquiv);
+    const difference = document.getElementById('cash-close-difference');
+    if (difference) {
+      const expected = Number({{ total_calculado_usd | tojson }}) * tasa;
+      const amount = totalCs + totalUsd * tasa - expected;
+      difference.textContent = `C$ ${formatAmount(amount)}`;
+      difference.style.color = Math.abs(amount) < 0.005 ? '#15803d' : '#dc2626';
+    }
   };
 
   const denomInputs = Array.from(document.querySelectorAll(".denom-input"));

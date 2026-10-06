@@ -748,6 +748,20 @@ class DepositoCliente(Base):
     cuenta = relationship("CuentaBancaria")
 
 
+class AperturaCaja(Base):
+    __tablename__ = "aperturas_caja"
+    __table_args__ = (UniqueConstraint("bodega_id", "fecha", name="uq_apertura_caja_dia"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=False)
+    fecha = Column(Date, nullable=False)
+    monto_cs = Column(Numeric(14, 2), nullable=False)
+    usuario_registro = Column(String(160), nullable=False)
+    cierre_id = Column(Integer, ForeignKey("cierres_caja.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class CajaDiaria(Base):
     __tablename__ = "caja_diaria"
     __table_args__ = (UniqueConstraint("branch_id", "bodega_id", "fecha", name="uq_caja_diaria"),)

@@ -36,7 +36,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import String, and_, create_engine, func, or_, text as sql_text
-from sqlalchemy.orm import Session, aliased, joinedload, object_session
+from sqlalchemy.orm import Session, aliased, joinedload, object_session, selectinload
 
 from ..core.price_lists import PRICE_LIST_LABELS
 from ..core.inventory_report_costs import branch_cost_increases
@@ -103,6 +103,7 @@ from ..models.sales import (
     Banco,
     BodegaRequisaCierre,
     BodegaRequisaDraft,
+    AperturaCaja,
     CajaDiaria,
     CierreCaja,
     Cliente,
@@ -3673,6 +3674,8 @@ def _build_cierre_ticket_pdf_bytes(
     add_line(f"Bodega: {bodega_name}", "left", False, 10)
     add_line("-" * 32, "center")
 
+    if _is_shoes_mode():
+        add_line(f"Apertura: C$ {format_amount(resumen.get('apertura_cs', 0))}", "left", True, 10)
     add_line("Resumen arqueo (USD)", "left", True, 10)
     add_line(f"Ventas: $ {format_amount(resumen['ventas_usd'])}", "left", False, 10)
     add_line(f"Ingresos: + $ {format_amount(resumen['ingresos_usd'])}", "left", False, 10)
@@ -12094,6 +12097,44 @@ def inventory_quick_transfers_search(
     return JSONResponse({"ok": True, "items": items, "bodega_id": selected_bodega.id})
 
 
+def _shoe_cash_opening(db: Session, bodega_id: int, fecha: date):
+    if not _is_shoes_mode():
+        return None
+    return db.query(AperturaCaja).filter_by(bodega_id=bodega_id, fecha=fecha).populate_existing().first()
+
+
+@router.post("/sales/apertura")
+async def sales_cash_opening(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(_require_admin_web),
+):
+    _enforce_permission(request, user, "access.sales")
+    if not _is_shoes_mode():
+        raise HTTPException(status_code=404, detail="Opcion no disponible")
+    branch, bodega = _resolve_branch_bodega(db, user)
+    if not branch or not bodega or not _bodega_permite_facturacion(bodega):
+        raise HTTPException(status_code=403, detail="Caja no disponible")
+    form = await request.form()
+    try:
+        amount = Decimal(str(form.get("monto_cs") or ""))
+        if not amount.is_finite() or amount < 0 or amount > Decimal("999999999999.99"):
+            raise ValueError()
+        if amount != amount.quantize(Decimal("0.01")):
+            raise ValueError()
+    except (ValueError, InvalidOperation):
+        return RedirectResponse("/sales?error=Monto+de+apertura+invalido", status_code=303)
+    db.query(Bodega).filter_by(id=bodega.id).with_for_update().one()
+    opening = _shoe_cash_opening(db, bodega.id, local_today())
+    if opening:
+        message = "La+caja+ya+esta+cerrada" if opening.cierre_id else "La+apertura+ya+fue+registrada"
+        return RedirectResponse(f"/sales?error={message}", status_code=303)
+    db.add(AperturaCaja(branch_id=branch.id, bodega_id=bodega.id, fecha=local_today(),
+                        monto_cs=amount, usuario_registro=user.full_name or user.email))
+    db.commit()
+    return RedirectResponse("/sales", status_code=303)
+
+
 @router.get("/sales")
 def sales_page(
     request: Request,
@@ -12123,6 +12164,7 @@ def sales_page(
         .first()
     )
     branch, bodega = _resolve_branch_bodega(db, user)
+    cash_opening = _shoe_cash_opening(db, bodega.id, local_today()) if bodega else None
     if bodega and not _bodega_permite_facturacion(bodega):
         error = error or "La bodega operativa no esta habilitada para facturacion"
     vendedores = _vendedores_for_bodega(db, bodega)
@@ -12290,6 +12332,10 @@ def sales_page(
             "error": error,
             "success": success,
             "print_id": print_id,
+            "cash_opening_required": _is_shoes_mode() and bodega is not None and cash_opening is None,
+            "cash_is_closed": bool(cash_opening and cash_opening.cierre_id),
+            "cash_opening_date": local_today().isoformat(),
+            "cash_opening_warehouse": bodega.name if bodega else "",
             "next_invoice": next_invoice,
             "pos_print": pos_print,
             "default_vendedor_id": _default_vendedor_id(db, bodega),
@@ -17497,6 +17543,8 @@ def sales_cierre(
             fecha_value = local_today()
 
     branch, bodega = _resolve_branch_bodega(db, user)
+    opening = _shoe_cash_opening(db, bodega.id, fecha_value) if bodega else None
+    apertura_cs = Decimal(str(opening.monto_cs)) if opening else Decimal("0")
     rate_today = (
         db.query(ExchangeRate)
         .filter(ExchangeRate.effective_date <= fecha_value)
@@ -17580,7 +17628,8 @@ def sales_cierre(
                 total_creditos_usd += (saldo_cs / tasa) if tasa else Decimal("0")
 
     total_calculado_usd = (
-        Decimal(str(total_ventas_usd))
+        (apertura_cs / tasa if tasa else Decimal("0"))
+        + Decimal(str(total_ventas_usd))
         - Decimal(str(total_egresos_usd))
         + Decimal(str(total_ingresos_usd))
         - Decimal(str(total_depositos_usd))
@@ -17600,6 +17649,9 @@ def sales_cierre(
             "fecha": fecha_value.isoformat(),
             "rate_today": rate_today,
             "tasa": float(tasa) if tasa else 0,
+            "apertura_cs": float(apertura_cs),
+            "apertura_usd": float(apertura_cs / tasa) if tasa else 0,
+            "show_cash_opening": _is_shoes_mode(),
             "total_ventas_usd": float(total_ventas_usd),
             "total_ingresos_usd": float(total_ingresos_usd),
             "total_egresos_usd": float(total_egresos_usd),
@@ -17634,9 +17686,19 @@ async def sales_cierre_create(
             fecha_value = local_today()
 
     branch, bodega = _resolve_branch_bodega(db, user)
+    opening = _shoe_cash_opening(db, bodega.id, fecha_value) if bodega else None
+    apertura_cs = Decimal(str(opening.monto_cs)) if opening else Decimal("0")
     if not branch or not bodega:
         return RedirectResponse("/sales/cierre?error=Usuario+sin+sucursal+o+bodega", status_code=303)
 
+    if _is_shoes_mode():
+        db.query(Bodega).filter_by(id=bodega.id).with_for_update().one()
+        opening = _shoe_cash_opening(db, bodega.id, fecha_value)
+        if not opening:
+            return RedirectResponse("/sales/cierre?error=Registra+primero+la+apertura+de+caja", status_code=303)
+        if opening.cierre_id:
+            return RedirectResponse(f"/sales/cierre?success=Caja+ya+cerrada&print_id={opening.cierre_id}", status_code=303)
+        apertura_cs = Decimal(str(opening.monto_cs))
     rate_today = (
         db.query(ExchangeRate)
         .filter(ExchangeRate.effective_date <= fecha_value)
@@ -17644,6 +17706,9 @@ async def sales_cierre_create(
         .first()
     )
     tasa = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
+
+    if _is_shoes_mode() and tasa <= 0:
+        return RedirectResponse("/sales/cierre?error=Configura+la+tasa+de+cambio+para+el+cierre", status_code=303)
 
     detalle_cs = {}
     detalle_usd = {}
@@ -17754,7 +17819,8 @@ async def sales_cierre_create(
                 total_creditos_usd += (saldo_cs / tasa) if tasa else Decimal("0")
 
     total_calculado_usd = (
-        Decimal(str(total_ventas_usd))
+        (apertura_cs / tasa if tasa else Decimal("0"))
+        + Decimal(str(total_ventas_usd))
         - Decimal(str(total_egresos_usd))
         + Decimal(str(total_ingresos_usd))
         - Decimal(str(total_depositos_usd))
@@ -17791,6 +17857,9 @@ async def sales_cierre_create(
         usuario_registro=user.full_name,
     )
     db.add(cierre)
+    db.flush()
+    if opening:
+        opening.cierre_id = cierre.id
     db.commit()
     db.refresh(cierre)
 
@@ -17812,6 +17881,7 @@ async def sales_cierre_create(
     if close_recipients:
         try:
             resumen = {
+                "apertura_cs": apertura_cs,
                 "ventas_usd": total_ventas_usd,
                 "ingresos_usd": total_ingresos_usd,
                 "egresos_usd": total_egresos_usd,
@@ -17851,6 +17921,7 @@ async def sales_cierre_create(
         try:
             company_profile = _company_profile_payload(db)
             resumen = {
+                "apertura_cs": apertura_cs,
                 "ventas_usd": total_ventas_usd,
                 "ingresos_usd": total_ingresos_usd,
                 "egresos_usd": total_egresos_usd,
@@ -17898,7 +17969,9 @@ def sales_cierre_pdf(
         .first()
     )
     tasa = Decimal(str(rate_today.rate)) if rate_today else Decimal("0")
+    opening = _shoe_cash_opening(db, cierre.bodega_id, cierre.fecha)
     resumen = {
+        "apertura_cs": Decimal(str(opening.monto_cs)) if opening else Decimal("0"),
         "ventas_usd": cierre.total_ventas_usd,
         "ingresos_usd": cierre.total_ingresos_usd,
         "egresos_usd": cierre.total_egresos_usd,
@@ -29862,6 +29935,8 @@ def sales_products_search(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    shoe_mode = _is_shoes_mode()
+    pacasholl_mode = _is_pacasholl_company()
     price_tier = _normalize_price_tier(price_list, default=1)
     product_images_enabled = _product_images_enabled(db)
     query = q.strip()
@@ -29869,6 +29944,8 @@ def sales_products_search(
         return JSONResponse({"ok": True, "items": []})
     tokens = _tokenize_search(query)
     product_query = _sellable_product_query(db.query(Producto).filter(Producto.activo.is_(True)))
+    if shoe_mode:
+        product_query = product_query.options(selectinload(Producto.combo_children), joinedload(Producto.unidad_medida))
     if tokens:
         token_filters = []
         for token in tokens:
@@ -29878,15 +29955,16 @@ def sales_products_search(
                     func.lower(func.coalesce(Producto.cod_producto, "")).like(like),
                     func.lower(func.coalesce(Producto.descripcion, "")).like(like),
                     func.lower(func.coalesce(Producto.referencia_producto, "")).like(like),
+                    func.lower(func.coalesce(Producto.marca, "")).like(like) if shoe_mode else False,
                 )
             )
-        candidate_limit = 300 if _is_shoes_mode() else 2500
+        candidate_limit = 300 if shoe_mode else 2500
         filtered_candidates = product_query.filter(and_(*token_filters)).order_by(Producto.descripcion).limit(candidate_limit).all()
     else:
         filtered_candidates = []
     if filtered_candidates:
         candidate_products = filtered_candidates
-    elif _is_shoes_mode():
+    elif shoe_mode:
         # A partial or mistyped scanner query must not load and compare the
         # entire shoe catalog for every keystroke.
         candidate_products = (
@@ -29905,6 +29983,7 @@ def sales_products_search(
                     str(producto.cod_producto or ""),
                     str(producto.descripcion or ""),
                     str(getattr(producto, "referencia_producto", "") or ""),
+                    str(producto.marca or "") if shoe_mode else "",
                 ]
             )
         )
@@ -29962,6 +30041,7 @@ def sales_products_search(
                 "id": producto.id,
                 "cod_producto": producto.cod_producto,
                 "descripcion": producto.descripcion,
+                "marca": (producto.marca or "").strip(),
                 **prices,
                 "selected_price_tier": price_tier,
                 "selected_price_usd": float(selected_usd or 0),
@@ -29973,13 +30053,45 @@ def sales_products_search(
                 "combo_count": len(producto.combo_children or []),
                 "image_url": (producto.image_url or "") if product_images_enabled else "",
                 "es_por_peso": bool(getattr(producto, "es_por_peso", False)),
-                "es_libreado": bool(getattr(producto, "es_libreado", False)) if _is_pacasholl_company() else False,
+                "es_libreado": bool(getattr(producto, "es_libreado", False)) if pacasholl_mode else False,
                 "unidad_medida_id": int(producto.unidad_medida_id or 0) if getattr(producto, "unidad_medida_id", None) else None,
                 "unidad_medida_nombre": producto.unidad_medida.nombre if getattr(producto, "unidad_medida", None) else "",
                 "unidad_medida_abreviatura": producto.unidad_medida.abreviatura if getattr(producto, "unidad_medida", None) else "",
             }
         )
-    return JSONResponse({"ok": True, "items": items})
+    if shoe_mode and items and bodega:
+        by_product = {int(item["id"]): item for item in items}
+        variants = (
+            db.query(ShoeProductVariant, ColorCatalog, ShoeVariantStock)
+            .join(ColorCatalog, ColorCatalog.id == ShoeProductVariant.color_id)
+            .outerjoin(ShoeVariantStock, and_(ShoeVariantStock.variante_id == ShoeProductVariant.id,
+                                             ShoeVariantStock.bodega_id == bodega.id))
+            .filter(ShoeProductVariant.producto_id.in_(by_product), ShoeProductVariant.activo.is_(True))
+            .order_by(ShoeProductVariant.producto_id, ShoeProductVariant.cod_variante).limit(500).all()
+        )
+        stock_by_variant = {}
+        variant_ids = [int(row[0].id) for row in variants]
+        if variant_ids:
+            stocks = (
+                db.query(ShoeVariantStock.variante_id, Branch.code, func.sum(ShoeVariantStock.existencia))
+                .join(Bodega, Bodega.id == ShoeVariantStock.bodega_id)
+                .join(Branch, Branch.id == Bodega.branch_id)
+                .filter(ShoeVariantStock.variante_id.in_(variant_ids), Bodega.activo.is_(True),
+                        func.lower(Branch.code).in_(["central", "kg", "kgf"]))
+                .group_by(ShoeVariantStock.variante_id, Branch.code).all()
+            )
+            for variant_id, code, qty in stocks:
+                stock_by_variant.setdefault(int(variant_id), {"central": 0., "kg": 0., "kgf": 0.})[(code or "").lower()] = float(qty or 0)
+        expanded = []
+        for variant, color_row, stock in variants:
+            base = by_product[int(variant.producto_id)]
+            quantity = float(stock.existencia or 0) if stock else 0.0
+            expanded.append({**base, "variant_id": int(variant.id), "cod_variante": variant.cod_variante,
+                             "color": color_row.nombre, "talla": variant.talla,
+                             "stock_bodegas": stock_by_variant.get(int(variant.id), {"central": 0., "kg": 0., "kgf": 0.}),
+                             "existencia": quantity, "free_qty": max(0.0, quantity - base["reserved_qty"])})
+        items = expanded
+    return JSONResponse({"ok": True, "items": items, "bodega_code": (bodega.branch.code or "").lower() if bodega and bodega.branch else ""}, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/sales/shoes/variants/search")
@@ -30085,6 +30197,23 @@ def sales_shoes_variants_search(
             for variante_id, total_qty in global_stock_rows
             if variante_id
         }
+    store_stocks: dict[int, dict[str, float]] = {}
+    if variant_ids:
+        stock_rows = (
+            db.query(ShoeVariantStock.variante_id, Branch.code, func.sum(ShoeVariantStock.existencia))
+            .join(Bodega, Bodega.id == ShoeVariantStock.bodega_id)
+            .join(Branch, Branch.id == Bodega.branch_id)
+            .filter(
+                ShoeVariantStock.variante_id.in_(variant_ids),
+                Bodega.activo.is_(True),
+                func.lower(Branch.code).in_(["central", "kg", "kgf"]),
+            )
+            .group_by(ShoeVariantStock.variante_id, Branch.code)
+            .all()
+        )
+        for variant_id, code, quantity in stock_rows:
+            stocks = store_stocks.setdefault(int(variant_id), {"central": 0.0, "kg": 0.0, "kgf": 0.0})
+            stocks[(code or "").strip().lower()] = float(quantity or 0)
     items: list[dict[str, object]] = []
     for variant, producto, color_row, stock_row in rows:
         existencia = float(stock_row.existencia or 0) if stock_row else 0.0
@@ -30104,6 +30233,7 @@ def sales_shoes_variants_search(
                 "talla": variant.talla,
                 "existencia": existencia,
                 "existencia_global": existencia_global,
+                "stock_bodegas": store_stocks.get(int(variant.id), {"central": 0.0, "kg": 0.0, "kgf": 0.0}),
                 "costo_cs": costo_cs,
                 "costo_usd": costo_usd,
                 **prices,
@@ -30112,7 +30242,7 @@ def sales_shoes_variants_search(
                 "selected_price_cs": float(prices.get(f"precio_venta{price_tier}", 0) or 0),
             }
         )
-    return JSONResponse({"ok": True, "items": items, "bodega_id": bodega.id})
+    return JSONResponse({"ok": True, "items": items, "bodega_id": bodega.id, "bodega_code": (bodega.branch.code or "").strip().lower() if bodega.branch else ""})
 
 
 @router.get("/sales/combo/{parent_id}/items")
@@ -35906,9 +36036,17 @@ async def sales_create_invoice(
         return RedirectResponse("/sales?error=Bodega+no+configurada+para+la+sucursal", status_code=303)
     if not _bodega_permite_facturacion(bodega):
         return RedirectResponse("/sales?error=La+bodega+operativa+no+esta+habilitada+para+facturacion", status_code=303)
+    if _is_shoes_mode():
+        opening = _shoe_cash_opening(db, bodega.id, local_today())
+        if not opening or opening.cierre_id:
+            return RedirectResponse("/sales?error=Registra+la+apertura+de+una+caja+abierta+antes+de+facturar", status_code=303)
     # Serializa la facturacion por bodega: protege el consecutivo y hace que
     # dos confirmaciones simultaneas compartan la misma operacion.
     bodega = db.query(Bodega).filter(Bodega.id == bodega.id).with_for_update().one()
+    if _is_shoes_mode():
+        opening = _shoe_cash_opening(db, bodega.id, local_today())
+        if not opening or opening.cierre_id:
+            return RedirectResponse("/sales?error=Caja+no+abierta", status_code=303)
     existing_invoice = db.query(VentaFactura).filter(
         VentaFactura.operation_key == operation_key
     ).first()
