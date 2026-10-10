@@ -579,6 +579,8 @@ def _permission_names(user: User) -> set[str]:
     names = {perm.name for perm in (user.permissions or [])}
     if _is_shoes_mode() and any(role.name == "cajero" for role in user.roles or []):
         names.update({"menu.inventory.traslados", "access.inventory.traslados", "menu.sales.devoluciones", "access.sales.devoluciones"})
+    if _is_shoes_mode() and not any(role.name == "administrador" for role in user.roles or []):
+        names.discard("access.sales.reversion")
     return names
 
 
@@ -2884,6 +2886,8 @@ def _shoe_admin_all_stores(user: User) -> bool:
 def _can_request_shoe_reversion(db: Session, user: User) -> bool:
     if not _is_shoes_mode():
         return True
+    if not any(role.name == "administrador" for role in user.roles or []):
+        return False
     if not (user.default_bodega_id or user.default_branch_id or user.branches):
         return False
     branch, bodega = _resolve_branch_bodega(db, user)
@@ -14894,6 +14898,8 @@ def sales_utilitario(
             "branches": branches,
             "can_filter_stores": not _is_shoes_mode() or _shoe_admin_all_stores(user),
             "can_reverse_sales": _can_request_shoe_reversion(db, user),
+            "reversion_denied_reason": "No puedes anular facturas porque tu rol no tiene permiso. Solo el rol administrador puede hacerlo."
+                if not any(role.name == "administrador" for role in user.roles or []) else "Las anulaciones solo se realizan desde Central.",
             "direct_shoe_reversion": _is_shoes_mode(),
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
@@ -26545,6 +26551,8 @@ async def sales_reversion_request(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    if _is_shoes_mode() and not any(role.name == "administrador" for role in user.roles or []):
+        return JSONResponse({"ok": False, "message": "No puedes anular facturas porque tu rol no tiene permiso. Solo el rol administrador puede hacerlo."}, status_code=403)
     _enforce_permission(request, user, "access.sales.reversion")
     if not _can_request_shoe_reversion(db, user):
         return JSONResponse({"ok": False, "message": "Las anulaciones solo se realizan desde Central"}, status_code=403)
@@ -26695,6 +26703,8 @@ async def sales_reversion_confirm(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    if _is_shoes_mode() and not any(role.name == "administrador" for role in user.roles or []):
+        return JSONResponse({"ok": False, "message": "No puedes anular facturas porque tu rol no tiene permiso. Solo el rol administrador puede hacerlo."}, status_code=403)
     _enforce_permission(request, user, "access.sales.reversion")
     if not _can_request_shoe_reversion(db, user):
         return JSONResponse({"ok": False, "message": "Las anulaciones solo se realizan desde Central"}, status_code=403)

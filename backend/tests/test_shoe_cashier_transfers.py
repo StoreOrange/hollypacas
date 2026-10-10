@@ -66,7 +66,7 @@ class ShoeCashierTests(unittest.TestCase):
   with patch.object(web,'get_active_company_key',return_value='bdzapatos'):
    self.assertFalse(web._can_request_shoe_reversion(self.db,self.user))
    self.user.default_branch_id=1;self.user.default_bodega_id=1
-   self.assertTrue(web._can_request_shoe_reversion(self.db,self.user))
+   self.assertFalse(web._can_request_shoe_reversion(self.db,self.user))
    self.user.default_branch_id=3;self.user.default_bodega_id=3
    self.user.roles=[Role(name='administrador')]
    self.assertFalse(web._can_request_shoe_reversion(self.db,self.user))
@@ -148,3 +148,21 @@ class ShoeCashierTests(unittest.TestCase):
     response=asyncio.run(web.inventory_create_egreso(request,self.db,self.user))
    self.assertIn('La+bodega+destino+debe+ser+distinta+al+origen',response.headers['location'])
   self.assertEqual(self.db.query(EgresoInventario).count(),0)
+
+ def test_only_admin_can_reverse_even_with_explicit_permission(self):
+  import asyncio,json
+  from app.models.user import Permission
+  self.user.default_branch_id=1;self.user.default_bodega_id=1
+  request=Request({'type':'http','method':'POST','path':'/sales/1/reversion/confirm','headers':[],'query_string':b''})
+  with patch.object(web,'get_active_company_key',return_value='bdzapatos'):
+   for role in ['cajero','vendedor','contador','bodega','seguridad']:
+    self.user.roles=[Role(name=role,permissions=[Permission(name='access.sales.reversion')])]
+    self.assertFalse(web._has_permission(self.user,'access.sales.reversion'))
+    self.assertFalse(web._can_request_shoe_reversion(self.db,self.user))
+    for endpoint in [web.sales_reversion_request,web.sales_reversion_confirm]:
+     response=asyncio.run(endpoint(1,request,self.db,self.user))
+     self.assertEqual(response.status_code,403)
+     self.assertIn('tu rol no tiene permiso',json.loads(response.body)['message'])
+   self.user.roles=[Role(name='administrador')]
+   self.assertTrue(web._has_permission(self.user,'access.sales.reversion'))
+   self.assertTrue(web._can_request_shoe_reversion(self.db,self.user))
