@@ -121,3 +121,30 @@ class ShoeCashierTests(unittest.TestCase):
    self.assertEqual({item['variant_id'] for item in data['items']},{900,901})
    data=json.loads(web.inventory_quick_transfers_search(request,q='PECHA03-BLK-7',bodega_id='1',color=None,talla=None,limit=120,exact=True,db=self.db,user=self.user).body)
    self.assertEqual([item['variant_id'] for item in data['items']],[901])
+
+ def test_central_cashier_can_choose_all_origins(self):
+  from unittest.mock import Mock
+  self.user.default_branch_id=1;self.user.default_bodega_id=1
+  request=Request({'type':'http','method':'GET','path':'/inventory/traslados-rapidos','headers':[],'query_string':b'','app':Mock()})
+  request.app.state.templates.TemplateResponse.side_effect=lambda name,context:context
+  with patch.object(web,'get_active_company_key',return_value='bdzapatos'):
+   data=web.inventory_quick_transfers_page(request,self.db,self.user)
+   self.assertEqual({b.id for b in data['origin_bodegas']},{1,2,3})
+   for origin in ['1','2','3']:
+    response=web.inventory_quick_transfers_search(request,q='test',bodega_id=origin,color=None,talla=None,limit=120,exact=True,db=self.db,user=self.user)
+    self.assertEqual(response.status_code,200)
+
+ def test_central_cannot_register_same_warehouse_transfer(self):
+  import asyncio
+  from unittest.mock import AsyncMock,Mock
+  from starlette.datastructures import FormData
+  from app.models.inventory import EgresoTipo,EgresoInventario
+  self.user.default_branch_id=1;self.user.default_bodega_id=1
+  self.db.add(EgresoTipo(id=901,nombre='Traslado entre bodegas'));self.db.commit()
+  for origin in ['1','2','3']:
+   request=Mock()
+   request.form=AsyncMock(return_value=FormData({'tipo_id':'901','bodega_id':origin,'bodega_destino_id':origin,'fecha':'2026-10-10','moneda':'CS','item_producto_id':'900','redirect_to':'/inventory/traslados-rapidos'}))
+   with patch.object(web,'get_active_company_key',return_value='bdzapatos'):
+    response=asyncio.run(web.inventory_create_egreso(request,self.db,self.user))
+   self.assertIn('La+bodega+destino+debe+ser+distinta+al+origen',response.headers['location'])
+  self.assertEqual(self.db.query(EgresoInventario).count(),0)

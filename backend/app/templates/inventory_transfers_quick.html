@@ -50,6 +50,22 @@
   :is(#layout main, .modal) :is(label, .form-label, .nav-link) { font-size: .95rem; }
   :is(#layout main, .modal) .text-\[16px\] { font-size: 17px; }
 
+  /* Keep the selected date and warehouses easy to read. */
+  #quick-transfer-form :is(#fecha, #bodega-origen, #bodega-destino),
+  #variant-search-modal :is(#search-bodega-origen, #search-bodega-destino) {
+    font-size: 20px;
+    font-weight: 600;
+    min-height: 48px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  #quick-transfer-form label[for="fecha"],
+  #quick-transfer-form .transfer-bodega-label,
+  #variant-search-modal :is(label[for="search-bodega-origen"], label[for="search-bodega-destino"]) {
+    font-size: 18px;
+    font-weight: 600;
+  }
+
   .transfer-search-box { width: 100%; max-width: 560px; }
   #layout main .transfer-search-box :is(.form-control, .input-group-text, .btn) {
     min-height: 54px;
@@ -171,7 +187,7 @@
           <input type="hidden" name="tipo_id" value="{{ traslado_tipo_id }}" />
           <input type="hidden" name="moneda" value="CS" />
           <div class="col-12 col-md-2">
-            <label class="form-label">Fecha *</label>
+            <label for="fecha" class="form-label">Fecha *</label>
             <input id="fecha" type="date" name="fecha" class="form-control form-control-sm" required />
           </div>
           <div class="col-12 col-md-3">
@@ -619,6 +635,12 @@
     updateRows();
   });
   const syncModalWarehouses = () => {
+    for (const select of [destinoEl, searchDestino]) {
+      for (const option of select.options) {
+        option.disabled = option.value === origenEl.value;
+      }
+    }
+    if (destinoEl.value === origenEl.value) destinoEl.value = "";
     searchOrigen.value = origenEl.value;
     searchDestino.value = destinoEl.value;
   };
@@ -632,9 +654,10 @@
     origenEl.dispatchEvent(new Event("change"));
     searchVariants();
   });
-  searchDestino.addEventListener("change", () => { destinoEl.value = searchDestino.value; });
+  searchDestino.addEventListener("change", () => { destinoEl.value = searchDestino.value; syncModalWarehouses(); });
   destinoEl.addEventListener("change", syncModalWarehouses);
   origenEl.addEventListener("change", syncModalWarehouses);
+  syncModalWarehouses();
   document.getElementById("search-stock-refresh").addEventListener("click", () => { searchVariants(); });
   form?.addEventListener("submit", (e) => {
     if (scansPending) {

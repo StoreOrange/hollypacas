@@ -1763,6 +1763,13 @@ def _quick_transfer_branch_bodega(db: Session, user: User):
     return _resolve_branch_bodega(db, user)
 
 
+def _quick_transfer_origin_restricted(db: Session, user: User) -> bool:
+    if not _is_shoe_cashier(user):
+        return False
+    branch, assigned = _quick_transfer_branch_bodega(db, user)
+    return not (assigned and branch and (branch.code or "").strip().lower() == "central")
+
+
 def _enforce_quick_transfer(request: Request, user: User) -> None:
     if _is_shoes_mode() and _has_permission(user, "access.inventory.traslados"):
         return
@@ -11917,7 +11924,7 @@ def inventory_quick_transfers_page(
         )
         .order_by(EgresoInventario.fecha.desc(), EgresoInventario.id.desc())
     )
-    if _is_shoe_cashier(user):
+    if _quick_transfer_origin_restricted(db, user):
         transfers_query = transfers_query.filter(EgresoInventario.bodega_id == bodega_origen.id)
     transfers = transfers_query.limit(80).all()
 
@@ -11936,7 +11943,7 @@ def inventory_quick_transfers_page(
             "request": request,
             "user": user,
             "bodegas": bodegas,
-            "origin_bodegas": [bodega_origen] if _is_shoe_cashier(user) else bodegas,
+            "origin_bodegas": [bodega_origen] if _quick_transfer_origin_restricted(db, user) else bodegas,
             "traslado_tipo_id": traslado_tipo.id,
             "default_origen_id": bodega_origen.id if bodega_origen else None,
             "default_destino_id": bodega_destino.id if bodega_destino else None,
@@ -11984,7 +11991,7 @@ def inventory_quick_transfers_search(
     if not _is_shoes_mode():
         return JSONResponse({"ok": True, "items": []})
 
-    if _is_shoe_cashier(user):
+    if _quick_transfer_origin_restricted(db, user):
         _, assigned = _quick_transfer_branch_bodega(db, user)
         if not assigned or (bodega_id is not None and str(bodega_id) != str(assigned.id)):
             raise HTTPException(status_code=403, detail="Solo puedes consultar tu bodega de origen")
@@ -31620,7 +31627,7 @@ def inventory_egreso_ticket_print(
     if not egreso:
         raise HTTPException(status_code=404, detail="Egreso no encontrado")
 
-    if _is_shoe_cashier(user):
+    if _quick_transfer_origin_restricted(db, user):
         _, assigned = _quick_transfer_branch_bodega(db, user)
         if not assigned or egreso.bodega_id != assigned.id:
             raise HTTPException(status_code=403, detail="El traslado pertenece a otra bodega")
@@ -34227,7 +34234,7 @@ async def inventory_create_egreso(
         transfer_type = db.query(EgresoTipo).filter(EgresoTipo.id == int(type_raw)).first() if type_raw.isdigit() else None
         if not transfer_type or "traslado" not in (transfer_type.nombre or "").lower():
             _enforce_permission(request, user, "access.inventory.egresos")
-        if _is_shoe_cashier(user):
+        if _quick_transfer_origin_restricted(db, user):
             _, assigned = _quick_transfer_branch_bodega(db, user)
             if not assigned or str(form.get("bodega_id")) != str(assigned.id):
                 raise HTTPException(status_code=403, detail="Solo puedes trasladar desde tu bodega asignada")
