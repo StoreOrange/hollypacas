@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_active_company_key, settings
 from ..database import Base, get_engine, get_session_local
+from ..models.returns import CustomerReturn
 from ..models.user import Branch, Permission, Role, User
 from ..models.inventory import (
     Bodega,
@@ -81,6 +82,8 @@ def _seed_admin(db: Session) -> None:
 
 def _seed_permissions(db: Session) -> None:
     permission_names = [
+        "menu.sales.devoluciones",
+        "access.sales.devoluciones",
         "Ecommerce",
         "Finanzas",
         "Inventarios",

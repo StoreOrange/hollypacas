@@ -4,6 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload
 from ..models.sales import VentaFactura, VentaPago, FormaPago, CierreCaja, DepositoCliente
+from ..models.returns import CustomerReturn
 from ..models.inventory import Producto, ShoeProductVariant, ShoeVariantStock, ColorCatalog
 
 
@@ -30,6 +31,15 @@ def snapshot(db, stores, day, *, sales=True, cash=True):
             if method.casefold()=='efectivo':row['cash_'+currency.lower()]+=amount
             else:
                 row['movements'].append(dict(kind='Cobro · '+method,reference=invoice.numero,currency=currency,amount=money(amount)))
+    if sales or cash:
+        returns=db.query(CustomerReturn).filter(CustomerReturn.bodega_id.in_(ids), CustomerReturn.created_at>=start, CustomerReturn.created_at<end).all()
+        for returned in returns:
+            row=rows[returned.bodega_id]
+            row['sales']-=Decimal(str(returned.monto_cs))
+            if cash and returned.tipo=='DINERO':
+                row['cash_cs']-=Decimal(str(returned.monto_cs))
+            if cash:
+                row['movements'].append(dict(kind='Devolución · '+('Efectivo entregado' if returned.tipo=='DINERO' else 'Anticipo para canje'),reference=returned.numero,currency='CS',amount=money(returned.monto_cs)))
     if cash:
         # Latest count per warehouse: repeated closures are snapshots, not additive.
         closes=db.query(CierreCaja).filter(CierreCaja.bodega_id.in_(ids),CierreCaja.fecha==day).order_by(CierreCaja.created_at.desc(),CierreCaja.id.desc()).all()

@@ -149,6 +149,8 @@ from ..models.sales import (
     VentaItem,
     VentaPago,
 )
+from ..models.returns import CustomerReturn
+from ..core.customer_returns import consume_credits
 from ..models.user import Branch, Permission, Role, User
 from ..models.attendance import AttendancePolicySetting
 
@@ -403,6 +405,7 @@ SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "sales", "label": "Ventas", "href": "/sales", "icon": "bi-cart-check-fill", "perm": "menu.sales", "alt_perm": None},
     {"id": "sales_caliente", "label": "Ventas en Caliente", "href": "/sales/ventas-caliente", "icon": "bi-activity", "perm": "menu.sales.caliente", "alt_perm": None},
     {"id": "reports", "label": "Informes", "href": "/reports", "icon": "bi-bar-chart-line-fill", "perm": "menu.reports", "alt_perm": None},
+    {"id": "sales_devoluciones", "label": "Devoluciones", "href": "/sales/devoluciones", "icon": "bi-arrow-counterclockwise", "perm": "menu.sales.devoluciones", "alt_perm": None, "shoes_only": True},
     {"id": "sales_cobranza", "label": "Gestion de cobranza", "href": "/sales/cobranza", "icon": "bi-wallet-fill", "perm": "menu.sales.cobranza", "alt_perm": None},
     {"id": "sales_cierre", "label": "Cierre de caja", "href": "/sales/cierre", "icon": "bi-cash-stack", "perm": "menu.sales.cierre", "alt_perm": None},
     {"id": "sales_utilitario", "label": "Utilitario Ventas", "href": "/sales/utilitario", "icon": "bi-wrench-adjustable-circle", "perm": "menu.sales.utilitario", "alt_perm": None},
@@ -467,6 +470,10 @@ def get_sidebar_menu_layout(db: Session) -> list[dict[str, str | None]]:
         except json.JSONDecodeError:
             order_ids = []
     normalized_ids = _normalize_sidebar_menu_order(order_ids)
+    if company_key == "bdzapatos" and "sales_devoluciones" not in order_ids:
+        normalized_ids.remove("sales_devoluciones")
+        anchor = "sales_utilitario" if "sales_utilitario" in normalized_ids else "sales"
+        normalized_ids.insert(normalized_ids.index(anchor) + 1, "sales_devoluciones")
     by_id = {str(item["id"]): item for item in SIDEBAR_MENU_ITEMS}
     items = [dict(by_id[item_id]) for item_id in normalized_ids if item_id in by_id]
     if company_key == "bdzapatos":
@@ -571,7 +578,7 @@ def _get_user_from_cookie(request: Request, db: Session) -> Optional[User]:
 def _permission_names(user: User) -> set[str]:
     names = {perm.name for perm in (user.permissions or [])}
     if _is_shoes_mode() and any(role.name == "cajero" for role in user.roles or []):
-        names.update({"menu.inventory.traslados", "access.inventory.traslados"})
+        names.update({"menu.inventory.traslados", "access.inventory.traslados", "menu.sales.devoluciones", "access.sales.devoluciones"})
     return names
 
 
@@ -744,6 +751,7 @@ PERMISSION_GROUPS = [
         "items": [
             {"name": "menu.sales.utilitario", "label": "Utilitario de ventas"},
             {"name": "menu.sales.etiquetas", "label": "Impresion de etiquetas"},
+            {"name": "menu.sales.devoluciones", "label": "Devoluciones de clientes"},
             {"name": "menu.sales.cobranza", "label": "Gestion de cobranza"},
             {"name": "menu.sales.roc", "label": "Recibos de caja"},
             {"name": "menu.sales.depositos", "label": "Registro de depositos"},
@@ -786,6 +794,7 @@ PERMISSION_GROUPS = [
             {"name": "access.sales.roc", "label": "Recibos de caja"},
             {"name": "access.sales.depositos", "label": "Depositos bancarios"},
             {"name": "access.sales.cierre", "label": "Cierre de caja"},
+            {"name": "access.sales.devoluciones", "label": "Gestionar devoluciones de clientes"},
             {"name": "access.sales.reversion", "label": "Reversion de facturas"},
             {"name": "access.sales.comisiones", "label": "Registro de comisiones"},
             {"name": "access.sales.preventas", "label": "Gestion de preventas"},
@@ -6811,6 +6820,49 @@ def _build_auto_accounting_entry(
     return entry
 
 
+def _return_liability_account(db: Session) -> int:
+    account = db.query(CuentaContable).filter(CuentaContable.codigo == "2198").first()
+    if not account:
+        if db.get_bind().dialect.name == "postgresql":
+            db.execute(sql_text("SELECT pg_advisory_xact_lock(83742010)"))
+            account = db.query(CuentaContable).filter(CuentaContable.codigo == "2198").first()
+        if not account:
+            account = CuentaContable(codigo="2198", nombre="Anticipos de clientes por devoluciones", tipo="BALANCE", naturaleza="HABER", activo=True)
+            db.add(account)
+            db.flush()
+    if not account.activo or account.naturaleza != "HABER" or "devolucion" not in _ascii_lower(account.nombre):
+        raise ValueError("Configura la cuenta 2198 como Anticipos de clientes por devoluciones, de naturaleza HABER.")
+    return account.id
+
+
+def _post_return_accounting(db: Session, row: CustomerReturn) -> None:
+    if not _get_accounting_policy(db).get("auto_entry_enabled", False):
+        return
+    ref = f"AUTO-DEV-{row.id}"
+    if _auto_accounting_entry_exists(db, ref):
+        return
+    accounts = db.query(CuentaContable).filter(CuentaContable.activo.is_(True)).all()
+    revenue = _find_account_by_codes(accounts, ["4105", "4103", "4101"]) or _find_account_by_terms(accounts, ["venta", "ingreso"], "HABER")
+    cash = _find_account_by_codes(accounts, ["1101"]) or _find_account_by_terms(accounts, ["caja"], "DEBE")
+    inventory = _find_account_by_codes(accounts, ["1104"]) or _find_account_by_terms(accounts, ["inventario"], "DEBE")
+    cost = _find_account_by_codes(accounts, ["5102", "5101", "5103"]) or _find_account_by_terms(accounts, ["costo"], "DEBE")
+    destination = _return_liability_account(db) if row.tipo == "CANJE" else cash
+    voucher = _find_voucher_type_for_code(db, "DIARIO")
+    if not revenue or not destination or not voucher or (row.costo_cs > 0 and (not inventory or not cost)):
+        raise ValueError("Configura las cuentas de ventas, caja, inventario y costo y el comprobante DIARIO antes de registrar devoluciones.")
+    period = _accounting_period(row.created_at.date())
+    seq = _next_accounting_sequence(db, voucher.id, row.bodega.branch_id, period)
+    lines = [AccountingEntryLine(cuenta_id=revenue, descripcion=f"Devolución {row.numero}", debe=row.monto_cs, haber=0),
+             AccountingEntryLine(cuenta_id=destination, descripcion=row.estado, debe=0, haber=row.monto_cs)]
+    if row.costo_cs > 0:
+        lines += [AccountingEntryLine(cuenta_id=inventory, descripcion="Reintegro de mercadería", debe=row.costo_cs, haber=0),
+                  AccountingEntryLine(cuenta_id=cost, descripcion="Reversión de costo", debe=0, haber=row.costo_cs)]
+    db.add(AccountingEntry(tipo_id=voucher.id, branch_id=row.bodega.branch_id, fecha=row.created_at.date(), periodo=period,
+        secuencia=seq, numero=_build_accounting_entry_number(voucher, period, seq), referencia=ref,
+        descripcion=f"{row.numero} · Factura {row.factura.numero}", moneda="CS", estado="POSTEADO",
+        total_debe=row.monto_cs+row.costo_cs, total_haber=row.monto_cs+row.costo_cs, creado_por="auto-system", lines=lines))
+
+
 def _build_sale_accounting_entries(
     db: Session,
     *,
@@ -6856,18 +6908,26 @@ def _build_sale_accounting_entries(
                 if receivable_id:
                     debit_lines.append((receivable_id, sale_total, "Cliente por cobrar"))
             else:
-                grouped = {"cash": Decimal("0.00"), "bank": Decimal("0.00")}
+                grouped = {"cash": Decimal("0.00"), "bank": Decimal("0.00"), "credit": Decimal("0.00")}
                 for pago in payments or []:
                     pago_amount = Decimal(str(pago.monto_cs or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                     if pago_amount <= 0:
                         continue
                     key = "bank" if getattr(pago, "banco_id", None) or getattr(pago, "cuenta_id", None) else "cash"
+                    if _is_shoes_mode():
+                        form = db.get(FormaPago, pago.forma_pago_id)
+                        if form and (form.nombre or "").strip().lower() == "anticipo":
+                            key = "credit"
                     grouped[key] += pago_amount
                 if not any(grouped.values()):
                     grouped["cash"] = sale_total
                 running = Decimal("0.00")
+                if grouped["credit"] > 0:
+                    liability = _return_liability_account(db)
+                    debit_lines.append((liability, grouped["credit"], "Aplicación de anticipo por devolución"))
+                    running += grouped["credit"]
                 if grouped["cash"] > 0 and cash_id:
-                    amount = min(grouped["cash"], sale_total)
+                    amount = min(grouped["cash"], sale_total - running)
                     debit_lines.append((cash_id, amount, "Cobro de venta"))
                     running += amount
                 if grouped["bank"] > 0 and bank_id:
@@ -17640,6 +17700,13 @@ def sales_cierre(
             if saldo_cs > 0:
                 total_creditos_usd += (saldo_cs / tasa) if tasa else Decimal("0")
 
+    if _is_shoes_mode() and bodega:
+        canjes_cs = db.query(func.coalesce(func.sum(CustomerReturn.monto_cs), 0)).join(
+            VentaFactura, VentaFactura.id == CustomerReturn.factura_canje_id
+        ).filter(VentaFactura.bodega_id == bodega.id, func.date(VentaFactura.fecha) == fecha_value,
+                 VentaFactura.estado != "ANULADA", _setato_reportable_filter()).scalar()
+        total_egresos_usd += Decimal(str(canjes_cs or 0)) / tasa if tasa else Decimal("0")
+
     total_calculado_usd = (
         (apertura_cs / tasa if tasa else Decimal("0"))
         + Decimal(str(total_ventas_usd))
@@ -17830,6 +17897,13 @@ async def sales_cierre_create(
             saldo_cs = max(due_cs - paid_cs, Decimal("0"))
             if saldo_cs > 0:
                 total_creditos_usd += (saldo_cs / tasa) if tasa else Decimal("0")
+
+    if _is_shoes_mode() and bodega:
+        canjes_cs = db.query(func.coalesce(func.sum(CustomerReturn.monto_cs), 0)).join(
+            VentaFactura, VentaFactura.id == CustomerReturn.factura_canje_id
+        ).filter(VentaFactura.bodega_id == bodega.id, func.date(VentaFactura.fecha) == fecha_value,
+                 VentaFactura.estado != "ANULADA", _setato_reportable_filter()).scalar()
+        total_egresos_usd += Decimal(str(canjes_cs or 0)) / tasa if tasa else Decimal("0")
 
     total_calculado_usd = (
         (apertura_cs / tasa if tasa else Decimal("0"))
@@ -26486,6 +26560,10 @@ async def sales_reversion_request(
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
     if factura.estado == "ANULADA":
         return JSONResponse({"ok": False, "message": "Factura ya anulada"}, status_code=400)
+    if _is_shoes_mode() and db.query(CustomerReturn.id).filter(
+        or_(CustomerReturn.factura_id == factura.id, CustomerReturn.factura_canje_id == factura.id)
+    ).first():
+        return JSONResponse({"ok": False, "message": "Esta factura tiene devoluciones o anticipos aplicados; no se puede anular."}, status_code=400)
     if factura.abonos and len(factura.abonos) > 0:
         return JSONResponse({"ok": False, "message": "No se puede anular con abonos aplicados"}, status_code=400)
 
@@ -26630,6 +26708,10 @@ async def sales_reversion_confirm(
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
     if factura.estado == "ANULADA":
         return JSONResponse({"ok": False, "message": "Factura ya anulada"}, status_code=400)
+    if _is_shoes_mode() and db.query(CustomerReturn.id).filter(
+        or_(CustomerReturn.factura_id == factura.id, CustomerReturn.factura_canje_id == factura.id)
+    ).first():
+        return JSONResponse({"ok": False, "message": "Esta factura tiene devoluciones o anticipos aplicados; no se puede anular."}, status_code=400)
     if factura.abonos and len(factura.abonos) > 0:
         return JSONResponse({"ok": False, "message": "No se puede anular con abonos aplicados"}, status_code=400)
 
@@ -35980,6 +36062,7 @@ async def sales_create_invoice(
     pago_montos = form.getlist("pago_monto")
     pago_banco_ids = form.getlist("pago_banco_id")
     pago_cuenta_ids = form.getlist("pago_cuenta_id")
+    pago_credit_ids = form.getlist("pago_devolucion_id")
     item_ids = form.getlist("item_producto_id")
     item_variant_ids = form.getlist("item_variante_id")
     item_qtys = form.getlist("item_cantidad")
@@ -36669,6 +36752,21 @@ async def sales_create_invoice(
                     monto_cs=pago_cs,
                 )
             )
+
+    if _is_shoes_mode():
+        try:
+            if condicion_venta == "CREDITO" and any(str(x).strip() for x in pago_credit_ids):
+                raise ValueError("Los anticipos se utilizan en facturas de contado.")
+            allowed_credit_ids = {b.id for b in _scoped_bodegas_query(db).all()}
+            if not _shoe_admin_all_stores(user) and (branch.code or "").lower() != "central":
+                allowed_credit_ids &= {bodega.id}
+            if pago_forma_ids and len(pagos) != len(pago_forma_ids):
+                raise ValueError("Hay un pago inválido. Revisa las formas y los montos.")
+            consume_credits(db, payments=pagos, credit_ids=pago_credit_ids, invoice=factura,
+                allowed_ids=allowed_credit_ids, now=local_now_naive(), actor=user.full_name or user.email)
+        except ValueError as error:
+            db.rollback()
+            return RedirectResponse("/sales?error=" + quote_plus(str(error)), status_code=303)
 
     if condicion_venta == "CREDITO":
         factura.estado_cobranza = "PENDIENTE"
@@ -38891,3 +38989,7 @@ def inventory_activate_product(
         db.commit()
         return RedirectResponse("/inventory", status_code=303)
     return RedirectResponse("/inventory?error=Producto+no+encontrado", status_code=303)
+
+
+from .customer_returns import register as _register_customer_returns
+_register_customer_returns(router)

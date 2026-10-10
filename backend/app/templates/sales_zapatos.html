@@ -1468,6 +1468,7 @@
   </div>
 </div>
 
+{% include "partials/shoe_return_credit.html" %}
 <script>
   const layout = document.getElementById("layout");
   const toggles = document.querySelectorAll(".toggle-sidebar");
@@ -1912,6 +1913,7 @@
           <input type="hidden" form="sales-form" name="pago_monto" value="${item.monto.toFixed(2)}" />
           <input type="hidden" form="sales-form" name="pago_banco_id" value="${item.bancoId || ""}" />
           <input type="hidden" form="sales-form" name="pago_cuenta_id" value="${item.cuentaId || ""}" />
+          <input type="hidden" form="sales-form" name="pago_devolucion_id" value="${item.devolucionId || ""}" />
         `;
       })
       .join("");
@@ -3584,8 +3586,11 @@
     handleProductNav(event);
   });
 
+  {% include "partials/shoe_return_credit.js" %}
+
   if (addPayment) {
     addPayment.addEventListener("click", () => {
+      if (isReturnCredit()) { openReturnCredits(); return; }
       const formaId = formaPagoField?.value;
       const formaOption = formaPagoField?.selectedOptions[0];
       const formaLabel = formaOption?.textContent || "";
@@ -3606,7 +3611,7 @@
       const remaining = Math.max(due - paidSoFar, 0);
       const montoInvoice = invoiceCurrency === "USD" ? toUsd(monto, moneda) : toCs(monto, moneda);
       const isCash = isCashPayment(formaId, formaLabel);
-      if (!isCash && montoInvoice > remaining + 0.01) {
+      if ((!isCash || paymentItems.some(p => p.devolucionId)) && montoInvoice > remaining + 0.001) {
         pauseNavForAlert({ icon: "warning", title: "Pago excede el saldo", text: "Solo efectivo permite vuelto." });
         return;
       }
@@ -3673,6 +3678,7 @@
       }
       updatePayMethodButtons(targetId);
       syncPaymentFields();
+      if (isReturnCredit()) openReturnCredits();
     });
   });
 
@@ -3883,6 +3889,17 @@
         return acc + (invoiceCurrency === "USD" ? toUsd(item.monto, item.moneda) : toCs(item.monto, item.moneda));
       }, 0);
       const due = invoiceCurrency === "USD" ? currentTotals.usd : currentTotals.cs;
+      if (paymentItems.some(p => p.devolucionId)) {
+        if (invoiceCurrency !== 'CS' || Math.round(totalPaid*100) !== Math.round(due*100)) {
+          pauseNavForAlert({icon:'warning',title:'Revisa el canje',text:'La compra debe ser igual o mayor que los anticipos. Completa la diferencia exacta en C$; no se permite vuelto.'});
+          return;
+        }
+        const customerId = Number(document.getElementById('cliente-id')?.value);
+        if (paymentItems.some(p => p.devolucionId && p.clienteId !== customerId)) {
+          pauseNavForAlert({icon:'warning',title:'Cliente del anticipo',text:'Selecciona al cliente propietario del anticipo antes de facturar.'});
+          return;
+        }
+      }
       const EPS = 0.01;
       if (totalPaid + EPS < due) {
         pauseNavForAlert({

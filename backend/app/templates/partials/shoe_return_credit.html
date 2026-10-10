@@ -1,0 +1,9 @@
+<style>
+#return-credit-modal .modal-title{font-size:21px}#return-credit-modal .modal-body{font-size:17px}#return-credit-modal .form-control,#return-credit-modal .btn{font-size:17px;min-height:44px}#return-credit-modal .small{font-size:14px}#return-credit-status{font-size:15px}
+</style>
+<div class="modal fade" id="return-credit-modal" tabindex="-1" aria-labelledby="return-credit-title" aria-hidden="true">
+<div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+<div class="modal-header"><div><h5 id="return-credit-title" class="modal-title fw-bold">Anticipos por devolución</h5><p class="text-muted small mb-0 mt-1">Canjea el importe completo en C$. La nueva compra debe tener un valor igual o mayor.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+<div class="modal-body"><div class="input-group mb-3"><input id="return-credit-query" class="form-control" placeholder="Factura original, DEV-000001 o nombre del cliente" aria-label="Buscar anticipo"><button id="return-credit-search" class="btn btn-primary" type="button">Buscar</button></div><div id="return-credit-status" class="alert alert-info py-2" role="status">Busca por factura o cliente para ver sus anticipos disponibles.</div><div id="return-credit-list" class="d-grid gap-3"></div></div>
+<div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Volver al pago</button></div>
+</div></div></div>
