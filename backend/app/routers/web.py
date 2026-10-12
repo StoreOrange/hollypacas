@@ -23354,6 +23354,11 @@ def _build_kardex_movements(
     resumen = {
         "movimientos": len(rows),
         "dias": (end_date - start_date).days + 1,
+        # Each running balance belongs to one product/warehouse. The report
+        # summary must consolidate all matching balances, including warehouses
+        # with opening stock but no movements during the selected period.
+        "saldo_inicial": sum(opening_balances.values(), Decimal("0")),
+        "saldo_final": sum(saldos.values(), Decimal("0")),
         "total_ingresos": sum((r["cantidad"] for r in rows if r.get("tipo_base") == "Ingreso"), Decimal("0")),
         "total_egresos": sum((abs(r["cantidad"]) for r in rows if r.get("tipo_base") == "Egreso"), Decimal("0")),
         "total_ventas": sum((abs(r["cantidad"]) for r in rows if r.get("tipo_base") == "Venta"), Decimal("0")),
@@ -25363,8 +25368,8 @@ def report_kardex_export(
     y -= 14
     c.drawString(margin, y, f"Ventas: {resumen['total_ventas']}")
     y -= 14
-    c.drawString(margin + 220, y + 28, f"Antes del ultimo mov.: {float(resumen.get('saldo_antes_ultimo') or 0):.2f}")
-    c.drawString(margin + 220, y + 14, f"Saldo final: {float(resumen.get('saldo_final_ultimo') or 0):.2f}")
+    c.drawString(margin + 220, y + 28, f"Saldo inicial total: {float(resumen.get('saldo_inicial') or 0):.2f}")
+    c.drawString(margin + 220, y + 14, f"Saldo final total: {float(resumen.get('saldo_final') or 0):.2f}")
     c.setFillColor(colors.black)
     c.line(margin, y, width - margin, y)
     y -= 12

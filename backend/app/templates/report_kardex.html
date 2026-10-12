@@ -37,17 +37,17 @@
             </div>
             <div class="odoo-pill">
               <i class="bi bi-hourglass-split"></i>
-              Antes del ultimo mov.: {{ "%.2f"|format(resumen.saldo_antes_ultimo or 0) }}
+              Saldo inicial total: {{ "%.2f"|format(resumen.saldo_inicial or 0) }}
             </div>
             <div class="odoo-pill primary">
               <i class="bi bi-stack"></i>
-              Saldo final: {{ "%.2f"|format(resumen.saldo_final_ultimo or 0) }}
+              Saldo final total: {{ "%.2f"|format(resumen.saldo_final or 0) }}
             </div>
           </div>
         </div>
         {% if resumen.ultimo_producto %}
         <div class="text-sm text-slate mt-2">
-          Ultimo producto en el reporte: <strong class="text-ink">{{ resumen.ultimo_producto }}</strong>
+          Los saldos de cada fila corresponden a su producto y bodega. Último producto en el reporte: <strong class="text-ink">{{ resumen.ultimo_producto }}</strong>
         </div>
         {% endif %}
         <ul class="nav nav-tabs mt-3">
