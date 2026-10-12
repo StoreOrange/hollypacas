@@ -319,6 +319,22 @@
   .sales-unified-grid .row-qty {
     width: 4.2rem !important;
   }
+  /* El tono marrón pastel identifica los precios que se pueden editar. */
+  .sales-unified-grid .row-price:not([readonly]):not(:disabled) {
+    background-color: #f0e2d6 !important;
+    color: #68472f !important;
+    border: 1px solid #c6a88f !important;
+    border-radius: .375rem;
+    padding-left: .35rem;
+    padding-right: .35rem;
+  }
+  .sales-unified-grid .row-price:not([readonly]):not(:disabled):focus {
+    background-color: #ead6c5 !important;
+    border-color: #967052 !important;
+    outline: none;
+    box-shadow: 0 0 0 .15rem rgba(150, 112, 82, .18);
+  }
+
   .sales-unified-grid tbody tr {
     border-color: #eef2f6;
   }
