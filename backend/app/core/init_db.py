@@ -1920,6 +1920,9 @@ def init_db() -> None:
                 conn.execute(text("UPDATE productos SET es_libreado = FALSE WHERE es_libreado IS NULL"))
     if "ventas_preventas_items" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("ventas_preventas_items")}
+        if "peso_lbs" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE ventas_preventas_items ADD COLUMN peso_lbs NUMERIC(14, 2)"))
         if "combo_role" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE ventas_preventas_items ADD COLUMN combo_role VARCHAR(20)"))

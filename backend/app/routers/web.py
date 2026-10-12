@@ -1722,6 +1722,20 @@ def _preventa_estado_badge(estado: str) -> dict[str, str]:
     return mapping.get((estado or "").upper(), {"label": estado or "-", "class": "bg-slate-100 text-slate-700"})
 
 
+def _preventa_previous_pending_filter(day: date):
+    return and_(Preventa.fecha < datetime.combine(day, datetime.min.time()),
+                Preventa.estado.in_(["PENDIENTE", "REVISION"]), Preventa.venta_factura_id.is_(None))
+
+
+def _preventa_pending_age(preventa: Preventa) -> str:
+    if not _is_pacasholl_company() or not preventa.fecha or preventa.estado not in {"PENDIENTE", "REVISION"} or preventa.venta_factura_id:
+        return ""
+    days = (local_today() - preventa.fecha.date()).days
+    if days == 1:
+        return "Pendiente de ayer"
+    return f"Pendiente hace {days} días" if days > 1 else ""
+
+
 def _preventa_scope_query(db: Session, user: User):
     scoped_branch_ids = _user_scoped_branch_ids(db, user)
     query = (
@@ -12307,6 +12321,8 @@ def sales_page(
                         "cod_producto": producto.cod_producto,
                         "descripcion": producto.descripcion,
                         "cantidad": qty,
+                        "peso_lbs": float(row.peso_lbs or 0),
+                        "es_libreado": _is_pacasholl_company() and bool(producto.es_libreado),
                         "existencia": existencia,
                         "precio_usd": float(row.precio_unitario_usd or 0),
                         "precio_cs": float(row.precio_unitario_cs or 0),
@@ -13034,6 +13050,12 @@ def mobile_preventas_page(
     if vendedor_user_id:
         recent_preventas_query = recent_preventas_query.filter(Preventa.vendedor_id == vendedor_user_id)
     recent_preventas = recent_preventas_query.order_by(Preventa.created_at.desc(), Preventa.id.desc()).limit(20).all()
+    if _is_pacasholl_company():
+        previous_query = db.query(Preventa).filter(Preventa.branch_id == branch.id, Preventa.bodega_id == bodega.id,
+                                                 _preventa_previous_pending_filter(local_today()))
+        if vendedor_user_id:
+            previous_query = previous_query.filter(Preventa.vendedor_id == vendedor_user_id)
+        recent_preventas = previous_query.order_by(Preventa.fecha.asc(), Preventa.id.asc()).all() + recent_preventas
     result_preventa = None
     result_preventa_raw = (request.query_params.get("result_preventa") or "").strip()
     if result_preventa_raw.isdigit():
@@ -13067,6 +13089,7 @@ def mobile_preventas_page(
                         "codigo": producto.cod_producto,
                         "descripcion": producto.descripcion,
                         "cantidad": float(item.cantidad or 0),
+                        "peso_lbs": float(item.peso_lbs or 0),
                         "precio_usd": float(item.precio_unitario_usd or 0),
                         "subtotal_usd": float(item.subtotal_usd or 0),
                         "combo_role": (item.combo_role or "").strip().lower(),
@@ -13097,6 +13120,7 @@ def mobile_preventas_page(
                 "emoji": score_emoji,
                 "level": score_level,
             },
+            "include_previous_pending": _is_pacasholl_company(),
             "recent_preventas": [
                 {
                     "id": p.id,
@@ -13104,6 +13128,7 @@ def mobile_preventas_page(
                     "cliente": p.cliente.nombre if p.cliente else "Consumidor final",
                     "vendedor": p.vendedor.nombre if p.vendedor else "-",
                     "fecha_label": p.fecha.strftime("%d/%m/%Y %H:%M") if p.fecha else "-",
+                    "pending_age": _preventa_pending_age(p),
                     "estado": p.estado,
                     "badge": _preventa_estado_badge(p.estado),
                 }
@@ -13967,6 +13992,7 @@ def mobile_preventas_detail(
                 "codigo": producto.cod_producto,
                 "descripcion": producto.descripcion,
                 "cantidad": float(item.cantidad or 0),
+                "peso_lbs": float(item.peso_lbs or 0),
                 "precio_usd": float(item.precio_unitario_usd or 0),
                 "precio_cs": float(item.precio_unitario_cs or 0),
                 "subtotal_usd": float(item.subtotal_usd or 0),
@@ -14039,6 +14065,7 @@ def mobile_preventas_products_search(
                 "precio_venta1_usd": float(producto.precio_venta1_usd or 0),
                 "precio_venta1": float(producto.precio_venta1 or 0),
                 "existencia": existencia,
+                "es_libreado": _is_pacasholl_company() and bool(producto.es_libreado),
                 "combo_count": len(producto.combo_children or []),
             }
         )
@@ -14307,6 +14334,18 @@ async def mobile_preventas_create(
         producto = db.query(Producto).filter(Producto.id == producto_id, Producto.activo.is_(True)).first()
         if not producto:
             return RedirectResponse("/m/preventas?error=Producto+no+encontrado", status_code=303)
+        is_libreado = _is_pacasholl_company() and bool(producto.es_libreado)
+        weight = _to_dec(item_peso_lbs[idx] if idx < len(item_peso_lbs) else 0)
+        if is_libreado:
+            if not weight.is_finite() or weight <= 0 or weight > Decimal("9999999999.99"):
+                return RedirectResponse("/m/preventas?error=" + quote_plus(f"Indica las libras válidas de {producto.cod_producto}."), status_code=303)
+            weight = weight.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if weight <= 0:
+                return RedirectResponse("/m/preventas?error=El+peso+minimo+es+0.01+lbs", status_code=303)
+            qty = Decimal("1")
+        else:
+            weight = Decimal("0")
+        billable_qty = weight if is_libreado else qty
         existencia = Decimal(str(balances.get((producto.id, bodega.id), Decimal("0")) or 0))
         reserved_qty, reserved_details = _preventa_reserved_by_others(
             db,
@@ -14315,7 +14354,8 @@ async def mobile_preventas_create(
             vendedor_id=vendedor.id,
         )
         libre = max(Decimal("0"), existencia - reserved_qty)
-        if qty > libre:
+        already_requested = sum((x["cantidad"] for x in parsed_items if x["producto"].id == producto.id), Decimal("0"))
+        if qty + already_requested > libre:
             if reserved_details:
                 detail_parts = [
                     f"{vend} ({numero}): {int(det_qty) if det_qty == det_qty.to_integral() else det_qty}"
@@ -14359,10 +14399,11 @@ async def mobile_preventas_create(
             {
                 "producto": producto,
                 "cantidad": qty,
+                "peso_lbs": weight if is_libreado else None,
                 "precio_usd": precio_usd,
                 "precio_cs": precio_cs,
-                "subtotal_usd": (precio_usd * qty).quantize(Decimal("0.01")),
-                "subtotal_cs": (precio_cs * qty).quantize(Decimal("0.01")),
+                "subtotal_usd": (precio_usd * billable_qty).quantize(Decimal("0.01")),
+                "subtotal_cs": (precio_cs * billable_qty).quantize(Decimal("0.01")),
                 "combo_role": combo_role,
                 "combo_group": combo_group,
             }
@@ -14382,6 +14423,7 @@ async def mobile_preventas_create(
         (
             int(x["producto"].id),
             _norm_dec(x["cantidad"], "1"),
+            _norm_dec(x["peso_lbs"] or Decimal("0"), "0.01"),
             _norm_dec(x["precio_usd"], "0.01"),
             _norm_dec(x["precio_cs"], "0.01"),
             str(x["combo_role"] or ""),
@@ -14414,6 +14456,7 @@ async def mobile_preventas_create(
             (
                 int(it.producto_id),
                 _norm_dec(Decimal(str(it.cantidad or 0)), "1"),
+                _norm_dec(Decimal(str(it.peso_lbs or 0)), "0.01"),
                 _norm_dec(Decimal(str(it.precio_unitario_usd or 0)), "0.01"),
                 _norm_dec(Decimal(str(it.precio_unitario_cs or 0)), "0.01"),
                 str(it.combo_role or ""),
@@ -14460,6 +14503,7 @@ async def mobile_preventas_create(
                 preventa_id=preventa.id,
                 producto_id=item["producto"].id,
                 cantidad=item["cantidad"],
+                peso_lbs=item["peso_lbs"],
                 precio_unitario_usd=item["precio_usd"],
                 precio_unitario_cs=item["precio_cs"],
                 subtotal_usd=item["subtotal_usd"],
@@ -14512,7 +14556,10 @@ def sales_preventas_panel(
     except ValueError:
         fecha_value = today
 
-    query = _preventa_scope_query(db, user).filter(func.date(Preventa.fecha) == fecha_value)
+    date_filter = func.date(Preventa.fecha) == fecha_value
+    if pacasholl_scope_enabled and fecha_value == today:
+        date_filter = or_(date_filter, _preventa_previous_pending_filter(today))
+    query = _preventa_scope_query(db, user).filter(date_filter)
     if pacasholl_scope_enabled and current_branch and current_bodega:
         query = query.filter(Preventa.branch_id == current_branch.id, Preventa.bodega_id == current_bodega.id)
         branch_id = str(current_branch.id)
@@ -14550,6 +14597,7 @@ def sales_preventas_panel(
             "id": p.id,
             "numero": p.numero,
             "fecha": p.fecha,
+            "pending_age": _preventa_pending_age(p),
             "cliente": p.cliente.nombre if p.cliente else "Consumidor final",
             "vendedor": p.vendedor.nombre if p.vendedor else "-",
             "sucursal": p.branch.name if p.branch else "-",
@@ -14624,6 +14672,7 @@ def sales_preventas_detail(
                 "codigo": producto.cod_producto,
                 "descripcion": producto.descripcion,
                 "cantidad": qty,
+                "peso_lbs": float(item.peso_lbs or 0),
                 "precio_usd": float(item.precio_unitario_usd or 0),
                 "precio_cs": float(item.precio_unitario_cs or 0),
                 "subtotal_usd": float(item.subtotal_usd or 0),

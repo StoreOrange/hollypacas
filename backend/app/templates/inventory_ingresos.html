@@ -4331,11 +4331,7 @@
   if (ingresoForm) {
     ingresoForm.addEventListener("input", saveDraft);
     ingresoForm.addEventListener("change", saveDraft);
-    ingresoForm.addEventListener("submit", () => {
-      try {
-        localStorage.removeItem(STORAGE_KEY);
-      } catch {}
-    });
+    // Clear the draft after the successful redirect (clear_draft=1).
   }
 
   const validateIngresoRequired = () => {
@@ -5195,5 +5191,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 </script>
+{% endif %}
+{% if active_company == 'hollywood_pacas' %}
+{% include "partials/inventory_ingresos_mobile.html" %}
 {% endif %}
 {% endblock %}

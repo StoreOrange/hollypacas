@@ -539,6 +539,7 @@ class PreventaItem(Base):
     preventa_id = Column(Integer, ForeignKey("ventas_preventas.id"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
     cantidad = Column(Numeric(14, 2), nullable=False, default=0)
+    peso_lbs = Column(Numeric(14, 2), nullable=True)
     precio_unitario_usd = Column(Numeric(14, 2), nullable=False, default=0)
     precio_unitario_cs = Column(Numeric(14, 2), nullable=False, default=0)
     subtotal_usd = Column(Numeric(14, 2), nullable=False, default=0)

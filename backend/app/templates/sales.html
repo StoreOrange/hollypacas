@@ -4049,10 +4049,14 @@
       const priceUsd = Number(it.precio_usd || 0);
       const priceCs = Number(it.precio_cs || 0);
       const priceForInvoice = invoiceCurrency === "USD" ? priceUsd : priceCs;
-      const subtotalUsd = priceUsd * qty;
-      const subtotalCs = priceCs * qty;
+      const weight = Number(it.peso_lbs || 0);
+      const isLibreado = Boolean(it.es_libreado);
+      const subtotalUsd = priceUsd * (isLibreado ? weight : qty);
+      const subtotalCs = priceCs * (isLibreado ? weight : qty);
       addItemRow({
         productId: Number(it.product_id),
+        isLibreado,
+        pesoLbs: weight,
         code: String(it.cod_producto || ""),
         name: String(it.descripcion || ""),
         qtyValue: qty.toFixed(2),

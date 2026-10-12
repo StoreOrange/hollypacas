@@ -918,7 +918,7 @@
         <div class="result-item">
           <div>
             <div class="result-item-name">{{ item.descripcion }}</div>
-            <div class="result-item-code">{{ item.codigo }} · Cantidad {{ "{:,.2f}".format(item.cantidad or 0) }}</div>
+            <div class="result-item-code">{{ item.codigo }} · Cantidad {{ "{:,.2f}".format(item.cantidad or 0) }}{% if item.peso_lbs %} · {{ "{:,.2f}".format(item.peso_lbs) }} lbs{% endif %}</div>
           </div>
           <div class="result-item-amount">$ {{ "{:,.2f}".format(item.subtotal_usd or 0) }}</div>
         </div>
@@ -977,7 +977,7 @@
         <summary class="preventas-report-head">
           <div>
             <div class="preventas-report-title">Preventas enviadas</div>
-            <div class="preventas-report-subtitle">Solo muestra preventas del dia actual para mantener la vista ligera.</div>
+            <div class="preventas-report-subtitle">{% if include_previous_pending %}Preventas de hoy y pendientes de días anteriores.{% else %}Solo muestra preventas del día actual.{% endif %}</div>
           </div>
           <i class="bi bi-chevron-down preventas-report-caret"></i>
         </summary>
@@ -988,6 +988,7 @@
               <button class="preventa-report-toggle" type="button" data-preventa-toggle data-preventa-id="{{ row.id }}">
                 <div class="preventa-report-main">
                   <div class="preventa-report-number">{{ row.numero }}</div>
+                  {% if row.pending_age %}<div class="badge bg-warning text-dark mt-1"><i class="bi bi-clock-history me-1"></i>{{ row.pending_age }}</div>{% endif %}
                   <div class="preventa-report-client">{{ row.cliente }}</div>
                   <div class="preventa-report-meta">Enviada: {{ row.fecha_label }} · Ejecutivo: {{ row.vendedor }}</div>
                 </div>
@@ -997,7 +998,7 @@
             </div>
             {% endfor %}
           {% else %}
-            <div class="text-muted small">Hoy aun no hay preventas enviadas para mostrar.</div>
+            <div class="text-muted small">{% if include_previous_pending %}No hay preventas de hoy ni pendientes anteriores para mostrar.{% else %}Hoy aún no hay preventas enviadas para mostrar.{% endif %}</div>
           {% endif %}
         </div>
       </details>
@@ -1536,6 +1537,7 @@
       const itemsHtml = items.length
         ? items.map((item) => {
             const qty = Number(item.cantidad || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            const lbsDetail = Number(item.peso_lbs || 0)>0 ? ` · ${Number(item.peso_lbs).toFixed(2)} lbs` : "";
             const subtotalLabel = preventa.total_usd
               ? fmt(item.subtotal_usd, "$")
               : fmt(item.subtotal_cs, "C$");
@@ -1551,7 +1553,7 @@
               <div class="preventa-report-item">
                 <div class="code">${esc(item.codigo || "SIN-CODIGO")}${roleLabel ? ` · ${esc(roleLabel)}` : ""}</div>
                 <div class="desc">${esc(item.descripcion || "Producto")}</div>
-                <div class="meta">Cantidad: ${qty} · Precio: ${priceLabel}</div>
+                <div class="meta">Cantidad: ${qty}${lbsDetail} · Precio: ${priceLabel}</div>
                 <div class="meta">Subtotal: ${subtotalLabel}</div>
               </div>
             `;
@@ -1661,7 +1663,9 @@
         const qty = Number(row.querySelector('input[name="item_cantidad"]')?.value || 0);
         const priceUsd = Number(row.querySelector('input[name="item_precio_usd"]')?.value || 0);
         quantity += Number.isFinite(qty) ? qty : 0;
-        totalUsd += Number.isFinite(qty * priceUsd) ? qty * priceUsd : 0;
+        const lbs = Number(row.querySelector('[name="item_peso_lbs"]')?.value || 0);
+        const billed = row.dataset.libreado === "1" ? lbs : qty;
+        totalUsd += Number.isFinite(billed * priceUsd) ? billed * priceUsd : 0;
       });
       if (draftItemCount) {
         draftItemCount.textContent = quantity.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -1758,14 +1762,30 @@
       return `${productId}|${role || ""}|${comboGroup || ""}`;
     }
 
-    function addItem(item, extra = {}) {
+    async function addItem(item, extra = {}) {
+      const isLibreado = Boolean(item.es_libreado);
+      let lbs = 0;
+      if (isLibreado) {
+        if (extra.comboGroup) {
+          Swal.fire({icon:'warning',title:'Producto libreado',text:'Agrega este producto de forma individual e indica sus libras.'});return;
+        }
+        if (getAvailableQty(item.id,item.existencia) < 1) {
+          Swal.fire({icon:'warning',title:'Sin existencia disponible',text:'No hay un bulto disponible de este producto.'});return;
+        }
+        const answer = await Swal.fire({title:'¿Cuántas libras tiene?',text:item.descripcion + ' · Precio por libra: ' + fmt(item.precio_venta1_usd,'$'),
+          input:'number',inputLabel:'Peso en libras (lbs)',inputAttributes:{min:'0.01',step:'0.01',inputmode:'decimal'},
+          showCancelButton:true,confirmButtonText:'Agregar con este peso',cancelButtonText:'Cancelar',
+          inputValidator:value=>Number.isFinite(Number(value))&&Number(value)>=0.01?undefined:'Ingresa un peso mayor o igual a 0.01 lbs.'});
+        if (!answer.isConfirmed) return;
+        lbs = Math.round(Number(answer.value)*100)/100;
+      }
       const role = extra.role || "";
       const comboGroup = extra.comboGroup || "";
       const lockPrice = !!extra.lockPrice;
       const qty = Math.max(1, Math.round(Number(extra.qty || 1)));
       const priceUsd = Number(extra.priceUsd ?? item.precio_venta1_usd ?? 0);
       const priceCs = Number(extra.priceCs ?? item.precio_venta1 ?? 0);
-      const rowKey = makeRowKey(item.id, role, comboGroup);
+      const rowKey = makeRowKey(item.id, role, comboGroup) + (isLibreado ? "|lbs-" + crypto.randomUUID() : "");
 
       const existing = itemsBody.querySelector(`tr[data-row-key="${rowKey}"]`);
       if (existing && !comboGroup) {
@@ -1781,6 +1801,7 @@
       hideNoItems();
       const tr = document.createElement("tr");
       tr.setAttribute("data-item-row", "1");
+      tr.dataset.libreado = isLibreado ? "1" : "0";
       tr.setAttribute("data-product-id", String(item.id));
       tr.setAttribute("data-row-key", rowKey);
       if (comboGroup) {
@@ -1806,6 +1827,7 @@
           <input type="hidden" name="item_role" value="${role}">
           <input type="hidden" name="item_combo_group" value="${comboGroup}">
           <input type="hidden" name="item_cantidad" value="${qty}">
+          ${isLibreado ? `<label class="small fw-semibold mt-2">Peso en lbs<input class="form-control item-lbs" name="item_peso_lbs" type="number" min="0.01" step="0.01" inputmode="decimal" value="${lbs.toFixed(2)}" required style="min-height:44px;max-width:130px"></label><div class="small text-muted">1 bulto · cobro por libra</div>` : '<input type="hidden" name="item_peso_lbs" value="0">'}
         </td>
         <td class="text-end">
           <input
@@ -1816,7 +1838,7 @@
             value="${qty}"
             inputmode="numeric"
             style="max-width: 90px; margin-left:auto;"
-            ${comboGroup ? "readonly disabled tabindex=\"-1\" aria-readonly=\"true\"" : ""}
+            ${comboGroup || isLibreado ? "readonly disabled tabindex=\"-1\" aria-readonly=\"true\"" : ""}
           >
         </td>
         <td class="text-end">
@@ -1831,7 +1853,8 @@
 
       const qtyInput = tr.querySelector(".item-qty");
       const hiddenQty = tr.querySelector('input[name="item_cantidad"]');
-      if (qtyInput && !comboGroup) {
+      tr.querySelector(".item-lbs")?.addEventListener("input", updateDraftSummary);
+      if (qtyInput && !comboGroup && !isLibreado) {
         const selectAllQty = () => {
           try {
             qtyInput.focus();
@@ -1926,7 +1949,7 @@
           <div class="d-flex justify-content-between gap-2">
             <div>
               <div class="fw-semibold">${esc(item.cod_producto)} &middot; ${esc(item.descripcion)} ${comboBadge}</div>
-              <div class="small text-muted">${fmt(item.precio_venta1_usd, "$")} / ${fmt(item.precio_venta1, "C$")}</div>
+              <div class="small text-muted">${fmt(item.precio_venta1_usd, "$")} / ${fmt(item.precio_venta1, "C$")}${item.es_libreado ? " · Por libra (lbs)" : ""}</div>
             </div>
             <div class="text-end small ${canUse ? "text-success" : "text-danger"}">
               Exist: ${Number(item.existencia || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}
