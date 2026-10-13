@@ -480,7 +480,9 @@
               </nav>
             </div>
             {% if pacasholl_libreado_enabled %}
-            <img class="pacasholl-sales-banner" src="/static/pacasholl-sales-banner.png" alt="Felices fiestas patrias te desea Pacas Hollywood">
+            <video id="pacasholl-sales-header-video" class="pacasholl-sales-banner" autoplay loop muted playsinline preload="auto" aria-label="Encabezado animado de Pacas Hollywood">
+              <source src="/static/hollywood_header.mp4?v=20261013" type="video/mp4">
+            </video>
             {% else %}
             <div class="text-xl font-semibold text-ink leading-tight">Terminal de Venta Empresarial</div>
             <p class="text-xs text-slate max-w-xl">Gestiona ventas, inventario y pagos con un flujo rapido para atencion al cliente.</p>
