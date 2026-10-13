@@ -242,10 +242,10 @@
     background: #fff7f7;
   }
   .product-pick-row.product-active {
-    background: #fff1f2;
-    outline: 2px solid rgba(244, 114, 114, .62);
+    background: #fce7f3;
+    outline: 2px solid #d946a8;
     outline-offset: -2px;
-    box-shadow: inset 0 0 0 1px rgba(248, 113, 113, .18);
+    box-shadow: inset 0 0 0 1px rgba(217, 70, 168, .18);
   }
   .add-item {
     background: var(--hp-primary) !important;
@@ -329,12 +329,25 @@
     padding-right: .35rem;
   }
   .sales-unified-grid .row-price:not([readonly]):not(:disabled):focus {
-    background-color: #ead6c5 !important;
-    border-color: #967052 !important;
+    background-color: #fce7f3 !important;
+    border-color: #d946a8 !important;
     outline: none;
-    box-shadow: 0 0 0 .15rem rgba(150, 112, 82, .18);
+    box-shadow: 0 0 0 .15rem rgba(217, 70, 168, .2);
   }
 
+  .price-minimum-warning { display: block; font-size: .72rem; color: #b42318; margin-top: .2rem; }
+  .price-minimum-warning:empty { display: none; }
+  .price-editor { display: inline-flex; align-items: center; gap: .3rem; }
+  .price-edit-indicator { width: 1.2rem; color: #967052; cursor: text; }
+  .price-typing { display: none; align-items: center; gap: 2px; width: 1.2rem; }
+  .price-typing span { width: 3px; height: 3px; border-radius: 50%; background: #c0268b; animation: price-typing-pulse 1s infinite ease-in-out; }
+  .price-typing span:nth-child(2) { animation-delay: .15s; }
+  .price-typing span:nth-child(3) { animation-delay: .3s; }
+  .price-typing span:nth-child(4) { animation-delay: .45s; }
+  .price-editor:focus-within .price-edit-indicator { display: none; }
+  .price-editor:focus-within .price-typing { display: inline-flex; }
+  @keyframes price-typing-pulse { 0%, 80%, 100% { opacity: .35; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+  @media (prefers-reduced-motion: reduce) { .price-typing span { animation: none; opacity: 1; } }
   .sales-unified-grid tbody tr {
     border-color: #eef2f6;
   }
@@ -2055,7 +2068,11 @@
       </td>
       <td><span class="rounded-full bg-[#efe7f0] text-brand text-xs fw-bold px-2 py-1">Venta</span></td>
       <td class="text-end">
-        <input class="row-price w-24 text-end border-0 bg-transparent focus:outline-none fw-bold text-brand" type="text" inputmode="decimal" value="${payload.priceValue}" name="item_precio" ${(payload.lockPrice || preventaIdInput?.value) ? "readonly" : ""} />
+        <span class="price-editor">
+        <input class="row-price w-24 text-end border-0 bg-transparent focus:outline-none fw-bold text-brand" type="text" inputmode="decimal" value="${payload.priceValue}" name="item_precio" autocomplete="off" spellcheck="false" aria-label="Precio unitario" pattern="[0-9]+([.][0-9]{1,2})?" ${(payload.lockPrice || preventaIdInput?.value) ? "readonly" : ""} />
+          ${(payload.lockPrice || preventaIdInput?.value) ? "" : '<i class="bi bi-pencil price-edit-indicator" title="Editar precio unitario" aria-hidden="true"></i><span class="price-typing" aria-hidden="true"><span></span><span></span><span></span><span></span></span>'}
+        </span>
+        <span class="price-minimum-warning" role="status" aria-live="polite"></span>
       </td>
       <td class="text-end">
         <span class="subtotal-usd-cell fw-bold text-brand">${formatMoney(payload.subtotalUsd, "USD")}</span>
@@ -2326,7 +2343,7 @@
     const priceUsd = parseFloat(variant.selected_price_usd ?? variant.precio_venta1_usd ?? 0);
     const priceCs = parseFloat(variant.selected_price_cs ?? variant.precio_venta1 ?? 0);
     const price = moneda === "USD" ? priceUsd : priceCs;
-    const subtotal = price * qty;
+    const subtotal = roundMoney(price * qty);
     const subtotalUsd = moneda === "USD" ? subtotal : (rateToday ? subtotal / rateToday : 0);
     const subtotalCs = moneda === "USD" ? subtotal * rateToday : subtotal;
     addItemRow({
@@ -3272,6 +3289,7 @@
     }
     activeProductRows.forEach((row, idx) => {
       row.classList.toggle("product-active", idx === activeProductIndex);
+      row.setAttribute("aria-selected", String(idx === activeProductIndex));
     });
     const activeRow = activeProductRows[activeProductIndex];
     if (activeRow && productListPanel) {
@@ -3296,7 +3314,7 @@
         const visualFreeQty = Math.max(0, rawFreeQty - getInvoiceVariantQty(item.id, item.variant_id));
         const defaultQty = String(Math.min(1, Math.max(0, Math.floor(visualFreeQty))));
         return `
-          <tr class="product-pick-row" data-product-id="${item.id}" data-variant-id="${item.variant_id || ''}" data-name="${item.descripcion}" data-code="${item.cod_producto}" role="option">
+          <tr class="product-pick-row" data-product-id="${item.id}" data-variant-id="${item.variant_id || ''}" data-name="${item.descripcion}" data-code="${item.cod_producto}" role="option" tabindex="-1" aria-selected="false">
             <td><span class="rm-code text-brand fw-bold">${item.cod_variante || item.cod_producto}</span></td>
             <td>
               <div class="fw-bold text-ink">${item.descripcion}</div>
@@ -3373,7 +3391,9 @@
     }
     mainFilterBar?.classList.toggle("d-none", !query || query.length < 2);
     if (!query || query.length < 2) {
-      if (productList && productEmptyRow) {
+      mainSearchItems = [];
+      renderProducts([]);
+      if (productList) {
         productList.innerHTML = `<tr id="product-empty"><td colspan="8" class="text-center py-3 text-slate">Escribe para buscar productos.</td></tr>`;
       }
       return;
@@ -3398,7 +3418,7 @@
     productList.addEventListener("click", async (event) => {
       const button = event.target.closest(".add-item");
       if (!button) return;
-      await handleAddItem(button);
+      await addProductAndReset(button);
     });
   }
 
@@ -3420,46 +3440,42 @@
         handleProductNav(event);
         event.preventDefault();
         event.stopPropagation();
-        if (event.key !== "Enter") productListPanel?.focus({preventScroll:true});
+
       }
     });
   }
 
-  let lastNavAt = 0;
-  const NAV_DELAY = 80;
-
-  const addActiveProduct = async () => {
-    const activeRow = getActiveProductRow();
-    if (!activeRow) return;
-    const button = activeRow.querySelector(".add-item");
-    if (button) {
+  let productAddInProgress = false;
+  const addProductAndReset = async (button) => {
+    if (!button || productAddInProgress) return false;
+    productAddInProgress = true;
+    try {
       const added = await handleAddItem(button);
-      if (added && productSearch) {
-        clearTimeout(searchTimer);
-        productSearchAbort?.abort();
-        productSearchSequence += 1;
-        mainSearchItems = [];
-        mainSearchQuery = "";
-        Object.values(mainFilters).forEach(input => { if (input) input.value = ""; });
-        mainFilterBar?.classList.add("d-none");
-        productSearch.value = "";
-        if (productList && productEmptyRow) {
-          productList.innerHTML = productEmptyRow.outerHTML;
-        }
-        if (productListPanel) {
-          productListPanel.scrollTop = 0;
-        }
-        activeProductIndex = -1;
-        activeProductRows = [];
-        productNavMode = "search";
-        setTimeout(() => {
-          productSearch.focus();
-          productSearch.select();
-        }, 0);
+      if (!added) return false;
+      clearTimeout(searchTimer);
+      productSearchAbort?.abort();
+      productSearchSequence += 1;
+      mainSearchItems = [];
+      mainSearchQuery = "";
+      Object.values(mainFilters).forEach(input => { if (input) input.value = ""; });
+      mainFilterBar?.classList.add("d-none");
+      if (productSearch) productSearch.value = "";
+      if (productList) {
+        productList.innerHTML = `<tr id="product-empty"><td colspan="8" class="text-center py-3 text-slate">Escribe para buscar productos.</td></tr>`;
       }
-      return added;
+      activeProductIndex = -1;
+      activeProductRows = [];
+      productNavMode = "search";
+      productSearch?.focus({ preventScroll: true });
+      return true;
+    } finally {
+      productAddInProgress = false;
     }
-    return false;
+  };
+
+  const addActiveProduct = () => {
+    const activeRow = getActiveProductRow();
+    return addProductAndReset(activeRow?.querySelector(".add-item"));
   };
 
   const handleProductNav = (event) => {
@@ -3480,16 +3496,12 @@
     if (!activeProductRows.length) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      const now = Date.now();
-      if (now - lastNavAt < NAV_DELAY) return;
-      lastNavAt = now;
       setActiveProduct(activeProductIndex + 1);
+      getActiveProductRow()?.focus({ preventScroll: true });
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      const now = Date.now();
-      if (now - lastNavAt < NAV_DELAY) return;
-      lastNavAt = now;
       setActiveProduct(activeProductIndex - 1);
+      getActiveProductRow()?.focus({ preventScroll: true });
     } else if (event.key === "Enter") {
       event.preventDefault();
       addActiveProduct();
@@ -3520,13 +3532,7 @@
       }
       const button = row.querySelector(".add-item");
       if (!button) return;
-      const added = await handleAddItem(button);
-      if (added) {
-        setTimeout(() => {
-          productSearch?.focus();
-          productSearch?.select();
-        }, 10);
-      }
+      await addProductAndReset(button);
     });
   }
 
@@ -3750,6 +3756,47 @@
       refreshVisibleProductBalances();
       refreshVariantBalances();
     });
+    const editablePrice = target => target.matches?.(".row-price:not([readonly]):not(:disabled)");
+    // Seleccionar una sola vez, después del clic nativo del navegador.
+    itemsTable.addEventListener("click", (event) => {
+      const editor = event.target.closest?.(".price-editor");
+      if (!editor) return;
+      event.stopPropagation();
+      const input = editor.querySelector(".row-price");
+      if (!input || !editablePrice(input)) return;
+      if (event.target !== input) {
+        event.preventDefault();
+        input.focus({ preventScroll: true });
+      }
+      input.setSelectionRange(0, input.value.length);
+    });
+    ["dblclick", "auxclick"].forEach(type => {
+      itemsTable.addEventListener(type, event => {
+        if (!event.target.closest?.(".price-editor")) return;
+        event.preventDefault();
+        event.stopPropagation();
+      });
+    });
+    itemsTable.addEventListener("beforeinput", (event) => {
+      if (!editablePrice(event.target) || !event.data || !event.inputType.startsWith("insert")) return;
+      const input = event.target;
+      const next = input.value.slice(0, input.selectionStart) + event.data.replace(/,/g, ".") + input.value.slice(input.selectionEnd);
+      if (!/^\d*(?:\.\d{0,2})?$/.test(next)) event.preventDefault();
+    });
+    itemsTable.addEventListener("keydown", (event) => {
+      if (!editablePrice(event.target) || event.key !== "Enter") return;
+      event.preventDefault();
+      event.stopPropagation();
+      productSearch?.focus({ preventScroll: true });
+      productSearch?.select();
+    });
+    itemsTable.addEventListener("focusout", (event) => {
+      if (!editablePrice(event.target)) return;
+      const input = event.target;
+      input.value = (Number(input.value) || 0).toFixed(2);
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
     itemsTable.addEventListener("change", (event) => {
       if (!event.target.matches(".row-price")) return;
       const row = event.target.closest("tr");
@@ -3758,10 +3805,21 @@
         event.target.value = minimum.toFixed(2);
         event.target.setCustomValidity("");
         event.target.dispatchEvent(new Event("input", { bubbles: true }));
-        if (typeof Swal !== "undefined") Swal.fire({ icon: "warning", title: "Precio inferior a la lista", text: `El mínimo es ${minimum.toFixed(2)} en ${({{ price_list_labels|tojson }})[row.dataset.priceTier]}. Selecciona la lista requerida y agrega nuevamente el producto.` });
+        row.dataset.priceCorrection = `Se aplicó el precio mínimo: ${minimum.toFixed(2)}`;
+        const warning = row.querySelector(".price-minimum-warning");
+        if (warning) warning.textContent = row.dataset.priceCorrection;
       }
     });
     itemsTable.addEventListener("input", (event) => {
+      if (editablePrice(event.target)) {
+        if (event.isTrusted) delete event.target.closest("tr").dataset.priceCorrection;
+        const input = event.target;
+        const position = input.selectionStart;
+        const raw = input.value.replace(/,/g, ".").replace(/[^0-9.]/g, "");
+        const [integer, ...fractions] = raw.split(".");
+        const clean = integer + (fractions.length ? "." + fractions.join("").slice(0, 2) : "");
+        if (input.value !== clean) { input.value = clean; input.setSelectionRange(Math.min(position, clean.length), Math.min(position, clean.length)); }
+      }
       const row = event.target.closest("tr");
       if (!row) return;
       const qtyInput = row.querySelector(".row-qty");
@@ -3787,9 +3845,13 @@
       const validPrice = Number(priceInput?.value || 0);
       priceInput?.setCustomValidity(!Number.isFinite(validPrice) || validPrice < minimum
         ? `El precio mínimo de la lista ${({{ price_list_labels|tojson }})[row.dataset.priceTier]} es ${minimum.toFixed(2)}. Selecciona otra lista para cobrar menos.` : "");
-      const price = parseFloat(priceInput ? priceInput.value : 0);
+      const belowMinimum = !Number.isFinite(validPrice) || validPrice < minimum;
+      const priceWarning = row.querySelector(".price-minimum-warning");
+      if (priceWarning) priceWarning.textContent = belowMinimum ? `Precio mínimo: ${minimum.toFixed(2)}` : (row.dataset.priceCorrection || "");
+      priceInput?.setAttribute("aria-invalid", String(belowMinimum));
+      const price = Number(priceInput?.value) || 0;
       const moneda = monedaField.value || "USD";
-      const subtotal = price * qty;
+      const subtotal = roundMoney(price * qty);
       row.dataset.subtotalUsd = moneda === "USD" ? subtotal.toFixed(2) : (rateToday ? (subtotal / rateToday).toFixed(2) : "0.00");
       row.dataset.subtotalCs = moneda === "USD" ? (subtotal * rateToday).toFixed(2) : subtotal.toFixed(2);
       const subtotalCell = row.querySelector(".subtotal-cell");
@@ -4597,7 +4659,7 @@
     const target = event.target;
     if (
       target instanceof Element &&
-      target.closest("input, textarea, select, [contenteditable='true'], button, a, .select2-container")
+      target.closest("input, textarea, select, [contenteditable='true'], button, a, .select2-container, .price-editor")
     ) {
       return;
     }

@@ -1,6 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
+  .transfer-variant-search { display: flex; align-items: center; gap: .5rem; }
+  #variant-search-modal #variant-q { border: 2px solid #c4a5df; background: #faf5ff; border-radius: .5rem; min-width: 0; }
+  #variant-search-modal #variant-q:focus { border-color: #a477c7; box-shadow: 0 0 0 .2rem rgba(164, 119, 199, .18); }
+  .transfer-search-indicators { display: inline-flex; align-items: center; justify-content: center; width: 2.9rem; flex-shrink: 0; color: #8c5aad; gap: .35rem; }
+  .transfer-search-dots { display: inline-flex; align-items: center; gap: 3px; }
+  .transfer-search-dots span { width: 4px; height: 4px; background: #a477c7; border-radius: 50%; animation: transfer-search-pulse 1s infinite ease-in-out; }
+  .transfer-search-dots span:nth-child(2) { animation-delay: .15s; }
+  .transfer-search-dots span:nth-child(3) { animation-delay: .3s; }
+  .transfer-search-dots span:nth-child(4) { animation-delay: .45s; }
+  .transfer-search-spinner { display: none; animation: transfer-search-spin .8s linear infinite; }
+  .transfer-variant-search[data-state="busy"] .transfer-search-spinner { display: inline-block; }
+  .transfer-variant-search:is([data-state="ready"], [data-state="error"]) .transfer-search-dots { visibility: hidden; }
+  @keyframes transfer-search-pulse { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+  @keyframes transfer-search-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .transfer-search-dots span, .transfer-search-spinner { animation: none; } }
+
   .transfer-search-box {
     border-color: #1e3a5f;
     background: #f3f7fd;
@@ -187,11 +203,11 @@
           <input type="hidden" name="tipo_id" value="{{ traslado_tipo_id }}" />
           <input type="hidden" name="moneda" value="CS" />
           <div class="col-12 col-md-2">
-            <label for="fecha" class="form-label">Fecha *</label>
+            <label for="fecha" class="form-label"><i class="bi bi-calendar3 me-1" aria-hidden="true"></i> Fecha *</label>
             <input id="fecha" type="date" name="fecha" class="form-control form-control-sm" required />
           </div>
           <div class="col-12 col-md-3">
-            <label class="form-label transfer-bodega-label">Bodega origen *</label>
+            <label for="bodega-origen" class="form-label transfer-bodega-label"><i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i> Bodega origen *</label>
             <select id="bodega-origen" name="bodega_id" class="form-select form-select-sm transfer-bodega-select" required>
               {% for b in origin_bodegas %}
               <option value="{{ b.id }}" {% if b.id == default_origen_id %}selected{% endif %}>{{ b.name }}</option>
@@ -199,7 +215,7 @@
             </select>
           </div>
           <div class="col-12 col-md-3">
-            <label class="form-label transfer-bodega-label">Bodega destino *</label>
+            <label for="bodega-destino" class="form-label transfer-bodega-label"><i class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></i> Bodega destino *</label>
             <select id="bodega-destino" name="bodega_destino_id" class="form-select form-select-sm transfer-bodega-select" required>
               {% for b in bodegas %}
               <option value="{{ b.id }}" {% if b.id == default_destino_id %}selected{% endif %}>{{ b.name }}</option>
@@ -207,16 +223,16 @@
             </select>
           </div>
           <div class="col-12 col-md-4">
-            <label class="form-label">Observacion</label>
+            <label class="form-label"><i class="bi bi-chat-left-text me-1" aria-hidden="true"></i> Observacion</label>
             <input type="text" name="observacion" class="form-control form-control-sm" placeholder="Motivo o nota del traslado" />
           </div>
 
           <div class="col-12 col-lg-8">
-            <label class="form-label">Escanear codigo de barra variante</label>
+            <label class="form-label"><i class="bi bi-upc-scan me-1" aria-hidden="true"></i> Escanear codigo de barra variante</label>
             <div class="input-group input-group-sm transfer-search-box">
               <span class="input-group-text"><i class="bi bi-upc-scan"></i></span>
               <input id="scan-input" type="text" class="form-control" placeholder="Escanea y presiona Enter" autocomplete="off" />
-              <button id="scan-add" class="btn btn-primary" type="button">Agregar</button>
+              <button id="scan-add" class="btn btn-primary" type="button"><i class="bi bi-plus-circle me-1" aria-hidden="true"></i> Agregar</button>
             </div>
           </div>
           <div id="scan-status" class="col-12 small" role="status" aria-live="polite"></div>
@@ -230,13 +246,13 @@
               <table class="table table-sm align-middle transfer-grid-sm">
                 <thead>
                   <tr>
-                    <th>Codigo</th>
-                    <th>Producto</th>
-                    <th>Color</th>
-                    <th>Talla</th>
-                    <th class="text-end">Stock origen</th>
-                    <th class="text-end">Cantidad</th>
-                    <th class="text-end">Quitar</th>
+                    <th><i class="bi bi-upc me-1" aria-hidden="true"></i> Codigo</th>
+                    <th><i class="bi bi-box-seam me-1" aria-hidden="true"></i> Producto</th>
+                    <th><i class="bi bi-palette me-1" aria-hidden="true"></i> Color</th>
+                    <th><i class="bi bi-rulers me-1" aria-hidden="true"></i> Talla</th>
+                    <th class="text-end"><i class="bi bi-boxes me-1" aria-hidden="true"></i> Stock origen</th>
+                    <th class="text-end"><i class="bi bi-123 me-1" aria-hidden="true"></i> Cantidad</th>
+                    <th class="text-end"><i class="bi bi-trash me-1" aria-hidden="true"></i> Quitar</th>
                   </tr>
                 </thead>
                 <tbody id="transfer-items-body">
@@ -246,23 +262,23 @@
             </div>
           </div>
           <div class="col-12 d-flex justify-content-end gap-2">
-            <button id="clear-transfer" type="button" class="btn btn-outline-secondary btn-sm">Limpiar</button>
-            <button id="submit-transfer" type="submit" class="btn btn-primary btn-sm">Registrar traslado</button>
+            <button id="clear-transfer" type="button" class="btn btn-outline-secondary btn-sm"><i class="bi bi-eraser me-1" aria-hidden="true"></i> Limpiar</button>
+            <button id="submit-transfer" type="submit" class="btn btn-primary btn-sm"><i class="bi bi-send me-1" aria-hidden="true"></i> Registrar traslado</button>
           </div>
         </form>
       </div>
 
       <div class="odoo-card">
-        <div class="odoo-section-title mb-2">Traslados recientes</div>
+        <div class="odoo-section-title mb-2"><i class="bi bi-clock-history me-1" aria-hidden="true"></i> Traslados recientes</div>
         <div class="table-responsive">
           <table class="table table-sm align-middle transfer-grid-sm">
             <thead>
               <tr>
-                <th>Fecha</th>
-                <th>Origen</th>
-                <th>Destino</th>
-                <th class="text-end">Total C$</th>
-                <th class="text-end">Accion</th>
+                <th><i class="bi bi-calendar3 me-1" aria-hidden="true"></i> Fecha</th>
+                <th><i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i> Origen</th>
+                <th><i class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></i> Destino</th>
+                <th class="text-end"><i class="bi bi-cash-coin me-1" aria-hidden="true"></i> Total C$</th>
+                <th class="text-end"><i class="bi bi-hand-index me-1" aria-hidden="true"></i> Accion</th>
               </tr>
             </thead>
             <tbody>
@@ -273,8 +289,8 @@
                 <td>{{ mov.bodega_destino.name if mov.bodega_destino else "-" }}</td>
                 <td class="text-end">{{ "%.2f"|format(mov.total_cs or 0) }}</td>
                 <td class="text-end">
-                  <a class="btn btn-outline-primary btn-sm" href="/inventory/egresos/{{ mov.id }}/ticket/print?copies=1&amp;return_to=/inventory/traslados-rapidos">Recibo POS</a>
-                  <a class="btn btn-outline-secondary btn-sm" href="/inventory/egresos/{{ mov.id }}/pdf" target="_blank" rel="noopener">PDF</a>
+                  <a class="btn btn-outline-primary btn-sm" href="/inventory/egresos/{{ mov.id }}/ticket/print?copies=1&amp;return_to=/inventory/traslados-rapidos"><i class="bi bi-printer me-1" aria-hidden="true"></i> Recibo POS</a>
+                  <a class="btn btn-outline-secondary btn-sm" href="/inventory/egresos/{{ mov.id }}/pdf" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1" aria-hidden="true"></i> PDF</a>
                 </td>
               </tr>
               {% else %}
@@ -292,43 +308,43 @@
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content border-0 shadow-lg">
       <div class="modal-header">
-        <h5 class="modal-title">Buscar variantes</h5>
+        <h5 class="modal-title"><i class="bi bi-search me-1" aria-hidden="true"></i> Buscar variantes</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
       <div class="modal-body">
         <div class="row g-2 mb-3">
           <div class="col-12 col-md-5">
-            <label for="search-bodega-origen" class="form-label">Bodega origen</label>
+            <label for="search-bodega-origen" class="form-label"><i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i> Bodega origen</label>
             <select id="search-bodega-origen" class="form-select">
               {% for b in origin_bodegas %}<option value="{{ b.id }}" {% if b.id == default_origen_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-5">
-            <label for="search-bodega-destino" class="form-label">Bodega destino</label>
+            <label for="search-bodega-destino" class="form-label"><i class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></i> Bodega destino</label>
             <select id="search-bodega-destino" class="form-select">
               {% for b in bodegas %}<option value="{{ b.id }}" {% if b.id == default_destino_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}
             </select>
           </div>
-          <div class="col-12 col-md-2 d-flex align-items-end"><button id="search-stock-refresh" type="button" class="btn btn-outline-primary w-100">Refrescar</button></div>
+          <div class="col-12 col-md-2 d-flex align-items-end"><button id="search-stock-refresh" type="button" class="btn btn-outline-primary w-100"><i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i> Refrescar</button></div>
         </div>
         <p class="small text-muted">Los saldos por tienda son informativos. El producto se trasladará desde la bodega origen seleccionada.</p>
         <div class="row g-2 mb-2">
-          <div class="col-12 col-md-5"><input id="variant-q" class="form-control form-control-sm" placeholder="Codigo, descripcion, color o talla" /></div>
-          <div class="col-6 col-md-3"><input id="variant-color" class="form-control form-control-sm" placeholder="Color" /></div>
-          <div class="col-6 col-md-2"><input id="variant-size" class="form-control form-control-sm" placeholder="Talla" /></div>
-          <div class="col-12 col-md-2"><button id="variant-search-btn" class="btn btn-primary btn-sm w-100" type="button">Buscar</button></div>
+          <div class="col-12 col-md-5"><label for="variant-q" class="form-label small mb-1"><i class="bi bi-search me-1" aria-hidden="true"></i> Código o descripción</label><div id="transfer-variant-search" class="transfer-variant-search" data-state="idle"><input id="variant-q" class="form-control form-control-sm" placeholder="Codigo, descripcion, color o talla" aria-label="Buscar variante por código o descripción" autocomplete="off" /><span class="transfer-search-indicators" aria-hidden="true"><span class="transfer-search-dots"><span></span><span></span><span></span><span></span></span><i class="bi bi-arrow-repeat transfer-search-spinner"></i></span></div></div>
+          <div class="col-6 col-md-3"><label for="variant-color" class="form-label small mb-1"><i class="bi bi-palette me-1" aria-hidden="true"></i> Color</label><input id="variant-color" class="form-control form-control-sm" placeholder="Color" /></div>
+          <div class="col-6 col-md-2"><label for="variant-size" class="form-label small mb-1"><i class="bi bi-rulers me-1" aria-hidden="true"></i> Talla</label><input id="variant-size" class="form-control form-control-sm" placeholder="Talla" /></div>
+          <div class="col-12 col-md-2 d-flex align-items-end"><button id="variant-search-btn" class="btn btn-primary btn-sm w-100" type="button"><i class="bi bi-search me-1" aria-hidden="true"></i> Buscar</button></div>
         </div>
         <div id="variant-search-status" class="form-text mb-2">Escribe para buscar variantes.</div>
         <div class="table-responsive">
           <table class="table table-sm align-middle transfer-grid-sm">
             <thead>
               <tr>
-                <th>Codigo</th>
-                <th>Producto</th>
-                <th>Color</th>
-                <th>Talla</th>
-                <th class="text-end">Central</th><th class="text-end">KG</th><th class="text-end">KGF</th><th class="text-end">Origen</th>
-                <th class="text-end">Accion</th>
+                <th><i class="bi bi-upc me-1" aria-hidden="true"></i> Codigo</th>
+                <th><i class="bi bi-box-seam me-1" aria-hidden="true"></i> Producto</th>
+                <th><i class="bi bi-palette me-1" aria-hidden="true"></i> Color</th>
+                <th><i class="bi bi-rulers me-1" aria-hidden="true"></i> Talla</th>
+                <th class="text-end">Central</th><th class="text-end">KG</th><th class="text-end">KGF</th><th class="text-end"><i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i> Origen</th>
+                <th class="text-end"><i class="bi bi-hand-index me-1" aria-hidden="true"></i> Accion</th>
               </tr>
             </thead>
             <tbody id="variant-search-body"></tbody>
@@ -402,7 +418,7 @@
         <td class="text-end" style="width:120px;">
           <input type="number" class="form-control form-control-sm text-end row-qty" min="1" max="${item.existencia}" value="${item.cantidad}" step="1" />
         </td>
-        <td class="text-end"><button class="btn btn-outline-danger btn-sm row-remove" type="button"><i class="bi bi-x-lg"></i></button></td>
+        <td class="text-end"><button class="btn btn-outline-danger btn-sm row-remove" type="button" aria-label="Quitar variante" title="Quitar variante"><i class="bi bi-x-lg"></i></button></td>
         <input type="hidden" name="item_producto_id" value="${item.producto_id}" />
         <input type="hidden" name="item_variante_id" value="${item.variant_id}" />
         <input type="hidden" name="item_costo" value="${item.costo_cs}" />
@@ -502,20 +518,30 @@
 
   const stockBadge = (value) => `<span class="${Number(value || 0) > 0 ? 'transfer-stock-positive' : 'transfer-stock-zero'}">${fmt(value || 0)}</span>`;
 
+  const variantSearchIndicator = document.getElementById("transfer-variant-search");
+  let variantRequestSequence = 0;
+  const setVariantSearchState = state => {
+    if (variantSearchIndicator) variantSearchIndicator.dataset.state = state;
+    variantQ?.setAttribute("aria-busy", String(state === "busy"));
+  };
   const searchVariants = async (queryOverride = null) => {
+    const requestSequence = ++variantRequestSequence;
+    if (variantTimer) clearTimeout(variantTimer);
     const q = queryOverride !== null ? queryOverride : variantQ.value.trim();
     if (!q && !variantColor.value.trim() && !variantSize.value.trim()) {
+      setVariantSearchState("idle");
       variantSearchStatus.textContent = "Escribe para buscar variantes.";
       variantSearchBody.innerHTML = "";
       return;
     }
+    setVariantSearchState("busy");
     variantSearchStatus.textContent = "Buscando...";
     try {
       const requestedOrigin = origenEl.value;
       const resp = await fetch(getSearchUrl(q), { headers: { "X-Requested-With": "fetch" } });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      if (requestedOrigin !== origenEl.value) return;
+      if (requestSequence !== variantRequestSequence || requestedOrigin !== origenEl.value) return;
       const rows = data.items || [];
       if (!rows.length) {
         variantSearchStatus.textContent = "Sin resultados.";
@@ -533,7 +559,7 @@
           <td>${it.color || ""}</td>
           <td>${it.talla || ""}</td>
           <td class="text-end">${stockBadge(it.stock_bodegas?.central || 0)}</td><td class="text-end">${stockBadge(it.stock_bodegas?.kg || 0)}</td><td class="text-end">${stockBadge(it.stock_bodegas?.kgf || 0)}</td><td class="text-end">${stockBadge(it.existencia)}</td>
-          <td class="text-end"><button type="button" class="btn btn-outline-primary btn-sm variant-add">+</button></td>
+          <td class="text-end"><button type="button" class="btn btn-outline-primary btn-sm variant-add" aria-label="Agregar variante" title="Agregar variante"><i class="bi bi-plus-lg" aria-hidden="true"></i></button></td>
         `;
         const add = () => {
           if (Number(it.existencia || 0) <= 0) return;
@@ -544,8 +570,12 @@
         variantSearchBody.appendChild(tr);
       }
     } catch (err) {
+      if (requestSequence !== variantRequestSequence) return;
+      setVariantSearchState("error");
       const msg = err && err.message ? err.message : "sin detalle";
       variantSearchStatus.textContent = `Error al buscar variantes (${msg}).`;
+    } finally {
+      if (requestSequence === variantRequestSequence && variantSearchIndicator?.dataset.state === "busy") setVariantSearchState("ready");
     }
   };
 
@@ -609,6 +639,8 @@
     }
   });
   const scheduleVariantSearch = () => {
+    variantRequestSequence += 1;
+    setVariantSearchState("busy");
     if (variantTimer) clearTimeout(variantTimer);
     variantTimer = setTimeout(() => searchVariants(), 180);
   };
@@ -644,7 +676,15 @@
     searchOrigen.value = origenEl.value;
     searchDestino.value = destinoEl.value;
   };
-  document.getElementById("variant-search-modal").addEventListener("show.bs.modal", syncModalWarehouses);
+  document.getElementById("variant-search-modal").addEventListener("show.bs.modal", () => {
+    syncModalWarehouses();
+    setVariantSearchState("idle");
+  });
+  document.getElementById("variant-search-modal").addEventListener("shown.bs.modal", () => {
+    if (!variantQ) return;
+    variantQ.focus({ preventScroll: true });
+    variantQ.select();
+  });
   searchOrigen.addEventListener("change", () => {
     if (items.size && !window.confirm("Cambiar el origen quitará los productos cargados. ¿Continuar?")) {
       searchOrigen.value = origenEl.value;
