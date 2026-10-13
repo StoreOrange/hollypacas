@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.unit-page{max-width:1250px;margin:auto}.unit-card{background:#fff;border:1px solid #e7dfec;border-radius:16px;padding:20px;margin-bottom:16px}.unit-page .form-control:focus,.unit-page .form-select:focus{border-color:#b596d0;box-shadow:0 0 0 .2rem #b596d025}.unit-grid{min-width:850px}.unit-page label{font-weight:600;font-size:.9rem}.unit-summary{color:#704986;font-weight:700}.unit-page .form-control,.unit-page .form-select{font-size:1rem}
+.unit-search-wrap{position:relative}.unit-search-results{position:absolute;top:100%;left:0;width:min(520px,calc(100vw - 64px));max-height:260px;overflow-y:auto;background:#fff;border:1px solid #cdb5df;border-radius:10px;box-shadow:0 8px 24px #34213d20;z-index:30;margin-top:4px}.unit-search-result{display:block;width:100%;border:0;border-bottom:1px solid #eee6f2;background:#fff;text-align:left;padding:9px 12px;font-size:.9rem;line-height:1.3}.unit-search-result small{display:block;color:#6f6677;margin-top:3px}.unit-search-result:is(:hover,.active){background:#f3eafa;color:#683583}.unit-search-result strong,.unit-search-result small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+{% include 'partials/sidebar.html' %}
+<main class="p-4 lg:p-8"><div class="unit-page">
+<div class="d-flex align-items-center gap-2 mb-3"><button type="button" class="toggle-sidebar btn btn-outline-secondary" aria-label="Mostrar u ocultar menú"><i class="bi bi-list"></i></button><div><h1 class="h3 mb-1"><i class="bi bi-box-seam me-2"></i>Ingresos por unidad</h1><p class="text-muted mb-0">Un modelo, un color y una talla por fila. Agrega varios y registra el lote.</p></div></div>
+<div id="unit-feedback" role="status" aria-live="polite"></div>
+<form id="unit-form">
+<div class="unit-card"><div class="row g-3">
+<div class="col-6 col-md-3"><label for="unit-date">Fecha</label><input id="unit-date" class="form-control" type="date" value="{{ today }}" required></div>
+<div class="col-6 col-md-3"><label for="unit-warehouse">Bodega que recibe</label><select id="unit-warehouse" class="form-select" required>{% for b in warehouses %}<option value="{{ b.id }}" {% if b.id == user.default_bodega_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+<div class="col-6 col-md-3"><label for="unit-type">Tipo de ingreso</label><select id="unit-type" class="form-select" required>{% for t in types %}<option value="{{ t.id }}">{{ t.nombre }}</option>{% endfor %}</select></div>
+<div class="col-6 col-md-3"><label for="unit-supplier">Proveedor, si corresponde</label><select id="unit-supplier" class="form-select"><option value="">Sin proveedor</option>{% for p in suppliers %}<option value="{{ p.id }}">{{ p.nombre }}</option>{% endfor %}</select></div>
+<div class="col-12"><label for="unit-note">Observación</label><input id="unit-note" class="form-control" maxlength="200" placeholder="Motivo del ingreso especial"></div>
+</div></div>
+<div class="unit-card"><h2 class="h5">1. Captura el artículo</h2><div class="row g-3">
+<div class="col-12 col-md-4"><label for="unit-code">Código del modelo *</label><div class="unit-search-wrap"><div class="input-group"><input id="unit-code" class="form-control" maxlength="60" placeholder="Código, nombre, marca, talla o color" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="unit-search-results"><button id="unit-lookup" type="button" class="btn btn-outline-primary"><i class="bi bi-search"></i> Buscar</button></div><div id="unit-search-results" class="unit-search-results d-none" role="listbox" aria-label="Artículos encontrados"></div></div><small id="unit-lookup-status" class="text-muted" role="status">Escribe al menos 2 caracteres y selecciona un modelo o una variante.</small></div>
+<div class="col-12 col-md-4"><label for="unit-name">Descripción *</label><input id="unit-name" class="form-control" maxlength="200"></div>
+<div class="col-6 col-md-4"><label for="unit-line">Línea *</label><select id="unit-line" class="form-select"><option value="">Selecciona</option>{% for l in lines %}<option value="{{ l.id }}">{{ l.linea }}</option>{% endfor %}</select></div>
+<div class="col-6 col-md-3"><label for="unit-brand">Marca</label><input id="unit-brand" class="form-control" maxlength="80" placeholder="Sin Marca"></div>
+<div class="col-6 col-md-3"><label for="unit-color">Color *</label><input id="unit-color" list="unit-colors" class="form-control" maxlength="120" placeholder="Selecciona o escribe un color"><datalist id="unit-colors">{% for c in colors %}<option value="{{ c.nombre }}">{% endfor %}</datalist></div>
+<div class="col-6 col-md-2"><label for="unit-size">Talla *</label><input id="unit-size" class="form-control" maxlength="20" placeholder="Ej. 38"></div>
+<div class="col-6 col-md-2"><label for="unit-qty">Unidades *</label><input id="unit-qty" class="form-control" type="number" min="1" max="10000" step="1" value="1"></div>
+<div class="col-6 col-md-2"><label for="unit-cost">Costo C$ *</label><input id="unit-cost" class="form-control" type="number" min="0" step=".01" value="0"></div>
+<div class="col-6 col-md-3"><label for="unit-price">Precio de venta C$ *</label><input id="unit-price" class="form-control" type="number" min=".01" step=".01"></div>
+<div class="col-12 col-md-6"><label for="unit-scan">Código de etiqueta (opcional)</label><input id="unit-scan" class="form-control" maxlength="80" placeholder="El código exacto que no encuentra en ventas"><small class="text-muted">Si lo dejas vacío se conserva el existente o se genera uno para esta talla/color.</small></div>
+<div class="col-12 col-md-3 d-flex align-items-center"><button id="unit-add" type="button" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-1"></i>Agregar a la lista</button></div>
+</div><p class="small text-muted mt-3 mb-0">El precio se aplica al modelo y a sus listas de venta, igual que en el ingreso habitual. Las filas de un mismo modelo deben tener el mismo costo y precio.</p></div>
+<div class="unit-card"><h2 class="h5">2. Revisa y registra</h2><div class="table-responsive"><table class="table align-middle unit-grid"><thead><tr><th>Modelo / artículo</th><th>Color</th><th>Talla</th><th>Unidades</th><th>Costo C$</th><th>Precio C$</th><th>Código etiqueta</th><th></th></tr></thead><tbody id="unit-rows"></tbody></table></div><div class="d-flex flex-wrap justify-content-between align-items-center gap-3"><span id="unit-summary" class="unit-summary"></span><button id="unit-save" class="btn btn-primary" type="submit" disabled><i class="bi bi-check-circle me-1"></i>Registrar ingreso</button></div></div>
+</form>
+<div id="unit-result" class="unit-card d-none"><h2 class="h5 text-success"><i class="bi bi-check-circle me-1"></i>Ingreso registrado</h2><p id="unit-result-text"></p><div class="d-flex flex-wrap gap-2"><a id="unit-labels" class="btn btn-outline-primary"><i class="bi bi-upc-scan me-1"></i>Revisar e imprimir etiquetas</a><button type="button" id="unit-new" class="btn btn-primary">Nuevo ingreso</button></div></div>
+</div></main></div>
+<script id="unit-data" type="application/json">{{ {'token':token}|tojson }}</script>
+<script src="/static/js/shoe-unit-receipts.js?v=20261013"></script>
+{% endblock %}
