@@ -1,5 +1,7 @@
 # Preventas automáticas y POS · solo Pacas Hollywood
 
+**Flujo retirado por solicitud del usuario:** el panel y las rutas del agente ya no se exponen. Esta documentación conserva el diseño anterior como referencia; no se debe instalar el agente. La alternativa de impresión desde el navegador está en evaluación.
+
 Implementación local. No se activó el modo en una caja real ni se generaron facturas/impresiones reales durante QA. La salida física requiere instalar y probar el agente en Windows con la Epson.
 
 ## Uso

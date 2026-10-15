@@ -12707,7 +12707,6 @@ def sales_page(
             "active_company": (get_active_company_key() or "").strip().lower(),
             "sale_datetime_override_enabled": _is_global_company(),
             "pacasholl_libreado_enabled": _is_pacasholl_company(),
-            "pos_auto_bodega_id": bodega.id if bodega else None,
             "default_sales_currency": "CS" if _inventory_cs_only_mode(db) else "USD",
             "weighted_sales_enabled": _weighted_sales_enabled_mode(db),
             "sale_operation_key": uuid.uuid4().hex,
