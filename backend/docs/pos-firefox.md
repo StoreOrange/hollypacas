@@ -15,3 +15,7 @@ Cada trabajo se entrega una sola vez; el navegador registra el intento antes de 
 QA: pruebas de servicios con facturas/asientos reales en SQLite aislada, plazo, pausa, idempotencia, entrega/ACK/reimpresión, ticket y ausencia de rutas de agente. Firefox automatizado valida el interruptor pequeño, iframe POS, copias/evento/ACK y ausencia de repetición, simulando la API y window.print; no se generaron ventas ni impresiones reales. La prueba física Epson debe realizarse en la PC Windows.
 
 Referencia técnica Mozilla: https://github.com/mozilla-firefox/firefox/blob/main/modules/libpref/init/StaticPrefList.yaml (`print.always_print_silent`).
+
+## Recuperación de conexión
+
+La consulta tiene tiempo máximo de 8 segundos. Los temporizadores se inician antes de la primera conexión, para que un fallo inicial no impida volver a consultar. Reintenta automáticamente y al regresar a la pestaña; muestra Reconectando mientras no recibe datos. El contador visible usa una fecha límite local que no se extiende con cada respuesta del servidor. Al estar apagado se indica Apagado. El texto junto a Auto POS muestra el contador real cuando hay una preventa pendiente. QA de regresión: `python tests/browser_pos_timer_recovery.py` con app local y Firefox de Playwright; APIs simuladas, sin facturas ni impresiones reales.
