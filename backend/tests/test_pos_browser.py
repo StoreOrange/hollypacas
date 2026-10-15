@@ -22,13 +22,13 @@ class NativePosTests(unittest.TestCase):
     def due(self):
         self.activate();sale=self.sale()
         asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user))
-        self.clock+=timedelta(seconds=40)
+        self.clock+=timedelta(seconds=15)
         return sale
 
     def invoice(self):
         sale=self.due();asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user));return sale,self.db.query(PosPrintJob).one()
 
-    def test_checkbox_works_without_agent_and_only_after_forty_seconds(self):
+    def test_checkbox_works_without_agent_and_only_after_fifteen_seconds(self):
         sale=self.due();self.assertEqual(self.db.query(VentaFactura).count(),0)
         self.clock-=timedelta(seconds=1);asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user));self.assertEqual(self.db.query(VentaFactura).count(),0)
         self.clock+=timedelta(seconds=1);asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user));self.assertEqual(self.db.query(VentaFactura).one().total_cs,925)
@@ -44,7 +44,7 @@ class NativePosTests(unittest.TestCase):
 
     def test_missing_print_confirmation_stops_new_invoices(self):
         sale,job=self.invoice();self.sale(2)
-        asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user));self.clock+=timedelta(seconds=40)
+        asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user));self.clock+=timedelta(seconds=15)
         asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user));self.assertEqual(self.db.query(VentaFactura).count(),1)
         result=native.claim(self.station.id,self.request(),self.db,self.user)['job']
         asyncio.run(native.ack(self.station.id,job.id,self.request({'claim_id':result['claim_id'],'status':'UNKNOWN'}),self.db,self.user))

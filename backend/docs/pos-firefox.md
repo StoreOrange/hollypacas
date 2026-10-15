@@ -1,10 +1,10 @@
-# Auto POS · 40 s (Hollpacas)
+# Auto POS · 15 s (Hollpacas)
 
 Interruptor compacto junto a Ver preventas, sin panel ni agente. Se conserva por usuario/navegador/bodega; inicialmente apagado. Las antiguas rutas del agente permanecen deshabilitadas.
 
 Requiere Firefox en Windows con la Epson/controlador/papel POS seleccionados y `print.always_print_silent=true` en about:config. Esa preferencia se configura una vez en la PC; una web no puede activarla ni comprobarla. Primero comprobar una impresión POS normal con la Epson. No requiere Python, SumatraPDF ni instalación del agente. Mantener Ventas abierta y activa.
 
-Al marcar, toma únicamente preventas nuevas pendientes, no congeladas y de la bodega/día actual. No procesa retrospectivamente las pendientes al activar. Cuenta 40 segundos desde su recepción en la cola (consulta cada 2 segundos). Genera la factura con el mismo flujo de ventas: efectivo C$ por el total, inventario, libreados y contabilidad. Se pausa mientras existe una venta/preventa manual o modal abierto. Desmarcar cancela las esperas aún no facturadas.
+Al marcar, toma únicamente preventas nuevas pendientes, no congeladas y de la bodega/día actual. No procesa retrospectivamente las pendientes al activar. Cuenta 15 segundos desde su recepción en la cola (consulta cada 2 segundos). Genera la factura con el mismo flujo de ventas: efectivo C$ por el total, inventario, libreados y contabilidad. Se pausa mientras existe una venta/preventa manual o modal abierto. Desmarcar cancela las esperas aún no facturadas.
 
 Se reutilizan las tablas aditivas de tareas/facturas y sus claves estables para impedir facturas duplicadas, tanto al reintentar como entre pestañas/cajas. Solo una estación reciente controla cada bodega. La factura y su trabajo POS se confirman juntos. No usa el ejecutable del servidor ni abre ventanas nuevas: carga el ticket POS existente en un iframe de la misma web y solicita impresión nativa. El último número queda visible con enlace a la factura. Respeta copias por sucursal (1–5).
 
@@ -19,3 +19,5 @@ Referencia técnica Mozilla: https://github.com/mozilla-firefox/firefox/blob/mai
 ## Recuperación de conexión
 
 La consulta tiene tiempo máximo de 8 segundos. Los temporizadores se inician antes de la primera conexión, para que un fallo inicial no impida volver a consultar. Reintenta automáticamente y al regresar a la pestaña; muestra Reconectando mientras no recibe datos. El contador visible usa una fecha límite local que no se extiende con cada respuesta del servidor. Al estar apagado se indica Apagado. El texto junto a Auto POS muestra el contador real cuando hay una preventa pendiente. QA de regresión: `python tests/browser_pos_timer_recovery.py` con app local y Firefox de Playwright; APIs simuladas, sin facturas ni impresiones reales.
+
+La detección se mantiene por consultas cada 2 segundos sin recargar Ventas. Además, la notificación de una preventa solicita una consulta inmediata; recuperar red, foco o página también reanuda la consulta. Las solicitudes no usan caché. El plazo de servidor y el contador son de 15 segundos.

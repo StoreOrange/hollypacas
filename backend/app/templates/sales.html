@@ -1461,6 +1461,7 @@
   window.addEventListener('holl-preventa-facturada',(event)=>clearPreventaNotice(event.detail?.id));
 
   const showPreventaLiveNotice = (payload) => {
+    window.dispatchEvent(new CustomEvent('holl-preventa-recibida',{detail:{id:payload?.id}}));
     if(finishedPreventaNotices.has(Number(payload?.id)))return;
     const numero = payload?.numero || "Nueva preventa";
     const vendedor = payload?.vendedor || "Vendedor";

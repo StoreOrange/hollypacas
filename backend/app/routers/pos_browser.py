@@ -26,7 +26,7 @@ def state(db,station):
         if invoiced and not task['job_id']:continue
         if not sale or sale.estado=='ANULADA':continue
         pending.append(task)
-    return {'ok':True,'station_id':station.id,'enabled':station.enabled,'tasks':pending,'completed_preventa_ids':completed}
+    return {'ok':True,'station_id':station.id,'enabled':station.enabled,'delay_seconds':auto.DELAY,'tasks':pending,'completed_preventa_ids':completed}
 
 
 async def station(request:Request,db=Depends(get_db),user=Depends(web._require_admin_web)):

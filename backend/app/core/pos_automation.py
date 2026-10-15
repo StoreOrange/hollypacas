@@ -8,7 +8,7 @@ from ..models.pos_automation import PosAutoStation,PosAutoTask,PosPrintJob
 from ..models.sales import Preventa,VentaFactura,PosPrintSetting,FormaPago,CierreCaja
 from ..models.inventory import Bodega
 
-DELAY=40
+DELAY=15
 
 
 def lock_scope(db,station):
@@ -76,7 +76,7 @@ async def invoice_due(db,station,task,request,user,now,*,require_agent=True):
     from starlette.requests import Request
     from starlette.datastructures import FormData
     if task.status!='WAITING':return
-    if task.due_at>now:raise ValueError('La cuenta regresiva de 40 segundos no ha finalizado')
+    if task.due_at>now:raise ValueError(f'La cuenta regresiva de {DELAY} segundos no ha finalizado')
     if not station.enabled or (require_agent and not online(station,now)):return
     preventa=db.query(Preventa).filter_by(id=task.preventa_id).populate_existing().with_for_update().first()
     if not preventa or preventa.bodega_id!=station.bodega_id or preventa.branch_id!=station.branch_id:raise ValueError('Preventa fuera de la caja asignada')

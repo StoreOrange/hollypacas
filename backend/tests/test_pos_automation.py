@@ -46,12 +46,12 @@ class AutoPosTests(unittest.TestCase):
 
     def due(self):
         self.activate();sale=self.sale();tasks=auto.prepare(self.db,self.station,self.clock);self.db.commit()
-        self.clock+=timedelta(seconds=40);self.station.agent_seen=self.clock;self.db.commit();return sale,tasks[0]
+        self.clock+=timedelta(seconds=15);self.station.agent_seen=self.clock;self.db.commit();return sale,tasks[0]
 
     def test_old_pending_excluded_and_timer_is_durable(self):
         self.sale();self.activate();self.sale(2);self.sale(3,is_frozen=True);self.sale(4,fecha=self.now-timedelta(days=1))
-        tasks=auto.prepare(self.db,self.station,self.clock);self.assertEqual([t.preventa_id for t in tasks],[2]);self.assertEqual(tasks[0].due_at,self.now+timedelta(seconds=40));self.db.commit()
-        self.clock+=timedelta(seconds=20);same=auto.prepare(self.db,self.station,self.clock);self.assertEqual(same[0].due_at,self.now+timedelta(seconds=40))
+        tasks=auto.prepare(self.db,self.station,self.clock);self.assertEqual([t.preventa_id for t in tasks],[2]);self.assertEqual(tasks[0].due_at,self.now+timedelta(seconds=15));self.db.commit()
+        self.clock+=timedelta(seconds=5);same=auto.prepare(self.db,self.station,self.clock);self.assertEqual(same[0].due_at,self.now+timedelta(seconds=15))
 
     def test_invoice_cash_cordobas_weight_and_accounting_once(self):
         sale,task=self.due()
@@ -69,8 +69,8 @@ class AutoPosTests(unittest.TestCase):
 
     def test_early_offline_and_busy_never_invoice(self):
         self.activate();self.sale();task=auto.prepare(self.db,self.station,self.clock)[0];self.db.commit()
-        with self.assertRaisesRegex(ValueError,'40 segundos'):asyncio.run(auto.invoice_due(self.db,self.station,task,self.request(),self.user,self.clock))
-        self.clock+=timedelta(seconds=40)
+        with self.assertRaisesRegex(ValueError,'15 segundos'):asyncio.run(auto.invoice_due(self.db,self.station,task,self.request(),self.user,self.clock))
+        self.clock+=timedelta(seconds=21)  # Plazo vencido y agente sin latido por más de 20 s.
         asyncio.run(auto.invoice_due(self.db,self.station,task,self.request(),self.user,self.clock));self.assertEqual(self.db.query(VentaFactura).count(),0)
         self.station.agent_seen=self.clock;self.db.commit()
         asyncio.run(routes.tick(self.station.id,self.request({'busy':True}),self.db,self.user));self.assertEqual(self.db.query(VentaFactura).count(),0)
