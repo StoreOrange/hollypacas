@@ -22,10 +22,10 @@ def online(station,now):
     return bool(station.agent_ready and station.agent_seen and timedelta(0)<=now-station.agent_seen<timedelta(seconds=20))
 
 
-def set_enabled(db,station,enabled,now):
+def set_enabled(db,station,enabled,now,*,require_agent=True):
     lock_scope(db,station)
     if enabled:
-        if not online(station,now):raise ValueError('Instala y conecta el agente Windows con la Epson predeterminada antes de activar')
+        if require_agent and not online(station,now):raise ValueError('Instala y conecta el agente Windows con la Epson predeterminada antes de activar')
         others=db.query(PosAutoStation).filter(PosAutoStation.bodega_id==station.bodega_id,PosAutoStation.id!=station.id,PosAutoStation.enabled.is_(True)).all()
         for other in others:
             if other.last_tick and now-other.last_tick<timedelta(seconds=25):raise ValueError('Otra caja tiene activada la facturación automática de esta bodega')
@@ -71,13 +71,13 @@ def queue_invoice(db,invoice,station_id,task_id):
     db.flush()
 
 
-async def invoice_due(db,station,task,request,user,now):
+async def invoice_due(db,station,task,request,user,now,*,require_agent=True):
     from ..routers import web
     from starlette.requests import Request
     from starlette.datastructures import FormData
     if task.status!='WAITING':return
     if task.due_at>now:raise ValueError('La cuenta regresiva de 40 segundos no ha finalizado')
-    if not station.enabled or not online(station,now):return
+    if not station.enabled or (require_agent and not online(station,now)):return
     preventa=db.query(Preventa).filter_by(id=task.preventa_id).populate_existing().with_for_update().first()
     if not preventa or preventa.bodega_id!=station.bodega_id or preventa.branch_id!=station.branch_id:raise ValueError('Preventa fuera de la caja asignada')
     if preventa.fecha and preventa.fecha.date()!=web.local_today():

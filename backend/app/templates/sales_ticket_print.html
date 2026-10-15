@@ -237,6 +237,18 @@
           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         };
 
+        {% if browser_auto_job %}
+        const job={{ browser_auto_job|tojson }};
+        const storageKey='holl-native-print:'+job.claim_id;
+        let completed=0,requested=false,finished=false;
+        const report=(status)=>{if(finished)return;finished=true;window.parent.postMessage({type:'holl-native-print',job_id:job.id,claim_id:job.claim_id,status},window.location.origin);};
+        const send=()=>{if(finished)return;requested=true;try{window.print();}catch(error){report('UNKNOWN');}};
+        window.addEventListener('afterprint',()=>{if(!requested||finished)return;requested=false;completed++;if(completed<{{ browser_auto_copies }})setTimeout(send,250);else report('SENT');});
+        waitForTicketReady().then(()=>{try{if(sessionStorage.getItem(storageKey)){report('UNKNOWN');return;}sessionStorage.setItem(storageKey,'requested');}catch(error){report('UNKNOWN');return;}setTimeout(send,180);}).catch(()=>report('UNKNOWN'));
+        setTimeout(()=>report('UNKNOWN'),90000);
+        return;
+        {% endif %}
+
         {% if fit_shoe_ticket %}
         // Measure the actual receipt after images and fonts load, instead of
         // estimating its roll length from the number of lines.
