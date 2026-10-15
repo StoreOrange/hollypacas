@@ -28,11 +28,36 @@ from ..models.payroll import (
     PayrollPayment,
     PayrollPeriod,
     PayrollSettlement,
+    PayrollSettlementDeduction,
 )
 from .attendance import _attendance_day_bounds, _browser_admin, _unique_catalog_code
 
+from ..core import accounting_payroll as payroll_ledger
+from ..models.payroll import PayrollAccountingSetting
+from ..models.sales import AccountingJournal, CuentaContable
+from ..models.inventory import Bodega
+
 router = APIRouter(tags=["Payroll"])
 MONEY = Decimal("0.01")
+
+
+def _linked_accounting():
+    from . import web
+    return web._is_pacasholl_company()
+
+
+def _ledger_error(db, period_id, error):
+    db.rollback()
+    message = str(error.detail if isinstance(error, HTTPException) else error)
+    return RedirectResponse(f'/payroll?period_id={period_id}&error='+quote_plus(message), status_code=303)
+
+
+def _check_accounting_branch(db, user, period):
+    from . import web
+    allowed=web._user_scoped_branch_ids(db,user)
+    if allowed and period.branch_id not in allowed:
+        raise HTTPException(403,'No tiene acceso a esta sucursal de planilla')
+
 
 
 def _money(value) -> Decimal:
@@ -55,7 +80,8 @@ def _debt_paid(db: Session, debt_id: int) -> tuple[Decimal, int]:
         )
         .one()
     )
-    return _money(paid), int(installments or 0)
+    settled, settled_count = db.query(func.sum(PayrollSettlementDeduction.amount),func.count(PayrollSettlementDeduction.id)).join(PayrollSettlement,PayrollSettlement.id==PayrollSettlementDeduction.settlement_id).filter(PayrollSettlementDeduction.employee_deduction_id==debt_id,PayrollSettlement.status=='PAID').one()
+    return _money(paid)+_money(settled), int(installments or 0)+int(settled_count or 0)
 
 
 def _next_pay_date(value: date) -> date:
@@ -142,11 +168,11 @@ def _benefit_preview(profile: PayrollEmployeeProfile, employee: HREmployee, as_o
     service_days = (as_of - start).days + 1
     vacation_start = max(start, (profile.vacation_paid_through + timedelta(days=1)) if profile.vacation_paid_through else start)
     vacation_elapsed = max(0, (as_of - vacation_start).days + 1)
-    vacation_days = (Decimal(vacation_elapsed) * Decimal("30") / Decimal("365"))
-    statutory_bonus_start = date(as_of.year if as_of.month == 12 else as_of.year - 1, 12, 1)
-    bonus_start = max(start, statutory_bonus_start, (profile.bonus_paid_through + timedelta(days=1)) if profile.bonus_paid_through else start)
+    from ..core.payroll_benefits import month_days
+    vacation_days = month_days(vacation_start, as_of)
+    bonus_start = max(start, (profile.bonus_paid_through + timedelta(days=1)) if profile.bonus_paid_through else start)
     bonus_elapsed = max(0, (as_of - bonus_start).days + 1)
-    bonus_days = Decimal(bonus_elapsed) * Decimal("30") / Decimal("365")
+    bonus_days = month_days(bonus_start,as_of)
     seniority_start = max(start, (profile.seniority_paid_through + timedelta(days=1)) if profile.seniority_paid_through else start)
     seniority_elapsed = max(0, (as_of - seniority_start).days + 1)
     service_years = Decimal(seniority_elapsed) / Decimal("365")
@@ -262,6 +288,12 @@ def payroll_home(request: Request, db: Session = Depends(get_db)):
         "payroll.html",
         {
             "request": request,
+            "payroll_accounting": _linked_accounting(),
+            "payroll_accounts": db.query(CuentaContable).filter_by(activo=True).order_by(CuentaContable.codigo).all() if _linked_accounting() else [],
+            "payroll_accounting_config": db.get(PayrollAccountingSetting,1) if _linked_accounting() else None,
+            "payroll_accounting_deduction_types": db.query(PayrollDeductionType).order_by(PayrollDeductionType.name).all() if _linked_accounting() else [],
+            "payroll_journals": db.query(AccountingJournal).filter(AccountingJournal.active.is_(True),AccountingJournal.kind.in_(['CASH','BANK'])).all() if _linked_accounting() else [],
+            "payroll_warehouses": db.query(Bodega).all() if _linked_accounting() else [],
             "user": user,
             "employees": employees,
             "next_employee_code": _next_employee_code(db),
@@ -354,6 +386,18 @@ def save_employee_profile(
     if not profile:
         profile = PayrollEmployeeProfile(employee_id=employee_id)
         db.add(profile)
+    payroll_ledger.lock(db)
+    _check_accounting_branch(db,_browser_admin(request,db),employee)
+    from ..models.payroll import PayrollBenefitAccrual
+    if _linked_accounting() and db.query(PayrollBenefitAccrual.id).filter_by(employee_id=employee_id).first():
+        try:
+            desired_start=date.fromisoformat(contract_start) if contract_start.strip() else None
+        except ValueError:
+            return RedirectResponse('/payroll?error=Fecha+de+contrato+invalida',status_code=303)
+        if desired_start!=profile.contract_start or (branch_id.strip().isdigit() and int(branch_id)!=employee.branch_id):
+            return RedirectResponse('/payroll?error=El+trabajador+ya+tiene+prestaciones+contabilizadas.+La+fecha+de+ingreso+y+sucursal+requieren+regularizacion+contable',status_code=303)
+    if not monthly_salary.is_finite() or monthly_salary<0:
+        return RedirectResponse('/payroll?error=Salario+invalido',status_code=303)
     profile.monthly_salary = _money(monthly_salary)
     try:
         profile.contract_start = date.fromisoformat(contract_start) if contract_start.strip() else None
@@ -501,6 +545,7 @@ def _valid_debt_dependency(db: Session, debt: PayrollEmployeeDeduction, dependen
 
 
 def _refresh_debt_in_draft_calculations(db: Session, debt: PayrollEmployeeDeduction) -> None:
+    if _linked_accounting(): payroll_ledger.lock(db)
     paid, paid_installments = _debt_paid(db, debt.id)
     balance = max(Decimal("0"), _money(debt.original_amount) - paid)
     calculations = (
@@ -801,7 +846,10 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
     holiday_days = 0
     late_minutes = 0
     details = []
+    from ..core.payroll_benefits import rest_dates
+    vacation_dates=rest_dates(db,employee_id,period.date_from,period.date_to) if _linked_accounting() else set()
     for day, marks in by_date.items():
+        if day in vacation_dates:continue
         day_override = day_overrides.get(day)
         entry, exit_at = _attendance_day_bounds(marks)
         day_late_minutes = 0
@@ -874,7 +922,7 @@ def _employee_time(db: Session, employee_id: int, period: PayrollPeriod, policy:
     if is_esteli_employee:
         cutoff = min(date.today(), period.date_to)
         for holiday_date, holiday in holidays.items():
-            if holiday_date in by_date or holiday_date > cutoff or holiday_date.weekday() == 6:
+            if holiday_date in vacation_dates or holiday_date in by_date or holiday_date > cutoff or holiday_date.weekday() == 6:
                 continue
             holiday_days += 1
             details.append({
@@ -1091,6 +1139,10 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
 
 def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, Optional[str]]:
     """Actualiza el acumulado de una planilla abierta al corte del día actual."""
+    if _linked_accounting():
+        payroll_ledger.lock(db)
+        db.refresh(period,with_for_update=True)
+        if period.status=='CLOSED':return 0,'La planilla ya está cerrada y no se recalcula'
     policy = db.query(AttendancePolicySetting).first()
     if not policy:
         return 0, "Configure primero la política de marcadas"
@@ -1257,6 +1309,7 @@ def _update_calculation_totals(db: Session, calculation: PayrollCalculation) -> 
 @router.post("/payroll/calculations/{calculation_id}/deductions/{deduction_id}")
 def update_period_deduction(calculation_id: int, deduction_id: int, request: Request, action: str = Form(...), amount: str = Form(""), reason: str = Form(..., min_length=2), db: Session = Depends(get_db)):
     user = _browser_admin(request, db)
+    if _linked_accounting(): payroll_ledger.lock(db)
     calculation = db.query(PayrollCalculation).filter(PayrollCalculation.id == calculation_id).first()
     deduction = db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.id == deduction_id).first()
     if not calculation or calculation.status == "CLOSED" or not deduction or deduction.employee_id != calculation.employee_id:
@@ -1305,10 +1358,17 @@ def update_period_deduction(calculation_id: int, deduction_id: int, request: Req
 
 @router.post("/payroll/periods/{period_id}/close")
 def close_period(period_id: int, request: Request, db: Session = Depends(get_db)):
-    _browser_admin(request, db)
+    user = _browser_admin(request, db)
+    if _linked_accounting(): payroll_ledger.lock(db)
     period = db.query(PayrollPeriod).filter(PayrollPeriod.id == period_id).first()
     if not period or not db.query(PayrollCalculation).filter(PayrollCalculation.period_id == period_id).first():
         return RedirectResponse("/payroll?error=Calcule+la+planilla+antes+de+cerrar", status_code=303)
+    if _linked_accounting():
+        _check_accounting_branch(db,user,period)
+        try:
+            payroll_ledger.accrue(db,period,user.email)
+        except (ValueError,HTTPException) as exc:
+            return _ledger_error(db,period.id,exc)
     period.status = "CLOSED"
     period.closed_at = datetime.utcnow()
     db.query(PayrollCalculation).filter(PayrollCalculation.period_id == period_id).update({"status": "CLOSED"}, synchronize_session=False)
@@ -1319,6 +1379,7 @@ def close_period(period_id: int, request: Request, db: Session = Depends(get_db)
 @router.post("/payroll/adjustments")
 def create_adjustment(request: Request, period_id: int = Form(...), employee_id: int = Form(...), adjustment_type: str = Form(...), description: str = Form(...), amount: Decimal = Form(0), worked_days: str = Form(""), overtime_hours: str = Form(""), db: Session = Depends(get_db)):
     user = _browser_admin(request, db)
+    if _linked_accounting(): payroll_ledger.lock(db)
     period = db.query(PayrollPeriod).filter(PayrollPeriod.id == period_id).first()
     employee = db.query(HREmployee).filter(HREmployee.id == employee_id).first()
     if not period or period.status == "CLOSED" or not employee or (period.branch_id and employee.branch_id != period.branch_id):
@@ -1360,6 +1421,7 @@ def create_adjustment(request: Request, period_id: int = Form(...), employee_id:
 @router.post("/payroll/adjustments/{adjustment_id}/void")
 def void_adjustment(adjustment_id: int, request: Request, reason: str = Form(...), db: Session = Depends(get_db)):
     user = _browser_admin(request, db)
+    if _linked_accounting(): payroll_ledger.lock(db)
     row = db.query(PayrollAdjustment).filter(PayrollAdjustment.id == adjustment_id, PayrollAdjustment.active.is_(True)).first()
     if not row or row.period.status == "CLOSED":
         return RedirectResponse("/payroll/reports?error=Ajuste+no+anulable", status_code=303)
@@ -1369,8 +1431,9 @@ def void_adjustment(adjustment_id: int, request: Request, reason: str = Form(...
 
 
 @router.post("/payroll/payments")
-def create_payment(request: Request, period_id: int = Form(...), payment_date: date = Form(...), payment_method: str = Form("EFECTIVO"), reference: str = Form(""), db: Session = Depends(get_db)):
+def create_payment(request: Request, period_id: int = Form(...), payment_date: date = Form(...), payment_method: str = Form("EFECTIVO"), reference: str = Form(""), journal_id: str = Form(""), cash_bodega_id: str = Form(""), db: Session = Depends(get_db)):
     user = _browser_admin(request, db)
+    if _linked_accounting(): payroll_ledger.lock(db)
     period = db.query(PayrollPeriod).filter(PayrollPeriod.id == period_id, PayrollPeriod.status == "CLOSED").first()
     if not period or not period.branch_id:
         return RedirectResponse("/payroll?error=Solo+puede+pagar+una+planilla+cerrada+con+sucursal", status_code=303)
@@ -1378,7 +1441,19 @@ def create_payment(request: Request, period_id: int = Form(...), payment_date: d
     if already_paid:
         return RedirectResponse("/payroll?error=La+planilla+ya+tiene+un+pago+activo", status_code=303)
     total = _money(db.query(func.sum(PayrollCalculation.net_pay)).filter(PayrollCalculation.period_id == period.id).scalar())
-    db.add(PayrollPayment(period_id=period.id, branch_id=period.branch_id, amount=total, payment_date=payment_date, payment_method=payment_method, reference=reference.strip() or None, created_by=user.email))
+    if payment_method not in {'EFECTIVO','TRANSFERENCIA','CHEQUE'}:
+        return RedirectResponse('/payroll?error=Metodo+de+pago+invalido',status_code=303)
+    payment=PayrollPayment(period_id=period.id, branch_id=period.branch_id, amount=total, payment_date=payment_date, payment_method=payment_method, reference=reference.strip() or None, created_by=user.email)
+    db.add(payment)
+    if _linked_accounting():
+        _check_accounting_branch(db,user,period)
+        try:
+            db.flush()
+            from . import web
+            warehouse = db.get(Bodega,int(cash_bodega_id)) if cash_bodega_id else web._resolve_branch_bodega(db,user)[1]
+            payroll_ledger.pay(db,payment,user.email,journal_id,warehouse)
+        except (ValueError,HTTPException) as exc:
+            return _ledger_error(db,period.id,exc)
     db.commit()
     return RedirectResponse(f"/payroll?period_id={period.id}&ok=Pago+de+planilla+registrado", status_code=303)
 
@@ -1386,9 +1461,18 @@ def create_payment(request: Request, period_id: int = Form(...), payment_date: d
 @router.post("/payroll/payments/{payment_id}/void")
 def void_payment(payment_id: int, request: Request, reason: str = Form(...), db: Session = Depends(get_db)):
     user = _browser_admin(request, db)
+    if _linked_accounting(): payroll_ledger.lock(db)
     payment = db.query(PayrollPayment).filter(PayrollPayment.id == payment_id, PayrollPayment.status == "PAID").first()
     if not payment:
         return RedirectResponse("/payroll?error=Pago+no+encontrado", status_code=303)
+    if _linked_accounting():
+        _check_accounting_branch(db,user,payment.period)
+        try:
+            if len(reason.strip())<5:raise ValueError('Detalla el motivo de la anulación')
+            from . import web
+            payroll_ledger.void(db,payment,user.email,reason.strip(),web.local_today())
+        except (ValueError,HTTPException) as exc:
+            return _ledger_error(db,payment.period_id,exc)
     payment.status, payment.void_reason, payment.voided_by, payment.voided_at = "VOID", reason.strip(), user.email, datetime.utcnow()
     db.commit()
     return RedirectResponse(f"/payroll?period_id={payment.period_id}&ok=Pago+anulado+con+trazabilidad", status_code=303)
@@ -1689,15 +1773,26 @@ def payroll_period_pdf(period_id: int, request: Request, db: Session = Depends(g
 def payroll_settlements(request: Request, branch_id: str = "", as_of: str = "", db: Session = Depends(get_db)):
     user = _browser_admin(request, db)
     try:
-        cutoff = date.fromisoformat(as_of) if as_of else date.today()
+        from . import web
+        cutoff = date.fromisoformat(as_of) if as_of else web.local_today()
     except ValueError:
-        cutoff = date.today()
+        cutoff = web.local_today()
     query = db.query(PayrollEmployeeProfile).join(HREmployee).filter(PayrollEmployeeProfile.active.is_(True), HREmployee.status == "ACTIVE")
     if branch_id.isdigit():
         query = query.filter(HREmployee.branch_id == int(branch_id))
-    accruals = [{"profile": profile, "employee": profile.employee, **_benefit_preview(profile, profile.employee, cutoff)} for profile in query.order_by(HREmployee.full_name).all()]
+    accruals = []
+    for profile in query.order_by(HREmployee.full_name).all():
+        values = _benefit_preview(profile,profile.employee,cutoff)
+        if _linked_accounting():
+            from ..core.payroll_benefits import balance
+            try:
+                available=balance(db,profile,cutoff)
+                values['vacation_days'],values['vacation_amount']=available['days'],available['amount']
+            except ValueError:
+                values['vacation_days']=values['vacation_amount']=Decimal(0)
+        accruals.append({'profile':profile,'employee':profile.employee,**values})
     settlements = db.query(PayrollSettlement).order_by(PayrollSettlement.created_at.desc()).limit(100).all()
-    return request.app.state.templates.TemplateResponse("payroll_settlements.html", {"request": request, "user": user, "branches": db.query(Branch).filter(Branch.activo.is_(True)).order_by(Branch.name).all(), "accruals": accruals, "settlements": settlements, "as_of": cutoff})
+    return request.app.state.templates.TemplateResponse("payroll_settlements.html", {"request": request, "user": user, "branches": db.query(Branch).filter(Branch.activo.is_(True)).order_by(Branch.name).all(), "accruals": accruals, "settlements": settlements, "as_of": cutoff, "journals": db.query(AccountingJournal).filter(AccountingJournal.active.is_(True),AccountingJournal.kind.in_(["CASH","BANK"])).all(), "warehouses": db.query(Bodega).all(), "linked_accounting": _linked_accounting()})
 
 
 @router.post("/payroll/settlements")
@@ -1708,35 +1803,64 @@ def create_settlement(request: Request, employee_id: int = Form(...), terminatio
         return RedirectResponse("/payroll/settlements?error=Empleado+sin+perfil+o+sucursal", status_code=303)
     if db.query(PayrollSettlement).filter(PayrollSettlement.employee_id == employee_id, PayrollSettlement.status.in_(["DRAFT", "PAID"])).first():
         return RedirectResponse("/payroll/settlements?error=El+empleado+ya+tiene+una+liquidacion+activa", status_code=303)
+    payroll_ledger.lock(db)
+    db.refresh(profile)
+    _check_accounting_branch(db,user,profile.employee)
     preview = _benefit_preview(profile, profile.employee, termination_date)
+    if _linked_accounting():
+        from ..core.payroll_benefits import balance
+        try:
+            vacation = balance(db,profile,termination_date)
+            preview["vacation_days"], preview["vacation_amount"] = vacation["days"], vacation["amount"]
+        except ValueError as exc:
+            db.rollback()
+            return RedirectResponse("/payroll/settlements?error="+quote_plus(str(exc)),status_code=303)
     if not preview["start"] or termination_date < preview["start"]:
         return RedirectResponse("/payroll/settlements?error=Revise+la+fecha+de+ingreso", status_code=303)
     use_seniority = apply_seniority == "on"
     enabled_ids = {row.deduction_type_id for row in db.query(PayrollEmployeeDeductionSetting).filter(PayrollEmployeeDeductionSetting.employee_id == employee_id, PayrollEmployeeDeductionSetting.enabled.is_(True)).all()}
     scheduled = Decimal("0")
+    scheduled_lines = []
     if enabled_ids:
         for debt in db.query(PayrollEmployeeDeduction).filter(PayrollEmployeeDeduction.employee_id == employee_id, PayrollEmployeeDeduction.deduction_type_id.in_(enabled_ids), PayrollEmployeeDeduction.status == "ACTIVE", PayrollEmployeeDeduction.start_date <= termination_date).all():
             paid = _money(db.query(func.sum(PayrollCalculationDeduction.amount)).join(PayrollCalculation, PayrollCalculation.id == PayrollCalculationDeduction.calculation_id).join(PayrollPeriod, PayrollPeriod.id == PayrollCalculation.period_id).filter(PayrollCalculationDeduction.employee_deduction_id == debt.id, PayrollPeriod.status == "CLOSED").scalar())
             remaining = max(Decimal("0"), _money(debt.original_amount) - paid)
-            scheduled += min(remaining, _money(debt.installment_amount))
+            applied = min(remaining, _money(debt.installment_amount))
+            scheduled += applied
+            if applied:scheduled_lines.append((debt,applied))
     settlement_seniority_days = max(Decimal("30"), preview["seniority_days"]) if use_seniority and preview["service_days"] > 0 else Decimal("0")
     seniority_amount = _money(_money(profile.monthly_salary) / 30 * settlement_seniority_days)
     additions = _money(other_additions)
     gross = _money(preview["vacation_amount"] + preview["bonus_amount"] + seniority_amount + additions)
-    deductions = min(gross, _money(scheduled + _money(manual_deductions)))
+    deductions = _money(scheduled + _money(manual_deductions))
+    if not additions.is_finite() or not _money(manual_deductions).is_finite() or additions<0 or _money(manual_deductions)<0 or deductions>gross-preview['bonus_amount']:
+        db.rollback()
+        return RedirectResponse('/payroll/settlements?error=Revise+las+deducciones%3A+no+pueden+ser+negativas+ni+consumir+el+aguinaldo+protegido',status_code=303)
     row = PayrollSettlement(employee_id=employee_id, branch_id=profile.employee.branch_id, termination_date=termination_date, reason_code=reason_code, reason_detail=reason_detail.strip(), salary_snapshot=_money(profile.monthly_salary), service_days=preview["service_days"], vacation_days=preview["vacation_days"], vacation_amount=preview["vacation_amount"], bonus_days=preview["bonus_days"], bonus_amount=preview["bonus_amount"], seniority_days=settlement_seniority_days, seniority_amount=seniority_amount, other_additions=additions, deductions_amount=deductions, gross_amount=gross, net_amount=_money(gross - deductions), apply_seniority=use_seniority, created_by=user.email)
     db.add(row)
+    db.flush()
+    for debt,amount in scheduled_lines:
+        db.add(PayrollSettlementDeduction(settlement_id=row.id,employee_deduction_id=debt.id,amount=amount))
     db.commit()
     return RedirectResponse("/payroll/settlements?ok=Liquidacion+calculada+en+borrador", status_code=303)
 
 
 @router.post("/payroll/settlements/{settlement_id}/pay")
-def pay_settlement(settlement_id: int, request: Request, db: Session = Depends(get_db)):
+def pay_settlement(settlement_id: int, request: Request, payment_method: str = Form("EFECTIVO"), journal_id: int = Form(0), cash_bodega_id: int = Form(0), db: Session = Depends(get_db)):
     user = _browser_admin(request, db)
-    row = db.query(PayrollSettlement).filter(PayrollSettlement.id == settlement_id, PayrollSettlement.status == "DRAFT").first()
+    payroll_ledger.lock(db)
+    row = db.query(PayrollSettlement).filter(PayrollSettlement.id == settlement_id, PayrollSettlement.status == "DRAFT").with_for_update().first()
     if not row:
         return RedirectResponse("/payroll/settlements?error=Liquidacion+no+disponible", status_code=303)
     profile = db.query(PayrollEmployeeProfile).filter(PayrollEmployeeProfile.employee_id == row.employee_id).first()
+    if _linked_accounting():
+        from ..core.payroll_benefits import pay_settlement as settle_benefits
+        try:
+            _check_accounting_branch(db,user,row)
+            settle_benefits(db,row,profile,user.email,payment_method,journal_id,db.get(Bodega,cash_bodega_id))
+        except (ValueError,HTTPException) as exc:
+            db.rollback()
+            return RedirectResponse('/payroll/settlements?error='+quote_plus(str(getattr(exc,'detail',exc))),status_code=303)
     row.status, row.paid_by, row.paid_at = "PAID", user.email, datetime.utcnow()
     if profile:
         profile.vacation_paid_through = row.termination_date
@@ -1758,3 +1882,32 @@ def void_settlement(settlement_id: int, request: Request, reason: str = Form(...
     row.status, row.void_reason, row.voided_by, row.voided_at = "VOID", reason.strip(), user.email, datetime.utcnow()
     db.commit()
     return RedirectResponse("/payroll/settlements?ok=Liquidacion+anulada", status_code=303)
+
+
+@router.post('/payroll/accounting/config')
+async def payroll_accounting_config(request: Request, db: Session = Depends(get_db)):
+    user=_browser_admin(request,db)
+    from . import web
+    web._enforce_permission(request,user,'access.accounting.financial_data')
+    if not _linked_accounting():raise HTTPException(404)
+    form=await request.form();payroll_ledger.lock(db)
+    try:
+        expense=payroll_ledger.account(db,int(form.get('salary_expense_id') or 0))
+        payable=payroll_ledger.account(db,int(form.get('salary_payable_id') or 0))
+        if expense.tipo!='RESULTADO' or expense.naturaleza!='DEBE' or payable.tipo!='BALANCE' or payable.naturaleza!='HABER' or expense.id==payable.id:
+            raise ValueError('Selecciona gasto salarial al Debe y obligación salarial al Haber')
+        manual=int(form.get('manual_deduction_id') or 0) or None
+        if manual:payroll_ledger.account(db,manual)
+        mappings=[]
+        for dtype in db.query(PayrollDeductionType).all():
+            ident=int(form.get('deduction_'+str(dtype.id)) or 0) or None
+            if ident:payroll_ledger.account(db,ident)
+            mappings.append((dtype,ident))
+        config=db.get(PayrollAccountingSetting,1)
+        if not config:config=PayrollAccountingSetting(id=1,salary_expense_id=expense.id,salary_payable_id=payable.id);db.add(config)
+        config.salary_expense_id=expense.id;config.salary_payable_id=payable.id;config.manual_deduction_id=manual
+        config.updated_by=user.email;config.updated_at=datetime.utcnow()
+        for dtype,ident in mappings:dtype.accounting_account_id=ident
+        db.commit()
+    except (ValueError,HTTPException) as exc:return _ledger_error(db,'',exc)
+    return RedirectResponse('/payroll?ok=Cuentas+contables+de+planilla+guardadas',status_code=303)

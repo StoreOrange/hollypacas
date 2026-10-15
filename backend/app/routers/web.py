@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from ..core.accounting_cash_receipts import available_cash_journals, resolve_cash_journal, receipt_amounts, build_receipt_entry
+
+from ..core.accounting_workflow import POSTED_STATES, validate_postable_entry
+from ..models.sales import AccountingLockSetting, AccountingJournal, AccountingReconciliation, AccountingBankMatch, AccountingPeriodClosure, AccountingPeriodEvent
+from ..core.accounting_workflow import journal_for_reference
+
 from collections import defaultdict
 from difflib import SequenceMatcher
 from typing import Optional
@@ -10,6 +16,7 @@ import hashlib
 import html as html_lib
 import hmac
 import json
+import math
 import mimetypes
 import os
 import re
@@ -4204,37 +4211,45 @@ def login_action(
             status_code=403,
         )
 
-    # Keep sessions alive by default for POS usage (1 year).
-    expires = timedelta(days=365)
+    # Hollpacas: cookie persistente y JWT con la misma vigencia.
+    expires = timedelta(days=90 if _is_pacasholl_company() else 365)
     token = create_access_token({"sub": user.email}, expires_delta=expires)
     response = RedirectResponse("/sales" if _is_shoes_mode() else "/home", status_code=302)
-    max_age = int(expires.total_seconds())
-    expires_at = datetime.now(timezone.utc) + expires
-    host = request.url.hostname or ""
-    cookie_domain = None
-    if host and host not in {"localhost", "127.0.0.1"} and host.count(".") >= 1:
-        cookie_domain = f".{host.split('.', 1)[1]}"
-    response.set_cookie(
-        "access_token",
-        token,
-        httponly=True,
-        samesite="lax",
-        max_age=max_age,
-        expires=expires_at,
-        path="/",
-        domain=cookie_domain,
-    )
+    if _is_pacasholl_company():
+        from ..core.browser_session import persist_browser_session
+        persist_browser_session(response,request,token,expires)
+    else:
+        max_age = int(expires.total_seconds())
+        expires_at = datetime.now(timezone.utc) + expires
+        host = request.url.hostname or ""
+        cookie_domain = None
+        if host and host not in {"localhost", "127.0.0.1"} and host.count(".") >= 1:
+            cookie_domain = f".{host.split('.', 1)[1]}"
+        response.set_cookie(
+            "access_token",
+            token,
+            httponly=True,
+            samesite="lax",
+            max_age=max_age,
+            expires=expires_at,
+            path="/",
+            domain=cookie_domain,
+        )
     return response
 
 
 @router.get("/logout")
 def logout(request: Request):
     response = RedirectResponse("/login", status_code=302)
-    host = request.url.hostname or ""
-    cookie_domain = None
-    if host and host not in {"localhost", "127.0.0.1"} and host.count(".") >= 1:
-        cookie_domain = f".{host.split('.', 1)[1]}"
-    response.delete_cookie("access_token", path="/", domain=cookie_domain)
+    if _is_pacasholl_company():
+        from ..core.browser_session import clear_browser_session
+        clear_browser_session(response,request)
+    else:
+        host = request.url.hostname or ""
+        cookie_domain = None
+        if host and host not in {"localhost", "127.0.0.1"} and host.count(".") >= 1:
+            cookie_domain = f".{host.split('.', 1)[1]}"
+        response.delete_cookie("access_token", path="/", domain=cookie_domain)
     return response
 
 
@@ -4431,6 +4446,26 @@ def finance_home(
     )
 
 
+def _lock_accounting_transaction(db: Session) -> None:
+    if db.bind.dialect.name == "postgresql":
+        db.execute(sql_text("SELECT pg_advisory_xact_lock(83742011)"))
+
+
+def _assert_accounting_date_open(db: Session, entry_date: date) -> None:
+    # Shared with closure: a concurrent close cannot overtake a transaction
+    # which has already validated its posting date.
+    _lock_accounting_transaction(db)
+    lock = db.query(AccountingLockSetting).filter(AccountingLockSetting.id == 1).populate_existing().first()
+    period = db.query(AccountingPeriodClosure).filter(AccountingPeriodClosure.closed.is_(True), AccountingPeriodClosure.start_date <= entry_date, AccountingPeriodClosure.end_date >= entry_date).populate_existing().order_by(AccountingPeriodClosure.end_date.desc()).first()
+    if period:
+        raise HTTPException(status_code=409, detail=f"El período contable {period.period} está cerrado. Reapérturalo para registrar correcciones en esa fecha.")
+    # Backward compatibility until a legacy cutoff has been adapted. Once
+    # represented as a period, its own closed/open state is authoritative.
+    legacy_period = db.query(AccountingPeriodClosure.id).filter_by(kind="LEGACY", period="HISTORICO").first()
+    if lock and not legacy_period and entry_date <= lock.closed_through:
+        raise HTTPException(status_code=409, detail=f"El período contable está cerrado hasta {lock.closed_through.isoformat()}. Reapérturalo para registrar correcciones.")
+
+
 def _accounting_period(entry_date: date) -> str:
     return entry_date.strftime("%Y-%m")
 
@@ -4445,10 +4480,11 @@ def _next_accounting_sequence(
         AccountingEntry.tipo_id == tipo_id,
         AccountingEntry.periodo == period,
     )
-    if branch_id is None:
-        query = query.filter(AccountingEntry.branch_id.is_(None))
-    else:
-        query = query.filter(AccountingEntry.branch_id == branch_id)
+    # Numbers are unique across branches, even though the legacy sequence
+    # constraint also includes branch_id.
+    if db.bind.dialect.name == "postgresql":
+        lock_key = int(tipo_id) * 1000000 + int(period.replace("-", ""))
+        db.execute(sql_text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
     last_seq = query.scalar() or 0
     return int(last_seq) + 1
 
@@ -4558,7 +4594,7 @@ def _suggest_counter_account_id(
         .join(line_other, line_other.entry_id == line_base.entry_id)
         .filter(line_base.cuenta_id == selected_account.id)
         .filter(line_other.cuenta_id != selected_account.id)
-        .filter(AccountingEntry.estado != "ANULADO")
+        .filter(AccountingEntry.estado.in_(POSTED_STATES))
     )
     if (selected_account.naturaleza or "").upper() == "DEBE":
         historical = historical.filter(line_base.debe > 0, line_other.haber > 0)
@@ -5984,7 +6020,7 @@ def _parse_accounting_report_dates(
 
 def _scope_accounting_entries_query(db: Session, branch_ids: list[int]):
     return db.query(AccountingEntry).filter(
-        AccountingEntry.estado != "ANULADO",
+        AccountingEntry.estado.in_(POSTED_STATES),
         or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
     )
 
@@ -6038,7 +6074,7 @@ def _build_accounting_reports_payload(
         )
         .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
         .filter(
-            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.estado.in_(POSTED_STATES),
             AccountingEntry.fecha < start_date,
             or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
         )
@@ -6051,7 +6087,7 @@ def _build_accounting_reports_payload(
         )
         .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
         .filter(
-            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.estado.in_(POSTED_STATES),
             AccountingEntry.fecha >= start_date,
             AccountingEntry.fecha <= end_date,
             or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
@@ -6065,7 +6101,7 @@ def _build_accounting_reports_payload(
         )
         .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
         .filter(
-            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.estado.in_(POSTED_STATES),
             AccountingEntry.fecha <= cutoff_date,
             or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
         )
@@ -6740,7 +6776,7 @@ def _auto_accounting_entry_exists(db: Session, reference: str) -> bool:
         .filter(
             AccountingEntry.referencia == ref,
             AccountingEntry.creado_por == "auto-system",
-            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.estado.in_(POSTED_STATES),
         )
         .first()
         is not None
@@ -6772,6 +6808,7 @@ def _build_auto_accounting_entry(
     if not voucher_type:
         return None
 
+    _assert_accounting_date_open(db, entry_date)
     active_accounts = (
         db.query(CuentaContable)
         .filter(CuentaContable.activo.is_(True))
@@ -6809,6 +6846,7 @@ def _build_auto_accounting_entry(
     line_amount = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     entry = AccountingEntry(
         tipo_id=voucher_type.id,
+        journal_id=journal_for_reference(db, reference),
         branch_id=branch_id,
         fecha=entry_date,
         periodo=period,
@@ -6868,6 +6906,7 @@ def _post_return_accounting(db: Session, row: CustomerReturn) -> None:
     voucher = _find_voucher_type_for_code(db, "DIARIO")
     if not revenue or not destination or not voucher or (row.costo_cs > 0 and (not inventory or not cost)):
         raise ValueError("Configura las cuentas de ventas, caja, inventario y costo y el comprobante DIARIO antes de registrar devoluciones.")
+    _assert_accounting_date_open(db, row.created_at.date())
     period = _accounting_period(row.created_at.date())
     seq = _next_accounting_sequence(db, voucher.id, row.bodega.branch_id, period)
     lines = [AccountingEntryLine(cuenta_id=revenue, descripcion=f"Devolución {row.numero}", debe=row.monto_cs, haber=0),
@@ -6875,7 +6914,7 @@ def _post_return_accounting(db: Session, row: CustomerReturn) -> None:
     if row.costo_cs > 0:
         lines += [AccountingEntryLine(cuenta_id=inventory, descripcion="Reintegro de mercadería", debe=row.costo_cs, haber=0),
                   AccountingEntryLine(cuenta_id=cost, descripcion="Reversión de costo", debe=0, haber=row.costo_cs)]
-    db.add(AccountingEntry(tipo_id=voucher.id, branch_id=row.bodega.branch_id, fecha=row.created_at.date(), periodo=period,
+    db.add(AccountingEntry(journal_id=journal_for_reference(db, ref), tipo_id=voucher.id, branch_id=row.bodega.branch_id, fecha=row.created_at.date(), periodo=period,
         secuencia=seq, numero=_build_accounting_entry_number(voucher, period, seq), referencia=ref,
         descripcion=f"{row.numero} · Factura {row.factura.numero}", moneda="CS", estado="POSTEADO",
         total_debe=row.monto_cs+row.costo_cs, total_haber=row.monto_cs+row.costo_cs, creado_por="auto-system", lines=lines))
@@ -6900,6 +6939,7 @@ def _build_sale_accounting_entries(
     if sale_total <= 0:
         return []
 
+    _assert_accounting_date_open(db, entry_date)
     active_accounts = (
         db.query(CuentaContable)
         .filter(CuentaContable.activo.is_(True))
@@ -6965,7 +7005,7 @@ def _build_sale_accounting_entries(
                 seq = _next_accounting_sequence(db, voucher_type.id, branch_id, period)
                 number = _build_accounting_entry_number(voucher_type, period, seq)
                 lines = [
-                    AccountingEntryLine(cuenta_id=account_id, descripcion=desc, debe=amount, haber=Decimal("0.00"))
+                    AccountingEntryLine(cuenta_id=account_id, cliente_id=factura.cliente_id, descripcion=desc, debe=amount, haber=Decimal("0.00"))
                     for account_id, amount, desc in debit_lines
                     if amount > 0
                 ]
@@ -6980,6 +7020,7 @@ def _build_sale_accounting_entries(
                 entries.append(
                     AccountingEntry(
                         tipo_id=voucher_type.id,
+                        journal_id=journal_for_reference(db, ref),
                         branch_id=branch_id,
                         fecha=entry_date,
                         periodo=period,
@@ -7007,6 +7048,7 @@ def _build_sale_accounting_entries(
                 entries.append(
                     AccountingEntry(
                         tipo_id=voucher_type.id,
+                        journal_id=journal_for_reference(db, ref),
                         branch_id=branch_id,
                         fecha=entry_date,
                         periodo=period,
@@ -7045,14 +7087,68 @@ def accounting_home(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.accounting")
+    branch_ids = _user_scoped_branch_ids(db, user)
+    scoped = db.query(AccountingEntry).filter(
+        or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids))
+    )
+    today = local_today()
+    month_start = today.replace(day=1)
+    dashboard = {
+        "draft_count": scoped.filter(AccountingEntry.estado == "BORRADOR").count(),
+        "posted_count": scoped.filter(AccountingEntry.estado.in_(POSTED_STATES), AccountingEntry.fecha >= month_start, AccountingEntry.fecha <= today).count(),
+        "month": today.strftime("%m/%Y"),
+    }
+    journal_cards = []
+    for journal in db.query(AccountingJournal).filter(AccountingJournal.active.is_(True), or_(AccountingJournal.branch_id.is_(None), AccountingJournal.branch_id.in_(branch_ids))).order_by(AccountingJournal.name).all():
+        jq = scoped.filter(AccountingEntry.journal_id == journal.id)
+        amount = jq.filter(AccountingEntry.estado.in_(POSTED_STATES), AccountingEntry.fecha >= month_start, AccountingEntry.fecha <= today).with_entities(func.coalesce(func.sum(AccountingEntry.total_debe), 0)).scalar()
+        journal_cards.append({"id": journal.id, "name": journal.name, "code": journal.code, "kind": journal.kind,
+                              "drafts": jq.filter(AccountingEntry.estado == "BORRADOR").count(), "amount": amount})
+    recent_entries = scoped.order_by(AccountingEntry.id.desc()).limit(8).all()
     return request.app.state.templates.TemplateResponse(
-        "accounting.html",
+        "accounting.html" if _is_pacasholl_company() else "accounting_legacy.html",
         {
             "request": request,
             "user": user,
             "version": settings.UI_VERSION,
+            "closed_period_count": db.query(AccountingPeriodClosure).filter_by(closed=True).count(), "accounting_lock": db.get(AccountingLockSetting, 1), "today": today.isoformat(), "yesterday": (today - timedelta(days=1)).isoformat(),
+            "dashboard": dashboard, "journal_cards": journal_cards, "recent_entries": recent_entries,
         },
     )
+
+
+@router.post("/accounting/lock-date")
+def accounting_lock_date(request: Request, closed_through: str = Form(...), reason: str = Form(...), db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+    _enforce_permission(request, user, "access.accounting.financial_data")
+    if not any(role.name == "administrador" for role in user.roles):
+        raise HTTPException(status_code=403, detail="Solo el administrador puede cerrar un período contable.")
+    try:
+        cutoff = date.fromisoformat(closed_through)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Fecha de cierre inválida.")
+    if cutoff >= local_today() or len(reason.strip()) < 5:
+        raise HTTPException(status_code=400, detail="El cierre debe ser anterior a hoy y tener un motivo detallado.")
+    _lock_accounting_transaction(db)
+    lock = db.query(AccountingLockSetting).filter(AccountingLockSetting.id == 1).with_for_update().first()
+    if lock and cutoff <= lock.closed_through:
+        raise HTTPException(status_code=409, detail="La fecha de cierre solo puede avanzar.")
+    if db.query(AccountingEntry.id).filter(AccountingEntry.estado == "BORRADOR", AccountingEntry.fecha <= cutoff).first():
+        raise HTTPException(status_code=409, detail="Hay borradores hasta esa fecha. Publícalos o cancélalos antes de cerrar.")
+    if lock is None:
+        lock = AccountingLockSetting(id=1)
+        db.add(lock)
+    lock.closed_through = cutoff
+    lock.reason = reason.strip()[:260]
+    lock.updated_by = user.email
+    legacy = db.query(AccountingPeriodClosure).filter_by(kind="LEGACY", period="HISTORICO").first()
+    if not legacy:
+        legacy = AccountingPeriodClosure(kind="LEGACY", period="HISTORICO", start_date=date.min)
+        db.add(legacy)
+    legacy.end_date, legacy.closed, legacy.reason, legacy.updated_by = cutoff, True, reason.strip()[:260], user.email
+    db.flush()
+    db.add(AccountingPeriodEvent(closure_id=legacy.id, action="CIERRE", reason=reason.strip()[:260], actor=user.email, created_at=local_now_naive()))
+    db.commit()
+    return RedirectResponse("/accounting?success=Periodo+contable+cerrado", status_code=303)
 
 
 @router.get("/accounting/reports")
@@ -7118,7 +7214,7 @@ def accounting_reports(
         )
         .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
         .filter(
-            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.estado.in_(POSTED_STATES),
             AccountingEntry.fecha < start_date,
             or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
         )
@@ -7131,7 +7227,7 @@ def accounting_reports(
         )
         .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
         .filter(
-            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.estado.in_(POSTED_STATES),
             AccountingEntry.fecha >= start_date,
             AccountingEntry.fecha <= end_date,
             or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
@@ -7145,7 +7241,7 @@ def accounting_reports(
         )
         .join(AccountingEntry, AccountingEntry.id == AccountingEntryLine.entry_id)
         .filter(
-            AccountingEntry.estado != "ANULADO",
+            AccountingEntry.estado.in_(POSTED_STATES),
             AccountingEntry.fecha <= cutoff_date,
             or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)),
         )
@@ -7672,6 +7768,10 @@ async def accounting_opening_balance_upload(
     except ValueError:
         return RedirectResponse("/accounting/reports?error=Fecha+invalida", status_code=303)
 
+    try:
+        _assert_accounting_date_open(db, entry_date)
+    except HTTPException as exc:
+        return RedirectResponse(f"/accounting/reports?error={quote_plus(str(exc.detail))}", status_code=303)
     branch_scope = _user_scoped_branch_ids(db, user)
     scoped_branch_id: Optional[int] = None
     if branch_id:
@@ -7773,6 +7873,7 @@ async def accounting_opening_balance_upload(
     number = _build_accounting_entry_number(voucher_type, period, seq)
     entry = AccountingEntry(
         tipo_id=voucher_type.id,
+        journal_id=journal_for_reference(db, referencia),
         branch_id=scoped_branch_id,
         fecha=entry_date,
         periodo=period,
@@ -7917,6 +8018,27 @@ def accounting_policy_update(
     return RedirectResponse("/accounting/financial-data?success=Politicas+contables+actualizadas", status_code=303)
 
 
+def _manual_accounting_response(request, db, user, entries, edit_entry, voucher_types, branch_ids, start, end, search):
+    accounts = db.query(CuentaContable).filter(CuentaContable.activo.is_(True)).order_by(CuentaContable.codigo).all()
+    from ..core.accounting_catalog import account_paths
+    paths = account_paths(db.query(CuentaContable).all())
+    rate_row = db.query(ExchangeRate).filter(ExchangeRate.effective_date <= local_today()).order_by(ExchangeRate.effective_date.desc()).first()
+    return request.app.state.templates.TemplateResponse("accounting_entries.html", {
+        "request": request, "user": user, "entries": entries, "edit_entry": edit_entry, "manual_operation_key": uuid.uuid4().hex,
+        "edit_entry_lines_json": [{"cuenta_id": line.cuenta_id, "descripcion": line.descripcion or "", "debe": float(line.debe), "haber": float(line.haber)} for line in (edit_entry.lines if edit_entry else [])],
+        "cuentas": accounts, "cuentas_json": [{"id": account.id, "codigo": account.codigo, "nombre": account.nombre, "descripcion": account.descripcion or "", "path": paths[account.id], "tipo": account.tipo, "naturaleza": account.naturaleza} for account in accounts],
+        "voucher_types": voucher_types,
+        "branches": db.query(Branch).filter(Branch.id.in_(branch_ids)).order_by(Branch.name).all(),
+        "journals": db.query(AccountingJournal).filter(AccountingJournal.active.is_(True), or_(AccountingJournal.branch_id.is_(None), AccountingJournal.branch_id.in_(branch_ids))).order_by(AccountingJournal.name).all(),
+        "accounting_clients": db.query(Cliente).filter(Cliente.activo.is_(True)).order_by(Cliente.nombre).all(),
+        "accounting_suppliers": db.query(Proveedor).filter(Proveedor.activo.is_(True)).order_by(Proveedor.nombre).all(),
+        "accounting_system_rate": float(rate_row.rate) if rate_row else 0,
+        "start_filter": start, "end_filter": end, "factura_filter": search,
+        "version": settings.UI_VERSION, "today": local_today().isoformat(),
+        "pdf_entry_id": request.query_params.get("pdf_entry_id"),
+    })
+
+
 @router.get("/accounting/entries")
 def accounting_entries_page(
     request: Request,
@@ -7931,6 +8053,15 @@ def accounting_entries_page(
         .filter(or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branch_ids)))
     )
     entries_query = base_entries_query
+    journal_filter = request.query_params.get("journal_id", "")
+    if journal_filter.isdigit():
+        entries_query = entries_query.filter(AccountingEntry.journal_id == int(journal_filter))
+    voucher_filter = request.query_params.get("tipo_id", "")
+    if voucher_filter.isdigit():
+        entries_query = entries_query.filter(AccountingEntry.tipo_id == int(voucher_filter))
+    state_filter = request.query_params.get("estado", "").upper()
+    if state_filter in {"BORRADOR", "POSTEADO", "REVERSADO", "ANULADO"}:
+        entries_query = entries_query.filter(AccountingEntry.estado == state_filter)
     start = request.query_params.get("start")
     end = request.query_params.get("end")
     factura_q = (request.query_params.get("factura") or "").strip()
@@ -8002,6 +8133,8 @@ def accounting_entries_page(
         .order_by(AccountingVoucherType.code)
         .all()
     )
+    if _is_pacasholl_company():
+        return _manual_accounting_response(request, db, user, entries, edit_entry, voucher_types, branch_ids, start_filter_value, end_filter_value, factura_q)
     policy = _get_accounting_policy(db)
     rate_today = (
         db.query(ExchangeRate)
@@ -8117,7 +8250,7 @@ def accounting_entries_page(
         .all()
     )
     return request.app.state.templates.TemplateResponse(
-        "accounting_entries.html",
+        "accounting_entries_legacy.html",
         {
             "request": request,
             "user": user,
@@ -8171,6 +8304,9 @@ def accounting_entries_page(
             "subrubro_edit_item": subrubro_edit_item,
             "subrubro_link_edit_item": subrubro_link_edit_item,
             "branches": branches,
+            "journals": db.query(AccountingJournal).filter(AccountingJournal.active.is_(True), or_(AccountingJournal.branch_id.is_(None), AccountingJournal.branch_id.in_(branch_ids))).all(),
+            "accounting_clients": db.query(Cliente).filter(Cliente.activo.is_(True)).order_by(Cliente.nombre).all(),
+            "accounting_suppliers": db.query(Proveedor).filter(Proveedor.activo.is_(True)).order_by(Proveedor.nombre).all(),
             "version": settings.UI_VERSION,
             "error": request.query_params.get("error"),
             "success": request.query_params.get("success"),
@@ -8486,9 +8622,9 @@ def accounting_accounts_search(
     side_norm = (side or "").strip().lower()
 
     rows_q = db.query(CuentaContable).filter(CuentaContable.activo.is_(True))
-    if side_norm == "debe":
+    if side_norm == "debe" and not _is_pacasholl_company():
         rows_q = rows_q.filter(func.upper(CuentaContable.naturaleza) == "DEBE")
-    elif side_norm == "haber":
+    elif side_norm == "haber" and not _is_pacasholl_company():
         rows_q = rows_q.filter(func.upper(CuentaContable.naturaleza) == "HABER")
 
     if query:
@@ -9316,8 +9452,13 @@ def accounting_entries_create(
     moneda: str = Form("CS"),
     tasa_sistema: str = Form(""),
     tasa_cambio: str = Form(""),
-    estado_comprobante: str = Form("POSTEADO"),
+    estado_comprobante: str = Form("BORRADOR"),
     edit_entry_id: str = Form(""),
+    journal_id: str = Form(""),
+    cliente_id_contable: str = Form(""),
+    proveedor_id_contable: str = Form(""),
+    vencimiento_contable: str = Form(""),
+    manual_operation_key: str = Form(""),
     line_cuenta_id: list[str] = Form(...),
     line_descripcion: list[str] = Form([]),
     line_debe: list[str] = Form([]),
@@ -9331,7 +9472,20 @@ def accounting_entries_create(
     except ValueError:
         return RedirectResponse("/accounting/entries?error=Fecha+invalida", status_code=303)
 
+    try:
+        _assert_accounting_date_open(db, entry_date)
+    except HTTPException as exc:
+        return RedirectResponse(f"/accounting/entries?error={quote_plus(str(exc.detail))}", status_code=303)
     scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    operation_key = manual_operation_key.strip() if isinstance(manual_operation_key, str) else ""
+    if operation_key and not re.fullmatch(r"[0-9a-f]{32}", operation_key):
+        return RedirectResponse("/accounting/entries?error=Sesion+de+registro+invalida", status_code=303)
+    if operation_key:
+        existing = db.query(AccountingEntry).filter_by(manual_operation_key=operation_key).first()
+        if existing:
+            if existing.branch_id is not None and existing.branch_id not in scoped_branch_ids:
+                return RedirectResponse("/accounting/entries?error=Sesion+de+registro+no+permitida", status_code=303)
+            return RedirectResponse(f"/accounting/entries?success=Este+comprobante+ya+fue+guardado&pdf_entry_id={existing.id}", status_code=303)
     selected_branch_id: Optional[int] = None
     if branch_id and branch_id.strip():
         try:
@@ -9354,7 +9508,7 @@ def accounting_entries_create(
                 AccountingEntry.estado == "BORRADOR",
                 or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(scoped_branch_ids)),
             )
-            .first()
+            .with_for_update().first()
         )
         if not edit_entry:
             return RedirectResponse("/accounting/entries?error=Borrador+no+encontrado", status_code=303)
@@ -9367,6 +9521,19 @@ def accounting_entries_create(
     if not voucher_type:
         return RedirectResponse("/accounting/entries?error=Tipo+de+comprobante+invalido", status_code=303)
 
+    chosen_journal = None
+    if journal_id:
+        chosen_journal = db.query(AccountingJournal).filter(AccountingJournal.id == int(journal_id) if journal_id.isdigit() else AccountingJournal.id == -1, AccountingJournal.active.is_(True)).first()
+        if not chosen_journal or (chosen_journal.branch_id and chosen_journal.branch_id != selected_branch_id) or (not _is_pacasholl_company() and chosen_journal.voucher_type_id != tipo_id):
+            return RedirectResponse("/accounting/entries?error=Diario+invalido+o+tipo+de+comprobante+incompatible", status_code=303)
+    contact_client = db.get(Cliente, int(cliente_id_contable)) if cliente_id_contable.isdigit() else None
+    contact_supplier = db.get(Proveedor, int(proveedor_id_contable)) if proveedor_id_contable.isdigit() else None
+    if (cliente_id_contable and not contact_client) or (proveedor_id_contable and not contact_supplier) or (contact_client and contact_supplier):
+        return RedirectResponse("/accounting/entries?error=Selecciona+un+cliente+o+un+proveedor+valido", status_code=303)
+    try:
+        due_date = date.fromisoformat(vencimiento_contable) if vencimiento_contable else None
+    except ValueError:
+        return RedirectResponse("/accounting/entries?error=Vencimiento+invalido", status_code=303)
     descripcion_clean = (descripcion or "").strip()
     if not descripcion_clean:
         return RedirectResponse("/accounting/entries?error=Descripcion+del+comprobante+requerida", status_code=303)
@@ -9397,7 +9564,7 @@ def accounting_entries_create(
     elif manual_rate <= 0:
         return RedirectResponse("/accounting/entries?error=Tasa+de+cambio+requerida+para+USD", status_code=303)
 
-    if len(line_cuenta_id) < 2:
+    if len(line_cuenta_id) < (2 if entry_status == "POSTEADO" else 1):
         return RedirectResponse("/accounting/entries?error=Debes+registrar+al+menos+2+lineas", status_code=303)
 
     lines: list[AccountingEntryLine] = []
@@ -9412,7 +9579,7 @@ def accounting_entries_create(
         except ValueError:
             return RedirectResponse("/accounting/entries?error=Cuenta+contable+invalida", status_code=303)
         cuenta = db.query(CuentaContable).filter(CuentaContable.id == cuenta_id).first()
-        if not cuenta:
+        if not cuenta or not cuenta.activo:
             return RedirectResponse("/accounting/entries?error=Cuenta+contable+invalida", status_code=303)
         debe_raw = (line_debe[index] if index < len(line_debe) else "0").replace(",", ".")
         haber_raw = (line_haber[index] if index < len(line_haber) else "0").replace(",", ".")
@@ -9428,6 +9595,8 @@ def accounting_entries_create(
                 haber_value = (haber_value * manual_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         except (InvalidOperation, ValueError):
             return RedirectResponse("/accounting/entries?error=Monto+invalido+en+lineas", status_code=303)
+        if not debe_value.is_finite() or not haber_value.is_finite():
+            return RedirectResponse("/accounting/entries?error=Monto+invalido+en+lineas", status_code=303)
         if debe_value < 0 or haber_value < 0:
             return RedirectResponse("/accounting/entries?error=No+se+permiten+valores+negativos", status_code=303)
         if debe_value == 0 and haber_value == 0:
@@ -9440,6 +9609,9 @@ def accounting_entries_create(
         lines.append(
             AccountingEntryLine(
                 cuenta_id=cuenta_id,
+                cliente_id=contact_client.id if contact_client else None,
+                proveedor_id=contact_supplier.id if contact_supplier else None,
+                vencimiento=due_date,
                 descripcion=line_detail[:200] if line_detail else None,
                 debe=debe_value,
                 haber=haber_value,
@@ -9453,14 +9625,14 @@ def accounting_entries_create(
             }
         )
 
-    if len(lines) < 2:
+    if len(lines) < (2 if entry_status == "POSTEADO" else 1):
         return RedirectResponse("/accounting/entries?error=Debes+registrar+lineas+con+monto", status_code=303)
-    if total_debe <= 0 or total_haber <= 0:
+    if entry_status == "POSTEADO" and (total_debe <= 0 or total_haber <= 0):
         return RedirectResponse("/accounting/entries?error=Debe+y+Haber+deben+ser+mayores+a+0", status_code=303)
-    if total_debe != total_haber:
+    if entry_status == "POSTEADO" and total_debe != total_haber:
         return RedirectResponse("/accounting/entries?error=El+comprobante+no+cuadra+(Debe+!=+Haber)", status_code=303)
     policy = _get_accounting_policy(db)
-    policy_error = _validate_accounting_entry_policy(voucher_type, line_payloads, policy)
+    policy_error = _validate_accounting_entry_policy(voucher_type, line_payloads, policy) if not _is_pacasholl_company() and entry_status == "POSTEADO" else None
     if policy_error:
         return RedirectResponse(f"/accounting/entries?error={quote_plus(policy_error)}", status_code=303)
     period = _accounting_period(entry_date)
@@ -9501,16 +9673,109 @@ def accounting_entries_create(
             lines=lines,
         )
         db.add(entry)
+    if operation_key:
+        entry.manual_operation_key = operation_key
+    entry.journal_id = chosen_journal.id if chosen_journal else journal_for_reference(db, entry.referencia)
+    if entry_status == "POSTEADO":
+        entry.publicado_por = user.email
+        entry.publicado_at = local_now_naive()
     db.commit()
     if entry_status == "BORRADOR":
         return RedirectResponse(
-            f"/accounting/entries?success=Borrador+guardado+cuadrado",
+            f"/accounting/entries?success=Borrador+guardado.+Puedes+completarlo+y+publicarlo+despues",
             status_code=303,
         )
     return RedirectResponse(
         f"/accounting/entries?success=Comprobante+registrado&pdf_entry_id={entry.id}",
         status_code=303,
     )
+
+
+@router.post("/accounting/entries/{entry_id}/post")
+def accounting_entry_post(request: Request, entry_id: int, db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+    _enforce_permission(request, user, "access.accounting.entries")
+    _lock_accounting_transaction(db)
+    branches = _user_scoped_branch_ids(db, user)
+    entry = db.query(AccountingEntry).filter(AccountingEntry.id == entry_id,
+        or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branches))).with_for_update().first()
+    if not entry or entry.estado != "BORRADOR":
+        return RedirectResponse("/accounting/entries?error=Solo+se+puede+publicar+un+borrador", status_code=303)
+    try:
+        _assert_accounting_date_open(db, entry.fecha)
+    except HTTPException as exc:
+        return RedirectResponse(f"/accounting/entries?error={quote_plus(str(exc.detail))}", status_code=303)
+    try:
+        validate_postable_entry(entry)
+        error = _validate_accounting_entry_policy(entry.tipo, [{"account": line.cuenta, "debe": line.debe, "haber": line.haber} for line in entry.lines], _get_accounting_policy(db)) if not _is_pacasholl_company() else None
+        if error:
+            raise ValueError(error)
+    except ValueError as exc:
+        return RedirectResponse(f"/accounting/entries?error={quote_plus(str(exc))}", status_code=303)
+    entry.estado = "POSTEADO"
+    entry.publicado_por = user.email
+    entry.publicado_at = local_now_naive()
+    db.commit()
+    return RedirectResponse(f"/accounting/entries?success=Asiento+publicado&pdf_entry_id={entry.id}", status_code=303)
+
+
+@router.post("/accounting/entries/{entry_id}/reverse")
+def accounting_entry_reverse(request: Request, entry_id: int, motivo: str = Form(...), fecha_reversa: str = Form(...), db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+    _enforce_permission(request, user, "access.accounting.entries")
+    reason = (motivo or "").strip()
+    try:
+        reversal_date = date.fromisoformat(fecha_reversa)
+    except ValueError:
+        return RedirectResponse("/accounting/entries?error=Fecha+de+reversion+invalida", status_code=303)
+    if len(reason) < 5:
+        return RedirectResponse("/accounting/entries?error=Detalla+el+motivo+de+la+reversion", status_code=303)
+    _lock_accounting_transaction(db)
+    branches = _user_scoped_branch_ids(db, user)
+    entry = db.query(AccountingEntry).filter(AccountingEntry.id == entry_id,
+        or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branches))).with_for_update().first()
+    if not entry or entry.estado != "POSTEADO":
+        return RedirectResponse("/accounting/entries?error=Solo+se+puede+revertir+un+asiento+publicado", status_code=303)
+    if entry.reversa_de_id or db.query(AccountingEntry.id).filter(AccountingEntry.reversa_de_id == entry.id).first():
+        return RedirectResponse("/accounting/entries?error=Este+asiento+ya+tiene+una+reversion+o+es+una+reversion", status_code=303)
+    from ..models.payroll import PayrollPeriod, PayrollPayment, PayrollBenefitAccrual, PayrollVacationMovement, PayrollVacationRelease, PayrollVacationReversal
+    if db.query(PayrollVacationReversal.id).filter(PayrollVacationReversal.accounting_entry_id==entry.id).first() or db.query(PayrollBenefitAccrual.id).filter(PayrollBenefitAccrual.accounting_entry_id==entry.id).first() or db.query(PayrollVacationMovement.id).filter(PayrollVacationMovement.accounting_entry_id==entry.id).first() or db.query(PayrollVacationRelease.id).filter(PayrollVacationRelease.accounting_entry_id==entry.id).first() or (entry.referencia or '').startswith(('PREST-','VAC-','LIQ-')):
+        return RedirectResponse('/accounting/entries?error=Este+comprobante+pertenece+al+control+de+prestaciones.+La+correccion+debe+coordinar+saldo%2C+planilla+y+caja',status_code=303)
+    if db.query(PayrollPeriod.id).filter(PayrollPeriod.accounting_entry_id==entry.id).first() or db.query(PayrollPayment.id).filter(or_(PayrollPayment.accounting_entry_id==entry.id,PayrollPayment.reversal_entry_id==entry.id)).first():
+        return RedirectResponse('/accounting/entries?error=Este+asiento+pertenece+a+planilla.+Corrige+su+operacion+de+origen+para+mantener+salarios%2C+pago+y+caja+coordinados',status_code=303)
+    if db.query(ReciboCaja.id).filter(ReciboCaja.accounting_entry_id == entry.id).first():
+        return RedirectResponse("/accounting/entries?error=Este+asiento+proviene+de+un+recibo+de+caja.+La+correccion+debe+coordinar+recibo+y+caja%3B+no+se+revierte+solo+el+asiento", status_code=303)
+    if reversal_date < entry.fecha:
+        return RedirectResponse("/accounting/entries?error=La+reversion+no+puede+ser+anterior+al+asiento", status_code=303)
+    line_ids = [line.id for line in entry.lines]
+    if db.query(AccountingReconciliation.id).filter(AccountingReconciliation.canceled_at.is_(None), or_(AccountingReconciliation.debit_line_id.in_(line_ids), AccountingReconciliation.credit_line_id.in_(line_ids))).first() or db.query(AccountingBankMatch.id).filter(AccountingBankMatch.canceled_at.is_(None), AccountingBankMatch.line_id.in_(line_ids)).first():
+        return RedirectResponse("/accounting/entries?error=Deshaz+la+conciliacion+del+asiento+antes+de+revertirlo", status_code=303)
+    try:
+        _assert_accounting_date_open(db, reversal_date)
+    except HTTPException as exc:
+        return RedirectResponse(f"/accounting/entries?error={quote_plus(str(exc.detail))}", status_code=303)
+    try:
+        validate_postable_entry(entry, allow_inactive=True)
+    except ValueError as exc:
+        return RedirectResponse(f"/accounting/entries?error={quote_plus(str(exc))}", status_code=303)
+    # A reversal preserves original accounts even if later deactivated.
+    period = _accounting_period(reversal_date)
+    seq = _next_accounting_sequence(db, entry.tipo_id, entry.branch_id, period)
+    reversal = AccountingEntry(tipo_id=entry.tipo_id, journal_id=entry.journal_id, branch_id=entry.branch_id,
+        fecha=reversal_date, periodo=period, secuencia=seq,
+        numero=_build_accounting_entry_number(entry.tipo, period, seq),
+        referencia=f"REV-{entry.numero}"[:160], descripcion=f"Reversión de {entry.numero}: {reason}",
+        moneda=entry.moneda, tasa_sistema=entry.tasa_sistema, tasa_cambio=entry.tasa_cambio,
+        estado="POSTEADO", total_debe=entry.total_haber, total_haber=entry.total_debe,
+        reversa_de_id=entry.id, creado_por=user.email,
+        publicado_por=user.email, publicado_at=local_now_naive(),
+        lines=[AccountingEntryLine(cuenta_id=line.cuenta_id, cliente_id=line.cliente_id, proveedor_id=line.proveedor_id, vencimiento=line.vencimiento, descripcion=line.descripcion,
+                debe=line.haber, haber=line.debe) for line in entry.lines])
+    entry.estado = "REVERSADO"
+    entry.anulado_motivo = reason[:260]
+    entry.anulado_por = user.email
+    entry.anulado_at = local_now_naive()
+    db.add(reversal)
+    db.commit()
+    return RedirectResponse(f"/accounting/entries?success=Reversion+registrada&pdf_entry_id={reversal.id}", status_code=303)
 
 
 @router.post("/accounting/entries/{entry_id}/annul")
@@ -9531,6 +9796,8 @@ def accounting_entry_annul(
     )
     if not entry:
         return RedirectResponse("/accounting/entries?error=Comprobante+no+encontrado", status_code=303)
+    if entry.estado in POSTED_STATES:
+        return RedirectResponse("/accounting/entries?error=Los+asientos+publicados+se+corrigen+con+una+reversion", status_code=303)
     if entry.estado == "ANULADO":
         return RedirectResponse("/accounting/entries?error=El+comprobante+ya+esta+anulado", status_code=303)
     entry.estado = "ANULADO"
@@ -17630,10 +17897,18 @@ def sales_roc(
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
+    registered_receipt = None
+    if _is_pacasholl_company() and bodega and print_id and str(print_id).isdigit():
+        registered_receipt = db.query(ReciboCaja).filter(ReciboCaja.id == int(print_id), ReciboCaja.bodega_id == bodega.id).first()
     return request.app.state.templates.TemplateResponse(
         "sales_roc.html",
         {
             "request": request,
+            "roc_accounting_enabled": _is_pacasholl_company(),
+            "roc_registered": registered_receipt,
+            "roc_operation_key": __import__('uuid').uuid4().hex,
+            "roc_accounts": db.query(CuentaContable).filter(CuentaContable.activo.is_(True)).order_by(CuentaContable.codigo).all() if _is_pacasholl_company() else [],
+            "roc_cash_journals": available_cash_journals(db, branch.id) if branch and _is_pacasholl_company() else [],
             "user": user,
             "rubros": rubros,
             "motivos": motivos,
@@ -17811,6 +18086,8 @@ async def sales_cierre_create(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.sales.cierre")
+    if _is_pacasholl_company():
+        _lock_accounting_transaction(db)
     form = await request.form()
     fecha_raw = form.get("fecha")
     fecha_value = local_today()
@@ -18152,6 +18429,20 @@ async def sales_roc_create(
 ):
     _enforce_permission(request, user, "access.sales.roc")
     form = await request.form()
+    integrated = _is_pacasholl_company()
+    operation_key = (form.get("operation_key") or "").strip() if integrated else None
+    if integrated:
+        if not re.fullmatch(r"[a-f0-9]{32}", operation_key or ""):
+            return RedirectResponse("/sales/roc?error=Recarga+el+formulario+para+registrar", status_code=303)
+        _lock_accounting_transaction(db)
+        if db.get_bind().dialect.name == "postgresql":
+            db.execute(sql_text("SELECT pg_advisory_xact_lock(83742020)"))
+        existing = db.query(ReciboCaja).filter(ReciboCaja.operation_key == operation_key).first()
+        if existing:
+            _, assigned = _resolve_branch_bodega(db, user)
+            if not assigned or existing.bodega_id != assigned.id:
+                raise HTTPException(403, "Recibo fuera de su bodega")
+            return RedirectResponse(f"/sales/roc?success=Recibo+ya+registrado&print_id={existing.id}", status_code=303)
     tipo = (form.get("tipo") or "EGRESO").upper()
     rubro_id = form.get("rubro_id")
     motivo_id = form.get("motivo_id")
@@ -18163,16 +18454,16 @@ async def sales_roc_create(
 
     if tipo not in {"INGRESO", "EGRESO"}:
         return RedirectResponse("/sales/roc?error=Tipo+no+valido", status_code=303)
-    if not rubro_id or not motivo_id or not monto_raw:
+    if not rubro_id or not str(rubro_id).isdigit() or not motivo_id or not str(motivo_id).isdigit() or not monto_raw:
         return RedirectResponse("/sales/roc?error=Datos+incompletos", status_code=303)
     if moneda not in {"CS", "USD"}:
         return RedirectResponse("/sales/roc?error=Moneda+no+valida", status_code=303)
 
     try:
-        monto = float(monto_raw)
+        monto = float(str(monto_raw).replace(",", ""))
     except ValueError:
         monto = 0.0
-    if monto <= 0:
+    if not math.isfinite(monto) or monto <= 0:
         return RedirectResponse("/sales/roc?error=Monto+no+valido", status_code=303)
 
     rate_today = (
@@ -18208,6 +18499,8 @@ async def sales_roc_create(
         try:
             fecha_value = date.fromisoformat(str(fecha_raw).split("T")[0])
         except ValueError:
+            if integrated:
+                return RedirectResponse("/sales/roc?error=Fecha+invalida", status_code=303)
             fecha_value = local_today()
     else:
         fecha_value = local_today()
@@ -18221,8 +18514,19 @@ async def sales_roc_create(
     next_seq = (last_recibo.secuencia if last_recibo else 0) + 1
     branch_code = (branch.code or "").lower()
     prefix = "ROC-C" if branch_code == "central" else "ROC-E" if branch_code == "esteli" else f"ROC-{branch_code[:1].upper()}"
+    if integrated:
+        next_seq = int(db.query(func.max(ReciboCaja.secuencia)).filter(ReciboCaja.numero.like(prefix + "-%")).scalar() or 0) + 1
     numero = f"{prefix}-{next_seq:05d}"
 
+    if integrated and afecta_caja:
+        try:
+            if db.query(CierreCaja.id).filter(CierreCaja.bodega_id == bodega.id, CierreCaja.fecha == fecha_value).first():
+                raise ValueError("La caja de esa fecha ya fue cerrada. Revisa el cierre antes de registrar otro movimiento.")
+            resolve_cash_journal(db, branch.id, form.get("cash_journal_id"))
+            _assert_accounting_date_open(db, fecha_value)
+        except (ValueError, HTTPException) as exc:
+            db.rollback()
+            return RedirectResponse('/sales/roc?error='+quote_plus(str(exc.detail if isinstance(exc,HTTPException) else exc)), status_code=303)
     monto_usd = Decimal("0")
     monto_cs = Decimal("0")
     if moneda == "USD":
@@ -18232,7 +18536,15 @@ async def sales_roc_create(
         monto_cs = Decimal(str(monto))
         monto_usd = Decimal(str(monto / tasa)) if tasa else Decimal("0")
 
+    if integrated:
+        try:
+            monto_usd, monto_cs = receipt_amounts(monto_raw, moneda, tasa)
+        except ValueError as exc:
+            db.rollback()
+            return RedirectResponse('/sales/roc?error='+quote_plus(str(exc)), status_code=303)
+
     recibo = ReciboCaja(
+        operation_key=operation_key,
         secuencia=next_seq,
         numero=numero,
         branch_id=branch.id,
@@ -18250,6 +18562,14 @@ async def sales_roc_create(
         usuario_registro=user.full_name,
     )
     db.add(recibo)
+    if integrated and afecta_caja:
+        try:
+            db.flush()
+            entry = build_receipt_entry(db, recibo, rubro, form.get("cash_journal_id"), user.full_name, form.get("counter_account_id"))
+            recibo.accounting_entry_id = entry.id
+        except (ValueError, HTTPException) as exc:
+            db.rollback()
+            return RedirectResponse('/sales/roc?error='+quote_plus(str(exc.detail if isinstance(exc,HTTPException) else exc)), status_code=303)
 
     if afecta_caja:
         caja = (
@@ -18259,6 +18579,7 @@ async def sales_roc_create(
                 CajaDiaria.bodega_id == bodega.id,
                 CajaDiaria.fecha == fecha_value,
             )
+            .with_for_update()
             .first()
         )
         if not caja:
@@ -29521,38 +29842,12 @@ def data_cuentas_contables_create(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.data.catalogs")
-    codigo = codigo.strip()
-    nombre = nombre.strip()
-    tipo = tipo.strip().upper()
-    naturaleza = naturaleza.strip().upper()
-    if not codigo or not nombre:
-        return RedirectResponse("/data/cuentas-contables?error=Datos+incompletos", status_code=303)
-    if tipo not in {"BALANCE", "RESULTADO"}:
-        return RedirectResponse("/data/cuentas-contables?error=Tipo+no+valido", status_code=303)
-    if naturaleza not in {"DEBE", "HABER"}:
-        return RedirectResponse("/data/cuentas-contables?error=Naturaleza+no+valida", status_code=303)
-    exists = db.query(CuentaContable).filter(func.lower(CuentaContable.codigo) == codigo.lower()).first()
-    if exists:
-        return RedirectResponse("/data/cuentas-contables?error=Codigo+ya+existe", status_code=303)
-    nivel = 1
-    if parent_id:
-        parent = db.query(CuentaContable).filter(CuentaContable.id == parent_id).first()
-        if not parent:
-            return RedirectResponse("/data/cuentas-contables?error=Cuenta+padre+no+valida", status_code=303)
-        nivel = (parent.nivel or 1) + 1
-        if nivel > 4:
-            return RedirectResponse("/data/cuentas-contables?error=Maximo+4+niveles", status_code=303)
-    db.add(
-        CuentaContable(
-            codigo=codigo,
-            nombre=nombre,
-            tipo=tipo,
-            naturaleza=naturaleza,
-            parent_id=parent_id,
-            nivel=nivel,
-            activo=activo == "on",
-        )
-    )
+    from ..core.accounting_catalog import save_account
+    _lock_accounting_transaction(db)
+    try:
+        save_account(db, codigo=codigo, nombre=nombre, tipo=tipo, naturaleza=naturaleza, parent_id=parent_id, active=activo=="on")
+    except ValueError as exc:
+        return RedirectResponse(f"/data/cuentas-contables?error={quote_plus(str(exc))}", status_code=303)
     db.commit()
     return RedirectResponse("/data/cuentas-contables?success=Cuenta+creada", status_code=303)
 
@@ -29571,36 +29866,12 @@ def data_cuentas_contables_update(
     user: User = Depends(_require_admin_web),
 ):
     _enforce_permission(request, user, "access.data.catalogs")
-    item = db.query(CuentaContable).filter(CuentaContable.id == item_id).first()
-    if not item:
-        return RedirectResponse("/data/cuentas-contables?error=Cuenta+no+existe", status_code=303)
-    codigo = codigo.strip()
-    nombre = nombre.strip()
-    tipo = tipo.strip().upper()
-    naturaleza = naturaleza.strip().upper()
-    exists = (
-        db.query(CuentaContable)
-        .filter(CuentaContable.id != item_id)
-        .filter(func.lower(CuentaContable.codigo) == codigo.lower())
-        .first()
-    )
-    if exists:
-        return RedirectResponse("/data/cuentas-contables?error=Codigo+ya+existe", status_code=303)
-    nivel = 1
-    if parent_id:
-        parent = db.query(CuentaContable).filter(CuentaContable.id == parent_id).first()
-        if not parent:
-            return RedirectResponse("/data/cuentas-contables?error=Cuenta+padre+no+valida", status_code=303)
-        nivel = (parent.nivel or 1) + 1
-        if nivel > 4:
-            return RedirectResponse("/data/cuentas-contables?error=Maximo+4+niveles", status_code=303)
-    item.codigo = codigo
-    item.nombre = nombre
-    item.tipo = tipo
-    item.naturaleza = naturaleza
-    item.parent_id = parent_id
-    item.nivel = nivel
-    item.activo = activo == "on"
+    from ..core.accounting_catalog import save_account
+    _lock_accounting_transaction(db)
+    try:
+        save_account(db, account_id=item_id, codigo=codigo, nombre=nombre, descripcion=(db.get(CuentaContable,item_id).descripcion or "") if db.get(CuentaContable,item_id) else "", tipo=tipo, naturaleza=naturaleza, parent_id=parent_id, active=activo=="on")
+    except ValueError as exc:
+        return RedirectResponse(f"/data/cuentas-contables?error={quote_plus(str(exc))}", status_code=303)
     db.commit()
     return RedirectResponse("/data/cuentas-contables?success=Cuenta+actualizada", status_code=303)
 

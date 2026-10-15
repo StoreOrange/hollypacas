@@ -141,8 +141,8 @@
                   <td>{{ entry.numero }}</td>
                   <td>{{ account.codigo }} - {{ account.nombre }}</td>
                   <td>{{ line.descripcion or entry.descripcion }}</td>
-                  <td class="text-end">{{ "%.2f"|format(line.debe or 0) }}</td>
-                  <td class="text-end">{{ "%.2f"|format(line.haber or 0) }}</td>
+                  <td class="text-end">{{ '{:,.2f}'.format(line.debe or 0) }}</td>
+                  <td class="text-end">{{ '{:,.2f}'.format(line.haber or 0) }}</td>
                 </tr>
                 {% else %}
                 <tr><td colspan="6" class="text-muted">Sin movimientos en el periodo.</td></tr>
@@ -165,10 +165,10 @@
                 <tr>
                   <td>{{ row.codigo }} - {{ row.nombre }}</td>
                   <td>{{ row.naturaleza }}</td>
-                  <td class="text-end">{{ "%.2f"|format(row.saldo_inicial) }}</td>
-                  <td class="text-end">{{ "%.2f"|format(row.debe) }}</td>
-                  <td class="text-end">{{ "%.2f"|format(row.haber) }}</td>
-                  <td class="text-end fw-semibold">{{ "%.2f"|format(row.saldo_final) }}</td>
+                  <td class="text-end">{{ '{:,.2f}'.format(row.saldo_inicial) }}</td>
+                  <td class="text-end">{{ '{:,.2f}'.format(row.debe) }}</td>
+                  <td class="text-end">{{ '{:,.2f}'.format(row.haber) }}</td>
+                  <td class="text-end fw-semibold">{{ '{:,.2f}'.format(row.saldo_final) }}</td>
                 </tr>
                 {% else %}
                 <tr><td colspan="6" class="text-muted">Sin saldos para mostrar.</td></tr>
@@ -204,12 +204,12 @@
                 {% for row in balanza_rows %}
                 <tr>
                   <td>{{ row.codigo }} - {{ row.nombre }}</td>
-                  <td class="text-end">{{ "%.2f"|format(row.saldo_inicial_deudor) }}</td>
-                  <td class="text-end">{{ "%.2f"|format(row.saldo_inicial_acreedor) }}</td>
-                  <td class="text-end">{{ "%.2f"|format(row.mov_debe) }}</td>
-                  <td class="text-end">{{ "%.2f"|format(row.mov_haber) }}</td>
-                  <td class="text-end fw-semibold">{{ "%.2f"|format(row.saldo_final_deudor) }}</td>
-                  <td class="text-end fw-semibold">{{ "%.2f"|format(row.saldo_final_acreedor) }}</td>
+                  <td class="text-end">{{ '{:,.2f}'.format(row.saldo_inicial_deudor) }}</td>
+                  <td class="text-end">{{ '{:,.2f}'.format(row.saldo_inicial_acreedor) }}</td>
+                  <td class="text-end">{{ '{:,.2f}'.format(row.mov_debe) }}</td>
+                  <td class="text-end">{{ '{:,.2f}'.format(row.mov_haber) }}</td>
+                  <td class="text-end fw-semibold">{{ '{:,.2f}'.format(row.saldo_final_deudor) }}</td>
+                  <td class="text-end fw-semibold">{{ '{:,.2f}'.format(row.saldo_final_acreedor) }}</td>
                 </tr>
                 {% else %}
                 <tr><td colspan="7" class="text-muted">Sin movimientos para balanza en el periodo.</td></tr>
@@ -220,10 +220,10 @@
                   <th class="text-end">Totales</th>
                   <th class="text-end">-</th>
                   <th class="text-end">-</th>
-                  <th class="text-end">{{ "%.2f"|format(balanza_debe) }}</th>
-                  <th class="text-end">{{ "%.2f"|format(balanza_haber) }}</th>
-                  <th class="text-end">{{ "%.2f"|format(balanza_saldo_deudor) }}</th>
-                  <th class="text-end">{{ "%.2f"|format(balanza_saldo_acreedor) }}</th>
+                  <th class="text-end">{{ '{:,.2f}'.format(balanza_debe) }}</th>
+                  <th class="text-end">{{ '{:,.2f}'.format(balanza_haber) }}</th>
+                  <th class="text-end">{{ '{:,.2f}'.format(balanza_saldo_deudor) }}</th>
+                  <th class="text-end">{{ '{:,.2f}'.format(balanza_saldo_acreedor) }}</th>
                 </tr>
               </tfoot>
             </table>
@@ -241,7 +241,7 @@
                     <tr>
                       <td>{{ row.codigo }} - {{ row.nombre }}</td>
                       <td>{{ row.clasificacion }}</td>
-                      <td class="text-end">{{ "%.2f"|format(row.monto) }}</td>
+                      <td class="text-end">{{ '{:,.2f}'.format(row.monto) }}</td>
                     </tr>
                     {% else %}
                     <tr><td colspan="3" class="text-muted">Sin cuentas de resultado para el periodo.</td></tr>
@@ -252,10 +252,10 @@
             </div>
             <div class="col-lg-4">
               <div class="border rounded p-3 bg-light-subtle">
-                <div class="d-flex justify-content-between"><span>Ingresos</span><strong>{{ "%.2f"|format(total_ingresos) }}</strong></div>
-                <div class="d-flex justify-content-between"><span>Gastos</span><strong>{{ "%.2f"|format(total_gastos) }}</strong></div>
+                <div class="d-flex justify-content-between"><span>Ingresos</span><strong>{{ '{:,.2f}'.format(total_ingresos) }}</strong></div>
+                <div class="d-flex justify-content-between"><span>Gastos</span><strong>{{ '{:,.2f}'.format(total_gastos) }}</strong></div>
                 <hr />
-                <div class="d-flex justify-content-between"><span>Utilidad / Perdida</span><strong>{{ "%.2f"|format(utilidad_neta) }}</strong></div>
+                <div class="d-flex justify-content-between"><span>Utilidad / Perdida</span><strong>{{ '{:,.2f}'.format(utilidad_neta) }}</strong></div>
               </div>
             </div>
           </div>
@@ -268,12 +268,12 @@
                 <div class="fw-semibold mb-2">Activo</div>
                 <ul class="list-group list-group-flush small">
                   {% for row in activos_rows %}
-                  <li class="list-group-item d-flex justify-content-between"><span>{{ row.codigo }} {{ row.nombre }}</span><strong>{{ "%.2f"|format(row.monto) }}</strong></li>
+                  <li class="list-group-item d-flex justify-content-between"><span>{{ row.codigo }} {{ row.nombre }}</span><strong>{{ '{:,.2f}'.format(row.monto) }}</strong></li>
                   {% else %}
                   <li class="list-group-item text-muted">Sin cuentas de activo.</li>
                   {% endfor %}
                 </ul>
-                <div class="text-end mt-2 fw-semibold">Total Activo: {{ "%.2f"|format(total_activo) }}</div>
+                <div class="text-end mt-2 fw-semibold">Total Activo: {{ '{:,.2f}'.format(total_activo) }}</div>
               </div>
             </div>
             <div class="col-lg-4">
@@ -281,12 +281,12 @@
                 <div class="fw-semibold mb-2">Pasivo</div>
                 <ul class="list-group list-group-flush small">
                   {% for row in pasivos_rows %}
-                  <li class="list-group-item d-flex justify-content-between"><span>{{ row.codigo }} {{ row.nombre }}</span><strong>{{ "%.2f"|format(row.monto) }}</strong></li>
+                  <li class="list-group-item d-flex justify-content-between"><span>{{ row.codigo }} {{ row.nombre }}</span><strong>{{ '{:,.2f}'.format(row.monto) }}</strong></li>
                   {% else %}
                   <li class="list-group-item text-muted">Sin cuentas de pasivo.</li>
                   {% endfor %}
                 </ul>
-                <div class="text-end mt-2 fw-semibold">Total Pasivo: {{ "%.2f"|format(total_pasivo) }}</div>
+                <div class="text-end mt-2 fw-semibold">Total Pasivo: {{ '{:,.2f}'.format(total_pasivo) }}</div>
               </div>
             </div>
             <div class="col-lg-4">
@@ -294,17 +294,17 @@
                 <div class="fw-semibold mb-2">Patrimonio</div>
                 <ul class="list-group list-group-flush small">
                   {% for row in patrimonio_rows %}
-                  <li class="list-group-item d-flex justify-content-between"><span>{{ row.codigo }} {{ row.nombre }}</span><strong>{{ "%.2f"|format(row.monto) }}</strong></li>
+                  <li class="list-group-item d-flex justify-content-between"><span>{{ row.codigo }} {{ row.nombre }}</span><strong>{{ '{:,.2f}'.format(row.monto) }}</strong></li>
                   {% else %}
                   <li class="list-group-item text-muted">Sin cuentas de patrimonio.</li>
                   {% endfor %}
                 </ul>
-                <div class="text-end mt-2 fw-semibold">Total Patrimonio: {{ "%.2f"|format(total_patrimonio) }}</div>
+                <div class="text-end mt-2 fw-semibold">Total Patrimonio: {{ '{:,.2f}'.format(total_patrimonio) }}</div>
               </div>
             </div>
           </div>
           <div class="alert alert-info mt-3 mb-0">
-            Cuadre: Activo {{ "%.2f"|format(total_activo) }} vs Pasivo + Patrimonio {{ "%.2f"|format(total_pasivo + total_patrimonio) }}.
+            Cuadre: Activo {{ '{:,.2f}'.format(total_activo) }} vs Pasivo + Patrimonio {{ '{:,.2f}'.format(total_pasivo + total_patrimonio) }}.
           </div>
         </div>
 
@@ -318,9 +318,9 @@
                     {% for row in cash_movements %}
                     <tr>
                       <td>{{ row.codigo }} - {{ row.nombre }}</td>
-                      <td class="text-end">{{ "%.2f"|format(row.debe) }}</td>
-                      <td class="text-end">{{ "%.2f"|format(row.haber) }}</td>
-                      <td class="text-end fw-semibold">{{ "%.2f"|format(row.neto) }}</td>
+                      <td class="text-end">{{ '{:,.2f}'.format(row.debe) }}</td>
+                      <td class="text-end">{{ '{:,.2f}'.format(row.haber) }}</td>
+                      <td class="text-end fw-semibold">{{ '{:,.2f}'.format(row.neto) }}</td>
                     </tr>
                     {% else %}
                     <tr><td colspan="4" class="text-muted">Sin movimientos de caja/banco en el periodo.</td></tr>
@@ -331,10 +331,10 @@
             </div>
             <div class="col-lg-4">
               <div class="border rounded p-3 bg-light-subtle">
-                <div class="d-flex justify-content-between"><span>Entradas</span><strong>{{ "%.2f"|format(flujo_entradas) }}</strong></div>
-                <div class="d-flex justify-content-between"><span>Salidas</span><strong>{{ "%.2f"|format(flujo_salidas) }}</strong></div>
+                <div class="d-flex justify-content-between"><span>Entradas</span><strong>{{ '{:,.2f}'.format(flujo_entradas) }}</strong></div>
+                <div class="d-flex justify-content-between"><span>Salidas</span><strong>{{ '{:,.2f}'.format(flujo_salidas) }}</strong></div>
                 <hr />
-                <div class="d-flex justify-content-between"><span>Flujo neto</span><strong>{{ "%.2f"|format(flujo_neto) }}</strong></div>
+                <div class="d-flex justify-content-between"><span>Flujo neto</span><strong>{{ '{:,.2f}'.format(flujo_neto) }}</strong></div>
               </div>
             </div>
           </div>

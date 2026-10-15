@@ -25,7 +25,7 @@
           <div class="odoo-card h-100">
             <div class="odoo-section-title mb-2">Plan de cuentas</div>
             <p class="text-slate mb-2">Total cuentas: <strong>{{ cuentas_total }}</strong> | Activas: <strong>{{ cuentas_activas }}</strong></p>
-            <a class="btn btn-primary btn-sm" href="/data/cuentas-contables">Administrar cuentas contables</a>
+            <a class="btn btn-primary btn-sm" href="{{ '/accounting/accounts' if active_company == 'hollywood_pacas' else '/data/cuentas-contables' }}">Administrar cuentas contables</a>
           </div>
         </div>
 

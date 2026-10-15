@@ -28,6 +28,7 @@ class PayrollEmployeeProfile(Base):
 class PayrollDeductionType(Base):
     __tablename__ = "payroll_deduction_types"
 
+    accounting_account_id = Column(Integer, ForeignKey('cuentas_contables.id'), nullable=True)
     id = Column(Integer, primary_key=True)
     code = Column(String(40), unique=True, nullable=False)
     name = Column(String(120), unique=True, nullable=False)
@@ -57,6 +58,9 @@ class PayrollPeriod(Base):
     __tablename__ = "payroll_periods"
     __table_args__ = (UniqueConstraint("branch_id", "date_from", "date_to", name="uq_payroll_branch_period_range"),)
 
+    accounting_entry_id = Column(Integer, ForeignKey('accounting_entries.id'), nullable=True)
+    accounting_entry = relationship('AccountingEntry', foreign_keys=[accounting_entry_id])
+    accounting_payable_id = Column(Integer, ForeignKey('cuentas_contables.id'), nullable=True)
     id = Column(Integer, primary_key=True)
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
     code = Column(String(40), unique=True, nullable=False)
@@ -164,6 +168,12 @@ class PayrollAdjustment(Base):
 class PayrollPayment(Base):
     __tablename__ = "payroll_payments"
 
+    accounting_entry_id = Column(Integer, ForeignKey('accounting_entries.id'), nullable=True)
+    accounting_entry = relationship('AccountingEntry', foreign_keys=[accounting_entry_id])
+    reversal_entry_id = Column(Integer, ForeignKey('accounting_entries.id'), nullable=True)
+    reversal_entry = relationship('AccountingEntry', foreign_keys=[reversal_entry_id])
+    cash_receipt_id = Column(Integer, ForeignKey('recibos_caja.id'), nullable=True)
+    refund_receipt_id = Column(Integer, ForeignKey('recibos_caja.id'), nullable=True)
     id = Column(Integer, primary_key=True)
     period_id = Column(Integer, ForeignKey("payroll_periods.id"), nullable=False)
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
@@ -246,3 +256,97 @@ class PayrollDeductionOverride(Base):
 
     period = relationship("PayrollPeriod")
     employee_deduction = relationship("PayrollEmployeeDeduction")
+
+
+class PayrollAccountingSetting(Base):
+    __tablename__ = 'payroll_accounting_settings'
+    id = Column(Integer, primary_key=True)
+    salary_expense_id = Column(Integer, ForeignKey('cuentas_contables.id'), nullable=False)
+    salary_payable_id = Column(Integer, ForeignKey('cuentas_contables.id'), nullable=False)
+    manual_deduction_id = Column(Integer, ForeignKey('cuentas_contables.id'), nullable=True)
+    updated_by = Column(String(160), nullable=True)
+    updated_at = Column(DateTime, nullable=True)
+
+
+class PayrollBenefitSetting(Base):
+    __tablename__ = 'payroll_benefit_settings'
+    id = Column(Integer, primary_key=True)
+    enabled = Column(Boolean, nullable=False, default=False)
+    start_date = Column(Date, nullable=False)
+    expense_id = Column(Integer, ForeignKey('cuentas_contables.id'), nullable=False)
+    opening_debit_id = Column(Integer, ForeignKey('cuentas_contables.id'), nullable=False)
+    vacation_payable_id = Column(Integer, ForeignKey('cuentas_contables.id'), nullable=False)
+    bonus_payable_id = Column(Integer, ForeignKey('cuentas_contables.id'), nullable=False)
+    seniority_payable_id = Column(Integer, ForeignKey('cuentas_contables.id'), nullable=False)
+    updated_by = Column(String(160), nullable=True)
+    last_error = Column(Text, nullable=True)
+    last_run = Column(DateTime, nullable=True)
+
+
+class PayrollBenefitAccrual(Base):
+    __tablename__ = 'payroll_benefit_accruals'
+    __table_args__ = (UniqueConstraint('employee_id', 'as_of', name='uq_payroll_benefit_day'),)
+    id = Column(Integer, primary_key=True)
+    employee_id = Column(Integer, ForeignKey('hr_employees.id'), nullable=False)
+    as_of = Column(Date, nullable=False)
+    salary = Column(Numeric(14, 2), nullable=False)
+    vacation_amount = Column(Numeric(14, 2), nullable=False)
+    bonus_amount = Column(Numeric(14, 2), nullable=False)
+    seniority_amount = Column(Numeric(14, 2), nullable=False)
+    accounting_entry_id = Column(Integer, ForeignKey('accounting_entries.id'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    employee = relationship('HREmployee')
+
+
+class PayrollVacationMovement(Base):
+    __tablename__ = 'payroll_vacation_movements'
+    id = Column(Integer, primary_key=True)
+    operation_key = Column(String(32), unique=True, nullable=False)
+    employee_id = Column(Integer, ForeignKey('hr_employees.id'), nullable=False)
+    kind = Column(String(20), nullable=False)  # REST / CASH / SETTLEMENT
+    effective_date = Column(Date, nullable=False)
+    date_from = Column(Date, nullable=True)
+    date_to = Column(Date, nullable=True)
+    days = Column(Numeric(10, 4), nullable=False)
+    salary = Column(Numeric(14, 2), nullable=False)
+    amount = Column(Numeric(14, 2), nullable=False)
+    reason = Column(String(300), nullable=False)
+    status = Column(String(20), nullable=False, default='ACTIVE')
+    settlement_id = Column(Integer, ForeignKey('payroll_settlements.id'), unique=True, nullable=True)
+    accounting_entry_id = Column(Integer, ForeignKey('accounting_entries.id'), nullable=True)
+    cash_receipt_id = Column(Integer, ForeignKey('recibos_caja.id'), nullable=True)
+    created_by = Column(String(160), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    employee = relationship('HREmployee')
+
+
+class PayrollVacationRelease(Base):
+    __tablename__ = 'payroll_vacation_releases'
+    __table_args__ = (UniqueConstraint('movement_id', 'period_id', name='uq_vacation_period_release'),)
+    id = Column(Integer, primary_key=True)
+    movement_id = Column(Integer, ForeignKey('payroll_vacation_movements.id'), nullable=False)
+    period_id = Column(Integer, ForeignKey('payroll_periods.id'), nullable=False)
+    days = Column(Numeric(10, 4), nullable=False)
+    amount = Column(Numeric(14, 2), nullable=False)
+    accounting_entry_id = Column(Integer, ForeignKey('accounting_entries.id'), nullable=True)
+
+
+class PayrollSettlementDeduction(Base):
+    __tablename__ = 'payroll_settlement_deductions'
+    __table_args__ = (UniqueConstraint('settlement_id','employee_deduction_id',name='uq_settlement_debt'),)
+    id = Column(Integer, primary_key=True)
+    settlement_id = Column(Integer, ForeignKey('payroll_settlements.id'), nullable=False)
+    employee_deduction_id = Column(Integer, ForeignKey('payroll_employee_deductions.id'), nullable=False)
+    amount = Column(Numeric(14,2), nullable=False)
+    employee_deduction = relationship('PayrollEmployeeDeduction')
+
+
+class PayrollVacationReversal(Base):
+    __tablename__ = 'payroll_vacation_reversals'
+    id = Column(Integer, primary_key=True)
+    movement_id = Column(Integer, ForeignKey('payroll_vacation_movements.id'), unique=True, nullable=False)
+    reason = Column(String(300), nullable=False)
+    accounting_entry_id = Column(Integer, ForeignKey('accounting_entries.id'), nullable=True)
+    cash_receipt_id = Column(Integer, ForeignKey('recibos_caja.id'), nullable=True)
+    created_by = Column(String(160), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

@@ -1,0 +1,23 @@
+{% extends "accounting_workspace_base.html" %}
+{% block accounting_title %}Diarios contables{% endblock %}
+{% block accounting_body %}
+<p class="text-muted">Organiza los asientos por proceso. Configura la cuenta y sucursal de cada banco o caja antes de conciliar su extracto.</p>
+<div class="row g-3">
+{% for journal in journals %}<div class="col-md-6"><details class="odoo-card h-100"><summary class="fw-semibold">{{ journal.name }} · {{ journal.code }} <span class="badge text-bg-light">{{ kinds[journal.kind] }}</span></summary>
+<p class="small text-muted mt-2">{{ journal.currency }} · {{ journal.branch.name if journal.branch else 'General' }} · {{ journal.main_account.nombre if journal.main_account else 'Cuenta de liquidez sin configurar' }}</p>
+<form action="/accounting/journals/save" method="post" class="row g-2"><input type="hidden" name="journal_id" value="{{ journal.id }}">
+<div class="col-4"><label class="form-label">Código</label><input class="form-control" name="code" value="{{ journal.code }}" required maxlength="20"></div><div class="col-8"><label class="form-label">Nombre</label><input class="form-control" name="name" value="{{ journal.name }}" required></div>
+<div class="col-6"><label class="form-label">Tipo</label><select class="form-select" name="kind">{% for key,label in kinds.items() %}<option value="{{ key }}" {{ 'selected' if journal.kind==key else '' }}>{{ label }}</option>{% endfor %}</select></div>
+<div class="col-6"><label class="form-label">Moneda</label><select class="form-select" name="currency"><option value="CS" {{ 'selected' if journal.currency=='CS' else '' }}>C$</option><option value="USD" {{ 'selected' if journal.currency=='USD' else '' }}>USD</option></select></div>
+<div class="col-6"><label class="form-label">Sucursal</label><select class="form-select" name="branch_id"><option value="">General</option>{% for branch in branches %}<option value="{{ branch.id }}" {{ 'selected' if journal.branch_id==branch.id else '' }}>{{ branch.name }}</option>{% endfor %}</select></div>
+<div class="col-6"><label class="form-label">Comprobante</label><select class="form-select" name="voucher_type_id">{% for voucher in voucher_types %}<option value="{{ voucher.id }}" {{ 'selected' if journal.voucher_type_id==voucher.id else '' }}>{{ voucher.nombre }}</option>{% endfor %}</select></div>
+<div class="col-12"><label class="form-label">Cuenta de banco o caja</label><select class="form-select" name="main_account_id"><option value="">No aplica</option>{% for account in accounts %}<option value="{{ account.id }}" {{ 'selected' if journal.main_account_id==account.id else '' }}>{{ account.codigo }} · {{ account.nombre }}</option>{% endfor %}</select></div>
+<div class="col-12 d-flex gap-2 mt-3"><button class="btn btn-dark" type="submit">Guardar diario</button><a class="btn btn-outline-secondary" href="/accounting/entries?journal_id={{ journal.id }}">Ver asientos</a></div>
+</form></details></div>{% endfor %}
+</div>
+<details class="odoo-card mt-4"><summary class="fw-semibold">Crear otro diario</summary><form action="/accounting/journals/save" method="post" class="row g-3 mt-1">
+<div class="col-md-3"><label class="form-label">Código</label><input class="form-control" name="code" required maxlength="20"></div><div class="col-md-5"><label class="form-label">Nombre</label><input class="form-control" name="name" required></div><div class="col-md-4"><label class="form-label">Tipo</label><select class="form-select" name="kind">{% for key,label in kinds.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+<div class="col-md-3"><label class="form-label">Moneda</label><select class="form-select" name="currency"><option value="CS">C$</option><option value="USD">USD</option></select></div><div class="col-md-3"><label class="form-label">Sucursal</label><select class="form-select" name="branch_id"><option value="">General</option>{% for branch in branches %}<option value="{{ branch.id }}">{{ branch.name }}</option>{% endfor %}</select></div><div class="col-md-3"><label class="form-label">Comprobante</label><select class="form-select" name="voucher_type_id">{% for voucher in voucher_types %}<option value="{{ voucher.id }}">{{ voucher.nombre }}</option>{% endfor %}</select></div><div class="col-md-3"><label class="form-label">Cuenta banco/caja</label><select class="form-select" name="main_account_id"><option value="">No aplica</option>{% for account in accounts %}<option value="{{ account.id }}">{{ account.codigo }} · {{ account.nombre }}</option>{% endfor %}</select></div>
+<div class="col"><button class="btn btn-dark" type="submit">Crear diario</button></div>
+</form></details>
+{% endblock %}

@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
+{% if roc_accounting_enabled %}<style>
+.roc-form,.roc-form p{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.roc-step{display:flex;align-items:center;gap:9px;font-size:1rem;font-weight:700;color:#593f66;margin:4px 0}.roc-step span{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#efe6f4;color:#734788;font-size:.85rem}.roc-review{background:#faf7fc!important;border:1px solid #d8c6e2!important;border-radius:14px!important}.roc-accounting-state{display:inline-block;border-radius:20px;background:#f3eddc;color:#795d22;padding:4px 10px;font-size:.75rem;font-weight:700}.roc-accounting-state.ready{background:#e4f3e9;color:#247049}.roc-effect{padding:10px 12px;background:#fff;border:1px solid #e2d8e8;border-radius:9px;font-size:.9rem;line-height:1.45}.roc-record-result{border:1px solid #b9dfc5;border-radius:12px;padding:16px;background:#f0faf3;margin-bottom:18px}.roc-form .form-select,.roc-form .form-control{min-height:42px;font-size:1rem}.roc-form .form-select:focus,.roc-form .form-control:focus{border-color:#b28bc6;box-shadow:0 0 0 .18rem #b28bc625}.roc-form .table td{vertical-align:middle}.roc-form small{display:block;margin-top:6px;line-height:1.4}.roc-form button[type=submit]{width:100%;min-height:46px}.roc-help{color:#697180;font-size:.84rem}
+</style>{% endif %}
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
@@ -70,16 +73,18 @@
       </div>
       {% endif %}
 
+      {% if roc_accounting_enabled and roc_registered and roc_registered.accounting_entry %}<div class="roc-record-result"><strong><i class="bi bi-check-circle me-1"></i>Recibo {{ roc_registered.numero }} y comprobante {{ roc_registered.accounting_entry.numero }} registrados</strong><p class="mb-2 mt-1">Asiento publicado · Debe C$ {{ '{:,.2f}'.format(roc_registered.accounting_entry.total_debe) }} = Haber C$ {{ '{:,.2f}'.format(roc_registered.accounting_entry.total_haber) }}. El movimiento de caja se aplicó una sola vez.</p><a class="btn btn-sm btn-outline-success" href="/accounting/entries/{{ roc_registered.accounting_entry_id }}/pdf" target="_blank" rel="noopener">Ver comprobante contable</a></div>{% endif %}
       <div class="row g-4">
         <div class="col-lg-5">
           <div class="odoo-card">
-            <div class="odoo-section-title mb-3">Nuevo recibo</div>
-            <form class="row g-3" method="post" action="/sales/roc">
+            <div class="odoo-section-title mb-1">Recibo de caja</div>{% if roc_accounting_enabled %}<p class="roc-help mb-3">Registra el movimiento y revisa su comprobante antes de confirmar.</p>{% endif %}
+            <form class="row g-3 roc-form" id="roc-form" method="post" action="/sales/roc">
+              {% if roc_accounting_enabled %}<div class="col-12"><h2 class="roc-step"><span>1</span>¿Qué ocurrió en caja?</h2></div>{% endif %}
               <div class="col-md-6">
                 <label class="odoo-field-label">Tipo *</label>
                 <select class="form-select odoo-input" name="tipo" id="roc-tipo" required>
-                  <option value="EGRESO" selected>Egreso</option>
-                  <option value="INGRESO">Ingreso</option>
+                  <option value="EGRESO" selected>{{ "Salida · gasto o pago" if roc_accounting_enabled else "Egreso" }}</option>
+                  <option value="INGRESO">{{ "Entrada · cobro u otro ingreso" if roc_accounting_enabled else "Ingreso" }}</option>
                 </select>
               </div>
               <div class="col-md-6">
@@ -95,6 +100,7 @@
                     value="{{ rubro.id }}"
                     data-tipo="{{ rubro.tipo or 'AMBOS' }}"
                     data-codigo="{{ rubro.cuenta.codigo if rubro.cuenta else '9999' }}"
+                    data-cuenta-id="{{ rubro.cuenta_id or '' }}"
                   >
                     {{ rubro.nombre }}
                   </option>
@@ -123,7 +129,7 @@
               </div>
               <div class="col-md-6">
                 <label class="odoo-field-label">Monto *</label>
-                <input class="form-control odoo-input" type="text" name="monto" id="roc-monto" placeholder="0.00" required>
+                <input class="form-control odoo-input" type="text" name="monto" id="roc-monto" inputmode="decimal" min="0.01" data-accounting-number="2" placeholder="0.00" required>
               </div>
               <div class="col-12">
                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
@@ -142,12 +148,19 @@
                   <div class="odoo-pill">Total USD: <span id="roc-total-usd">0.00</span></div>
                 </div>
               </div>
+              {% if roc_accounting_enabled %}
+              <div class="col-12"><h2 class="roc-step"><span>2</span>Elige las cuentas</h2><p class="roc-help mb-0">Un gasto aumenta un gasto; un pago de deuda reduce una cuenta por pagar.</p></div>
+              <input type="hidden" name="operation_key" value="{{ roc_operation_key }}">
+              <div class="col-12"><label class="odoo-field-label" for="roc-cash-journal">¿De qué caja sale o entra el dinero?</label><select class="form-select" name="cash_journal_id" id="roc-cash-journal">{% for journal in roc_cash_journals %}<option value="{{ journal.id }}" data-account-id="{{ journal.main_account_id or '' }}" data-account="{{ journal.main_account.codigo ~ ' ' ~ journal.main_account.nombre if journal.main_account else '' }}">{{ journal.name }} · {{ journal.main_account.codigo ~ ' ' ~ journal.main_account.nombre if journal.main_account else 'Cuenta pendiente de configurar' }}</option>{% endfor %}</select><p class="small text-muted mt-2 mb-0">Al afectar caja se publica también el asiento del recibo. El rubro determina si es gasto, pago de deuda u otro movimiento. <a href="/accounting/journals">Configurar diarios</a></p></div>
+              <div class="col-12"><label for="roc-counter-account" class="odoo-field-label">¿Qué cuenta recibe la contrapartida?</label><select id="roc-counter-account" name="counter_account_id" class="form-select"><option value="">Selecciona la cuenta correspondiente</option>{% for account in roc_accounts %}<option value="{{ account.id }}" data-name="{{ account.nombre }}" data-code="{{ account.codigo }}">{{ account.codigo }} · {{ account.nombre }}</option>{% endfor %}</select><small class="text-muted">Se usa la cuenta del rubro si ya está configurada. Si no, revisa esta selección. <a href="/data/recibos-rubros">Configurar rubros</a></small></div>
+              {% endif %}
               <div class="col-12">
-                <div class="odoo-card p-3 border border-slate-200 rounded-3xl bg-white">
+                <div class="odoo-card p-3 border border-slate-200 rounded-3xl bg-white roc-review">
                   <div class="odoo-section-title mb-2 d-flex align-items-center gap-2 text-sm">
                     <i class="bi bi-journal-text text-brand"></i>
-                    Mini asiento contable
+                    {% if roc_accounting_enabled %}3. Revisa el comprobante{% else %}Mini asiento contable{% endif %}
                   </div>
+                  {% if roc_accounting_enabled %}<div class="d-flex flex-wrap gap-2 align-items-center mb-2"><span id="roc-ledger-state" class="roc-accounting-state">Pendiente de completar</span><span class="roc-help">Debe y Haber · C$</span></div><p id="roc-ledger-effect" class="roc-effect mb-2" role="status" aria-live="polite">Completa el movimiento para revisar las cuentas.</p>{% endif %}
                   <div class="table-responsive">
                     <table class="table table-sm odoo-table mb-0 text-sm">
                       <thead>
@@ -167,9 +180,9 @@
                 </div>
               </div>
               <div class="col-12">
-                <button class="btn btn-primary" type="submit">
+                <button class="btn btn-primary" id="roc-register" type="submit">
                   <i class="bi bi-save2"></i>
-                  Registrar recibo
+                  <span id="roc-register-label">{{ 'Registrar recibo y comprobante' if roc_accounting_enabled else 'Registrar recibo' }}</span>
                 </button>
               </div>
             </form>
@@ -223,9 +236,9 @@
                     <td>{{ rec.tipo }}</td>
                     <td>{{ rec.rubro.nombre if rec.rubro else '-' }}</td>
                     <td>{{ rec.motivo.nombre if rec.motivo else '-' }}</td>
-                    <td class="text-end">{{ "%.2f"|format(rec.monto_cs or 0) }}</td>
-                    <td class="text-end">{{ "%.2f"|format(rec.monto_usd or 0) }}</td>
-                    <td>{{ "Si" if rec.afecta_caja else "No" }}</td>
+                    <td class="text-end">{{ '{:,.2f}'.format(rec.monto_cs or 0) }}</td>
+                    <td class="text-end">{{ '{:,.2f}'.format(rec.monto_usd or 0) }}</td>
+                    <td>{{ "Si" if rec.afecta_caja else "No" }}{% if roc_accounting_enabled %}<div class="small">{% if rec.accounting_entry %}<a href="/accounting/entries?start_date={{ rec.fecha }}&end_date={{ rec.fecha }}&tab=history">{{ rec.accounting_entry.numero }}</a> · {{ rec.accounting_entry.estado }}{% else %}Sin asiento vinculado{% endif %}</div>{% endif %}</td>
                     <td class="text-end">
                       <div class="d-inline-flex gap-1">
                         <a class="btn btn-sm btn-outline-secondary" href="/sales/roc/{{ rec.id }}/pdf" target="_blank" rel="noopener">
@@ -309,8 +322,7 @@
 
   const parseAmount = (value) => {
     if (!value) return 0;
-    const cleaned = value.replace(/[^0-9.]/g, "");
-    const parsed = parseFloat(cleaned);
+    const parsed = window.AccountingNumber ? window.AccountingNumber.parse(value) : Number(value.replace(/,/g, ''));
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
@@ -327,16 +339,57 @@
     rocTotalCs.textContent = formatAmount(totalCs);
     rocTotalUsd.textContent = formatAmount(totalUsd);
     updateAsiento(totalCs);
+    updateLedgerStatus(totalCs);
   };
 
+  function updateLedgerStatus(totalCs){
+    const state=document.getElementById('roc-ledger-state'),effect=document.getElementById('roc-ledger-effect'),button=document.getElementById('roc-register'),label=document.getElementById('roc-register-label');
+    if(!state)return;
+    const affects=document.getElementById('roc-afecta').checked;
+    const cash=document.getElementById('roc-cash-journal')?.selectedOptions[0];
+    const rubro=rocRubro.selectedOptions[0];
+    const account=rubro?.dataset.cuentaId || document.getElementById('roc-counter-account')?.value;
+    const valid=Number.isFinite(totalCs)&&totalCs>0&&rocMonto.checkValidity()&&rocRubro.value&&rocMotivo.value&&(!affects||(cash?.dataset.accountId&&account&&cash.dataset.accountId!==account));
+    button.disabled=!valid;state.classList.toggle('ready',!!valid);
+    if(!affects){state.textContent='Sin comprobante de caja';effect.textContent='Este recibo no moverá caja ni publicará un asiento automático de caja.';label.textContent='Registrar recibo sin afectar caja';return;}
+    label.textContent='Registrar recibo y comprobante';
+    if(!cash?.dataset.accountId){state.textContent='Configura la caja';effect.textContent='El diario debe tener una cuenta de caja activa.';return;}
+    if(!rocRubro.value||!rocMotivo.value){state.textContent='Elige el movimiento';effect.textContent='Selecciona el rubro y el tipo de movimiento para completar el recibo.';return;}
+    if(!account){state.textContent='Falta la contrapartida';effect.textContent='Selecciona la cuenta del gasto, deuda u otro concepto.';return;}
+    if(cash.dataset.accountId===account){state.textContent='Revisa las cuentas';effect.textContent='Caja y contrapartida deben ser cuentas distintas.';return;}
+    if(!Number.isFinite(totalCs)||totalCs<=0||!rocMonto.checkValidity()){state.textContent='Falta un monto válido';effect.textContent='Escribe un importe positivo con máximo dos decimales; si usas USD, verifica la tasa.';return;}
+    state.textContent='Cuadrado · listo para registrar';
+    const currency=rocMoneda.value==='USD'?'USD':'C$',amount=parseAmount(rocMonto.value);
+    effect.textContent=(rocTipo.value==='EGRESO'?'Saldrán ':'Entrarán ')+currency+' '+formatAmount(amount)+(rocTipo.value==='EGRESO'?' de ':' a ')+cash.dataset.account+'. Se publicará un comprobante '+rocTipo.value+' por C$ '+formatAmount(totalCs)+', con Debe y Haber iguales.';
+  }
+  rocMotivo?.addEventListener('change',()=>updateTotals());
+
+  document.getElementById('roc-cash-journal')?.addEventListener('change',()=>updateTotals());
+  document.getElementById('roc-afecta')?.addEventListener('change',()=>updateTotals());
+  const counterSelect = document.getElementById('roc-counter-account');
+  const normalizedName = value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+  function syncCounterAccount(){
+    if(!counterSelect)return;
+    const option=rocRubro.selectedOptions[0];
+    const matches=Array.from(counterSelect.options).filter(item=>item.value && normalizedName(item.dataset.name)===normalizedName(option?.textContent));
+    const matched=matches.length===1?matches[0]:null;
+    counterSelect.value=option?.dataset.cuentaId||matched?.value||'';
+    counterSelect.disabled=!!option?.dataset.cuentaId;
+    updateTotals();
+  }
+  rocRubro?.addEventListener('change',syncCounterAccount);
+  counterSelect?.addEventListener('change',()=>updateTotals());
   const rubroCodes = {};
 
+  const rocEscape = value=>String(value||'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const updateAsiento = (totalCs) => {
     if (!rocAsientoBody || !rocTipo || !rocRubro) return;
     const tipo = rocTipo.value || "EGRESO";
     const rubroOption = rocRubro.selectedOptions[0];
     const rubroName = rubroOption?.textContent || "";
-    const rubroCode = rubroOption?.dataset.codigo || "9999";
+    const counterSelect = document.getElementById('roc-counter-account');
+    const selectedCounter = counterSelect?.selectedOptions[0];
+    const rubroCode = rubroOption?.dataset.cuentaId ? rubroOption.dataset.codigo : selectedCounter?.dataset.code || rubroOption?.dataset.codigo || '9999';
     if (!totalCs || totalCs <= 0) {
       rocAsientoBody.innerHTML = `
         <tr>
@@ -345,17 +398,24 @@
       `;
       return;
     }
-    const cajaCuenta = "1101 Caja";
-    const rubroCuenta = `${rubroCode} ${rubroName || "Rubro"}`;
+    const selectedCash = document.getElementById('roc-cash-journal')?.selectedOptions[0];
+    const cajaCuenta = selectedCash ? selectedCash.dataset.account || 'Configura la cuenta del diario de caja' : '1101 Caja';
+    if (document.getElementById('roc-afecta') && !document.getElementById('roc-afecta').checked) {
+      rocAsientoBody.innerHTML = '<tr><td colspan="3">No afecta caja; no genera asiento automático de caja.</td></tr>';return;
+    }
+    if (rubroCode === '9999' || !cajaCuenta || cajaCuenta.startsWith('Configura')) {
+      rocAsientoBody.innerHTML = '<tr><td colspan="3">Configura la cuenta contable del rubro y del diario antes de registrar.</td></tr>';return;
+    }
+    const rubroCuenta = rubroOption?.dataset.cuentaId ? `${rubroCode} ${rubroName || 'Rubro'}` : selectedCounter?.textContent || `${rubroCode} ${rubroName || 'Rubro'}`;
     if (tipo === "EGRESO") {
       rocAsientoBody.innerHTML = `
         <tr>
-          <td>${rubroCuenta}</td>
+          <td>${rocEscape(rubroCuenta)}</td>
           <td class="text-end">C$ ${formatAmount(totalCs)}</td>
           <td class="text-end">-</td>
         </tr>
         <tr>
-          <td>${cajaCuenta}</td>
+          <td>${rocEscape(cajaCuenta)}</td>
           <td class="text-end">-</td>
           <td class="text-end">C$ ${formatAmount(totalCs)}</td>
         </tr>
@@ -364,12 +424,12 @@
     }
     rocAsientoBody.innerHTML = `
       <tr>
-        <td>${cajaCuenta}</td>
+        <td>${rocEscape(cajaCuenta)}</td>
         <td class="text-end">C$ ${formatAmount(totalCs)}</td>
         <td class="text-end">-</td>
       </tr>
       <tr>
-        <td>${rubroCuenta}</td>
+        <td>${rocEscape(rubroCuenta)}</td>
         <td class="text-end">-</td>
         <td class="text-end">C$ ${formatAmount(totalCs)}</td>
       </tr>
@@ -398,6 +458,9 @@
   }
   updateTotals();
 
+  syncCounterAccount();
+  rocTipo?.addEventListener('change',syncCounterAccount);
+
   const rocPrintLink = document.getElementById("roc-print-link");
   if (rocPrintLink) {
     const openPrint = () => {
@@ -416,4 +479,5 @@
     }, 350);
   }
 </script>
+<script src="/static/js/accounting-number.js?v=20261013"></script>
 {% endblock %}

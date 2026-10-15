@@ -14,7 +14,7 @@ from .core.price_lists import PRICE_LIST_LABELS
 from .core.init_db import init_db
 from .database import get_session_local
 from .models.sales import CompanyProfileSetting
-from .routers import attendance, auth, inventory, payroll, web
+from .routers import attendance, auth, inventory, payroll, web, accounting_workspace, payroll_vacations
 
 
 app = FastAPI(title="ERP System Backend")
@@ -32,10 +32,12 @@ app.include_router(inventory.router)
 app.include_router(attendance.router)
 app.include_router(attendance.web_router)
 app.include_router(payroll.router)
+app.include_router(payroll_vacations.router)
 app.include_router(web.router)
 from .routers import shoe_unit_receipts
 app.include_router(shoe_unit_receipts.router)
 web.SIDEBAR_MENU_ITEMS.insert(next((i + 1 for i, item in enumerate(web.SIDEBAR_MENU_ITEMS) if item["id"] == "inventory_ingresos"), len(web.SIDEBAR_MENU_ITEMS)), {"id": "inventory_unit_receipts", "label": "Ingresos por unidad", "href": "/inventory/ingresos-unidad", "icon": "bi-box-seam", "perm": "menu.inventory.ingresos", "alt_perm": None, "shoes_only": "1"})
+app.include_router(accounting_workspace.router)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.state.templates = Jinja2Templates(directory="app/templates")
@@ -206,3 +208,28 @@ def on_startup():
 @app.get("/")
 def root():
     return {"message": "API ERP lista"}
+
+
+@app.on_event("startup")
+async def start_benefit_worker():
+    import asyncio
+    from .core.payroll_benefits import run_daily
+    async def worker():
+        while True:
+            try:
+                await asyncio.to_thread(run_daily)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('Error del servicio diario de prestaciones; se reintentará')
+            await asyncio.sleep(60)
+    app.state.benefit_worker = asyncio.create_task(worker())
+
+
+@app.on_event("shutdown")
+async def stop_benefit_worker():
+    import asyncio
+    task = getattr(app.state, 'benefit_worker', None)
+    if task:
+        task.cancel()
+        try: await task
+        except asyncio.CancelledError: pass

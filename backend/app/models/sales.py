@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -700,6 +700,9 @@ class ReciboCaja(Base):
     __tablename__ = "recibos_caja"
 
     id = Column(Integer, primary_key=True, index=True)
+    operation_key = Column(String(32), nullable=True, unique=True)
+    accounting_entry_id = Column(Integer, ForeignKey("accounting_entries.id"), nullable=True)
+    accounting_entry = relationship("AccountingEntry", foreign_keys=[accounting_entry_id])
     secuencia = Column(Integer, nullable=False, default=1)
     numero = Column(String(20), nullable=False, unique=True)
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
@@ -931,6 +934,7 @@ class CuentaContable(Base):
     id = Column(Integer, primary_key=True, index=True)
     codigo = Column(String(20), nullable=False, unique=True)
     nombre = Column(String(160), nullable=False)
+    descripcion = Column(Text, nullable=True)
     tipo = Column(String(20), nullable=False)  # BALANCE / RESULTADO
     naturaleza = Column(String(10), nullable=False)  # DEBE / HABER
     parent_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=True)
@@ -952,6 +956,22 @@ class AccountingVoucherType(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class AccountingJournal(Base):
+    __tablename__ = "accounting_journals"
+    id = Column(Integer, primary_key=True)
+    code = Column(String(20), nullable=False, unique=True)
+    name = Column(String(120), nullable=False)
+    kind = Column(String(20), nullable=False)
+    currency = Column(String(10), nullable=False, default="CS")
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
+    voucher_type_id = Column(Integer, ForeignKey("accounting_voucher_types.id"), nullable=False)
+    main_account_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=True)
+    active = Column(Boolean, nullable=False, default=True)
+    branch = relationship("Branch")
+    main_account = relationship("CuentaContable")
+    voucher_type = relationship("AccountingVoucherType")
+
+
 class AccountingEntry(Base):
     __tablename__ = "accounting_entries"
     __table_args__ = (
@@ -960,6 +980,8 @@ class AccountingEntry(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     tipo_id = Column(Integer, ForeignKey("accounting_voucher_types.id"), nullable=False)
+    journal_id = Column(Integer, ForeignKey("accounting_journals.id"), nullable=True, index=True)
+    manual_operation_key = Column(String(32), nullable=True, unique=True)
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
     fecha = Column(Date, nullable=False)
     periodo = Column(String(7), nullable=False)  # YYYY-MM
@@ -978,9 +1000,12 @@ class AccountingEntry(Base):
     anulado_motivo = Column(String(260), nullable=True)
     anulado_at = Column(DateTime, nullable=True)
     creado_por = Column(String(160), nullable=True)
+    publicado_por = Column(String(160), nullable=True)
+    publicado_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    journal = relationship("AccountingJournal")
     tipo = relationship("AccountingVoucherType")
     branch = relationship("Branch")
     lines = relationship("AccountingEntryLine", back_populates="entry", cascade="all, delete-orphan")
@@ -993,12 +1018,95 @@ class AccountingEntryLine(Base):
     id = Column(Integer, primary_key=True, index=True)
     entry_id = Column(Integer, ForeignKey("accounting_entries.id"), nullable=False)
     cuenta_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
+    proveedor_id = Column(Integer, ForeignKey("proveedores.id"), nullable=True)
+    vencimiento = Column(Date, nullable=True)
     descripcion = Column(String(200), nullable=True)
     debe = Column(Numeric(14, 2), nullable=False, default=0)
     haber = Column(Numeric(14, 2), nullable=False, default=0)
 
+    cliente = relationship("Cliente")
+    proveedor = relationship("Proveedor")
     entry = relationship("AccountingEntry", back_populates="lines")
     cuenta = relationship("CuentaContable")
+
+
+class AccountingReconciliation(Base):
+    __tablename__ = "accounting_reconciliations"
+    __table_args__ = (CheckConstraint("amount_cs > 0", name="ck_accounting_reconcile_positive"),)
+    id = Column(Integer, primary_key=True)
+    debit_line_id = Column(Integer, ForeignKey("accounting_entry_lines.id"), nullable=False, index=True)
+    credit_line_id = Column(Integer, ForeignKey("accounting_entry_lines.id"), nullable=False, index=True)
+    amount_cs = Column(Numeric(14, 2), nullable=False)
+    reason = Column(String(260), nullable=False)
+    created_by = Column(String(160), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    canceled_at = Column(DateTime, nullable=True)
+    canceled_by = Column(String(160), nullable=True)
+
+
+class AccountingBankTransaction(Base):
+    __tablename__ = "accounting_bank_transactions"
+    __table_args__ = (UniqueConstraint("journal_id", "import_key", name="uq_bank_transaction_import"),)
+    id = Column(Integer, primary_key=True)
+    journal_id = Column(Integer, ForeignKey("accounting_journals.id"), nullable=False, index=True)
+    fecha = Column(Date, nullable=False)
+    reference = Column(String(160), nullable=False)
+    amount = Column(Numeric(14, 2), nullable=False)
+    rate = Column(Numeric(12, 4), nullable=False, default=1)
+    amount_cs = Column(Numeric(14, 2), nullable=False)
+    import_key = Column(String(64), nullable=False)
+    created_by = Column(String(160), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    journal = relationship("AccountingJournal")
+
+
+class AccountingBankMatch(Base):
+    __tablename__ = "accounting_bank_matches"
+    __table_args__ = (CheckConstraint("amount_cs > 0", name="ck_bank_match_positive"),)
+    id = Column(Integer, primary_key=True)
+    transaction_id = Column(Integer, ForeignKey("accounting_bank_transactions.id"), nullable=False, index=True)
+    line_id = Column(Integer, ForeignKey("accounting_entry_lines.id"), nullable=False, index=True)
+    amount_cs = Column(Numeric(14, 2), nullable=False)
+    created_by = Column(String(160), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    canceled_at = Column(DateTime, nullable=True)
+    canceled_by = Column(String(160), nullable=True)
+
+
+class AccountingPeriodClosure(Base):
+    __tablename__ = "accounting_period_closures"
+    __table_args__ = (UniqueConstraint("kind", "period", name="uq_accounting_period_closure"),)
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(16), nullable=False)
+    period = Column(String(20), nullable=False)
+    start_date = Column(Date, nullable=False, index=True)
+    end_date = Column(Date, nullable=False, index=True)
+    closed = Column(Boolean, nullable=False, default=True)
+    reason = Column(String(260), nullable=False)
+    updated_by = Column(String(160), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class AccountingPeriodEvent(Base):
+    __tablename__ = "accounting_period_events"
+    id = Column(Integer, primary_key=True)
+    closure_id = Column(Integer, ForeignKey("accounting_period_closures.id"), nullable=False, index=True)
+    action = Column(String(16), nullable=False)
+    reason = Column(String(260), nullable=False)
+    actor = Column(String(160), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    closure = relationship("AccountingPeriodClosure")
+
+
+class AccountingLockSetting(Base):
+    __tablename__ = "accounting_lock_settings"
+
+    id = Column(Integer, primary_key=True)
+    closed_through = Column(Date, nullable=False)
+    reason = Column(String(260), nullable=False)
+    updated_by = Column(String(160), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class AccountingPolicySetting(Base):

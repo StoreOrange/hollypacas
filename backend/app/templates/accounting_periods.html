@@ -1,0 +1,38 @@
+{% extends "accounting_workspace_base.html" %}
+{% block accounting_title %}Cierres y reaperturas{% endblock %}
+{% block accounting_body %}
+<style>.periods-page{font-family:system-ui,sans-serif}.periods-page .form-control,.periods-page .form-select{min-height:46px;font-size:16px}.periods-page .form-label{font-weight:600;font-size:13px}.periods-page .period-primary{background:#714b67;color:white;border-color:#714b67}.periods-page .period-card{border:1px solid #e0e5ea;border-radius:14px;padding:22px;background:white;margin-bottom:20px}.periods-page p{font-family:inherit}.periods-page .btn{min-height:40px;font-size:14px}.periods-page .period-status{font-size:12px;padding:6px 10px;border-radius:18px;display:inline-block;white-space:nowrap}.periods-page .closed{background:#fbe9e9;color:#a33a3a}.periods-page .open{background:#e6f4ec;color:#24734c}</style>
+<div class="periods-page">
+<p class="text-muted">Cierra un mes o un año terminado para proteger sus registros. Si necesitas corregir un error, el administrador puede reabrir el período y cerrarlo nuevamente. Cada acción conserva su motivo, usuario y fecha.</p>
+{% if can_manage %}<div class="period-card"><h2 class="h5 mb-3">Cerrar un período contable</h2>
+<form method="post" action="/accounting/periods/close" class="row g-3" id="periodCloseForm">
+<div class="col-md-3"><label class="form-label" for="periodKind">Tipo de cierre</label><select class="form-select" name="kind" id="periodKind"><option value="MONTH">Mensual</option><option value="YEAR">Anual</option></select></div>
+<div class="col-md-3"><label class="form-label" for="periodValue" id="periodLabel">Mes a cerrar</label><input class="form-control" id="periodValue" name="period" type="month" min="1900-01" value="{{ last_month }}" max="{{ last_month }}" required data-month="{{ last_month }}" data-year="{{ last_year }}"></div>
+<div class="col-md-6"><label class="form-label" for="periodReason">Motivo o referencia de revisión</label><input class="form-control" id="periodReason" name="reason" minlength="5" maxlength="260" required placeholder="Ej.: Revisión y cuadre del mes completados"></div>
+<div class="col-12"><p class="small text-muted mb-2">Registra primero los ajustes del mes o del ejercicio. Los borradores del período deben estar publicados o cancelados antes del cierre. El cierre anual abarca del 1 de enero al 31 de diciembre.</p><button class="btn period-primary" type="submit">Confirmar cierre</button></div>
+</form></div>{% endif %}
+<div class="period-card"><h2 class="h5 mb-3">Estado de los períodos</h2><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Período</th><th>Desde / hasta</th><th>Estado</th><th>Último motivo</th><th>Usuario</th><th>Acción</th></tr></thead><tbody>
+{% for period in periods %}<tr><td class="text-nowrap"><strong>{{ period.period }}</strong><div class="small text-muted">{{ 'Mensual' if period.kind=='MONTH' else 'Anual' if period.kind=='YEAR' else 'Cierre histórico adaptado' }}</div></td><td class="text-nowrap">{{ period.start_date if period.kind!='LEGACY' else 'Inicio del historial' }}<br>{{ period.end_date }}</td><td><span class="period-status {{ 'closed' if period.closed else 'open' }}">{{ 'Cerrado' if period.closed else 'Reabierto' }}</span>{% if not period.closed and blockers[period.id] %}<div class="small text-warning mt-1">Hay fechas aún protegidas por: {{ blockers[period.id]|join(', ') }}</div>{% endif %}</td><td>{{ period.reason }}</td><td>{{ period.updated_by }}</td><td>{% if can_manage %}<button type="button" class="btn btn-sm {{ 'btn-outline-secondary' if period.closed else 'period-primary' }} period-action" data-period="{{ period.period }}" data-id="{{ period.id }}" data-action="{{ 'reopen' if period.closed else 'close' }}">{{ 'Reabrir' if period.closed else 'Volver a cerrar' }}</button>{% else %}<span class="small text-muted">Solo administrador</span>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="text-muted text-center py-4">Todavía no se han cerrado períodos contables.</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="period-card"><h2 class="h5 mb-3">Historial de acciones</h2><p class="small text-muted">Últimas 100 acciones. Reabrir un período conserva su cierre anterior en este historial.</p><div class="table-responsive"><table class="table"><thead><tr><th>Fecha y hora</th><th>Período</th><th>Acción</th><th>Motivo</th><th>Usuario</th></tr></thead><tbody>{% for event in events %}<tr><td class="text-nowrap">{{ event.created_at.strftime('%d/%m/%Y %H:%M') if event.created_at else '' }}</td><td>{{ event.closure.period }}</td><td>{{ 'Cierre' if event.action=='CIERRE' else 'Reapertura' if event.action=='REAPERTURA' else 'Adaptación histórica' }}</td><td>{{ event.reason }}</td><td>{{ event.actor }}</td></tr>{% else %}<tr><td colspan="5" class="text-muted text-center py-4">Sin acciones registradas.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% if can_manage %}<div class="modal fade" id="periodActionModal" tabindex="-1" aria-labelledby="periodActionTitle" aria-hidden="true"><div class="modal-dialog"><form class="modal-content" method="post" id="periodActionForm"><div class="modal-header"><h5 class="modal-title" id="periodActionTitle">Gestionar período</h5><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><p id="periodActionMessage"></p><label class="form-label" for="periodActionReason">Motivo</label><textarea class="form-control" id="periodActionReason" name="reason" minlength="5" maxlength="260" required placeholder="Detalla el error o la revisión realizada"></textarea></div><div class="modal-footer"><button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button><button class="btn period-primary" type="submit" id="periodActionSubmit">Confirmar</button></div></form></div></div>
+<script>
+const periodKind = document.getElementById('periodKind');
+periodKind.addEventListener('change', () => {
+ const annual = periodKind.value === 'YEAR'; const input = document.getElementById('periodValue');
+ input.type = annual ? 'number' : 'month'; input.value = annual ? input.dataset.year : input.dataset.month;
+ input.max = annual ? input.dataset.year : input.dataset.month; input.min = annual ? '1900' : '1900-01'; input.step = '1';
+ document.getElementById('periodLabel').textContent = annual ? 'Año a cerrar' : 'Mes a cerrar';
+});
+document.querySelectorAll('.period-action').forEach(button => button.addEventListener('click', () => {
+ const reopen = button.dataset.action === 'reopen';
+ document.getElementById('periodActionForm').action = '/accounting/periods/' + button.dataset.id + '/' + button.dataset.action;
+ document.getElementById('periodActionTitle').textContent = (reopen ? 'Reabrir ' : 'Volver a cerrar ') + button.dataset.period;
+ document.getElementById('periodActionMessage').textContent = reopen ? 'Se habilitarán correcciones donde no exista otro cierre vigente. Si el período también está cubierto por otro cierre mensual o anual, ese cierre debe reabrirse por separado.' : 'Se bloquearán nuevamente los registros del período. Primero resuelve sus borradores pendientes.';
+ document.getElementById('periodActionReason').value = '';
+ document.getElementById('periodActionSubmit').textContent = reopen ? 'Confirmar reapertura' : 'Confirmar cierre';
+ bootstrap.Modal.getOrCreateInstance(document.getElementById('periodActionModal')).show();
+}));
+</script>{% endif %}
+{% endblock %}

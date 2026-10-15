@@ -314,10 +314,10 @@ def _seed_accounting_voucher_types(db: Session) -> None:
             db.add(AccountingVoucherType(code=code, nombre=nombre, prefijo=prefijo, activo=True))
             changed = True
             continue
-        if (row.nombre or "") != nombre:
+        if not (row.nombre or "").strip():
             row.nombre = nombre
             changed = True
-        if (row.prefijo or "") != prefijo:
+        if not (row.prefijo or "").strip():
             row.prefijo = prefijo
             changed = True
         if row.activo is None:
@@ -1182,8 +1182,10 @@ def _seed_cuentas_contables(db: Session) -> None:
     ]
 
     existing = {c.codigo: c for c in db.query(CuentaContable).all()}
+    created_codes = set()
     for codigo, nombre, tipo, naturaleza, parent_code in cuentas:
         if codigo not in existing:
+            created_codes.add(codigo)
             db.add(
                 CuentaContable(
                     codigo=codigo,
@@ -1198,7 +1200,7 @@ def _seed_cuentas_contables(db: Session) -> None:
     all_accounts = {c.codigo: c for c in db.query(CuentaContable).all()}
     for codigo, nombre, tipo, naturaleza, parent_code in cuentas:
         account = all_accounts.get(codigo)
-        if not account:
+        if not account or codigo not in created_codes:
             continue
         parent = all_accounts.get(parent_code) if parent_code else None
         account.parent_id = parent.id if parent else None
@@ -1955,9 +1957,40 @@ def init_db() -> None:
         if "tipo" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE cuentas_contables ADD COLUMN tipo VARCHAR(20)"))
+        if "descripcion" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE cuentas_contables ADD COLUMN descripcion TEXT"))
+    for table, fields in {
+        "payroll_periods": {"accounting_entry_id": "accounting_entries", "accounting_payable_id": "cuentas_contables"},
+        "payroll_payments": {"accounting_entry_id": "accounting_entries", "reversal_entry_id": "accounting_entries", "cash_receipt_id": "recibos_caja", "refund_receipt_id": "recibos_caja"},
+        "payroll_deduction_types": {"accounting_account_id": "cuentas_contables"},
+    }.items():
+        if table in inspector.get_table_names():
+            columns = {c["name"] for c in inspector.get_columns(table)}
+            with engine.begin() as conn:
+                for field, target in fields.items():
+                    if field not in columns:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {field} INTEGER REFERENCES {target}(id)"))
+    if "recibos_caja" in inspector.get_table_names():
+        columns = {c["name"] for c in inspector.get_columns("recibos_caja")}
+        with engine.begin() as conn:
+            if "operation_key" not in columns:
+                conn.execute(text("ALTER TABLE recibos_caja ADD COLUMN operation_key VARCHAR(32)"))
+                conn.execute(text("CREATE UNIQUE INDEX uq_cash_receipt_operation ON recibos_caja (operation_key)"))
+            if "accounting_entry_id" not in columns:
+                conn.execute(text("ALTER TABLE recibos_caja ADD COLUMN accounting_entry_id INTEGER REFERENCES accounting_entries(id)"))
     if "accounting_entries" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("accounting_entries")}
         with engine.begin() as conn:
+            if "manual_operation_key" not in columns:
+                conn.execute(text("ALTER TABLE accounting_entries ADD COLUMN manual_operation_key VARCHAR(32)"))
+                conn.execute(text("CREATE UNIQUE INDEX uq_accounting_manual_operation ON accounting_entries (manual_operation_key)"))
+            if "journal_id" not in columns:
+                conn.execute(text("ALTER TABLE accounting_entries ADD COLUMN journal_id INTEGER REFERENCES accounting_journals(id)"))
+            if "publicado_por" not in columns:
+                conn.execute(text("ALTER TABLE accounting_entries ADD COLUMN publicado_por VARCHAR(160)"))
+            if "publicado_at" not in columns:
+                conn.execute(text("ALTER TABLE accounting_entries ADD COLUMN publicado_at TIMESTAMP"))
             if "moneda" not in columns:
                 conn.execute(text("ALTER TABLE accounting_entries ADD COLUMN moneda VARCHAR(10) DEFAULT 'CS'"))
                 conn.execute(text("UPDATE accounting_entries SET moneda = 'CS' WHERE moneda IS NULL OR moneda = ''"))
@@ -1965,6 +1998,15 @@ def init_db() -> None:
                 conn.execute(text("ALTER TABLE accounting_entries ADD COLUMN tasa_sistema NUMERIC(12, 4)"))
             if "tasa_cambio" not in columns:
                 conn.execute(text("ALTER TABLE accounting_entries ADD COLUMN tasa_cambio NUMERIC(12, 4)"))
+    if "accounting_entry_lines" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("accounting_entry_lines")}
+        with engine.begin() as conn:
+            if "cliente_id" not in columns:
+                conn.execute(text("ALTER TABLE accounting_entry_lines ADD COLUMN cliente_id INTEGER REFERENCES clientes(id)"))
+            if "proveedor_id" not in columns:
+                conn.execute(text("ALTER TABLE accounting_entry_lines ADD COLUMN proveedor_id INTEGER REFERENCES proveedores(id)"))
+            if "vencimiento" not in columns:
+                conn.execute(text("ALTER TABLE accounting_entry_lines ADD COLUMN vencimiento DATE"))
     if "depositos_clientes" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("depositos_clientes")}
         if "metodo" not in columns:
@@ -2279,6 +2321,19 @@ def init_db() -> None:
         _seed_payroll_catalogs(db)
         _seed_cuentas_contables(db)
         _seed_accounting_voucher_types(db)
+        if get_active_company_key() == "hollywood_pacas":
+            from .accounting_workflow import seed_journals
+            seed_journals(db)
+            from .accounting_payroll import settings as seed_payroll_accounting
+            try:
+                seed_payroll_accounting(db)
+            except ValueError:
+                pass  # Un catálogo personalizado se configura desde Planilla.
+            from .payroll_benefits import seed_accounts as seed_benefit_accounts
+            seed_benefit_accounts(db)
+            from .accounting_periods import adapt_legacy_lock
+            adapt_legacy_lock(db)
+            db.commit()
         _seed_accounting_policy_settings(db)
         _seed_recibos_rubros(db)
         _seed_recibos_motivos(db)

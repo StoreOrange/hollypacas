@@ -1,76 +1,46 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+.acc-workspace{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--acc-purple:#714b67;--acc-teal:#017e84}.acc-workspace .acc-primary{background:var(--acc-purple);color:white;border-color:var(--acc-purple)}.acc-workspace .acc-card{background:white;border:1px solid #e2e5e9;border-radius:12px;padding:22px;height:100%}.acc-workspace .acc-card h2{font-size:20px;margin:0}.acc-workspace .acc-amount{font-size:26px;font-weight:650;color:var(--acc-teal)}.acc-workspace .acc-actions{display:flex;gap:10px;flex-wrap:wrap}.acc-workspace a{color:var(--acc-teal)}.acc-workspace .acc-primary{color:white}.acc-workspace .acc-step{border-left:3px solid var(--acc-purple);padding:4px 14px}.acc-workspace .acc-metric{background:#f5f1f4;border-radius:10px;padding:16px}.acc-workspace .acc-metric strong{display:block;font-size:28px;color:var(--acc-purple)}
+</style>
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
-  {% include "partials/sidebar.html" %}
-
-  <main class="p-4 sm:p-6 lg:p-8 text-[18px]">
-    <div class="odoo-page">
-      <div class="odoo-header">
-        <h1 class="odoo-title mb-1">Modulo de contabilidad</h1>
-        <p class="odoo-subtitle mb-0">
-          Flujo guiado para usuarios no contadores. Primero define catalogos, luego registra comprobantes y valida cuadre Debe/Haber.
-        </p>
-      </div>
-
-      <div class="row g-4 mt-1">
-        <div class="col-md-6">
-          <a class="text-decoration-none" href="/accounting/financial-data">
-            <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
-              <div class="d-flex align-items-center justify-content-between">
-                <div class="odoo-section-title">Datos financieros</div>
-                <span class="odoo-pill"><i class="bi bi-diagram-3"></i> Catalogos</span>
-              </div>
-              <p class="text-slate mt-2 mb-0">Plan de cuentas, tipos de comprobante y configuracion base para el ejercicio contable.</p>
-            </div>
-          </a>
-        </div>
-        <div class="col-md-6">
-          <a class="text-decoration-none" href="/accounting/entries">
-            <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
-              <div class="d-flex align-items-center justify-content-between">
-                <div class="odoo-section-title">Comprobantes contables</div>
-                <span class="odoo-pill"><i class="bi bi-journal-check"></i> Diario</span>
-              </div>
-              <p class="text-slate mt-2 mb-0">Asientos con numeracion consecutiva automatica, validacion de cuadre y salida PDF por comprobante.</p>
-            </div>
-          </a>
-        </div>
-        <div class="col-md-6">
-          <a class="text-decoration-none" href="/accounting/entries#datos-contables">
-            <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
-              <div class="d-flex align-items-center justify-content-between">
-                <div class="odoo-section-title">Datos contables inteligentes</div>
-                <span class="odoo-pill"><i class="bi bi-diagram-3-fill"></i> Rubros</span>
-              </div>
-              <p class="text-slate mt-2 mb-0">Grid de subrubros contra cuentas contables, filtros rapidos, asignaciones, bajas y creacion de nuevas reglas guia.</p>
-            </div>
-          </a>
-        </div>
-        <div class="col-md-6">
-          <a class="text-decoration-none" href="/accounting/reports">
-            <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">
-              <div class="d-flex align-items-center justify-content-between">
-                <div class="odoo-section-title">Informes financieros</div>
-                <span class="odoo-pill"><i class="bi bi-bar-chart-line"></i> NIIF</span>
-              </div>
-              <p class="text-slate mt-2 mb-0">Libro diario, mayor, resultados, balance general, flujo de caja y notas financieras con corte por fecha.</p>
-            </div>
-          </a>
-        </div>
-      </div>
-
-      <div class="odoo-card mt-4">
-        <div class="odoo-section-title mb-2">Guia rapida</div>
-        <ol class="mb-0 ps-3 text-slate">
-          <li>Configura o revisa las cuentas contables.</li>
-          <li>Define tipos de comprobante (diario, ingreso, egreso, ajuste).</li>
-          <li>Registra lineas Debe/Haber hasta lograr cuadre exacto.</li>
-          <li>Guarda y genera PDF para respaldo y revision.</li>
-        </ol>
-      </div>
-
-      <div class="text-end text-slate text-sm mt-4">Version {{ version }}</div>
-    </div>
-  </main>
+ {% include "partials/sidebar.html" %}
+ <main class="p-4 sm:p-6 lg:p-8 acc-workspace">
+  <div class="odoo-page">
+   {% if request.query_params.get('error') %}<div class="alert alert-danger">{{ request.query_params.get('error') }}</div>{% endif %}
+   {% if request.query_params.get('success') %}<div class="alert alert-success">{{ request.query_params.get('success') }}</div>{% endif %}
+   <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+    <div><p class="text-muted small mb-1">PACAS HOLLYWOOD · FINANZAS</p><h1 class="odoo-title">Contabilidad</h1><p class="text-muted mb-0">Revisa pendientes, registra asientos y consulta tus libros.</p></div>
+    <div class="acc-actions"><a class="btn acc-primary" href="/accounting/entries">Nuevo asiento</a><a class="btn btn-outline-secondary" href="/accounting/reports">Informes</a><a class="btn btn-outline-secondary" href="/accounting/accounts">Catálogo contable</a><a class="btn btn-outline-secondary" href="/accounting/voucher-types">Tipos de comprobante</a><a class="btn btn-outline-secondary" href="/accounting/financial-data">Configuración</a><a class="btn btn-outline-secondary" href="/accounting/reconcile">Conciliar saldos</a><a class="btn btn-outline-secondary" href="/accounting/bank">Banco y caja</a></div>
+   </div>
+   <div class="row g-3 mb-4">
+    <div class="col-sm-6"><a class="text-decoration-none" href="/accounting/entries?estado=BORRADOR"><div class="acc-metric"><strong>{{ dashboard.draft_count }}</strong><span>Borradores pendientes de publicar</span></div></a></div>
+    <div class="col-sm-6"><div class="acc-metric"><strong>{{ dashboard.posted_count }}</strong><span>Asientos publicados en {{ dashboard.month }}</span></div></div>
+   </div>
+   <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h5 mb-0">Diarios contables</h2><a class="small" href="/accounting/journals">Administrar diarios</a></div>
+   <div class="row g-3 mb-4">
+    {% for journal in journal_cards %}<div class="col-md-6 col-xl-4"><div class="acc-card">
+     <div class="d-flex justify-content-between gap-2"><h2>{{ journal.name }}</h2><span class="badge text-bg-light align-self-start">{{ journal.code }}</span></div>
+     <div class="acc-amount mt-3">C$ {{ "{:,.2f}".format(journal.amount or 0) }}</div><div class="small text-muted">Movimiento Debe publicado del mes</div>
+     <div class="d-flex justify-content-between align-items-center mt-4 gap-2"><a class="btn btn-sm acc-primary" href="/accounting/entries?journal_id={{ journal.id }}">Ver asientos</a><a href="/accounting/entries?journal_id={{ journal.id }}&estado=BORRADOR" class="small">{{ journal.drafts }} pendientes</a></div>
+    </div></div>{% else %}<div class="col"><div class="acc-card">Configura los tipos de comprobante para comenzar.</div></div>{% endfor %}
+   </div>
+   <div class="acc-card mb-4"><h2 class="mb-3">Proceso de registro</h2><div class="row g-3">
+    <div class="col-md-4"><div class="acc-step"><strong>1. Preparar</strong><p class="small text-muted mb-0">Indica fecha, sucursal, referencia y cuentas. Guarda como borrador para revisar.</p></div></div>
+    <div class="col-md-4"><div class="acc-step"><strong>2. Publicar</strong><p class="small text-muted mb-0">Comprueba Debe y Haber. Al publicar, el asiento forma parte de los libros.</p></div></div>
+    <div class="col-md-4"><div class="acc-step"><strong>3. Corregir con reversión</strong><p class="small text-muted mb-0">El original se conserva. Registra la fecha y el motivo de su contrapartida.</p></div></div>
+   </div></div>
+   <div class="acc-card mb-4">
+    <h2 class="mb-2">Cierres mensuales y anuales</h2>
+    <p class="text-muted">{{ closed_period_count }} períodos con cierre vigente. El administrador puede reabrirlos para corregir errores, dejando constancia del motivo.</p>
+    <a class="btn btn-outline-secondary" href="/accounting/periods">Administrar cierres y reaperturas</a>
+   </div>
+   <div class="acc-card"><div class="d-flex justify-content-between mb-3"><h2>Últimos asientos</h2><a href="/accounting/entries">Ver todos</a></div>
+    <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Número</th><th>Fecha</th><th>Concepto</th><th>Estado</th><th class="text-end">Debe C$</th><th></th></tr></thead><tbody>
+    {% for entry in recent_entries %}<tr><td class="fw-semibold">{{ entry.numero }}</td><td class="text-nowrap">{{ entry.fecha }}</td><td>{{ entry.descripcion }}</td><td><span class="badge {{ 'text-bg-warning' if entry.estado == 'BORRADOR' else 'text-bg-success' if entry.estado == 'POSTEADO' else 'text-bg-secondary' }}">{{ 'Publicado' if entry.estado == 'POSTEADO' else 'Revertido' if entry.estado == 'REVERSADO' else entry.estado|capitalize }}</span></td><td class="text-end text-nowrap">{{ "{:,.2f}".format(entry.total_debe or 0) }}</td><td>{% if entry.estado == 'BORRADOR' %}<a href="/accounting/entries?edit_entry_id={{ entry.id }}">Revisar</a>{% else %}<a href="/accounting/entries/{{ entry.id }}/pdf" target="_blank">PDF</a>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="text-muted py-4">Todavía no hay asientos en las sucursales a las que tienes acceso.</td></tr>{% endfor %}
+    </tbody></table></div>
+   </div>
+  </div>
+ </main>
 </div>
 {% endblock %}
