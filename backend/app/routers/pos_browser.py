@@ -5,7 +5,7 @@ from fastapi import APIRouter,Depends,Request,HTTPException
 from ..core.deps import get_db
 from ..core import pos_automation as auto
 from ..models.pos_automation import PosAutoStation,PosAutoTask,PosPrintJob
-from ..models.sales import VentaFactura
+from ..models.sales import VentaFactura,Preventa
 from . import web
 from .pos_automation import browser,station_create,snapshot
 
@@ -15,7 +15,17 @@ router=APIRouter(prefix='/sales/automatico-pos',tags=['POS navegador Hollpacas']
 def state(db,station):
     data=snapshot(db,station)
     # La interfaz no consume ni presenta configuración del agente retirado.
-    return {'ok':True,'station_id':station.id,'enabled':station.enabled,'tasks':data['tasks']}
+    completed=[]
+    pending=[]
+    for task in data['tasks']:
+        sale=db.get(Preventa,task['preventa_id'])
+        invoiced=bool(sale and (sale.venta_factura_id or sale.estado=='FACTURADA'))
+        if invoiced:completed.append(task['preventa_id'])
+        if task['print_status']=='SENT' or task['status']=='CANCELLED':continue
+        if invoiced and not task['job_id']:continue
+        if not sale or sale.estado=='ANULADA':continue
+        pending.append(task)
+    return {'ok':True,'station_id':station.id,'enabled':station.enabled,'tasks':pending,'completed_preventa_ids':completed}
 
 
 @router.post('/station')
@@ -90,7 +100,7 @@ async def ack(station_id:str,job_id:int,request:Request,db=Depends(get_db),user=
     if status not in {'SENT','UNKNOWN'}:raise HTTPException(400)
     if job.status=='DISPATCHED':
         job.status=status;job.completed_at=web.local_now_naive();job.message='Diálogo/ciclo de impresión finalizado; verifica salida en Epson' if status=='SENT' else 'Sin confirmación del navegador; revisa la Epson antes de reimprimir'
-    db.commit();return {'ok':True}
+    db.commit();return state(db,box)
 
 
 @router.post('/{station_id}/jobs/{job_id}/retry')

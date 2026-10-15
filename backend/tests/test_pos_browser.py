@@ -64,3 +64,19 @@ class NativePosTests(unittest.TestCase):
         from app.main import app
         self.assertFalse(any(route.path.startswith(('/api/pos-agent','/sales/auto-preventas')) for route in app.routes))
         self.assertTrue(any(route.path.startswith('/sales/automatico-pos') for route in app.routes))
+
+    def test_completed_print_is_removed_from_live_queue_not_history(self):
+        sale,job=self.invoice();claim=native.claim(self.station.id,self.request(),self.db,self.user)['job']
+        result=asyncio.run(native.ack(self.station.id,job.id,self.request({'claim_id':claim['claim_id'],'status':'SENT'}),self.db,self.user))
+        self.assertEqual(result['tasks'],[]);self.assertIn(sale.id,result['completed_preventa_ids'])
+        self.assertEqual(native.state(self.db,self.station)['tasks'],[])
+        self.assertEqual(self.db.query(VentaFactura).count(),1);self.assertEqual(self.db.query(PosAutoTask).one().status,'FACTURADA');self.assertEqual(self.db.query(PosPrintJob).one().status,'SENT')
+
+    def test_notification_checks_whether_preventa_is_still_pending(self):
+        from app.routers import web
+        sale=self.due();request=self.request();request.scope['query_string']=f'last_id={sale.id}&current_id={sale.id}'.encode()
+        before=web.sales_preventas_notifications_poll(request,self.db,self.user)
+        self.assertTrue(before['current_pending'])
+        asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user))
+        after=web.sales_preventas_notifications_poll(request,self.db,self.user)
+        self.assertFalse(after['current_pending']);self.assertEqual(after['items'],[])

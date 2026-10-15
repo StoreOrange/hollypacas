@@ -1445,7 +1445,23 @@
     return currency === "USD" ? `$ ${formatted}` : `C$ ${formatted}`;
   };
 
+  const finishedPreventaNotices = new Set();
+  const clearPreventaNotice = (id) => {
+    const ident=Number(id)||0;
+    if(!ident)return;
+    finishedPreventaNotices.add(ident);
+    if(Number(preventaLiveInline?.dataset.preventaId)===ident){
+      preventaLiveInline.classList.remove('show');
+      delete preventaLiveInline.dataset.preventaId;
+      if(preventaLiveText)preventaLiveText.textContent='';
+    }
+    const popup=window.Swal?.getPopup?.();
+    if(popup?.classList.contains('swal2-toast')&&Number(popup.dataset.preventaId)===ident)window.Swal.close();
+  };
+  window.addEventListener('holl-preventa-facturada',(event)=>clearPreventaNotice(event.detail?.id));
+
   const showPreventaLiveNotice = (payload) => {
+    if(finishedPreventaNotices.has(Number(payload?.id)))return;
     const numero = payload?.numero || "Nueva preventa";
     const vendedor = payload?.vendedor || "Vendedor";
     const cliente = payload?.cliente || "Consumidor final";
@@ -1455,6 +1471,7 @@
       preventaLiveText.textContent = text;
     }
     if (preventaLiveInline) {
+      preventaLiveInline.dataset.preventaId=String(payload.id);
       preventaLiveInline.classList.add("show");
     }
     if (preventaLiveBtn && payload?.url) {
@@ -1466,6 +1483,7 @@
         position: "bottom-end",
         icon: "success",
         title: "Nueva preventa recibida",
+        didOpen: (popup)=>{popup.dataset.preventaId=String(payload.id);},
         text,
         showConfirmButton: true,
         confirmButtonText: "Ver",
@@ -1518,11 +1536,12 @@
 
   const pollPreventaNotifications = async () => {
     try {
-      const resp = await fetch(`/sales/preventas/notifications/poll?last_id=${encodeURIComponent(String(preventaLastId || 0))}`, {
+      const resp = await fetch(`/sales/preventas/notifications/poll?last_id=${encodeURIComponent(String(preventaLastId || 0))}&current_id=${encodeURIComponent(preventaLiveInline?.dataset.preventaId || "0")}`, {
         headers: { "X-Requested-With": "fetch" },
       });
       if (!resp.ok) return;
       const payload = await resp.json().catch(() => null);
+      if(payload?.current_id && payload.current_pending===false)clearPreventaNotice(payload.current_id);
       const items = Array.isArray(payload?.items) ? payload.items : [];
       items.forEach((item) => {
         if (!item || !item.id) return;

@@ -12814,6 +12814,7 @@ def sales_preventas_notifications_poll(
         .outerjoin(Cliente, Cliente.id == Preventa.cliente_id)
         .filter(
             Preventa.id > last_id,
+            Preventa.venta_factura_id.is_(None),
             Preventa.estado.in_(["PENDIENTE", "REVISION"]),
             Preventa.is_frozen.is_(False),
         )
@@ -12836,7 +12837,15 @@ def sales_preventas_notifications_poll(
                 "url": "/sales/preventas",
             }
         )
-    return {"ok": True, "items": items}
+    current_raw=request.query_params.get('current_id','0')
+    current_id=int(current_raw) if current_raw.isdigit() else 0
+    current_pending=None
+    if current_id:
+        current=db.query(Preventa.id).filter(Preventa.id==current_id,Preventa.estado.in_(['PENDIENTE','REVISION']),Preventa.is_frozen.is_(False),Preventa.venta_factura_id.is_(None))
+        if bodega:current=current.filter(Preventa.bodega_id==bodega.id)
+        elif branch:current=current.filter(Preventa.branch_id==branch.id)
+        current_pending=bool(current.first())
+    return {"ok": True, "items": items,"current_id":current_id,"current_pending":current_pending}
 
 
 @router.get("/m/bodega/preproduccion")
