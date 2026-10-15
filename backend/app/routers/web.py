@@ -12726,7 +12726,7 @@ async def sales_preventas_notifications_stream(
     branch, bodega = _resolve_branch_bodega(db, user)
     branch_id = branch.id if branch else None
     bodega_id = bodega.id if bodega else None
-    release_idle_connection = _is_shoes_mode()
+    release_idle_connection = _is_shoes_mode() or _is_pacasholl_company()
     if release_idle_connection:
         db.close()
     last_id_raw = (request.query_params.get("last_id") or "0").strip()

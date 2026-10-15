@@ -1,6 +1,7 @@
 """Hollpacas: temporizador optativo e impresión nativa, sin endpoints de agente."""
 from datetime import timedelta
 import secrets
+import asyncio
 from fastapi import APIRouter,Depends,Request,HTTPException
 from ..core.deps import get_db
 from ..core import pos_automation as auto
@@ -28,13 +29,11 @@ def state(db,station):
     return {'ok':True,'station_id':station.id,'enabled':station.enabled,'tasks':pending,'completed_preventa_ids':completed}
 
 
-@router.post('/station')
 async def station(request:Request,db=Depends(get_db),user=Depends(web._require_admin_web)):
     result=await station_create(request,db,user)
     return state(db,db.get(PosAutoStation,result['station_id']))
 
 
-@router.post('/{station_id}/enable')
 async def enable(station_id:str,request:Request,db=Depends(get_db),user=Depends(web._require_admin_web)):
     box=browser(request,db,user,station_id);payload=await request.json()
     if not isinstance(payload.get('enabled'),bool):raise HTTPException(400,'Indica activar o desactivar')
@@ -43,7 +42,6 @@ async def enable(station_id:str,request:Request,db=Depends(get_db),user=Depends(
     return state(db,box)
 
 
-@router.post('/{station_id}/tick')
 async def tick(station_id:str,request:Request,db=Depends(get_db),user=Depends(web._require_admin_web)):
     box=browser(request,db,user,station_id);payload=await request.json()
     auto.lock_scope(db,box);now=web.local_now_naive();box.last_tick=now
@@ -68,9 +66,13 @@ async def tick(station_id:str,request:Request,db=Depends(get_db),user=Depends(we
 @router.post('/{station_id}/claim')
 def claim(station_id:str,request:Request,db=Depends(get_db),user=Depends(web._require_admin_web)):
     box=browser(request,db,user,station_id);auto.lock_scope(db,box)
-    if db.query(PosPrintJob.id).filter_by(station_id=box.id,status='DISPATCHED').first():return {'ok':True,'job':None}
+    if db.query(PosPrintJob.id).filter_by(station_id=box.id,status='DISPATCHED').first():
+        db.commit()
+        return {'ok':True,'job':None}
     job=db.query(PosPrintJob).filter_by(station_id=box.id,status='QUEUED').order_by(PosPrintJob.id).with_for_update().first()
-    if not job:return {'ok':True,'job':None}
+    if not job:
+        db.commit()
+        return {'ok':True,'job':None}
     job.status='DISPATCHED';job.claim_id=secrets.token_hex(16);job.dispatched_at=web.local_now_naive();job.message='Impresión solicitada al navegador'
     db.commit()
     return {'ok':True,'job':{'id':job.id,'claim_id':job.claim_id,'url':f'/sales/automatico-pos/{box.id}/jobs/{job.id}/ticket?claim={job.claim_id}'}}
@@ -91,7 +93,6 @@ def ticket(station_id:str,job_id:int,request:Request,db=Depends(get_db),user=Dep
     return result
 
 
-@router.post('/{station_id}/jobs/{job_id}/ack')
 async def ack(station_id:str,job_id:int,request:Request,db=Depends(get_db),user=Depends(web._require_admin_web)):
     box=browser(request,db,user,station_id);payload=await request.json();auto.lock_scope(db,box)
     job=db.query(PosPrintJob).filter_by(id=job_id,station_id=box.id).with_for_update().first()
@@ -103,7 +104,6 @@ async def ack(station_id:str,job_id:int,request:Request,db=Depends(get_db),user=
     db.commit();return state(db,box)
 
 
-@router.post('/{station_id}/jobs/{job_id}/retry')
 async def retry(station_id:str,job_id:int,request:Request,db=Depends(get_db),user=Depends(web._require_admin_web)):
     box=browser(request,db,user,station_id);payload=await request.json();auto.lock_scope(db,box)
     if payload.get('confirmed') is not True:raise HTTPException(400,'Confirma tras revisar la impresora')
@@ -112,3 +112,34 @@ async def retry(station_id:str,job_id:int,request:Request,db=Depends(get_db),use
     if job.status=='QUEUED' or (job.status=='DISPATCHED' and job.dispatched_at and web.local_now_naive()-job.dispatched_at<timedelta(seconds=120)):raise HTTPException(409,'Impresión en curso')
     job.status='QUEUED';job.claim_id=None;job.message='Reimpresión manual de la misma factura';db.commit()
     return state(db,box)
+
+
+# Leer el cuerpo en el loop; ejecutar DB y bloqueos síncronos en el pool de hilos.
+# Esperar pg_advisory_xact_lock dentro del loop detenía también login y navegación.
+async def _json_body(request:Request):
+    return await request.json()
+
+
+@router.post('/station')
+def station_route(request:Request,payload=Depends(_json_body),db=Depends(get_db),user=Depends(web._require_admin_web)):
+    return asyncio.run(station(request,db,user))
+
+
+@router.post('/{station_id}/enable')
+def enable_route(station_id:str,request:Request,payload=Depends(_json_body),db=Depends(get_db),user=Depends(web._require_admin_web)):
+    return asyncio.run(enable(station_id,request,db,user))
+
+
+@router.post('/{station_id}/tick')
+def tick_route(station_id:str,request:Request,payload=Depends(_json_body),db=Depends(get_db),user=Depends(web._require_admin_web)):
+    return asyncio.run(tick(station_id,request,db,user))
+
+
+@router.post('/{station_id}/jobs/{job_id}/ack')
+def ack_route(station_id:str,job_id:int,request:Request,payload=Depends(_json_body),db=Depends(get_db),user=Depends(web._require_admin_web)):
+    return asyncio.run(ack(station_id,job_id,request,db,user))
+
+
+@router.post('/{station_id}/jobs/{job_id}/retry')
+def retry_route(station_id:str,job_id:int,request:Request,payload=Depends(_json_body),db=Depends(get_db),user=Depends(web._require_admin_web)):
+    return asyncio.run(retry(station_id,job_id,request,db,user))

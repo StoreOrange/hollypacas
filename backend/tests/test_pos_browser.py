@@ -80,3 +80,23 @@ class NativePosTests(unittest.TestCase):
         asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user))
         after=web.sales_preventas_notifications_poll(request,self.db,self.user)
         self.assertFalse(after['current_pending']);self.assertEqual(after['items'],[])
+
+    def test_empty_print_queue_releases_transaction_lock(self):
+        from unittest.mock import patch
+        with patch.object(self.db,'commit',wraps=self.db.commit) as commit:
+            result=native.claim(self.station.id,self.request(),self.db,self.user)
+            self.assertIsNone(result['job']);self.assertEqual(commit.call_count,1)
+
+    def test_already_dispatched_claim_releases_transaction_lock(self):
+        from unittest.mock import patch
+        self.invoice();native.claim(self.station.id,self.request(),self.db,self.user)
+        with patch.object(self.db,'commit',wraps=self.db.commit) as commit:
+            result=native.claim(self.station.id,self.request(),self.db,self.user)
+            self.assertIsNone(result['job']);self.assertEqual(commit.call_count,1)
+
+    def test_native_database_routes_use_worker_threads(self):
+        import inspect
+        from app.main import app
+        routes=[route for route in app.routes if route.path.startswith('/sales/automatico-pos')]
+        self.assertGreater(len(routes),5)
+        self.assertTrue(all(not inspect.iscoroutinefunction(route.endpoint) for route in routes))
