@@ -594,6 +594,7 @@
       </div>
       {% endif %}
 
+      {% include "partials/pos_automation.html" %}
       <form id="sales-form" class="rounded-[30px] border border-slate-200 bg-white/90 shadow-2xl p-7 space-y-6 backdrop-blur -mt-4" method="post" action="/sales">
         <input type="hidden" name="operation_key" value="{{ sale_operation_key }}" />
         <div class="sales-command-grid">

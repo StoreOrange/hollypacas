@@ -1,0 +1,16 @@
+Hollpacas - Impresion automatica POS
+
+1. En Windows instala el controlador oficial de tu Epson termica y elige la Epson como impresora predeterminada. Configura el ancho de papel del ticket (normalmente 80 mm) en el controlador. Imprime una prueba de Windows.
+2. Instala Python 3.9 o superior, agregandolo al PATH, y SumatraPDF desde https://www.sumatrapdfreader.org/download-free-pdf-viewer . No hace falta cambiar el visor PDF predeterminado.
+3. Extrae TODO este ZIP. Abre PowerShell en esa carpeta y ejecuta:
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\Instalar.ps1
+   Usa la misma cuenta Windows con la que trabajas en caja. La tarea se ejecuta al iniciar sesion con ese usuario. Si la politica de Windows impide registrar tareas, solicita al administrador de esa PC instalar la tarea para tu cuenta.
+4. Regresa a Ventas en el mismo navegador y usuario que descargo este paquete. El estado debe mostrar Agente conectado y la Epson. Activa el checkbox. No es necesario abrir un puerto ni cambiar el firewall de entrada.
+
+Mantener Windows encendido, sesion Windows iniciada, agente activo, internet y Ventas abierta. El navegador puede retrasar procesos en pestanas en segundo plano: manten Ventas en primer plano para aproximarse a los 40 segundos. La automatizacion pausa mientras hay otra venta en la factura virtual.
+Solo nuevas preventas de esta bodega despues de activar; no toma las antiguas. Se facturan como efectivo C$ por el total. El checkbox autoriza ese registro de cobro: activalo unicamente cuando ese sea el procedimiento real de tu caja.
+
+SENT significa enviado a la cola Windows, NO confirma salida fisica. Sin papel, apagada o atascos deben revisarse en Windows. Si hay un fallo de comunicacion durante el envio, no se reimprime automaticamente: revisa primero la cola y el ticket antes de usar Reimprimir. Esa opcion usa la misma factura, nunca genera otra.
+
+El archivo hollpacas-pos.json contiene una credencial de esta caja: no lo compartas. Volver a descargar el instalador renueva esa credencial y requiere reinstalarlo. El agente esta limitado a obtener tickets de su caja y reportar su estado; no registra ventas ni recibe comandos ejecutables.
+Logs y configuracion: %LOCALAPPDATA%\HollpacasPOS . Para desinstalar, detene/elimina la tarea Hollpacas-POS-... del Programador de tareas y elimina esa carpeta. Desactiva antes el checkbox. Para desvincular un agente, usa Revocar agente desde Ventas.

@@ -14,7 +14,7 @@ from .core.price_lists import PRICE_LIST_LABELS
 from .core.init_db import init_db
 from .database import get_session_local
 from .models.sales import CompanyProfileSetting
-from .routers import attendance, auth, inventory, payroll, web, accounting_workspace, payroll_vacations
+from .routers import attendance, auth, inventory, payroll, web, accounting_workspace, payroll_vacations, pos_automation
 
 
 app = FastAPI(title="ERP System Backend")
@@ -33,6 +33,7 @@ app.include_router(attendance.router)
 app.include_router(attendance.web_router)
 app.include_router(payroll.router)
 app.include_router(payroll_vacations.router)
+app.include_router(pos_automation.router)
 app.include_router(web.router)
 from .routers import shoe_unit_receipts
 app.include_router(shoe_unit_receipts.router)

@@ -1,0 +1,10 @@
+{% if pacasholl_libreado_enabled %}
+<div id="holl-pos-auto" class="border rounded-3 p-3 mb-3 bg-light" data-user="{{ user.id }}" data-bodega="{{ pos_auto_bodega_id or '' }}">
+ <div class="d-flex flex-wrap align-items-center justify-content-between gap-2"><label class="form-check form-switch mb-0"><input type="checkbox" class="form-check-input" id="holl-pos-enabled"><span class="form-check-label fw-bold">Facturar preventas nuevas e imprimir POS · 40 segundos</span></label><span class="badge text-bg-secondary" id="holl-pos-agent">Verificando agente Windows…</span></div>
+ <div class="small text-muted mt-2">Efectivo C$ por el total · Epson predeterminada de esta PC · Mantén Ventas abierta. Se pausa mientras preparas otra venta.</div>
+ <div class="d-flex flex-wrap gap-2 mt-2"><button type="button" id="holl-pos-install" class="btn btn-sm btn-outline-secondary"><i class="bi bi-download me-1"></i>Vincular Epson en Windows</button><button type="button" id="holl-pos-revoke" class="btn btn-sm btn-outline-danger">Revocar agente</button><span class="small align-self-center" id="holl-pos-message" role="status"></span></div>
+ <div id="holl-pos-queue" class="mt-2" aria-live="polite"></div>
+ <details id="holl-pos-last" class="mt-2" hidden><summary class="fw-semibold">Última factura automática</summary><div id="holl-pos-invoice" class="mt-2"></div></details>
+</div>
+<script src="/static/js/pos-automation.js?v=1" defer></script>
+{% endif %}
