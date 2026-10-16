@@ -21,3 +21,9 @@ Referencia técnica Mozilla: https://github.com/mozilla-firefox/firefox/blob/mai
 La consulta tiene tiempo máximo de 8 segundos. Los temporizadores se inician antes de la primera conexión, para que un fallo inicial no impida volver a consultar. Reintenta automáticamente y al regresar a la pestaña; muestra Reconectando mientras no recibe datos. El contador visible usa una fecha límite local que no se extiende con cada respuesta del servidor. Al estar apagado se indica Apagado. El texto junto a Auto POS muestra el contador real cuando hay una preventa pendiente. QA de regresión: `python tests/browser_pos_timer_recovery.py` con app local y Firefox de Playwright; APIs simuladas, sin facturas ni impresiones reales.
 
 La detección se mantiene por consultas cada 2 segundos sin recargar Ventas. Además, la notificación de una preventa solicita una consulta inmediata; recuperar red, foco o página también reanuda la consulta. Las solicitudes no usan caché. El plazo de servidor y el contador son de 15 segundos.
+
+## Contención y consultas de estado
+
+Las consultas de recepción y la entrega/confirmación del ticket bloquean únicamente la fila de su estación. No toman el bloqueo global contable ni la bodega. La facturación conserva la serialización por bodega, el flujo contable existente y las claves contra duplicados; toma los bloqueos en el mismo orden que la venta manual. El estado compacto usa hasta tres consultas, sin cargar líneas/productos/clientes de facturas históricas. El navegador solo pide un ticket si hay un trabajo QUEUED. Las consultas SSE de notificaciones se ejecutan fuera del loop asíncrono y liberan su conexión antes de esperar el siguiente ciclo.
+
+Regresión: `python -m unittest tests.test_pos_browser tests.test_pos_automation`. Incluye consulta lenta de notificaciones sin detener el loop, sondeo sin bloqueo financiero/bodega y límite de consultas del historial.

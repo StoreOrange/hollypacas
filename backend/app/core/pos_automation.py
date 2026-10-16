@@ -12,10 +12,14 @@ DELAY=15
 
 
 def lock_scope(db,station):
-    from ..routers import web
-    web._lock_accounting_transaction(db)
+    # Mismo orden que la venta manual: bodega antes de registrar contabilidad.
     db.query(Bodega).filter_by(id=station.bodega_id).with_for_update().one()
     db.refresh(station)
+
+
+def lock_station(db,station):
+    """La cola/impresión solo serializa su estación; no bloquea ventas ni contabilidad."""
+    db.query(PosAutoStation).filter_by(id=station.id).populate_existing().with_for_update().one()
 
 
 def online(station,now):

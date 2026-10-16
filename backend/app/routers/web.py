@@ -12722,6 +12722,7 @@ async def sales_preventas_notifications_stream(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
+    from starlette.concurrency import run_in_threadpool
     _enforce_permission(request, user, "access.sales")
     branch, bodega = _resolve_branch_bodega(db, user)
     branch_id = branch.id if branch else None
@@ -12732,6 +12733,32 @@ async def sales_preventas_notifications_stream(
     last_id_raw = (request.query_params.get("last_id") or "0").strip()
     last_id = int(last_id_raw) if last_id_raw.isdigit() else 0
 
+    def load_notifications():
+        # DB síncrona fuera del loop: una consulta lenta no congela web/móvil.
+        try:
+            query = (
+                db.query(
+                    Preventa.id,
+                    Preventa.numero,
+                    Preventa.fecha,
+                    Vendedor.nombre.label("vendedor_nombre"),
+                    Cliente.nombre.label("cliente_nombre"),
+                )
+                .join(Vendedor, Vendedor.id == Preventa.vendedor_id)
+                .outerjoin(Cliente, Cliente.id == Preventa.cliente_id)
+                .filter(Preventa.estado == "PENDIENTE", Preventa.id > last_id, Preventa.is_frozen.is_(False))
+                .order_by(Preventa.id.asc())
+            )
+            if bodega_id:
+                query = query.filter(Preventa.bodega_id == bodega_id)
+            elif branch_id:
+                query = query.filter(Preventa.branch_id == branch_id)
+
+            rows = query.limit(10).all()
+            return rows
+        finally:
+            db.close()
+
     async def event_stream():
         nonlocal last_id
         headers_payload = {"ok": True}
@@ -12740,27 +12767,7 @@ async def sales_preventas_notifications_stream(
             if await request.is_disconnected():
                 break
             try:
-                query = (
-                    db.query(
-                        Preventa.id,
-                        Preventa.numero,
-                        Preventa.fecha,
-                        Vendedor.nombre.label("vendedor_nombre"),
-                        Cliente.nombre.label("cliente_nombre"),
-                    )
-                    .join(Vendedor, Vendedor.id == Preventa.vendedor_id)
-                    .outerjoin(Cliente, Cliente.id == Preventa.cliente_id)
-                    .filter(Preventa.estado == "PENDIENTE", Preventa.id > last_id, Preventa.is_frozen.is_(False))
-                    .order_by(Preventa.id.asc())
-                )
-                if bodega_id:
-                    query = query.filter(Preventa.bodega_id == bodega_id)
-                elif branch_id:
-                    query = query.filter(Preventa.branch_id == branch_id)
-
-                rows = query.limit(10).all()
-                if release_idle_connection:
-                    db.close()
+                rows = await run_in_threadpool(load_notifications)
                 for row in rows:
                     last_id = max(last_id, int(row.id or 0))
                     payload = {

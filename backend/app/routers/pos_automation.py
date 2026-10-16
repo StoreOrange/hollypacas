@@ -64,7 +64,8 @@ async def station_create(request:Request,db=Depends(get_db),user=Depends(web._re
     if not re.fullmatch('[0-9a-f]{32}',ident):raise HTTPException(400,'Identificador de caja inválido')
     branch,bodega=web._resolve_branch_bodega(db,user)
     if not branch or not bodega:raise HTTPException(400,'Selecciona sucursal y bodega de caja')
-    web._lock_accounting_transaction(db)
+    from ..models.inventory import Bodega
+    db.query(Bodega).filter_by(id=bodega.id).with_for_update().one()
     station=db.get(PosAutoStation,ident)
     if station:station=browser(request,db,user,ident)
     else:

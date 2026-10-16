@@ -100,3 +100,47 @@ class NativePosTests(unittest.TestCase):
         routes=[route for route in app.routes if route.path.startswith('/sales/automatico-pos')]
         self.assertGreater(len(routes),5)
         self.assertTrue(all(not inspect.iscoroutinefunction(route.endpoint) for route in routes))
+
+    def test_idle_poll_and_claim_do_not_take_financial_or_inventory_lock(self):
+        from unittest.mock import patch
+        with patch.object(native.auto,'lock_scope',side_effect=AssertionError('No debe bloquear la bodega')), patch.object(fixture.web,'_lock_accounting_transaction',side_effect=AssertionError('No debe bloquear contabilidad')):
+            asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user))
+            self.assertIsNone(native.claim(self.station.id,self.request(),self.db,self.user)['job'])
+
+    def test_completed_history_state_uses_three_queries_without_product_details(self):
+        from sqlalchemy import event
+        sale,job=self.invoice();job.status='SENT';self.db.commit()
+        queries=[]
+        def record(conn,cursor,statement,parameters,context,executemany):queries.append(statement)
+        self.db.refresh(self.station)
+        event.listen(self.engine,'before_cursor_execute',record)
+        try:result=native.state(self.db,self.station)
+        finally:event.remove(self.engine,'before_cursor_execute',record)
+        self.assertEqual(result['tasks'],[]);self.assertIn(sale.id,result['completed_preventa_ids'])
+        self.assertEqual(len(queries),3,queries)
+        self.assertFalse(any('ventas_factura_items' in q or 'productos.' in q for q in queries))
+
+    def test_notification_database_wait_does_not_block_async_loop(self):
+        import time,threading
+        from unittest.mock import MagicMock,patch,AsyncMock
+        db=MagicMock();query=MagicMock()
+        db.query.return_value=query
+        for method in ('join','outerjoin','filter','order_by','limit'):getattr(query,method).return_value=query
+        threads=[]
+        def slow_query():
+            threads.append(threading.get_ident());time.sleep(.15);return []
+        query.all.side_effect=slow_query
+        request=self.request();request.is_disconnected=AsyncMock(return_value=False)
+        async def verify():
+            with patch.object(fixture.web,'_resolve_branch_bodega',return_value=(None,None)),patch.object(fixture.web,'_enforce_permission'):
+                response=await fixture.web.sales_preventas_notifications_stream(request,db,self.user)
+                iterator=response.body_iterator
+                await iterator.__anext__()
+                pending=asyncio.create_task(iterator.__anext__())
+                started=time.monotonic();await asyncio.sleep(.03)
+                self.assertLess(time.monotonic()-started,.12)
+                self.assertFalse(pending.done())
+                self.assertIn('event: ping',await pending)
+                await iterator.aclose()
+        asyncio.run(verify())
+        self.assertTrue(threads);self.assertNotEqual(threads[0],threading.get_ident());db.close.assert_called()
