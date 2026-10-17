@@ -32,7 +32,7 @@ try:
   assert page.locator('.moto-trip').count()==0
   assert db.query(AccountingEntry).count()==entry_count and db.query(ReciboCaja).count()==0 and db.query(CajaDiaria).count()==0
   user[0]=case.case.user;page.goto('http://127.0.0.1:8018/motorizado');assert page.locator('.moto-trip').count()==0
-  page.get_by_role('link',name='Reporte de cierres').click();page.wait_for_url('**view=cierres')
+  page.get_by_role('link',name='Cierres').click();page.wait_for_url('**view=cierres')
   assert 'Cierre #1' in page.locator('.moto-trip-id').inner_text().title()
   page.locator('.moto-history summary').click();assert 'Viaje #1' in page.locator('.moto-closure-lines').inner_text()
   assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth')

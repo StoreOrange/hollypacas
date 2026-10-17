@@ -64,7 +64,7 @@ def home(request:Request,db=Depends(get_db),user=Depends(access)):
         else:query=query.filter(MotoTrip.rider_id==user.id) if 'motorizado' in names else query.filter(MotoTrip.id<0)
     seller=request.query_params.get('seller','');rider=request.query_params.get('rider','');status=request.query_params.get('status','')
     if seller.isdigit():query=query.filter(MotoTrip.seller_id==int(seller))
-    if rider.isdigit() and admin:query=query.filter(MotoTrip.rider_id==int(rider))
+    if rider.isdigit() and (admin or 'vendedor' in names):query=query.filter(MotoTrip.rider_id==int(rider))
     if status in {'PENDIENTE','ENTREGADO','RECIBIDO','ANULADO'}:query=query.filter(MotoTrip.status==status)
     count,total,delivered,pending,canceled=query.with_entities(func.count(MotoTrip.id),func.coalesce(func.sum(case((MotoTrip.status!='ANULADO',MotoTrip.amount_cs),else_=0)),0),func.coalesce(func.sum(case((MotoTrip.status.in_(['ENTREGADO','RECIBIDO']),1),else_=0)),0),func.coalesce(func.sum(case((MotoTrip.status=='PENDIENTE',1),else_=0)),0),func.coalesce(func.sum(case((MotoTrip.status=='ANULADO',MotoTrip.amount_cs),else_=0)),0)).one()
     pages=max(1,(count+29)//30);page=min(page,pages)
@@ -78,7 +78,10 @@ def home(request:Request,db=Depends(get_db),user=Depends(access)):
             func.coalesce(func.sum(MotoTrip.amount_cs),0).label('registered_total'),
             func.coalesce(func.sum(case((MotoTrip.status=='ANULADO',MotoTrip.amount_cs),else_=0)),0).label('canceled')
         ).group_by(User.id,User.full_name,User.email,Vendedor.id,Vendedor.nombre).order_by(User.full_name,Vendedor.nombre).all()
-    context={'request':request,'user':user,'today':today,'trips':trips,'summary':dict(count=count,total=total,registered_total=total+canceled,delivered=delivered,pending=pending,canceled=canceled),'costs':costs,'history_groups':history_groups,'view':view,'history':history,'admin':admin,'can_create':'motorizado' in names,'is_seller':'vendedor' in names,'seller_can':service.seller_can,'page':page,'pages':pages,'start':start,'end':end,'csrf':csrf(request,user),'token':uuid4().hex,'destinations':service.DESTINATIONS,'selected_seller':seller,'selected_rider':rider,'selected_status':status,'sidebar_role_label':'Administrador' if admin else 'Motorizado' if 'motorizado' in names else 'Vendedor'}
+    rider_groups=[]
+    if not history and not admin and 'vendedor' in names and user.vendedor_id:
+        rider_groups=query.join(User,User.id==MotoTrip.rider_id).with_entities(User.id.label('rider_id'),func.coalesce(func.nullif(User.full_name,''),User.email).label('rider'),func.count(MotoTrip.id).label('count'),func.coalesce(func.sum(case((MotoTrip.status!='ANULADO',MotoTrip.amount_cs),else_=0)),0).label('total')).group_by(User.id,User.full_name,User.email).order_by(User.full_name).all()
+    context={'request':request,'user':user,'today':today,'trips':trips,'summary':dict(count=count,total=total,registered_total=total+canceled,delivered=delivered,pending=pending,canceled=canceled),'costs':costs,'rider_groups':rider_groups,'history_groups':history_groups,'view':view,'history':history,'admin':admin,'can_create':'motorizado' in names,'is_seller':'vendedor' in names,'seller_can':service.seller_can,'page':page,'pages':pages,'start':start,'end':end,'csrf':csrf(request,user),'token':uuid4().hex,'destinations':service.DESTINATIONS,'selected_seller':seller,'selected_rider':rider,'selected_status':status,'sidebar_role_label':'Administrador' if admin else 'Motorizado' if 'motorizado' in names else 'Vendedor'}
     context['close_tokens']={trip.id:uuid4().hex for trip in trips}
     groups={}
     if 'vendedor' in names and user.vendedor_id:
@@ -91,7 +94,10 @@ def home(request:Request,db=Depends(get_db),user=Depends(access)):
     if request.headers.get('X-Moto-Fragment')=='1':return request.app.state.templates.TemplateResponse('partials/motorizado_results.html',context,headers={'Cache-Control':'no-store'})
     branch,warehouse=web._resolve_branch_bodega(db,user)
     journals=service.bank_journals(db,branch.id) if branch else []
-    context.update(sellers=db.query(Vendedor).filter_by(activo=True).order_by(Vendedor.nombre).all(),filter_sellers=db.query(Vendedor).filter(Vendedor.id.in_(service.scope(db,user,db.query(MotoTrip.seller_id)))).order_by(Vendedor.nombre).all() if not admin else db.query(Vendedor).order_by(Vendedor.nombre).all(),riders=db.query(User).join(User.roles).filter(web.Role.name=='motorizado',User.is_active.is_(True)).order_by(User.full_name).all() if admin else [],journals=journals,warehouse=warehouse,transport_ready=bool(db.query(CuentaContable.id).filter_by(codigo='6104',activo=True,tipo='RESULTADO',naturaleza='DEBE').first()))
+    if admin:rider_filter=db.query(User).join(User.roles).filter(web.Role.name=='motorizado',User.is_active.is_(True)).order_by(User.full_name).all()
+    elif 'vendedor' in names and user.vendedor_id:rider_filter=db.query(User).filter(User.id.in_(service.scope(db,user,db.query(MotoTrip.rider_id)))).order_by(User.full_name).all()
+    else:rider_filter=[]
+    context.update(sellers=db.query(Vendedor).filter_by(activo=True).order_by(Vendedor.nombre).all(),filter_sellers=db.query(Vendedor).filter(Vendedor.id.in_(service.scope(db,user,db.query(MotoTrip.seller_id)))).order_by(Vendedor.nombre).all() if not admin else db.query(Vendedor).order_by(Vendedor.nombre).all(),riders=rider_filter,journals=journals,warehouse=warehouse,transport_ready=bool(db.query(CuentaContable.id).filter_by(codigo='6104',activo=True,tipo='RESULTADO',naturaleza='DEBE').first()))
     return request.app.state.templates.TemplateResponse('motorizado.html',context,headers={'Cache-Control':'no-store'})
 
 
