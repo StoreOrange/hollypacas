@@ -408,6 +408,7 @@ def _allowed_theme_codes() -> set[str]:
     return {item["code"] for item in THEME_OPTIONS}
 
 SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
+    {"id":"motorizado","label":"Motorizado","href":"/motorizado","icon":"bi-moto-delivery","perm":"menu.motorizado","alt_perm":None,"hollpacas_only":True},
     {"id": "home", "label": "Panel", "href": "/home", "icon": "bi-speedometer2", "perm": "menu.home", "alt_perm": None},
     {"id": "sales", "label": "Ventas", "href": "/sales", "icon": "bi-cart-check-fill", "perm": "menu.sales", "alt_perm": None},
     {"id": "sales_caliente", "label": "Ventas en Caliente", "href": "/sales/ventas-caliente", "icon": "bi-activity", "perm": "menu.sales.caliente", "alt_perm": None},
@@ -582,7 +583,13 @@ def _get_user_from_cookie(request: Request, db: Session) -> Optional[User]:
     return db.query(User).filter(func.lower(User.email) == email.lower()).first()
 
 
+def _restricted_motorizado(user: User) -> bool:
+    from ..core.motorizado_access import restricted
+    return restricted(user,company=_is_pacasholl_company())
+
+
 def _permission_names(user: User) -> set[str]:
+    if _restricted_motorizado(user):return {"menu.motorizado"}
     names = {perm.name for perm in (user.permissions or [])}
     if _is_shoes_mode() and any(role.name == "cajero" for role in user.roles or []):
         names.update({"menu.inventory.traslados", "access.inventory.traslados", "menu.sales.devoluciones", "access.sales.devoluciones"})
@@ -592,13 +599,17 @@ def _permission_names(user: User) -> set[str]:
 
 
 def _has_permission(user: User, perm: str) -> bool:
+    if _restricted_motorizado(user):return perm == "menu.motorizado"
     if any(role.name == "administrador" for role in user.roles or []):
         return True
     return perm in _permission_names(user)
 
 
 def _set_request_permissions(request: Request, user: User) -> None:
-    if any(role.name == "administrador" for role in user.roles or []):
+    request.state.motorizado_only = _restricted_motorizado(user)
+    if request.state.motorizado_only:
+        perm_names = {"menu.motorizado"}
+    elif any(role.name == "administrador" for role in user.roles or []):
         perm_names = _permission_catalog_names()
     else:
         perm_names = _permission_names(user)
@@ -743,6 +754,7 @@ PERMISSION_GROUPS = [
         "title": "Menus principales (visibilidad)",
         "items": [
             {"name": "menu.home", "label": "Panel principal"},
+            {"name": "menu.motorizado", "label": "Motorizado (Pacas Holl)"},
             {"name": "menu.sales", "label": "Ventas"},
             {"name": "menu.sales.caliente", "label": "Ventas en caliente"},
             {"name": "menu.inventory", "label": "Inventarios"},
@@ -4214,7 +4226,7 @@ def login_action(
     # Hollpacas: cookie persistente y JWT con la misma vigencia.
     expires = timedelta(days=90 if _is_pacasholl_company() else 365)
     token = create_access_token({"sub": user.email}, expires_delta=expires)
-    response = RedirectResponse("/sales" if _is_shoes_mode() else "/home", status_code=302)
+    response = RedirectResponse("/motorizado" if _is_pacasholl_company() and any(role.name == "motorizado" for role in user.roles) else "/sales" if _is_shoes_mode() else "/home", status_code=302)
     if _is_pacasholl_company():
         from ..core.browser_session import persist_browser_session
         persist_browser_session(response,request,token,expires)

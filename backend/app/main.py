@@ -14,7 +14,7 @@ from .core.price_lists import PRICE_LIST_LABELS
 from .core.init_db import init_db
 from .database import get_session_local
 from .models.sales import CompanyProfileSetting
-from .routers import attendance, auth, inventory, payroll, web, accounting_workspace, payroll_vacations, pos_browser
+from .routers import attendance, auth, inventory, payroll, web, accounting_workspace, payroll_vacations, pos_browser, motorizado
 
 
 app = FastAPI(title="ERP System Backend")
@@ -34,6 +34,7 @@ app.include_router(attendance.web_router)
 app.include_router(payroll.router)
 app.include_router(payroll_vacations.router)
 app.include_router(pos_browser.router)
+app.include_router(motorizado.router)
 app.include_router(web.router)
 from .routers import shoe_unit_receipts
 app.include_router(shoe_unit_receipts.router)
@@ -199,6 +200,11 @@ async def attach_branding(request, call_next):
     request.state.branding = branding
     request.state.menu_links = menu_links
     return await call_next(request)
+
+
+# Se ejecuta antes del branding y de cualquier ruta, incluidas las APIs.
+from .core.motorizado_access import enforce_scope
+app.middleware("http")(enforce_scope)
 
 
 @app.on_event("startup")

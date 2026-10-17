@@ -809,13 +809,14 @@
         }
       }
     </style>
+    <style>.bi-moto-delivery::before{content:""!important;display:inline-block!important;width:1.5em;height:1em;background:currentColor;-webkit-mask:url('/static/icons/moto-delivery.svg') center/contain no-repeat;mask:url('/static/icons/moto-delivery.svg') center/contain no-repeat;vertical-align:-.08em}</style>
     {% block extra_head %}{% endblock %}
   </head>
   <body class="{% if request and request.url and request.url.path != '/login' %}mobile-with-global-nav{% endif %} company-{{ company_key }}">
     {% block content %}{% endblock %}
     {% if request and request.url and request.url.path != '/login' %}
     <div class="mobile-global-nav d-lg-none" aria-label="Navegacion movil">
-      <a href="/home" class="mobile-global-nav__home" aria-label="Ir al inicio">
+      <a href="{{ "/motorizado" if request.state.motorizado_only else "/home" }}" class="mobile-global-nav__home" aria-label="Ir al inicio">
         <i class="bi bi-house-door-fill"></i>
         <span>Inicio</span>
       </a>

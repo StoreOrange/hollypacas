@@ -875,6 +875,10 @@
         </a>
       </div>
     </div>
+    {% if branding.get('company_key') in ['hollywood_pacas','pacasholl','hollpacas'] and user.roles|selectattr('name', 'in', ['vendedor','administrador'])|list|length > 0 %}
+    <a href="/motorizado?view=costos" class="btn btn-light w-100 mt-3 d-flex justify-content-between align-items-center" id="seller-moto-access"><span><i class="bi bi-moto-delivery me-2"></i> Mis envíos y costos de transporte</span><i class="bi bi-chevron-right"></i></a>
+    {% endif %}
+
     <div class="app-meta-row">
       <div class="app-brand-chip">
         <img src="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="{{ branding.get('trade_name', 'Empresa') }}">

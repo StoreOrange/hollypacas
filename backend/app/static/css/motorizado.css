@@ -1,0 +1,186 @@
+.moto-app{max-width:1250px;margin:0 auto;color:#172d37;padding-bottom:28px}.moto-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}.moto-eyebrow{font-size:11px;font-weight:800;letter-spacing:2px;color:#5a7e79}.moto-header h1{font-size:32px;font-weight:800;letter-spacing:-1px;margin:8px 0}.moto-header p,.moto-muted{color:#687e85}.moto-header p{margin:0}.moto-primary{background:#176454;color:#fff;border:1px solid #176454;border-radius:12px;padding:12px 18px;font-weight:700;white-space:nowrap}.moto-primary:hover{background:#104c40;color:#fff}.moto-panel{background:#fff;border:1px solid #e0e9e7;padding:22px;border-radius:18px;margin-bottom:20px;box-shadow:0 5px 20px #1c453306}.moto-panel h2,.moto-list-heading h2{font-size:18px;font-weight:750;margin:0 0 14px}.moto-app label{font-size:14px;font-weight:650;margin-bottom:7px}.moto-app .form-control,.moto-app .form-select{min-height:46px;border-radius:10px;border-color:#ceddd9;font-size:16px}.moto-app .form-control:focus,.moto-app .form-select:focus{border-color:#278b77;box-shadow:0 0 0 3px #278b771c}.moto-money-note{font-size:13px;color:#176454}.moto-amount{font-weight:750;font-size:22px!important}.moto-entry{border-top:4px solid #237766}.moto-tabs{display:flex;gap:8px;margin-bottom:18px}.moto-tabs a{padding:10px 16px;border-radius:12px;color:#5d7479;text-decoration:none;font-weight:650}.moto-tabs a.active{color:#155b4c;background:#e5f2ed}.moto-stats{display:grid;grid-template-columns:1fr 1.6fr 1fr 1fr;gap:12px;margin:20px 0 26px}.moto-stats article{background:#fff;border:1px solid #e0e9e7;border-radius:16px;padding:19px;display:flex;flex-direction:column;gap:12px}.moto-stats article>span{font-size:13px;color:#647a80}.moto-stats strong{font-size:28px;line-height:1.1;letter-spacing:-.5px}.moto-stats small{font-size:11px;color:#68877d}.moto-stats .moto-stat-money{background:#eaf5ef;border-color:#c4e4d2;color:#155e45}.moto-list-heading{display:flex;justify-content:space-between;align-items:baseline;gap:10px}.moto-list-heading>span{font-size:12px}.moto-trip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.moto-trip{padding:22px;background:#fff;border:1px solid #dfe9e5;border-radius:18px;min-width:0;box-shadow:0 7px 24px #244b3906}.moto-trip header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:17px}.moto-trip-id{font-size:10px;font-weight:750;letter-spacing:.5px;color:#71848a}.moto-status{font-size:11px;font-weight:750;border-radius:20px;padding:6px 9px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.moto-pendiente{background:#fff0ed;color:#bc4839}.moto-entregado{background:#e5f6e8;color:#1e793b}.moto-recibido{background:#e4f2f9;color:#266984}.moto-anulado{background:#edf0f2;color:#69767d}.moto-dot{width:7px;height:7px;border-radius:50%;background:currentColor}.moto-pendiente .moto-dot,.moto-entregado .moto-dot{animation:moto-pulse 1.9s infinite}.moto-trip h3{font-size:19px;font-weight:750;line-height:1.4;overflow-wrap:anywhere}.moto-trip h3 i{color:#39836f}.moto-trip-people{display:grid;gap:5px;color:#677f83;font-size:13px;margin:15px 0}.moto-trip-people i{margin-right:5px}.moto-trip-price{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:17px 0}.moto-trip-price strong{font-size:25px;letter-spacing:-.6px}.moto-trip-price small{font-size:11px;color:#7c8b8f}.moto-comment{padding:11px;background:#f6f8f7;border-radius:10px;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}.moto-help{font-size:12px;color:#39836f}.moto-actions>.moto-cancel{margin:12px 0}.moto-actions .btn{border-radius:10px;min-height:44px;font-weight:650}.moto-history{margin-top:18px;border-top:1px solid #edf1ef;padding-top:14px}.moto-history summary,.moto-cancel summary{font-size:12px;font-weight:600;color:#67807a;cursor:pointer;min-height:26px}.moto-cancel summary{color:#b35348}.moto-refund{display:flex;gap:8px;align-items:start;font-size:12px!important}.moto-refund input{width:18px;height:18px;flex-shrink:0;margin-top:1px}.moto-timeline{margin:16px 0}.moto-timeline>div{display:flex;gap:12px;margin-bottom:14px}.moto-timeline>div>i{font-size:7px;color:#75a697;padding-top:5px}.moto-timeline strong{font-size:12px;display:block}.moto-timeline small{font-size:10px;color:#859398;display:block;margin-top:4px}.moto-timeline p{font-size:12px;margin:5px 0;white-space:pre-wrap;overflow-wrap:anywhere}.moto-void{background:#fafbfb;border-style:dashed}.moto-empty{grid-column:1/-1;text-align:center;padding:55px 20px;border:1px dashed #c5d7cf;border-radius:18px;color:#6c8480}.moto-empty>i{font-size:35px}.moto-empty h3{font-size:18px;margin-top:12px}.moto-empty p{font-size:13px}.moto-costs>div{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid #edf1ef;gap:15px}.moto-costs small{display:block;color:#879793;font-size:12px;margin-top:4px}.moto-pagination{display:flex;justify-content:center;align-items:center;gap:18px;margin-top:25px;font-size:13px}@keyframes moto-pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 currentColor}50%{opacity:.45;box-shadow:0 0 0 3px transparent}}@media(prefers-reduced-motion:reduce){.moto-dot{animation:none!important}}@media(max-width:767px){.moto-header{align-items:flex-start}.moto-header h1{font-size:26px}.moto-header p{font-size:13px}.moto-header .moto-primary{font-size:12px;padding:11px 12px;margin-top:25px}.moto-panel{padding:16px;border-radius:14px}.moto-stats{grid-template-columns:1fr 1fr;gap:9px}.moto-stats article{padding:14px;gap:9px}.moto-stats strong{font-size:24px}.moto-stats article>span{font-size:11px}.moto-stat-money{grid-column:2;grid-row:1}.moto-trip-grid{grid-template-columns:1fr}.moto-trip{padding:18px}.moto-list-heading{align-items:start;flex-direction:column;gap:0;margin-bottom:14px}.moto-list-heading h2{margin-bottom:5px}.moto-tabs a{font-size:13px;padding:9px 12px}}
+
+.moto-filters>summary{font-weight:700;font-size:14px;color:#3c665b;cursor:pointer;min-height:28px}.moto-filters>summary>span{float:right;font-size:11px;font-weight:500;color:#7c928c}.moto-filters[open]>summary{margin-bottom:18px}.moto-app{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.moto-app p{font-family:inherit}@media(max-width:767px){.moto-app{padding-left:8px;padding-right:8px}.moto-filters>summary>span{float:none;display:block;margin-top:5px;margin-left:19px}.moto-filters{padding-top:13px;padding-bottom:13px}}
+
+.moto-workspace{min-width:0;padding:28px 22px}@media(max-width:767px){.moto-workspace{padding:8px 0}}
+.moto-evidence{margin-top:15px;padding-top:13px;border-top:1px solid #e8eeeb}.moto-evidence summary{cursor:pointer;color:#3d7663;font-size:13px;font-weight:650;min-height:28px}.moto-photo-grid,.moto-photo-preview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:14px 0}.moto-photo-grid img,.moto-photo-preview img{width:100%;height:100px;object-fit:cover;border:1px solid #dce6e1;border-radius:9px}.moto-photo-grid a{min-width:0;text-decoration:none}.moto-photo-grid span{font-size:9px;color:#6d857c;display:block;margin-top:4px}.moto-upload small{display:block;margin-top:7px;font-size:11px}.moto-upload label{font-size:12px}.moto-photo-preview:empty{display:none}.moto-evidence .form-control{font-size:13px}
+.moto-history-switch{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px}.moto-history-switch .btn{font-size:13px;border-radius:10px}.moto-history-context{font-size:12px;color:#658276;margin-top:12px}.moto-app .select2-container .select2-selection--single{min-height:46px;border:1px solid #ceddd9;border-radius:10px}.moto-app .select2-container .select2-selection__rendered{line-height:44px;padding-left:12px;font-size:16px}.moto-app .select2-container .select2-selection__arrow{height:44px}.select2-dropdown{border-color:#8cb8a7!important;border-radius:10px!important;overflow:hidden}.select2-search--dropdown .select2-search__field{font-size:16px;min-height:42px;border-radius:7px;padding:8px!important}.select2-results__options{max-height:220px!important}.select2-results__option{font-size:15px;padding:10px!important}
+.moto-cerrado{background:#e4f0fa;color:#276b96}.moto-pay-group{padding:15px 0;border-bottom:1px solid #e5eeea}.moto-pay-group>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;font-size:15px;color:#226c54}.moto-pay-group>summary small{display:block;font-size:11px;color:#7a9086;margin-top:5px}.moto-pay-single{margin-top:15px;border:1px solid #cce5d6;background:#f3faf6;padding:12px;border-radius:10px}.moto-pay-single>summary{font-size:13px;font-weight:650;color:#23714f;cursor:pointer}.moto-closure-lines>div{display:flex;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid #edf1ef;font-size:12px}.moto-closure-lines small{display:block;color:#7d9188;margin-top:4px}.moto-closure-stats{grid-template-columns:1fr 1.6fr 1fr}@media(max-width:767px){.moto-closure-stats{grid-template-columns:1fr 1fr}.moto-closure-stats article:last-child{grid-column:1/-1}}
+
+.moto-close-preview{max-height:240px;overflow-y:auto;margin-top:12px;padding:0 8px;background:#f8fbf9;border-radius:9px}
+
+.moto-history-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px}.moto-history-group{padding:16px;border:1px solid #e2e8f0;border-radius:16px;background:#f8fafc;min-width:0}.moto-history-group h3{font-size:1rem;margin:0 0 6px;overflow-wrap:anywhere}.moto-history-group p{margin:0 0 14px;color:#64748b;overflow-wrap:anywhere}.moto-group-totals{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.moto-group-totals span{font-size:.8rem;color:#64748b}.moto-group-totals strong{display:block;font-size:1.25rem;color:#0f172a;margin-top:4px}.moto-history-group>small{display:block;margin-top:12px}
+
+.moto-history-grand-total{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:16px;padding:18px;border-radius:14px;background:#e9e5fa;color:#302252;font-size:1.05rem}.moto-history-grand-total strong{font-weight:800}.moto-history-grand-total strong:last-child{font-size:1.45rem}.moto-seller-detail{display:inline-block;color:#6241a3;text-decoration:none;font-weight:700}.moto-seller-detail:hover{text-decoration:underline}.moto-seller-detail small{display:block;font-size:.78rem;font-weight:400;margin-top:4px}.moto-seller-detail:focus-visible{outline:3px solid #b28aec;outline-offset:4px;border-radius:4px}#moto-trip-details{scroll-margin-top:90px}
+
+/* Controles cómodos para usar el módulo con una mano. */
+.moto-app :is(button,a,input,select,textarea,summary){touch-action:manipulation;-webkit-tap-highlight-color:#d8eee5}.moto-app .btn,.moto-tabs a{min-height:48px;display:inline-flex;align-items:center;justify-content:center;gap:7px}.moto-app summary{min-height:48px;align-content:center}.moto-app :is(button,a,summary):focus-visible{outline:3px solid #9168cf;outline-offset:3px}.moto-history-switch{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:6px;border:1px solid #dbe8e1;border-radius:16px;background:#fff}.moto-history-switch .btn{font-weight:700;font-size:14px;padding:10px 8px}.moto-quick-dates{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.moto-quick-dates button{min-height:46px;flex:1;border:1px solid #c9dbd2;border-radius:12px;background:#f1f7f4;color:#205a47;font-weight:700;padding:10px 16px}.moto-quick-dates button:active{background:#d7ebdf;transform:scale(.98)}.moto-history-group{background:#fff;border-color:#d9e6df;box-shadow:0 3px 12px #153c2307}.moto-seller-detail{display:block;padding:14px;border-radius:12px;background:#f0ebfa;min-height:64px;font-size:17px}.moto-seller-detail .bi-chevron-right{float:right;margin-top:4px}.moto-seller-detail:active{background:#e2d7f4}.moto-group-totals{padding:4px 2px}.moto-group-totals strong{font-size:1.45rem}.moto-app .moto-refund{min-height:48px;align-items:center;font-size:14px!important}.moto-refund input{width:24px;height:24px}.moto-status{font-size:12px;padding:9px 11px}.moto-history summary,.moto-evidence summary,.moto-cancel summary{font-size:14px}.moto-trip-id{font-size:12px}.moto-trip-people{font-size:15px;gap:10px}.moto-history-grand-total{border:2px solid #d8c9ed}.moto-history-grand-total strong:last-child{font-size:1.7rem}
+@media(max-width:767px){.moto-header{flex-wrap:wrap;margin-bottom:16px}.moto-header>div{flex:1;min-width:200px}.moto-header .moto-primary{width:100%;margin-top:0;font-size:16px;min-height:52px}.moto-header p{font-size:15px}.moto-stats{margin:14px 0 20px}.moto-stats article>span{font-size:13px}.moto-stats strong{font-size:26px;overflow-wrap:anywhere}.moto-stats .moto-stat-money{grid-column:1/-1;grid-row:1}.moto-stat-money strong{font-size:34px}.moto-stats article:last-child{grid-column:1/-1}.moto-history-switch .btn{flex-direction:column;gap:4px;font-size:12px;line-height:1.3}.moto-history-switch .bi{font-size:20px}.moto-history-grand-total{display:grid;grid-template-columns:1fr;gap:6px;padding:20px}.moto-history-grand-total strong:nth-child(2){font-size:14px}.moto-trip-price strong{font-size:29px}.moto-trip-price small{font-size:13px}.moto-panel h2,.moto-list-heading h2{font-size:20px;line-height:1.4}.moto-filters>summary{font-size:16px}.moto-timeline strong{font-size:14px}.moto-timeline small{font-size:12px}.moto-app .moto-evidence .form-control{font-size:16px}.moto-pagination .btn{min-width:90px}.moto-tabs a{flex:1}.moto-closure-stats article:last-child{grid-column:1/-1}}
+
+/* ============================================================
+   Motorizado · Capa de interfaz moderna (v8)
+   Tokens, motion suave y acabado premium. Sobreescribe la base.
+   ============================================================ */
+.moto-app{
+  --m-brand:#0d6b4e;--m-brand-600:#0a5340;--m-brand-700:#07402f;
+  --m-mint:#e9f5ef;--m-line:#dfe9e4;--m-ink:#0f2420;--m-muted:#5d7871;
+  --m-amber:#c26a03;--m-amber-bg:#fef3e2;
+  --m-green:#15803d;--m-green-bg:#e4f6ea;
+  --m-sky:#0369a1;--m-sky-bg:#e3f1fb;
+  --m-gray:#64748b;--m-gray-bg:#eef1f4;
+  --m-radius:18px;
+  --m-shadow:0 1px 2px rgb(13 60 45/.05),0 10px 30px -14px rgb(13 60 45/.18);
+  --m-shadow-lg:0 2px 6px rgb(13 60 45/.07),0 24px 48px -20px rgb(13 60 45/.28);
+  --m-ease:cubic-bezier(.22,.75,.25,1);
+  font-family:'Manrope',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:var(--m-ink);
+}
+.moto-workspace{background:radial-gradient(1100px 480px at 88% -8%,#ddf2e8 0%,transparent 55%),radial-gradient(880px 420px at -8% 0%,#fdf3e2 0%,transparent 50%),#f3f7f4}
+
+/* ——— Héroe ——— */
+.moto-header{position:relative;isolation:isolate;overflow:hidden;padding:26px 28px;border-radius:24px;background:linear-gradient(120deg,#083a2c 0%,#0d6b4e 55%,#12855f 100%);box-shadow:var(--m-shadow-lg)}
+.moto-header::after{content:'';position:absolute;inset:0;background:radial-gradient(420px 200px at 88% -30%,rgb(255 255 255/.16),transparent 60%),radial-gradient(300px 170px at 68% 120%,rgb(252 211 119/.14),transparent 62%);pointer-events:none}
+.moto-header>div{position:relative;z-index:1}
+.moto-eyebrow{color:#9fe8c8;letter-spacing:.22em}
+.moto-header h1{color:#fff}
+.moto-header h1 i{color:#7ee2b8}
+.moto-header p{color:#c9ebdc}
+.moto-hero-side{display:flex;flex-direction:column;align-items:flex-end;gap:12px}
+.moto-hero-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:rgb(255 255 255/.13);border:1px solid rgb(255 255 255/.22);color:#eafaf2;font-weight:700;font-size:12.5px;backdrop-filter:blur(6px)}
+.moto-header .moto-primary{background:#fff;color:var(--m-brand-700);border:0;box-shadow:0 12px 24px -10px rgb(0 0 0/.4)}
+.moto-header .moto-primary:hover{background:#effaf4;color:var(--m-brand-700);transform:translateY(-1px)}
+
+/* ——— Botones ——— */
+.moto-app .btn{transition:transform .16s var(--m-ease),box-shadow .25s,background-color .2s,border-color .2s,color .2s}
+.moto-app .btn:active{transform:scale(.97)}
+.moto-primary{background:linear-gradient(135deg,#12a173 0%,var(--m-brand) 55%,var(--m-brand-600) 100%);border:0;border-radius:14px;box-shadow:0 10px 20px -10px rgb(13 107 78/.55)}
+.moto-primary:hover{background:linear-gradient(135deg,#0f8f66,var(--m-brand-600));transform:translateY(-1px);box-shadow:0 14px 26px -12px rgb(13 107 78/.6)}
+.moto-primary:disabled{opacity:.55;transform:none;box-shadow:none}
+.moto-spinner{display:inline-block;width:1em;height:1em;margin-right:.45em;vertical-align:-.15em;border-radius:50%;border:2px solid color-mix(in srgb,currentColor 32%,transparent);border-top-color:currentColor;animation:moto-spin .7s linear infinite}
+@keyframes moto-spin{to{transform:rotate(1turn)}}
+
+/* ——— Paneles y formularios ——— */
+.moto-panel{border:1px solid rgb(13 60 45/.07);border-radius:var(--m-radius);box-shadow:var(--m-shadow)}
+.moto-entry{box-shadow:var(--m-shadow),inset 0 4px 0 var(--m-brand)}
+.moto-app .form-control,.moto-app .form-select{border-color:var(--m-line);transition:border-color .2s,box-shadow .2s}
+.moto-app .form-control:focus,.moto-app .form-select:focus{border-color:var(--m-brand);box-shadow:0 0 0 4px rgb(13 107 78/.12)}
+.moto-app .alert{border-radius:14px}
+.moto-app :is(button,a,summary,input,select,textarea):focus-visible{outline:3px solid color-mix(in srgb,var(--m-brand) 42%,transparent);outline-offset:2px}
+
+/* ——— Pestañas y conmutadores ——— */
+.moto-tabs{background:#e4eee8;padding:5px;border-radius:14px;gap:4px}
+.moto-tabs a{border-radius:10px;transition:background .2s,color .2s,box-shadow .2s}
+.moto-tabs a.active{background:#fff;color:var(--m-brand-700);box-shadow:0 2px 8px rgb(13 60 45/.14)}
+.moto-history-switch{background:#e4eee8;border:0}
+.moto-history-switch .btn{border-radius:11px}
+.moto-history-switch .btn-success{background:var(--m-brand);border-color:var(--m-brand);box-shadow:0 4px 10px -4px rgb(13 107 78/.5)}
+.moto-history-switch .btn-outline-success{color:var(--m-brand-700);border-color:transparent}
+.moto-history-switch .btn-outline-secondary{color:#4b625c;border-color:transparent}
+.moto-history-switch .btn-light{background:transparent;border-color:transparent;color:#4b625c}
+
+/* ——— Resumen (stats) ——— */
+.moto-stats article{position:relative;overflow:hidden;border:1px solid rgb(13 60 45/.07);border-radius:var(--m-radius);box-shadow:var(--m-shadow);animation:moto-rise .5s var(--m-ease) both;animation-delay:calc(var(--i,0)*55ms)}
+.moto-stats article>span{display:flex;align-items:center;gap:10px}
+.moto-stats article>span i{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:10px;background:var(--m-mint);color:var(--m-brand);font-size:15px;flex-shrink:0}
+.moto-stats strong{font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--m-ink)}
+.moto-stats .moto-stat-money{background:linear-gradient(135deg,var(--m-brand) 0%,#083a2c 100%);border-color:transparent;color:#fff}
+.moto-stat-money>span{color:#b9e8d2}
+.moto-stat-money>span i{background:rgb(255 255 255/.14);color:#a7f3d0}
+.moto-stat-money strong{color:#fff}
+.moto-stat-money small{color:#9fd8bd}
+#moto-summary.moto-flash .moto-stats article{animation:moto-flash .8s var(--m-ease)}
+@keyframes moto-flash{0%{box-shadow:0 0 0 0 rgb(34 197 94/.35)}100%{box-shadow:0 0 0 18px rgb(34 197 94/0)}}
+#moto-live{display:inline-flex;align-items:center;gap:7px;font-weight:600;color:#3f6f60}
+#moto-live::before{content:'';width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px #dcfce7;animation:moto-pulse 2s infinite}
+
+/* ——— Tarjetas de viaje ——— */
+.moto-trip{position:relative;overflow:hidden;border:1px solid rgb(13 60 45/.08);border-radius:var(--m-radius);box-shadow:var(--m-shadow);transition:transform .25s var(--m-ease),box-shadow .3s,border-color .25s;animation:moto-rise .5s var(--m-ease) both;animation-delay:calc(var(--i,0)*45ms)}
+.moto-trip::before{content:'';position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--m-bar,#c8d6d0)}
+.moto-card-pendiente{--m-bar:#f59e0b}
+.moto-card-entregado{--m-bar:#22c55e}
+.moto-card-recibido{--m-bar:#0ea5e9}
+.moto-card-anulado{--m-bar:#cbd5e1}
+.moto-card-cerrado{--m-bar:#8b5cf6}
+.moto-trip:hover{transform:translateY(-3px);box-shadow:var(--m-shadow-lg);border-color:rgb(13 60 45/.16)}
+#moto-results.moto-settled .moto-trip{animation:none}
+@keyframes moto-rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.moto-trip-id{letter-spacing:.08em;color:#6b8580}
+.moto-trip h3 i{color:var(--m-brand)}
+.moto-trip-price strong{font-variant-numeric:tabular-nums;color:var(--m-ink)}
+.moto-status{font-weight:800;letter-spacing:.02em;box-shadow:inset 0 0 0 1px rgb(0 0 0/.04)}
+.moto-pendiente{background:var(--m-amber-bg);color:var(--m-amber)}
+.moto-entregado{background:var(--m-green-bg);color:var(--m-green)}
+.moto-recibido{background:var(--m-sky-bg);color:var(--m-sky)}
+.moto-anulado{background:var(--m-gray-bg);color:var(--m-gray)}
+.moto-cerrado{background:#efe9fd;color:#6d28d9}
+.moto-dot{box-shadow:0 0 0 3px color-mix(in srgb,currentColor 18%,transparent)}
+.moto-comment{background:#f4f8f5;border:1px solid #e6efe9;border-radius:12px}
+.moto-void{background:#fafbfa}
+.moto-actions .btn{border-radius:12px}
+
+/* ——— Detalles con chevron animado ——— */
+.moto-history>summary,.moto-evidence>summary,.moto-cancel>summary,.moto-pay-single>summary,.moto-filters>summary{list-style:none;display:flex;align-items:center;gap:8px}
+.moto-history>summary::-webkit-details-marker,.moto-evidence>summary::-webkit-details-marker,.moto-cancel>summary::-webkit-details-marker,.moto-pay-single>summary::-webkit-details-marker,.moto-filters>summary::-webkit-details-marker{display:none}
+.moto-history>summary::after,.moto-evidence>summary::after,.moto-cancel>summary::after,.moto-pay-single>summary::after,.moto-filters>summary::after{content:'\F282';font-family:'bootstrap-icons';margin-left:auto;font-size:12px;color:#8aa69d;transition:transform .25s var(--m-ease)}
+.moto-history[open]>summary::after,.moto-evidence[open]>summary::after,.moto-cancel[open]>summary::after,.moto-pay-single[open]>summary::after,.moto-filters[open]>summary::after{transform:rotate(180deg)}
+.moto-filters{background:linear-gradient(180deg,#f2f8f4,#fff)}
+.moto-filters>summary{font-weight:800;color:var(--m-brand-700)}
+.moto-filters>summary>span{float:none;margin-left:auto;color:#6d867f}
+.moto-quick-dates button{border:1px solid var(--m-line);background:#fff;color:var(--m-brand-700);transition:transform .18s var(--m-ease),box-shadow .2s,border-color .2s}
+.moto-quick-dates button:hover{border-color:var(--m-brand);box-shadow:var(--m-shadow);transform:translateY(-1px)}
+
+/* ——— Línea de tiempo del viaje ——— */
+.moto-timeline{position:relative;margin:18px 0 6px;padding-left:2px}
+.moto-timeline::before{content:'';position:absolute;left:7px;top:8px;bottom:10px;width:2px;border-radius:2px;background:linear-gradient(#bcd8cb,#e9f1ec)}
+.moto-timeline>div{position:relative;gap:14px}
+.moto-timeline>div>i{font-size:8px;color:#2f9271;background:#fff;border-radius:50%;box-shadow:0 0 0 4px #fff;z-index:1}
+.moto-timeline strong{color:var(--m-ink)}
+
+/* ——— Fotos de soporte ——— */
+.moto-photo-grid a{overflow:hidden;border-radius:12px;box-shadow:0 2px 8px rgb(13 60 45/.08)}
+.moto-photo-grid img{border:0;transition:transform .4s var(--m-ease)}
+.moto-photo-grid a:hover img{transform:scale(1.06)}
+.moto-photo-preview img{border:0;box-shadow:var(--m-shadow)}
+
+/* ——— Costos, historial y cierres ——— */
+.moto-costs>div{border-color:#eef3f0;border-radius:10px;padding-left:8px;padding-right:8px;transition:background .2s}
+.moto-costs>div:hover{background:#f5faf7}
+.moto-closure-lines>div{border-color:#eef3f0}
+.moto-close-preview{background:#f7fbf8;box-shadow:inset 0 0 0 1px #e6efe9}
+.moto-close-preview::-webkit-scrollbar{width:8px}
+.moto-close-preview::-webkit-scrollbar-thumb{background:#c3d8cd;border-radius:8px}
+.moto-pay-group>summary strong{background:linear-gradient(135deg,var(--m-brand),var(--m-brand-600));color:#fff;padding:8px 14px;border-radius:999px;font-variant-numeric:tabular-nums;box-shadow:0 6px 14px -6px rgb(13 107 78/.5)}
+.moto-pay-single{border-color:#cfe8d8;background:linear-gradient(180deg,#f3fbf6,#eef8f1);border-radius:14px}
+.moto-refund input{accent-color:var(--m-brand)}
+.moto-history-group{background:#fff;border:1px solid rgb(13 60 45/.08);border-radius:var(--m-radius);box-shadow:var(--m-shadow);transition:transform .25s var(--m-ease),box-shadow .3s}
+.moto-history-group:hover{transform:translateY(-2px);box-shadow:var(--m-shadow-lg)}
+.moto-history-group h3 i{color:var(--m-brand)}
+.moto-seller-detail{background:linear-gradient(135deg,#f3efff,#e9e2fd);border:1px solid #e0d6fa;transition:background .2s,transform .18s var(--m-ease)}
+.moto-seller-detail:hover{background:linear-gradient(135deg,#ece5ff,#e0d5fc);text-decoration:none}
+.moto-group-totals strong{font-variant-numeric:tabular-nums}
+.moto-history-grand-total{background:linear-gradient(120deg,#4c1d95,#7c3aed);border:0;color:#fff;box-shadow:0 16px 32px -16px rgb(76 29 149/.5)}
+.moto-history-grand-total strong{color:#fff}
+
+/* ——— Vacío y paginación ——— */
+.moto-empty{border:1px dashed #bcd4c8;background:linear-gradient(180deg,#fbfdfc,#f3faf5);border-radius:22px}
+.moto-empty>i{display:inline-grid;place-items:center;width:88px;height:88px;border-radius:28px;background:#e7f4ec;color:var(--m-brand);font-size:38px;box-shadow:inset 0 0 0 1px #d4e9dc}
+
+/* ——— Select2 acorde a la marca ——— */
+.moto-app .select2-container .select2-selection--single{border-color:var(--m-line);transition:border-color .2s,box-shadow .2s}
+.moto-app .select2-container--default.select2-container--open .select2-selection--single{border-color:var(--m-brand);box-shadow:0 0 0 4px rgb(13 107 78/.12)}
+.select2-container--default .select2-results__option--highlighted.select2-results__option[aria-selected=true]{background:var(--m-brand)}
+.select2-container--default .select2-results__option[aria-selected=true]{background:var(--m-mint);color:var(--m-brand-700)}
+
+/* ——— Móvil ——— */
+@media(max-width:767px){
+  .moto-header{padding:20px;border-radius:20px}
+  .moto-header .moto-hero-side{flex:1 1 100%;flex-direction:column;align-items:stretch}
+  .moto-hero-chip{align-self:flex-start}
+  .moto-filters>summary>span{display:inline;margin:0 0 0 auto}
+}
+
+/* ——— Movimiento reducido ——— */
+@media(prefers-reduced-motion:reduce){
+  .moto-trip,.moto-stats article,#moto-summary.moto-flash .moto-stats article{animation:none!important}
+  .moto-app .btn,.moto-trip,.moto-history-group,.moto-photo-grid img{transition:none!important}
+}

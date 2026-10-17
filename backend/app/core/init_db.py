@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..config import get_active_company_key, settings
 from ..database import Base, get_engine, get_session_local
 from ..models.returns import CustomerReturn
+from ..models.motorizado import MotoTrip, MotoTripEvent, MotoTripPhoto, MotoTripClosure
 from ..models.user import Branch, Permission, Role, User
 from ..models.inventory import (
     Bodega,
@@ -52,6 +53,7 @@ from .security import hash_password
 
 def _seed_roles(db: Session) -> None:
     role_names = ["administrador", "vendedor", "cajero", "seguridad", "contador", "bodega"]
+    if get_active_company_key() == "hollywood_pacas":role_names.append("motorizado")
     existing = {role.name for role in db.query(Role).all()}
     for name in role_names:
         if name not in existing:
@@ -275,6 +277,11 @@ def _seed_branches(db: Session) -> None:
 
 
 def _seed_role_permissions(db: Session) -> None:
+    if get_active_company_key() == "hollywood_pacas":
+        permission=db.query(Permission).filter_by(name='menu.motorizado').first()
+        if not permission:permission=Permission(name='menu.motorizado');db.add(permission);db.flush()
+        for role in db.query(Role).filter(Role.name.in_(['administrador','vendedor','motorizado'])).all():
+            if permission not in role.permissions:role.permissions.append(permission)
     role_names = ["administrador", "seguridad"]
     permissions = db.query(Permission).all()
     for role_name in role_names:
@@ -1667,6 +1674,16 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
+    if "moto_trips" in table_names:
+        moto_columns={column['name']:column for column in inspector.get_columns('moto_trips')}
+        with engine.begin() as conn:
+            for name in ('accounting_entry_id','reversal_entry_id'):
+                if name not in moto_columns:conn.execute(text(f'ALTER TABLE moto_trips ADD COLUMN {name} INTEGER REFERENCES accounting_entries(id)'))
+            if 'closure_id' not in moto_columns:
+                conn.execute(text('ALTER TABLE moto_trips ADD COLUMN closure_id INTEGER REFERENCES moto_trip_closures(id)'))
+                conn.execute(text('CREATE INDEX ix_moto_trips_closure_id ON moto_trips (closure_id)'))
+            if engine.dialect.name=='postgresql' and not moto_columns['receipt_id']['nullable']:
+                conn.execute(text('ALTER TABLE moto_trips ALTER COLUMN receipt_id DROP NOT NULL'))
     with engine.begin() as conn:
         if "productos_comisiones" in table_names:
             columns = {col["name"] for col in inspector.get_columns("productos_comisiones")}
@@ -2324,6 +2341,8 @@ def init_db() -> None:
         if get_active_company_key() == "hollywood_pacas":
             from .accounting_workflow import seed_journals
             seed_journals(db)
+            from .motorizado import seed_bank
+            seed_bank(db)
             from .accounting_payroll import settings as seed_payroll_accounting
             try:
                 seed_payroll_accounting(db)
