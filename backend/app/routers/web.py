@@ -27450,7 +27450,10 @@ async def shoe_label_design_action(action: str, request: Request, user: User = D
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if action == "save":
-        return {"ok": True, "design": save(design)}
+        try:
+            return {"ok": True, "design": save(design)}
+        except OSError as exc:
+            raise HTTPException(500, "No se pudo escribir la configuración de etiquetas en el servidor. Revise los permisos de la carpeta settings.") from exc
     return Response(content=content, media_type="application/pdf")
 
 

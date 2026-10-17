@@ -39,7 +39,8 @@ class LabelDesignTests(unittest.TestCase):
             pdf.rotate.assert_called_once_with(180)
 
     def test_side_fields_share_row_without_collision(self):
-        result=design.layout({'name':'Nombre','code':'ABC123','reference':'Ref. ABC','price':'C$ 100'},design.DEFAULT)
+        d=copy.deepcopy(design.DEFAULT);d['fields']['price']['visible']=True
+        result=design.layout({'name':'Nombre','code':'ABC123','reference':'Ref. ABC','price':'C$ 100'},d)
         self.assertEqual(result['errors'],[])
         nodes={n['id']:n for n in result['nodes']}
         self.assertEqual(nodes['reference']['y'],nodes['price']['y'])

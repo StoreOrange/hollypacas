@@ -17,7 +17,7 @@
 <div class="col-md-7"><label class="form-label" for="receipt-printer">Impresora</label><div class="input-group"><select id="receipt-printer" class="form-select"><option value="">Conecte para elegir impresora</option></select><button id="receipt-connect" class="btn btn-outline-primary" type="button">Conectar / actualizar</button></div></div>
 </div>
 <div id="receipt-printer-status" class="small text-muted mt-2">Para envío directo, abra QZ Tray en la PC de la impresora y permita la conexión.</div>
-<div class="d-flex gap-2 flex-wrap align-items-center mt-3"><button id="receipt-print" class="btn btn-primary" disabled>Imprimir seleccionadas</button><button id="receipt-preview" class="btn btn-outline-secondary" disabled>Ver PDF seleccionado</button><label class="ms-2"><input id="receipt-show-price" type="checkbox" checked> Mostrar precio</label></div>
+<div class="d-flex gap-2 flex-wrap align-items-center mt-3"><button id="receipt-print" class="btn btn-primary" disabled>Imprimir seleccionadas</button><button id="receipt-preview" class="btn btn-outline-secondary" disabled>Ver PDF seleccionado</button><label class="ms-2"><input id="receipt-show-price" type="checkbox"> Mostrar precio</label></div>
 <div id="receipt-job-status" class="small mt-2" role="status" aria-live="polite"></div>
 </div>
 <div class="d-flex justify-content-between flex-wrap gap-2 mb-2"><label class="fw-semibold"><input id="receipt-select-all" type="checkbox" checked {% if not rows %}disabled{% endif %}> Seleccionar todas las variantes</label><strong id="receipt-selected-total">{{ total }} etiquetas seleccionadas</strong></div>

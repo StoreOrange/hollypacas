@@ -20,7 +20,8 @@ for key, label, size, y, bold in [('name','Producto',5,3.4,True),('detail','Colo
     DEFAULT['fields'][key] = {'label': label, 'size': size, 'top': y, 'bold': bold, 'visible': True, 'align': 'center', 'x': None}
 
 DEFAULT['fields']['reference'].update(align='left', top=17)
-DEFAULT['fields']['price'].update(align='right', top=17)
+# El precio de venta ya no se imprime en la etiqueta; el editor puede reactivarlo.
+DEFAULT['fields']['price'].update(align='right', top=17, visible=False)
 
 
 def validate(data):
