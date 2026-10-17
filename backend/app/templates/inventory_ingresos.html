@@ -3089,6 +3089,15 @@
       editProductSelect.select2("destroy");
     }
   }
+  // Un ingreso recién registrado llega con clear_draft=1: hay que limpiar el
+  // borrador ANTES de restaurar; de lo contrario la cuadrícula vuelve a cargar
+  // los items anteriores y el siguiente registro duplica el ingreso.
+  const draftResetParams = new URLSearchParams(window.location.search);
+  if (draftResetParams.get("clear_draft") === "1") {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  }
   restoreDraft();
   if (editSelect && loadEditProductFn && editSelect.value) {
     const option = editSelect.selectedOptions[0] || editSelect.options[editSelect.selectedIndex];
