@@ -23450,12 +23450,15 @@ def _build_kardex_movements(
     end_date: date,
     bodega_id: str | None,
     producto_q: str,
+    *, allowed_bodega_ids=None, producto_id=None, variante_id=None,
 ):
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
     producto_filter = None
-    if producto_q:
+    if producto_id:
+        producto_filter = Producto.id == producto_id
+    elif producto_q:
         like = f"%{producto_q.lower()}%"
         producto_filter = or_(
             func.lower(Producto.cod_producto).like(like),
@@ -23480,6 +23483,10 @@ def _build_kardex_movements(
         .join(Branch, Branch.id == Bodega.branch_id)
         .filter(IngresoInventario.fecha < start_date)
     )
+    if allowed_bodega_ids is not None:
+        opening_ing_q = opening_ing_q.filter(Bodega.id.in_(allowed_bodega_ids))
+    if variante_id:
+        opening_ing_q = opening_ing_q.filter(IngresoItem.variante_id == variante_id)
     if bodega_filter:
         opening_ing_q = opening_ing_q.filter(Bodega.id == bodega_filter)
     if producto_filter is not None:
@@ -23495,6 +23502,10 @@ def _build_kardex_movements(
         .join(Branch, Branch.id == Bodega.branch_id)
         .filter(EgresoInventario.fecha < start_date)
     )
+    if allowed_bodega_ids is not None:
+        opening_egr_q = opening_egr_q.filter(Bodega.id.in_(allowed_bodega_ids))
+    if variante_id:
+        opening_egr_q = opening_egr_q.filter(EgresoItem.variante_id == variante_id)
     if bodega_filter:
         opening_egr_q = opening_egr_q.filter(Bodega.id == bodega_filter)
     if producto_filter is not None:
@@ -23512,6 +23523,10 @@ def _build_kardex_movements(
         .filter(VentaFactura.estado != "ANULADA")
         .filter(VentaFactura.fecha < start_dt)
     )
+    if allowed_bodega_ids is not None:
+        opening_vta_q = opening_vta_q.filter(Bodega.id.in_(allowed_bodega_ids))
+    if variante_id:
+        opening_vta_q = opening_vta_q.filter(VentaItem.variante_id == variante_id)
     if bodega_filter:
         opening_vta_q = opening_vta_q.filter(Bodega.id == bodega_filter)
     if producto_filter is not None:
@@ -23529,6 +23544,10 @@ def _build_kardex_movements(
         .join(IngresoTipo, IngresoTipo.id == IngresoInventario.tipo_id, isouter=True)
         .filter(IngresoInventario.fecha >= start_date, IngresoInventario.fecha <= end_date)
     )
+    if allowed_bodega_ids is not None:
+        ingresos_q = ingresos_q.filter(Bodega.id.in_(allowed_bodega_ids))
+    if variante_id:
+        ingresos_q = ingresos_q.filter(IngresoItem.variante_id == variante_id)
     if bodega_filter:
         ingresos_q = ingresos_q.filter(Bodega.id == bodega_filter)
     if producto_filter is not None:
@@ -23577,6 +23596,10 @@ def _build_kardex_movements(
         .join(EgresoTipo, EgresoTipo.id == EgresoInventario.tipo_id, isouter=True)
         .filter(EgresoInventario.fecha >= start_date, EgresoInventario.fecha <= end_date)
     )
+    if allowed_bodega_ids is not None:
+        egresos_q = egresos_q.filter(Bodega.id.in_(allowed_bodega_ids))
+    if variante_id:
+        egresos_q = egresos_q.filter(EgresoItem.variante_id == variante_id)
     if bodega_filter:
         egresos_q = egresos_q.filter(Bodega.id == bodega_filter)
     if producto_filter is not None:
@@ -23626,6 +23649,10 @@ def _build_kardex_movements(
         .filter(VentaFactura.fecha >= start_dt, VentaFactura.fecha < end_dt)
         .filter(VentaFactura.estado != "ANULADA")
     )
+    if allowed_bodega_ids is not None:
+        ventas_q = ventas_q.filter(Bodega.id.in_(allowed_bodega_ids))
+    if variante_id:
+        ventas_q = ventas_q.filter(VentaItem.variante_id == variante_id)
     if bodega_filter:
         ventas_q = ventas_q.filter(Bodega.id == bodega_filter)
     if producto_filter is not None:
@@ -25618,6 +25645,64 @@ def report_inventory_consolidated_pdf(
     )
 
 
+def _kardex_selection(request, db, user):
+    branch_ids = _utility_branch_ids(db, user)
+    bodegas = (db.query(Bodega).join(Branch, Branch.id == Bodega.branch_id)
+        .filter(Bodega.activo.is_(True), Branch.activo.is_(True), Bodega.branch_id.in_(branch_ids))
+        .order_by(Bodega.name).all())
+    ids = {int(b.id) for b in bodegas}
+    start, end, bodega_id, text = _kardex_report_filters(request)
+    if bodega_id not in {'', 'all', None}:
+        if not str(bodega_id).isdigit() or int(bodega_id) not in ids:
+            raise HTTPException(403, 'No tienes permiso para consultar esta bodega')
+    raw_product = request.query_params.get('producto_id', '')
+    raw_variant = request.query_params.get('variante_id', '')
+    product_id = int(raw_product) if raw_product.isdigit() else None
+    variant_id = int(raw_variant) if raw_variant.isdigit() else None
+    selected = None
+    if variant_id:
+        variant = db.get(ShoeProductVariant, variant_id)
+        if not variant: raise HTTPException(404, 'Artículo no encontrado')
+        product_id = variant.producto_id
+        selected = f'{variant.cod_variante} · {variant.producto.descripcion} · {variant.color.nombre} · Talla {variant.talla}'
+    elif product_id:
+        product = db.get(Producto, product_id)
+        if not product: raise HTTPException(404, 'Producto no encontrado')
+        selected = f'{product.cod_producto} · {product.descripcion} · Todas las tallas y colores'
+    rows, summary = _build_kardex_movements(db, start, end, bodega_id, text,
+        allowed_bodega_ids=ids, producto_id=product_id, variante_id=variant_id)
+    if variant_id:
+        for row in rows:
+            row['codigo'] = variant.cod_variante
+            row['descripcion'] = f'{variant.producto.descripcion} · {variant.color.nombre} · Talla {variant.talla}'
+    return start, end, bodega_id, text, bodegas, rows, summary, product_id, variant_id, selected
+
+
+@router.get('/reports/kardex/items')
+def report_kardex_items(request: Request, q: str = '', db: Session = Depends(get_db), user: User = Depends(_require_user_web)):
+    _enforce_permission(request, user, 'access.reports')
+    if not _is_shoes_mode(): raise HTTPException(404)
+    words = q.strip().lower().split()[:8]
+    if not words: return JSONResponse({'items': []})
+    products = db.query(Producto).filter(Producto.activo.is_(True))
+    variants = (db.query(ShoeProductVariant, Producto, ColorCatalog)
+        .join(Producto, Producto.id == ShoeProductVariant.producto_id)
+        .join(ColorCatalog, ColorCatalog.id == ShoeProductVariant.color_id)
+        .filter(Producto.activo.is_(True), ShoeProductVariant.activo.is_(True)))
+    for word in words:
+        like = f'%{word}%'
+        products = products.filter(or_(func.lower(Producto.cod_producto).like(like), func.lower(Producto.descripcion).like(like)))
+        variant_match = or_(func.lower(Producto.cod_producto).like(like), func.lower(Producto.descripcion).like(like),
+            func.lower(ShoeProductVariant.cod_variante).like(like), func.lower(ColorCatalog.nombre).like(like), func.lower(ShoeProductVariant.talla).like(like))
+        if re.fullmatch(r'v\d{1,10}', word): variant_match = or_(variant_match, ShoeProductVariant.id == int(word[1:]))
+        variants = variants.filter(variant_match)
+    items = [dict(producto_id=p.id, variante_id=None, code=p.cod_producto, description=p.descripcion, color='', size='', label='Todas las tallas y colores')
+        for p in products.order_by(Producto.cod_producto).limit(10).all()]
+    items.extend(dict(producto_id=p.id, variante_id=v.id, code=v.cod_variante, description=p.descripcion, color=c.nombre, size=v.talla, label=f'{c.nombre} · Talla {v.talla}')
+        for v,p,c in variants.order_by(Producto.cod_producto, ColorCatalog.nombre, ShoeProductVariant.talla).limit(40).all())
+    return JSONResponse({'items':items}, headers={'Cache-Control':'no-store'})
+
+
 @router.get("/reports/kardex")
 def report_kardex(
     request: Request,
@@ -25625,20 +25710,7 @@ def report_kardex(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
-    start_date, end_date, bodega_id, producto_q = _kardex_report_filters(request)
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
-    bodegas_q = db.query(Bodega).join(Branch, Branch.id == Bodega.branch_id).filter(Bodega.activo.is_(True), Branch.activo.is_(True))
-    if scoped_branch_ids:
-        bodegas_q = bodegas_q.filter(Bodega.branch_id.in_(scoped_branch_ids))
-    bodegas = bodegas_q.order_by(Bodega.name).all()
-    scoped_bodega_ids = {int(b.id) for b in bodegas}
-    if bodega_id not in {"", "all", None}:
-        try:
-            if int(bodega_id) not in scoped_bodega_ids:
-                bodega_id = "all"
-        except ValueError:
-            bodega_id = "all"
-    rows, resumen = _build_kardex_movements(db, start_date, end_date, bodega_id, producto_q)
+    start_date, end_date, bodega_id, producto_q, bodegas, rows, resumen, producto_id, variante_id, selected_item = _kardex_selection(request, db, user)
     selected_bodega = next((b for b in bodegas if str(b.id) == str(bodega_id)), None)
 
     return request.app.state.templates.TemplateResponse(
@@ -25654,6 +25726,8 @@ def report_kardex(
             "selected_bodega": bodega_id or "",
             "bodega_label": selected_bodega.name if selected_bodega else "Todas las bodegas",
             "producto_q": producto_q,
+            "producto_id": producto_id, "variante_id": variante_id, "selected_item": selected_item,
+            "is_shoes": _is_shoes_mode(),
             "version": settings.UI_VERSION,
         },
     )
@@ -25667,20 +25741,7 @@ def report_kardex_export(
 ):
     _enforce_permission(request, user, "access.reports")
     company_profile = _company_profile_payload(db)
-    start_date, end_date, bodega_id, producto_q = _kardex_report_filters(request)
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
-    bodegas_q = db.query(Bodega).join(Branch, Branch.id == Bodega.branch_id).filter(Bodega.activo.is_(True), Branch.activo.is_(True))
-    if scoped_branch_ids:
-        bodegas_q = bodegas_q.filter(Bodega.branch_id.in_(scoped_branch_ids))
-    bodegas = bodegas_q.order_by(Bodega.name).all()
-    scoped_bodega_ids = {int(b.id) for b in bodegas}
-    if bodega_id not in {"", "all", None}:
-        try:
-            if int(bodega_id) not in scoped_bodega_ids:
-                bodega_id = "all"
-        except ValueError:
-            bodega_id = "all"
-    rows, resumen = _build_kardex_movements(db, start_date, end_date, bodega_id, producto_q)
+    start_date, end_date, bodega_id, producto_q, bodegas, rows, resumen, producto_id, variante_id, selected_item = _kardex_selection(request, db, user)
     selected_bodega = next((b for b in bodegas if str(b.id) == str(bodega_id)), None)
 
     buffer = io.BytesIO()
