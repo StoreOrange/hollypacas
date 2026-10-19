@@ -23692,6 +23692,26 @@ def _build_kardex_movements(
             }
         )
 
+    # Legacy destination receipts omitted variante_id. Read their exact
+    # source document to recover the selected size without modifying stock.
+    if variante_id:
+        from ..core.kardex_transfers import legacy_variant_receipts
+        for legacy in legacy_variant_receipts(db, variante_id, end_date, allowed_bodega_ids, bodega_filter):
+            receipt = legacy['receipt']; variant = legacy['variant']; quantity = legacy['quantity']
+            if receipt.fecha < start_date:
+                key = (variant.producto_id, receipt.bodega_id)
+                opening_balances[key] = opening_balances.get(key, Decimal('0')) + quantity
+                continue
+            warehouse = receipt.bodega
+            movimientos.append(dict(fecha=receipt.fecha, tipo='Ingreso - Traslado entre bodegas',
+                tipo_base='Ingreso', concepto=f'Traslado recibido · Egreso #{legacy["source_id"]}',
+                source_kind='ingreso', source_id=receipt.id,
+                source_url=f'/inventory/ingresos?start_date={receipt.fecha}&end_date={receipt.fecha}&focus_ingreso_id={receipt.id}&focus_producto_id={variant.producto_id}',
+                branch=warehouse.branch.name, branch_id=warehouse.branch_id,
+                bodega=warehouse.name, bodega_id=warehouse.id, producto_id=variant.producto_id,
+                codigo=variant.cod_variante, descripcion=variant.producto.descripcion,
+                vendedor='-', cantidad=quantity, costo_unit_cs=legacy['cost_cs'], costo_unit_usd=legacy['cost_usd']))
+
     movement_priority = {"Ingreso": 0, "Venta": 1, "Egreso": 2}
     movimientos.sort(
         key=lambda row: (
@@ -35090,6 +35110,7 @@ async def inventory_create_egreso(
                 IngresoItem(
                     ingreso_id=ingreso.id,
                     producto_id=int(row["producto_id"]),
+                    variante_id=int(row["variant_id"]) if row.get("variant_id") else None,
                     cantidad=float(row["cantidad"]),
                     costo_unitario_usd=0,
                     costo_unitario_cs=float(row["costo_unitario_cs"]),

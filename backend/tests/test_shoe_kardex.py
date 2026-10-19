@@ -81,6 +81,76 @@ class KardexTests(unittest.TestCase):
         data=json.loads(w.report_kardex_items(self.request(),'ZAP-1',self.db,self.admin).body)
         self.assertTrue(any(i['producto_id']==1 and i['variante_id'] is None for i in data['items']))
 
+    def legacy_transfer(self, day=date(2026,10,19), typed=False):
+        self.db.add(w.EgresoTipo(id=10,nombre='Traslado entre bodegas'))
+        self.db.add(w.IngresoTipo(id=10,nombre='Traslado entre bodegas'))
+        self.db.add(w.EgresoInventario(id=10,tipo_id=10,bodega_id=1,bodega_destino_id=2,fecha=day,moneda='CS'))
+        self.db.add(w.IngresoInventario(id=10,tipo_id=10,bodega_id=2,fecha=day,moneda='CS',observacion='Traslado desde Central hacia KG. Egreso #10'))
+        for variant,qty in [(1,2),(2,3)]:
+            self.db.add(w.EgresoItem(egreso_id=10,producto_id=1,variante_id=variant,cantidad=qty,costo_unitario_cs=100))
+            self.db.add(w.IngresoItem(ingreso_id=10,producto_id=1,variante_id=variant if typed else None,cantidad=qty,costo_unitario_cs=100))
+        self.db.commit()
+
+    def test_legacy_transfer_restores_only_selected_size_without_writes(self):
+        self.legacy_transfer()
+        rows,summary=w._build_kardex_movements(self.db,date(2026,10,19),date(2026,10,19),'2','',allowed_bodega_ids={2},producto_id=1,variante_id=1)
+        self.assertEqual(summary['saldo_inicial'],20)
+        self.assertEqual(summary['total_ingresos'],5)  # existing 3 + transferred 2
+        self.assertEqual(summary['saldo_final'],25)
+        recovered=[r for r in rows if r['source_id']==10]
+        self.assertEqual(len(recovered),1);self.assertEqual(recovered[0]['entrada'],2)
+        self.assertFalse(self.db.dirty);self.assertFalse(self.db.new)
+        self.assertEqual(self.db.query(w.IngresoItem).filter_by(ingreso_id=10,variante_id=None).count(),2)
+        # Scope also covers recovered rows; a forbidden destination stays absent.
+        rows,_=w._build_kardex_movements(self.db,date(2026,10,19),date(2026,10,19),'all','',allowed_bodega_ids={1},producto_id=1,variante_id=1)
+        self.assertEqual({r['bodega_id'] for r in rows},{1})
+
+    def test_legacy_transfer_before_period_contributes_to_opening_balance(self):
+        self.legacy_transfer(day=date(2026,10,18))
+        rows,summary=w._build_kardex_movements(self.db,date(2026,10,19),date(2026,10,19),'2','',producto_id=1,variante_id=1)
+        self.assertEqual(summary['saldo_inicial'],22);self.assertEqual(summary['saldo_final'],25)
+        self.assertEqual(len(rows),1)
+
+    def test_typed_transfer_is_not_reconstructed_twice(self):
+        self.legacy_transfer(typed=True)
+        _,summary=w._build_kardex_movements(self.db,date(2026,10,19),date(2026,10,19),'2','',producto_id=1,variante_id=1)
+        self.assertEqual(summary['total_ingresos'],5)
+
+    def test_partially_typed_transfer_only_recovers_missing_quantity(self):
+        self.legacy_transfer()
+        line=self.db.query(w.IngresoItem).filter_by(ingreso_id=10).order_by(w.IngresoItem.id).first()
+        line.cantidad=1
+        self.db.add(w.IngresoItem(ingreso_id=10,producto_id=1,variante_id=1,cantidad=1));self.db.commit()
+        _,summary=w._build_kardex_movements(self.db,date(2026,10,19),date(2026,10,19),'2','',producto_id=1,variante_id=1)
+        self.assertEqual(summary['total_ingresos'],5)
+
+    def test_unproven_legacy_transfer_is_not_invented(self):
+        from app.core.kardex_transfers import legacy_variant_receipts
+        self.legacy_transfer()
+        receipt=self.db.get(w.IngresoInventario,10)
+        for bad_reference in ['Egreso #100','Egreso #10 | Egreso #11']:
+            receipt.observacion=bad_reference;self.db.commit()
+            self.assertEqual(legacy_variant_receipts(self.db,1,date(2026,10,19)),[])
+        receipt.observacion='Egreso #10'
+        self.db.query(w.IngresoItem).filter_by(ingreso_id=10).first().cantidad=99;self.db.commit()
+        self.assertEqual(legacy_variant_receipts(self.db,1,date(2026,10,19)),[])
+
+    def test_new_transfer_retains_variant_on_destination_receipt(self):
+        import asyncio
+        from starlette.datastructures import FormData
+        self.db.add(w.EgresoTipo(id=10,nombre='Traslado entre bodegas'))
+        self.db.add(w.ShoeVariantStock(variante_id=1,bodega_id=1,existencia=5));self.db.commit()
+        request=self.request()
+        request._form=FormData({'tipo_id':'10','bodega_id':'1','bodega_destino_id':'2','fecha':'2026-10-19','moneda':'CS','item_producto_id':'1','item_variante_id':'1','item_cantidad':'2','item_costo':'100'})
+        with patch.object(w,'_build_auto_accounting_entry',return_value=None):
+            response=asyncio.run(w.inventory_create_egreso(request,self.db,self.admin))
+        self.assertNotIn('error=',response.headers['location'])
+        destination=self.db.query(w.IngresoInventario).filter(w.IngresoInventario.observacion.like('%Egreso #%')).one()
+        self.assertEqual(len(destination.items),1)
+        self.assertEqual(destination.items[0].variante_id,1)
+        self.assertEqual(destination.items[0].cantidad,2)
+        self.assertEqual(self.db.query(w.ShoeVariantStock).filter_by(variante_id=1,bodega_id=2).one().existencia,2)
+
     def test_report_and_export_keep_the_same_filters(self):
         request=self.request('variante_id=1&bodega_id=2')
         response=w.report_kardex(request,self.db,self.admin)
