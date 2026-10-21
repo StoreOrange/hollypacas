@@ -70,7 +70,7 @@
       </div>
 
       <div class="odoo-card">
-        <form class="row g-2 align-items-end" method="get" action="/reports/kardex">
+        <form id="kardex-filters" class="row g-2 align-items-end" method="get" action="/reports/kardex">
           <div class="col-12 col-md-3">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
             <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
@@ -92,14 +92,18 @@
           </div>
           <div class="col-12 col-md-3">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Producto</label>
-            <input name="producto" class="form-control form-control-sm" placeholder="Codigo o descripcion" value="{{ producto_q }}">
+            {% if is_shoes %}
+            <input type="hidden" name="producto_id" id="kardex-product-id" value="{{ producto_id or '' }}">
+            <input type="hidden" name="variante_id" id="kardex-variant-id" value="{{ variante_id or '' }}">
+            <div class="input-group"><input id="kardex-product" name="producto" class="form-control" placeholder="Código o descripción" value="{{ selected_item or producto_q }}" aria-label="Producto del Kardex"><button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#kardex-item-modal" aria-label="Buscar y seleccionar artículo"><i class="bi bi-search"></i></button><button type="button" id="kardex-clear" class="btn btn-outline-secondary" aria-label="Quitar producto"><i class="bi bi-x-lg"></i></button></div>
+            {% else %}            <input name="producto" class="form-control form-control-sm" placeholder="Codigo o descripcion" value="{{ producto_q }}">{% endif %}
           </div>
           <div class="col-12 col-md-auto">
             <button class="btn btn-outline-secondary btn-sm" type="submit">
               <i class="bi bi-search"></i>
               Filtrar
             </button>
-            <a class="btn btn-outline-danger btn-sm" href="/reports/kardex/export?start_date={{ start_date }}&end_date={{ end_date }}&bodega_id={{ selected_bodega }}&producto={{ producto_q }}">
+            <a class="btn btn-outline-danger btn-sm" href="{{ request.url.replace(path='/reports/kardex/export') }}">
               <i class="bi bi-file-earmark-pdf-fill"></i>
               PDF
             </a>
@@ -173,4 +177,9 @@
     </div>
   </main>
 </div>
+{% if is_shoes %}
+<div class="modal fade" id="kardex-item-modal" tabindex="-1" aria-labelledby="kardex-item-title" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="kardex-item-title"><i class="bi bi-search"></i> Elegir artículo para el Kardex</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><label for="kardex-item-search" class="form-label">Código, descripción, color o talla</label><input id="kardex-item-search" class="form-control" autocomplete="off" placeholder="Escribe el código o nombre del artículo" role="combobox" aria-controls="kardex-item-results" aria-expanded="false" aria-autocomplete="list"><p id="kardex-item-status" class="text-secondary small mt-2" role="status">Escribe para buscar. Usa ↑ ↓ y Enter para elegir.</p><div id="kardex-item-results" role="listbox" aria-label="Artículos encontrados"></div></div><div class="modal-footer"><span class="text-secondary small me-auto">Elige el modelo completo o una talla y color específicos.</span><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cerrar</button></div></div></div></div>
+<style>#kardex-item-modal .modal-dialog{max-width:min(760px,calc(100vw - 24px));margin:12px auto;min-height:calc(100% - 24px);height:calc(100% - 24px)}#kardex-item-modal .modal-content{border-radius:18px;min-height:0;max-height:100%}#kardex-item-modal .modal-body{flex:0 1 auto}#kardex-item-search{border:2px solid #c4a5df;min-height:50px;font-size:17px}#kardex-item-search:focus{box-shadow:0 0 0 4px #ede1f7}#kardex-item-results{max-height:min(46vh,360px);overflow:auto;display:grid;gap:8px}#kardex-item-results button{text-align:left;padding:12px 14px;border:1px solid #e0dce8;border-radius:12px;background:white;min-height:65px}#kardex-item-results button[aria-selected=true]{border:2px solid #b445a0;background:#faedf8}#kardex-item-results strong,#kardex-item-results small{display:block}#kardex-item-results small{color:#655e71;margin-top:3px}#kardex-filters .input-group .btn{min-width:44px}#kardex-filters :is(input,select){min-height:44px;font-size:16px}</style>
+<script src="/static/js/kardex_items.js?v=1" defer></script>
+{% endif %}
 {% endblock %}
