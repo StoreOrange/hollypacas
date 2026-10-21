@@ -181,4 +181,4 @@ class NativePosTests(unittest.TestCase):
         html=native.console(self.station.id,request,self.db,self.user).body.decode()
         self.assertIn('data-worker="1"',html)
         self.assertIn('data-station="'+self.station.id+'"',html)
-        self.assertIn('pos-browser.js?v=6',html)
+        self.assertIn('pos-browser.js?v=7',html)

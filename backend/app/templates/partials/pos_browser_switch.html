@@ -1,6 +1,6 @@
 {% if pacasholl_libreado_enabled %}
 <div id="native-pos" class="d-inline-flex align-items-center flex-wrap gap-2" data-worker="{{ 1 if pos_worker else 0 }}" data-station="{{ pos_station_id or '' }}" data-user="{{ user.id }}" data-bodega="{{ pos_auto_bodega_id or '' }}">
-  <label class="form-check form-switch mb-0 small" title="Preventa nueva → factura en efectivo C$ → POS. Requiere Firefox con impresión silenciosa configurada y la ventana de impresión abierta.">
+  <label class="form-check form-switch mb-0 small" title="Preventa nueva → factura en efectivo C$ → POS. Requiere Firefox con impresión silenciosa. Abre la ventana de impresión para continuar al salir de Ventas.">
     <input id="native-pos-enabled" class="form-check-input" type="checkbox" disabled aria-label="Facturar preventas e imprimir POS automáticamente después de 15 segundos">
     <span class="form-check-label fw-semibold">Auto POS · <span id="native-pos-time">15 s</span></span>
   </label>
@@ -9,5 +9,5 @@
   <span id="native-pos-last" class="small" hidden></span>
   <button id="native-pos-retry" class="btn btn-sm btn-outline-secondary" type="button" title="Revisar la Epson y reimprimir la misma factura" hidden><i class="bi bi-printer"></i></button>
 </div>
-<script src="/static/js/pos-browser.js?v=6" defer></script>
+<script src="/static/js/pos-browser.js?v=7" defer></script>
 {% endif %}
