@@ -25753,6 +25753,17 @@ def report_kardex(
     )
 
 
+@router.get('/reports/kardex/export.xlsx')
+def report_kardex_excel(request: Request, db: Session = Depends(get_db), user: User = Depends(_require_user_web)):
+    _enforce_permission(request, user, 'access.reports')
+    start, end, bodega_id, product, warehouses, rows, summary, product_id, variant_id, selected_item = _kardex_selection(request, db, user)
+    warehouse = next((b.name for b in warehouses if str(b.id) == str(bodega_id)), 'Todas las bodegas')
+    from ..core.kardex_excel import build_kardex_excel
+    stream = build_kardex_excel(start, end, warehouse, selected_item or product, rows, summary)
+    return StreamingResponse(stream, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename=kardex_{start}_{end}.xlsx', 'Cache-Control': 'no-store'})
+
+
 @router.get("/reports/kardex/export")
 def report_kardex_export(
     request: Request,

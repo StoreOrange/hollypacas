@@ -157,3 +157,51 @@ class KardexTests(unittest.TestCase):
         self.assertIn('kardex-item-modal',response.body.decode());self.assertIn('variante_id=1',response.body.decode())
         with patch.object(w,'_company_profile_payload',return_value={}):pdf=w.report_kardex_export(request,self.db,self.admin)
         self.assertEqual(pdf.media_type,'application/pdf')
+
+    def excel_workbook(self, query='', user=None):
+        import asyncio
+        from io import BytesIO
+        from openpyxl import load_workbook
+        response=w.report_kardex_excel(self.request(query),self.db,user or self.admin)
+        self.assertIn('attachment;',response.headers['content-disposition'])
+        self.assertIn('.xlsx',response.headers['content-disposition'])
+        async def read():
+            return b''.join([chunk async for chunk in response.body_iterator])
+        return load_workbook(BytesIO(asyncio.run(read())))
+
+    def test_excel_matches_filtered_report_and_has_numeric_balances(self):
+        query='variante_id=1&bodega_id=2'
+        expected=w._kardex_selection(self.request(query),self.db,self.admin)
+        sheet=self.excel_workbook(query).active
+        self.assertEqual(sheet.max_row,9)
+        self.assertEqual(sheet['B3'].value,'Bodega KG')
+        self.assertIn('Talla 38',sheet['B4'].value)
+        self.assertEqual(sheet['F9'].value,'ZAP-1-38')
+        self.assertEqual(sheet['H9'].value,20)
+        self.assertEqual(sheet['I9'].value,3)
+        self.assertEqual(sheet['K9'].value,23)
+        self.assertEqual(sheet['D5'].value,float(expected[6]['saldo_final']))
+        self.assertEqual(sheet['K9'].data_type,'n')
+        self.assertEqual(sheet['A9'].value.date(),date(2026,10,19))
+        self.assertEqual(sheet.auto_filter.ref,'A8:N9')
+        self.assertEqual(sheet.freeze_panes,'H9')
+
+    def test_excel_empty_report_and_text_are_safe(self):
+        sheet=self.excel_workbook('producto_id=2').active
+        self.assertEqual(sheet.max_row,8)
+        self.assertEqual(sheet['H8'].value,'Saldo anterior')
+        self.db.get(w.Producto,1).descripcion='=1+1'
+        self.db.commit()
+        sheet=self.excel_workbook('producto_id=1&bodega_id=1').active
+        self.assertEqual(sheet['G9'].value,'=1+1')
+        self.assertEqual(sheet['G9'].data_type,'s')
+
+    def test_excel_enforces_warehouse_scope_and_reports_permission(self):
+        with patch.object(w,'_enforce_permission') as permission:
+            sheet=self.excel_workbook('variante_id=1',self.member).active
+            self.assertEqual(sheet.max_row,9)
+            self.assertEqual(sheet['E9'].value,'Bodega CENTRAL')
+            self.assertEqual(permission.call_args.args[2],'access.reports')
+            with self.assertRaises(HTTPException) as error:
+                w.report_kardex_excel(self.request('bodega_id=2'),self.db,self.member)
+            self.assertEqual(error.exception.status_code,403)
