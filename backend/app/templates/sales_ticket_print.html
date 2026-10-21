@@ -234,7 +234,8 @@
               img.addEventListener("error", resolve, { once: true });
             });
           }));
-          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          // Los frames de animación se suspenden en pestañas sin foco.
+          await new Promise((resolve) => setTimeout(resolve, 50));
         };
 
         {% if browser_auto_job %}

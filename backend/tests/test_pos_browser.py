@@ -107,7 +107,7 @@ class NativePosTests(unittest.TestCase):
             asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user))
             self.assertIsNone(native.claim(self.station.id,self.request(),self.db,self.user)['job'])
 
-    def test_completed_history_state_uses_three_queries_without_product_details(self):
+    def test_completed_history_state_uses_four_queries_without_product_details(self):
         from sqlalchemy import event
         sale,job=self.invoice();job.status='SENT';self.db.commit()
         queries=[]
@@ -117,7 +117,7 @@ class NativePosTests(unittest.TestCase):
         try:result=native.state(self.db,self.station)
         finally:event.remove(self.engine,'before_cursor_execute',record)
         self.assertEqual(result['tasks'],[]);self.assertIn(sale.id,result['completed_preventa_ids'])
-        self.assertEqual(len(queries),3,queries)
+        self.assertEqual(len(queries),4,queries)
         self.assertFalse(any('ventas_factura_items' in q or 'productos.' in q for q in queries))
 
     def test_notification_database_wait_does_not_block_async_loop(self):
@@ -144,3 +144,41 @@ class NativePosTests(unittest.TestCase):
                 await iterator.aclose()
         asyncio.run(verify())
         self.assertTrue(threads);self.assertNotEqual(threads[0],threading.get_ident());db.close.assert_called()
+
+    def test_multiple_preventas_are_invoiced_and_printed_fifo(self):
+        self.activate()
+        sales=[self.sale(i) for i in (1,2,3)]
+        asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user))
+        self.clock+=timedelta(seconds=15)
+        for sale in sales:
+            asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user))
+            claim=native.claim(self.station.id,self.request(),self.db,self.user)['job']
+            job=self.db.get(PosPrintJob,claim['id'])
+            self.db.refresh(sale)
+            self.assertEqual(job.invoice_id,sale.venta_factura_id)
+            self.assertIsNone(native.claim(self.station.id,self.request(),self.db,self.user)['job'])
+            asyncio.run(native.ack(self.station.id,job.id,self.request({'claim_id':claim['claim_id'],'status':'SENT'}),self.db,self.user))
+        self.assertEqual(self.db.query(VentaFactura).count(),3)
+        self.assertEqual(native.state(self.db,self.station)['tasks'],[])
+
+    def test_unknown_oldest_job_cannot_be_overtaken(self):
+        sale,job=self.invoice()
+        job.status='UNKNOWN'
+        self.db.add(PosPrintJob(station_id=self.station.id,invoice_id=999,copies=1,status='QUEUED'))
+        self.db.commit()
+        self.assertIsNone(native.claim(self.station.id,self.request(),self.db,self.user)['job'])
+
+    def test_old_pending_print_is_visible_beyond_history_limit(self):
+        sale,job=self.invoice()
+        for i in range(20):
+            self.db.add(PosAutoTask(station_id=self.station.id,preventa_id=100+i,operation_key='history'+str(i),due_at=self.clock,status='CANCELLED'))
+        self.db.commit()
+        self.assertEqual([row['job_id'] for row in native.state(self.db,self.station)['tasks']],[job.id])
+
+    def test_console_keeps_station_and_does_not_require_sales_page(self):
+        request=self.request()
+        request.scope['app']=SimpleNamespace(state=SimpleNamespace(templates=Jinja2Templates(directory='app/templates')))
+        html=native.console(self.station.id,request,self.db,self.user).body.decode()
+        self.assertIn('data-worker="1"',html)
+        self.assertIn('data-station="'+self.station.id+'"',html)
+        self.assertIn('pos-browser.js?v=6',html)

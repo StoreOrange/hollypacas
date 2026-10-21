@@ -18,6 +18,8 @@ def state(db,station):
     # Estado compacto: no cargar productos/clientes de tickets ya impresos cada 2 s.
     ids=[row[0] for row in db.query(PosAutoTask.id).filter_by(station_id=station.id,status='WAITING').order_by(PosAutoTask.due_at,PosAutoTask.id).limit(20)]
     ids += [row[0] for row in db.query(PosAutoTask.id).filter(PosAutoTask.station_id==station.id,PosAutoTask.status!='WAITING').order_by(PosAutoTask.id.desc()).limit(10)]
+    # Nunca ocultar trabajos pendientes detrás del límite del historial.
+    ids += [row[0] for row in db.query(PosAutoTask.id).join(PosPrintJob,PosPrintJob.invoice_id==PosAutoTask.invoice_id).filter(PosAutoTask.station_id==station.id,PosPrintJob.status!='SENT')]
     completed=[];pending=[]
     if ids:
         rows=db.query(PosAutoTask,Preventa.estado,Preventa.venta_factura_id,Preventa.numero,VentaFactura.numero,VentaFactura.total_cs,PosPrintJob).outerjoin(Preventa,Preventa.id==PosAutoTask.preventa_id).outerjoin(VentaFactura,VentaFactura.id==PosAutoTask.invoice_id).outerjoin(PosPrintJob,PosPrintJob.invoice_id==PosAutoTask.invoice_id).filter(PosAutoTask.id.in_(ids)).order_by(PosAutoTask.due_at,PosAutoTask.id).all()
@@ -62,7 +64,8 @@ async def tick(station_id:str,request:Request,db=Depends(get_db),user=Depends(we
             try:
                 auto.lock_scope(db,box)
                 due=db.query(PosAutoTask).filter_by(id=ident).populate_existing().first()
-                if due.status=='WAITING':await auto.invoice_due(db,box,due,request,user,web.local_now_naive(),require_agent=False)
+                pending=db.query(PosPrintJob.id).filter(PosPrintJob.station_id==box.id,PosPrintJob.status.in_(['QUEUED','DISPATCHED','UNKNOWN'])).first()
+                if not pending and due.status=='WAITING':await auto.invoice_due(db,box,due,request,user,web.local_now_naive(),require_agent=False)
                 db.commit()
             except (ValueError,HTTPException) as exc:
                 db.rollback();due=db.get(PosAutoTask,ident)
@@ -70,14 +73,24 @@ async def tick(station_id:str,request:Request,db=Depends(get_db),user=Depends(we
     return state(db,box)
 
 
+@router.get('/{station_id}/console')
+def console(station_id:str,request:Request,db=Depends(get_db),user=Depends(web._require_admin_web)):
+    box=browser(request,db,user,station_id)
+    response=request.app.state.templates.TemplateResponse('pos_console.html',{'request':request,'user':user,'pacasholl_libreado_enabled':True,'pos_auto_bodega_id':box.bodega_id,'pos_worker':True,'pos_station_id':box.id})
+    response.headers['Cache-Control']='no-store'
+    return response
+
+
+@router.post('/{station_id}/state')
+def read_state(station_id:str,request:Request,db=Depends(get_db),user=Depends(web._require_admin_web)):
+    return state(db,browser(request,db,user,station_id))
+
+
 @router.post('/{station_id}/claim')
 def claim(station_id:str,request:Request,db=Depends(get_db),user=Depends(web._require_admin_web)):
     box=browser(request,db,user,station_id);auto.lock_station(db,box)
-    if db.query(PosPrintJob.id).filter_by(station_id=box.id,status='DISPATCHED').first():
-        db.commit()
-        return {'ok':True,'job':None}
-    job=db.query(PosPrintJob).filter_by(station_id=box.id,status='QUEUED').order_by(PosPrintJob.id).with_for_update().first()
-    if not job:
+    job=db.query(PosPrintJob).filter(PosPrintJob.station_id==box.id,PosPrintJob.status!='SENT').order_by(PosPrintJob.id).with_for_update().first()
+    if not job or job.status!='QUEUED':
         db.commit()
         return {'ok':True,'job':None}
     job.status='DISPATCHED';job.claim_id=secrets.token_hex(16);job.dispatched_at=web.local_now_naive();job.message='Impresión solicitada al navegador'
