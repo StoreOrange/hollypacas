@@ -1060,8 +1060,11 @@
 
     <div class="card mb-3">
       <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
           <label class="field-label m-0"><span class="step-badge">2</span><i class="bi bi-search"></i> Agregar producto</label>
+          {% if branding.get('company_key') in ['hollywood_pacas','pacasholl','hollpacas'] %}
+          <button id="mobileDiscountOpen" class="btn btn-outline-warning btn-sm" type="button" style="min-height:44px"><i class="bi bi-tags"></i> 2 por precio especial</button>
+          {% endif %}
           <button id="btnOpenCombo" class="btn btn-outline-primary btn-sm" type="button">
             <i class="bi bi-boxes"></i> Armar combo
           </button>
@@ -1201,6 +1204,9 @@
   </div>
 </div>
 
+{% if branding.get('company_key') in ['hollywood_pacas','pacasholl','hollpacas'] %}
+<div class="modal fade" id="mobileDiscountModal" tabindex="-1" aria-labelledby="mobileDiscountTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down"><div class="modal-content"><div class="modal-header"><div class="modal-title fw-bold" style="font-size:20px;color:#17365d" id="mobileDiscountTitle">2 por precio especial</div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><p class="small text-muted">Cada paquete incluye exactamente 2 unidades. El precio y las cantidades quedan protegidos al enviar la preventa.</p><div id="mobileDiscountList" role="status"></div></div></div></div></div>
+{% endif %}
 <script>
   document.addEventListener("DOMContentLoaded", () => {
     const flashError = {{ (error or "") | tojson }};
@@ -1766,6 +1772,41 @@
       return `${productId}|${role || ""}|${comboGroup || ""}`;
     }
 
+    const mobileDiscountOpen = document.getElementById('mobileDiscountOpen');
+    const mobileDiscountList = document.getElementById('mobileDiscountList');
+    mobileDiscountOpen?.addEventListener('click', async () => {
+      const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('mobileDiscountModal'));
+      modal.show();
+      mobileDiscountList.textContent = 'Cargando promociones de tu sucursal…';
+      try {
+        const response = await fetch('/m/preventas/discount-promotions', {cache:'no-store',redirect:'error'});
+        if (!response.ok) throw Error('No fue posible cargar las promociones.');
+        const data = await response.json();
+        mobileDiscountList.replaceChildren();
+        for (const item of data.items || []) {
+          const card = document.createElement('div');
+          card.className = 'border rounded p-3 mb-3';
+          const already = () => Array.from(itemsBody.querySelectorAll('tr[data-combo-group]')).filter(row => row.dataset.comboGroup.startsWith(`discount2-${item.promotion_id}-`)).length;
+          card.innerHTML = `<strong>${esc(item.code)} · ${esc(item.description)}</strong><div class="my-2">2 unidades por ${fmt(item.package_price_usd, '$')}</div>`;
+          const button = document.createElement('button');
+          button.type = 'button';button.className = 'btn btn-warning w-100';button.style.minHeight = '48px';
+          button.textContent = 'Agregar paquete de 2 unidades';
+          button.disabled = item.available_packages <= already() || !(data.exchange_rate > 0);
+          button.addEventListener('click', async () => {
+            if (already() >= item.available_packages) return;
+            button.disabled = true;
+            const usd = Math.round(Number(item.package_price_usd) / 2 * 100) / 100;
+            const cs = Math.round(usd * Number(data.exchange_rate) * 100) / 100;
+            await addItem({id:item.product_id,cod_producto:item.code,descripcion:item.description,existencia:item.physical_stock,es_libreado:false},
+              {qty:2,role:'discount',comboGroup:`discount2-${item.promotion_id}-${crypto.randomUUID().replaceAll('-','')}`,lockPrice:true,priceUsd:usd,priceCs:cs,priceDisplay:usd});
+            modal.hide();
+          });
+          card.appendChild(button);mobileDiscountList.appendChild(card);
+        }
+        if (!mobileDiscountList.children.length) mobileDiscountList.textContent = 'No hay promociones disponibles para esta sucursal.';
+      } catch (error) {mobileDiscountList.textContent = error.message || 'No fue posible cargar las promociones.';}
+    });
+
     async function addItem(item, extra = {}) {
       const isLibreado = Boolean(item.es_libreado);
       let lbs = 0;
@@ -1812,7 +1853,9 @@
         tr.setAttribute("data-combo-group", comboGroup);
       }
 
-      const badge = role === "parent"
+      const badge = role === "discount"
+        ? '<span class="combo-parent-badge"><i class="bi bi-tags"></i>2 por precio especial · 2 unidades</span>'
+        : role === "parent"
         ? '<span class="combo-parent-badge"><i class="bi bi-boxes"></i>Oferta</span>'
         : role === "gift"
           ? '<span class="combo-gift-badge"><i class="bi bi-gift"></i>Regalia</span>'

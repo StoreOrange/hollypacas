@@ -14549,6 +14549,32 @@ async def mobile_preventas_create_cliente(
     return JSONResponse({"ok": True, "id": cliente.id, "nombre": cliente.nombre, "existing": False})
 
 
+def _discount_preventa_units(db, promotion_id, branch_id):
+    amount = db.query(func.sum(PreventaItem.cantidad)).join(Preventa).filter(Preventa.branch_id == branch_id, Preventa.estado.in_(['PENDIENTE', 'REVISION']), PreventaItem.combo_role == 'discount', PreventaItem.combo_group.like(f'discount2-{promotion_id}-%')).scalar()
+    return Decimal(str(amount or 0))
+
+
+def _mobile_discount_price(db, product, bodega, group, role, qty, rate, requested, seen):
+    if not rate.is_finite() or rate <= 0:
+        raise ValueError('Configura una tasa de cambio válida para la promoción.')
+    match = re.fullmatch(r'discount2-(\d+)-[a-zA-Z0-9-]+', group or '')
+    if not _is_pacasholl_company() or role != 'discount' or not match or len(group or '') > 60 or group in seen or qty != 2 or product.es_libreado:
+        raise ValueError('Promoción inválida: cada paquete debe mantener sus 2 unidades.')
+    promotion = db.query(PromocionDescuentoProducto).filter_by(id=int(match[1]), producto_id=product.id).with_for_update().first()
+    if not promotion or promotion.cantidad_paquete != 2:
+        raise ValueError('La promoción ya no está disponible.')
+    allocation = db.query(PromocionDescuentoSucursal).filter_by(promocion_id=promotion.id, branch_id=bodega.branch_id, activo=True).with_for_update().first()
+    if not allocation or allocation.precio_paquete_usd <= 0:
+        raise ValueError('La promoción no está habilitada para esta sucursal.')
+    used = _discount_promotion_used_units(db, promotion.id, bodega.branch_id) + _discount_preventa_units(db, promotion.id, bodega.branch_id)
+    requested[promotion.id] += qty
+    if used + requested[promotion.id] > allocation.cupo_unidades:
+        raise ValueError('El cupo disponible de la promoción se agotó.')
+    seen.add(group)
+    unit = (Decimal(str(allocation.precio_paquete_usd))/2).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return unit, (unit*rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
 @router.post("/m/preventas")
 async def mobile_preventas_create(
     request: Request,
@@ -14610,6 +14636,10 @@ async def mobile_preventas_create(
     if moneda == "USD" and (not rate_today or tasa <= 0):
         return RedirectResponse("/m/preventas?error=Tasa+de+cambio+no+configurada", status_code=303)
 
+    if any(str(group).startswith('discount2-') for group in item_combo_groups):
+        db.query(Bodega).filter_by(id=bodega.id).with_for_update().one()
+    discount_requested = defaultdict(lambda: Decimal('0'))
+    seen_discount_groups = set()
     product_ids = [int(pid) for pid in item_ids if str(pid).isdigit()]
     balances = _balances_by_bodega(db, [bodega.id], list(set(product_ids))) if product_ids else {}
 
@@ -14624,7 +14654,11 @@ async def mobile_preventas_create(
         if not str(raw_product_id).isdigit():
             continue
         producto_id = int(raw_product_id)
-        qty = _to_dec(item_qtys[idx] if idx < len(item_qtys) else "0").quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        raw_qty = _to_dec(item_qtys[idx] if idx < len(item_qtys) else '0')
+        group_input = str(item_combo_groups[idx] if idx < len(item_combo_groups) else '')
+        if not raw_qty.is_finite() or (group_input.startswith('discount2-') and raw_qty != 2):
+            return RedirectResponse('/m/preventas?error=La+promocion+requiere+exactamente+2+unidades+por+paquete', status_code=303)
+        qty = raw_qty.quantize(Decimal('1'), rounding=ROUND_HALF_UP)
         if qty <= 0:
             continue
         producto = db.query(Producto).filter(Producto.id == producto_id, Producto.activo.is_(True)).first()
@@ -14649,6 +14683,8 @@ async def mobile_preventas_create(
             producto_id=producto.id,
             vendedor_id=vendedor.id,
         )
+        if group_input.startswith('discount2-'):
+            reserved_qty = Decimal(str(db.query(func.sum(PreventaItem.cantidad)).join(Preventa).filter(Preventa.bodega_id == bodega.id, Preventa.estado.in_(['PENDIENTE', 'REVISION']), PreventaItem.producto_id == producto.id).scalar() or 0))
         libre = max(Decimal("0"), existencia - reserved_qty)
         already_requested = sum((x["cantidad"] for x in parsed_items if x["producto"].id == producto.id), Decimal("0"))
         if qty + already_requested > libre:
@@ -14691,6 +14727,20 @@ async def mobile_preventas_create(
             else:
                 precio_cs = price_input
                 precio_usd = (price_input / tasa).quantize(Decimal("0.01")) if tasa > 0 else Decimal("0")
+        if combo_role and not combo_group:
+            return RedirectResponse('/m/preventas?error=El+paquete+promocional+no+es+valido', status_code=303)
+        if (combo_group and combo_group.startswith('discount2-')) or combo_role == 'discount':
+            try:
+                precio_usd, precio_cs = _mobile_discount_price(db, producto, bodega, combo_group, combo_role, qty, tasa, discount_requested, seen_discount_groups)
+            except ValueError as exc:
+                return RedirectResponse('/m/preventas?'+urlencode({'error':str(exc)}), status_code=303)
+        elif _is_pacasholl_company() and not combo_group and not combo_role:
+            # Un vendedor no puede quitar la etiqueta y conservar un precio promocional.
+            prices = _product_price_map(producto)
+            precio_usd = Decimal(str(prices.get('precio_venta1_usd') or 0))
+            precio_cs = Decimal(str(prices.get('precio_venta1') or 0))
+            if precio_usd <= 0 and tasa > 0: precio_usd = (precio_cs/tasa).quantize(Decimal('0.01'))
+            if precio_cs <= 0: precio_cs = (precio_usd*tasa).quantize(Decimal('0.01'))
         parsed_items.append(
             {
                 "producto": producto,
@@ -30435,6 +30485,16 @@ def data_update_cliente(
 @router.get("/sales/discount-promotions")
 def sales_discount_promotions(request: Request, db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
     _enforce_permission(request, user, "access.sales")
+    return _discount_promotions_response(db, user)
+
+
+@router.get('/m/preventas/discount-promotions')
+def mobile_discount_promotions(request: Request, db: Session = Depends(get_db), user: User = Depends(_require_user_web)):
+    _enforce_preventas_mobile_access(request, user)
+    return _discount_promotions_response(db, user, mobile=True)
+
+
+def _discount_promotions_response(db, user, mobile=False):
     if not _is_pacasholl_company():
         return JSONResponse({"ok": True, "items": []})
     _, bodega = _resolve_branch_bodega(db, user)
@@ -30448,9 +30508,16 @@ def sales_discount_promotions(request: Request, db: Session = Depends(get_db), u
     balances = _balances_by_bodega(db, [bodega.id], product_ids) if bodega and product_ids else {}
     items = []
     for allocation, promotion, product in rows:
+        if mobile and product.es_libreado:
+            continue
         used = _discount_promotion_used_units(db, promotion.id, bodega.branch_id)
+        if mobile:
+            used += _discount_preventa_units(db, promotion.id, bodega.branch_id)
         remaining = max(Decimal("0"), Decimal(str(allocation.cupo_unidades or 0)) - used)
         stock = Decimal(str(balances.get((product.id, bodega.id), 0) or 0)) if bodega else Decimal("0")
+        if mobile:
+            reserved = db.query(func.sum(PreventaItem.cantidad)).join(Preventa).filter(Preventa.bodega_id == bodega.id, Preventa.estado.in_(['PENDIENTE', 'REVISION']), PreventaItem.producto_id == product.id).scalar() or 0
+            stock = max(Decimal('0'), stock - Decimal(str(reserved)))
         available_units = max(Decimal("0"), min(remaining, stock))
         packages = int(available_units // Decimal("2"))
         prices = _product_price_map(product)
@@ -30470,6 +30537,7 @@ def sales_discount_promotions(request: Request, db: Session = Depends(get_db), u
     return JSONResponse(
         {
             "ok": True,
+            "exchange_rate": float(db.query(ExchangeRate.rate).filter(ExchangeRate.effective_date <= local_today()).order_by(ExchangeRate.effective_date.desc()).limit(1).scalar() or 0),
             "items": items,
             "branch_id": int(bodega.branch_id),
             "branch_name": bodega.branch.name if bodega.branch else "Sucursal",
@@ -36727,6 +36795,11 @@ async def sales_create_invoice(
                 for p_item in p_items
             }
             append_form_source_items()
+            locked_discounts = sorted((it.combo_group, it.producto_id, Decimal(str(it.cantidad)), it.combo_role) for it in p_items if str(it.combo_group or '').startswith('discount2-'))
+            submitted_discounts = sorted((str(it.get('combo_group') or ''), it['product_id'], Decimal(str(it['qty'])), it.get('role')) for it in source_items if str(it.get('combo_group') or '').startswith('discount2-') or it.get('role') == 'discount')
+            if locked_discounts != submitted_discounts:
+                db.rollback()
+                return RedirectResponse('/sales?error=No+puedes+alterar+las+cantidades+ni+productos+de+la+promocion+guardada+en+la+preventa', status_code=303)
         else:
             for p_item in p_items:
                 source_items.append(
