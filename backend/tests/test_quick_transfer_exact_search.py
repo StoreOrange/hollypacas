@@ -21,12 +21,13 @@ class QuickTransferExactSearchTest(unittest.TestCase):
     def tearDown(self):
         self.db.close();self.engine.dispose()
     def search(self,q,exact=True,bodega='1'):
-        with patch.object(web,'_enforce_permission'),patch.object(web,'_is_shoes_mode',return_value=True),patch.object(web,'_scoped_bodegas_query',side_effect=lambda db:db.query(Bodega)):
+        with patch.object(web,'_enforce_quick_transfer'),patch.object(web,'_quick_transfer_origin_restricted',return_value=False),patch.object(web,'_is_shoes_mode',return_value=True),patch.object(web,'_scoped_bodegas_query',side_effect=lambda db:db.query(Bodega)):
             return web.inventory_quick_transfers_search(None,q=q,exact=exact,bodega_id=bodega,db=self.db,user=None)
     def test_exact_does_not_substitute_partial_matches(self):
-        for code in ['UNKNOWN','SHOE','SHOE-3','Zapato','Negro','38','V1','%','_']:
+        for code in ['UNKNOWN','SHOE-3','Zapato','Negro','38','V1','%','_']:
             with self.subTest(code=code):
                 self.assertEqual(json.loads(self.search(code).body)['items'],[])
+        self.assertEqual([r['variant_id'] for r in json.loads(self.search('SHOE').body)['items']],[1,2])
         for code in ['SHOE-38','shoe-38',' V000001 ']:
             rows=json.loads(self.search(code).body)['items']
             self.assertEqual([r['variant_id'] for r in rows],[1]);self.assertEqual(rows[0]['scan_code'],'V000001')

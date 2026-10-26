@@ -12,7 +12,7 @@
 <form id="unit-form">
 <div class="unit-card"><div class="row g-3">
 <div class="col-6 col-md-3"><label for="unit-date">Fecha</label><input id="unit-date" class="form-control" type="date" value="{{ today }}" required></div>
-<div class="col-6 col-md-3"><label for="unit-warehouse">Bodega que recibe</label><select id="unit-warehouse" class="form-select" required>{% for b in warehouses %}<option value="{{ b.id }}" {% if b.id == user.default_bodega_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+<div class="col-6 col-md-3"><label for="unit-warehouse">Bodega que recibe</label><select id="unit-warehouse" class="form-select" required>{% for b in warehouses %}<option value="{{ b.id }}" {% if b.id == selected_warehouse_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
 <div class="col-6 col-md-3"><label for="unit-type">Tipo de ingreso</label><select id="unit-type" class="form-select" required>{% for t in types %}<option value="{{ t.id }}">{{ t.nombre }}</option>{% endfor %}</select></div>
 <div class="col-6 col-md-3"><label for="unit-supplier">Proveedor, si corresponde</label><select id="unit-supplier" class="form-select"><option value="">Sin proveedor</option>{% for p in suppliers %}<option value="{{ p.id }}">{{ p.nombre }}</option>{% endfor %}</select></div>
 <div class="col-12"><label for="unit-note">Observación</label><input id="unit-note" class="form-control" maxlength="200" placeholder="Motivo del ingreso especial"></div>

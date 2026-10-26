@@ -3,6 +3,7 @@ from unittest.mock import patch
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 from fastapi import HTTPException
 from app.database import Base
@@ -13,7 +14,7 @@ from app.models.sales import VentaFactura
 
 class ShoeCashierTests(unittest.TestCase):
  def setUp(self):
-  self.engine=create_engine('sqlite:///:memory:');Base.metadata.create_all(self.engine);self.db=Session(self.engine)
+  self.engine=create_engine('sqlite:///:memory:',connect_args={'check_same_thread':False},poolclass=StaticPool);Base.metadata.create_all(self.engine);self.db=Session(self.engine)
   self.db.add_all([Branch(id=1,code='central',name='Central'),Branch(id=2,code='kg',name='KG'),Branch(id=3,code='kgf',name='KGF')])
   self.db.add_all([Bodega(id=i,branch_id=i,code=code,name=code.upper()) for i,code in [(1,'central'),(2,'kg'),(3,'kgf')]])
   self.db.commit();self.user=User(email='test',roles=[Role(name='cajero')],default_branch_id=3,default_bodega_id=3)

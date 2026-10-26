@@ -236,10 +236,11 @@
             </div>
           </div>
           <div id="scan-status" class="col-12 small" role="status" aria-live="polite"></div>
-          <div class="col-12 col-lg-4 d-flex align-items-end">
+          <div class="col-12 col-lg-4 d-flex flex-column gap-2 align-items-stretch">
             <button type="button" class="btn transfer-manual-button btn-sm w-100" data-bs-toggle="modal" data-bs-target="#variant-search-modal">
               <i class="bi bi-search me-1"></i> Buscar variante manual
             </button>
+            <a class="btn btn-success btn-sm" href="/inventory/ingresos-unidad?bodega_id={{ default_origen_id }}" data-receipt-origin-selector="#bodega-origen" target="_blank" rel="noopener"><i class="bi bi-box-arrow-in-down me-1"></i>Solicitar ingresos a la bodega origen</a>
           </div>
           <div class="col-12">
             <div class="table-responsive">
@@ -350,6 +351,10 @@
             <tbody id="variant-search-body"></tbody>
           </table>
         </div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <a class="btn btn-success btn-sm" href="/inventory/ingresos-unidad?bodega_id={{ default_origen_id }}" data-receipt-origin-selector="#search-bodega-origen" target="_blank" rel="noopener"><i class="bi bi-box-arrow-in-down me-1"></i>Solicitar ingresos a la bodega origen</a>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
       </div>
     </div>
   </div>
@@ -734,4 +739,5 @@
   {% endif %}
 })();
 </script>
+<script src="/static/js/shoe-receipt-shortcut.js?v=1" defer></script>
 {% endblock %}

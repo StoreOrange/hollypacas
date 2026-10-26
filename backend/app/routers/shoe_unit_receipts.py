@@ -71,18 +71,30 @@ def access(request, user):
 
 def allowed_warehouses(db, user):
     query = db.query(w.Bodega)
-    branches = w._user_scoped_branch_ids(db, user)
-    if branches:
-        query = query.filter(w.Bodega.branch_id.in_(branches))
+    # Misma política de sucursales que las utilidades de Miss Zapatos:
+    # administrador en todas las tiendas; demás usuarios en su ámbito asignado.
+    branches = w._utility_branch_ids(db, user)
+    query = query.filter(w.Bodega.branch_id.in_(branches), w.Bodega.activo.is_(True))
     return query.order_by(w.Bodega.name).all()
 
 
 @router.get(PATH)
 def page(request: Request, db=Depends(w.get_db), user=Depends(w._require_admin_web)):
     access(request, user)
+    warehouses = allowed_warehouses(db, user)
+    origin = str(request.query_params.get('bodega_id') or '').strip()
+    if origin:
+        if not origin.isdigit():
+            raise HTTPException(400, 'Bodega de origen inválida')
+        selected = next((b for b in warehouses if b.id == int(origin) and b.activo), None)
+        if not selected:
+            raise HTTPException(403, 'No tiene acceso a la bodega de origen seleccionada')
+        selected_id = selected.id
+    else:
+        selected_id = user.default_bodega_id
     return request.app.state.templates.TemplateResponse('shoe_unit_receipts.html', dict(
         request=request, user=user, version=w.settings.UI_VERSION, today=w.local_today(), token=str(uuid4()),
-        warehouses=allowed_warehouses(db, user), types=[t for t in db.query(w.IngresoTipo).all() if 'traslado' not in w._ascii_lower(t.nombre)],
+        warehouses=warehouses, selected_warehouse_id=selected_id, types=[t for t in db.query(w.IngresoTipo).all() if 'traslado' not in w._ascii_lower(t.nombre)],
         suppliers=db.query(w.Proveedor).all(), lines=db.query(w.Linea).filter(w.Linea.activo.is_(True)).all(),
         colors=db.query(w.ColorCatalog).filter(w.ColorCatalog.activo.is_(True)).all()))
 

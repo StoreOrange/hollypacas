@@ -1473,7 +1473,8 @@
           </table>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer justify-content-between">
+        <a class="btn btn-success btn-sm" href="/inventory/ingresos-unidad?bodega_id={{ user.default_bodega_id or '' }}" data-receipt-warehouse="{{ user.default_bodega_id or '' }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-in-down me-1"></i>Solicitar ingresos a la bodega origen</a>
         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
       </div>
     </div>
@@ -5046,4 +5047,5 @@
 </script>
 {% endif %}
 
+<script src="/static/js/shoe-receipt-shortcut.js?v=1" defer></script>
 {% endblock %}
