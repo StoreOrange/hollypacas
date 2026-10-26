@@ -40,6 +40,8 @@ from .routers import shoe_unit_receipts
 app.include_router(shoe_unit_receipts.router)
 web.SIDEBAR_MENU_ITEMS.insert(next((i + 1 for i, item in enumerate(web.SIDEBAR_MENU_ITEMS) if item["id"] == "inventory_ingresos"), len(web.SIDEBAR_MENU_ITEMS)), {"id": "inventory_unit_receipts", "label": "Ingresos por unidad", "href": "/inventory/ingresos-unidad", "icon": "bi-box-seam", "perm": "menu.inventory.ingresos", "alt_perm": None, "shoes_only": "1"})
 app.include_router(accounting_workspace.router)
+from .routers import accounting_registry
+app.include_router(accounting_registry.router)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.state.templates = Jinja2Templates(directory="app/templates")

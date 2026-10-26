@@ -45,6 +45,8 @@ class InventoryTypeReportTests(unittest.TestCase):
         self.assertEqual(totals['Egreso']['cost_cs'],80)
         row=next(r for g in groups for r in g['rows'] if r['direction']=='Ingreso' and r['id']==1)
         self.assertEqual(row['cost_cs'],150);self.assertEqual(row['lab_number'],'LAB-TEST')
+        self.assertEqual([(p['code'],p['quantity']) for p in row['products']],[('A',Decimal(2)),('B',Decimal(1))])
+        self.assertEqual(sum(p['cost_cs'] for p in row['products']),row['cost_cs'])
         self.assertEqual(row['lab_date'],date(2026,9,1))
     def test_direction_type_date_and_warehouse_filters(self):
         groups,totals=inventory_type_rows(self.db,self.day,self.day,1,'ingreso',income_type=2)
@@ -66,6 +68,7 @@ class InventoryTypeReportTests(unittest.TestCase):
         self.assertIn('focus_laboratorio=1#labDetail1',html)
         self.assertIn('start_date=2026-09-01&amp;end_date=2026-09-01',html)
         self.assertIn('Sin laboratorio',html)
+        self.assertIn('Paca A',html);self.assertIn('Paca B',html);self.assertIn('Costo unit. C$',html)
         self.assertEqual(response.context['warehouse'].id,1)
         self.assertEqual(len(response.context['warehouses']),1)
     def test_forbidden_scope_and_bad_filters(self):

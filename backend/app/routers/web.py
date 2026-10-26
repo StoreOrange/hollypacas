@@ -9732,6 +9732,16 @@ def accounting_entry_post(request: Request, entry_id: int, db: Session = Depends
 
 @router.post("/accounting/entries/{entry_id}/reverse")
 def accounting_entry_reverse(request: Request, entry_id: int, motivo: str = Form(...), fecha_reversa: str = Form(...), db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+    return _reverse_accounting_entry(request,entry_id,motivo,fecha_reversa,db,user)
+
+
+@router.post('/accounting/entries/{entry_id}/correct')
+def accounting_entry_correct(request:Request,entry_id:int,motivo:str=Form(...),fecha_reversa:str=Form(...),db:Session=Depends(get_db),user:User=Depends(_require_admin_web)):
+    if not _is_pacasholl_company():raise HTTPException(404)
+    return _reverse_accounting_entry(request,entry_id,motivo,fecha_reversa,db,user,replacement=True)
+
+
+def _reverse_accounting_entry(request,entry_id,motivo,fecha_reversa,db,user,*,replacement=False):
     _enforce_permission(request, user, "access.accounting.entries")
     reason = (motivo or "").strip()
     try:
@@ -9744,6 +9754,13 @@ def accounting_entry_reverse(request: Request, entry_id: int, motivo: str = Form
     branches = _user_scoped_branch_ids(db, user)
     entry = db.query(AccountingEntry).filter(AccountingEntry.id == entry_id,
         or_(AccountingEntry.branch_id.is_(None), AccountingEntry.branch_id.in_(branches))).with_for_update().first()
+    correction_key=hashlib.sha256(f'accounting-correction:{entry_id}'.encode()).hexdigest()[:32]
+    if replacement and entry:
+        prior=db.query(AccountingEntry).filter_by(manual_operation_key=correction_key).first()
+        if prior and entry.estado=='REVERSADO' and prior.branch_id==entry.branch_id:return RedirectResponse(f'/accounting/entries?edit_entry_id={prior.id}',status_code=303)
+        if prior:return RedirectResponse('/accounting/comprobantes?error=La+referencia+de+correccion+ya+esta+ocupada.+Revisa+el+historial',status_code=303)
+        if str(entry.referencia or '').startswith('AUTO-'):
+            return RedirectResponse('/accounting/comprobantes?error=Este+comprobante+es+automatico.+Corrige+el+documento+de+origen+para+mantener+caja+e+inventario+coordinados',status_code=303)
     if not entry or entry.estado != "POSTEADO":
         return RedirectResponse("/accounting/entries?error=Solo+se+puede+revertir+un+asiento+publicado", status_code=303)
     if entry.reversa_de_id or db.query(AccountingEntry.id).filter(AccountingEntry.reversa_de_id == entry.id).first():
@@ -9786,6 +9803,14 @@ def accounting_entry_reverse(request: Request, entry_id: int, motivo: str = Form
     entry.anulado_por = user.email
     entry.anulado_at = local_now_naive()
     db.add(reversal)
+    if replacement:
+        db.flush()
+        draft_seq=_next_accounting_sequence(db,entry.tipo_id,entry.branch_id,period)
+        draft=AccountingEntry(tipo_id=entry.tipo_id,journal_id=entry.journal_id,branch_id=entry.branch_id,fecha=reversal_date,periodo=period,secuencia=draft_seq,numero=_build_accounting_entry_number(entry.tipo,period,draft_seq),referencia=entry.referencia,descripcion=f'Corrección de {entry.numero}: {entry.descripcion}',moneda=entry.moneda,tasa_sistema=entry.tasa_sistema,tasa_cambio=entry.tasa_cambio,estado='BORRADOR',total_debe=entry.total_debe,total_haber=entry.total_haber,manual_operation_key=correction_key,creado_por=user.email,lines=[AccountingEntryLine(cuenta_id=line.cuenta_id,cliente_id=line.cliente_id,proveedor_id=line.proveedor_id,vencimiento=line.vencimiento,descripcion=line.descripcion,debe=line.debe,haber=line.haber) for line in entry.lines])
+        db.add(draft);db.flush()
+        entry.anulado_motivo=(reason[:150]+' | Borrador de corrección: '+draft.numero)[:260]
+        db.commit()
+        return RedirectResponse(f'/accounting/entries?edit_entry_id={draft.id}&success=Original+revertido.+Revisa+cuentas+y+montos+del+borrador+antes+de+publicarlo',status_code=303)
     db.commit()
     return RedirectResponse(f"/accounting/entries?success=Reversion+registrada&pdf_entry_id={reversal.id}", status_code=303)
 
