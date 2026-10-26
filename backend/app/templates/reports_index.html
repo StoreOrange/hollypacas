@@ -89,6 +89,9 @@
           </span>
         </div>
         <div class="row g-4">
+          {% if stagnant_inventory_enabled %}
+          <div class="col-md-6 col-xl-4"><a class="text-decoration-none" href="/reports/movimientos-tipo"><div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white"><div class="odoo-section-title"><i class="bi bi-arrow-left-right me-2"></i>Ingresos y egresos por tipo</div><p class="text-slate mt-2">Movimientos de una bodega, agrupados por tipo, con costos y acceso a laboratorios.</p></div></a></div>
+          {% endif %}
           <div class="col-md-6 col-xl-4">
             <a class="text-decoration-none" href="/reports/ventas">
               <div class="border border-slate-200 rounded-3xl p-4 h-100 shadow-sm bg-white">

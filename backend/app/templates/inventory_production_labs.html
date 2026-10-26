@@ -70,4 +70,5 @@
     })();
   </script>
 </div>
+<script>document.addEventListener('DOMContentLoaded',()=>{const id=new URLSearchParams(location.search).get('focus_laboratorio');if(!/^\d+$/.test(id||''))return;const modal=document.getElementById('labDetail'+id);if(modal&&window.bootstrap)bootstrap.Modal.getOrCreateInstance(modal).show();});</script>
 {% endblock %}

@@ -25773,6 +25773,47 @@ def report_kardex_items(request: Request, q: str = '', db: Session = Depends(get
     return JSONResponse({'items':items}, headers={'Cache-Control':'no-store'})
 
 
+@router.get('/reports/movimientos-tipo')
+def report_inventory_types(request: Request, db: Session = Depends(get_db), user: User = Depends(_require_user_web)):
+    _enforce_permission(request, user, 'access.reports')
+    if not _is_hollpacas_mode(): raise HTTPException(404)
+    allowed = _utility_branch_ids(db, user)
+    branches = db.query(Branch).filter(Branch.id.in_(allowed), Branch.activo.is_(True)).order_by(Branch.name).all()
+    warehouses = db.query(Bodega).filter(Bodega.branch_id.in_([b.id for b in branches]), Bodega.activo.is_(True)).order_by(Bodega.name).all()
+    if not warehouses: raise HTTPException(403, 'No tienes bodegas autorizadas')
+    def ident(name):
+        value=request.query_params.get(name, '')
+        if value and not value.isdigit():raise HTTPException(400, 'Filtro inválido: '+name)
+        return int(value) if value else None
+    branch_id=ident('branch_id')
+    if branch_id and branch_id not in {b.id for b in branches}:raise HTTPException(403, 'Sucursal no autorizada')
+    candidates=[b for b in warehouses if not branch_id or b.branch_id==branch_id]
+    if not candidates:raise HTTPException(403, 'La sucursal no tiene bodegas autorizadas')
+    warehouse_id=ident('bodega_id')
+    if warehouse_id:
+        warehouse=next((b for b in candidates if b.id==warehouse_id),None)
+        if not warehouse:raise HTTPException(403, 'Bodega no autorizada para esta sucursal')
+    else:
+        warehouse=next((b for b in candidates if b.id==user.default_bodega_id),candidates[0])
+    branch_id=warehouse.branch_id
+    today=local_today()
+    try:
+        start=date.fromisoformat(request.query_params.get('start_date') or today.replace(day=1).isoformat())
+        end=date.fromisoformat(request.query_params.get('end_date') or today.isoformat())
+    except ValueError:raise HTTPException(400, 'Rango de fechas inválido')
+    if start>end:start,end=end,start
+    direction=request.query_params.get('direction','ambos')
+    if direction not in ('ambos','ingreso','egreso'):raise HTTPException(400, 'Movimiento inválido')
+    income_type,expense_type=ident('ingreso_tipo_id'),ident('egreso_tipo_id')
+    income_types=db.query(IngresoTipo).order_by(IngresoTipo.nombre).all()
+    expense_types=db.query(EgresoTipo).order_by(EgresoTipo.nombre).all()
+    if income_type and income_type not in {t.id for t in income_types}:raise HTTPException(400,'Tipo de ingreso inválido')
+    if expense_type and expense_type not in {t.id for t in expense_types}:raise HTTPException(400,'Tipo de egreso inválido')
+    from ..core.inventory_type_report import inventory_type_rows
+    groups,totals=inventory_type_rows(db,start,end,warehouse.id,direction,income_type,expense_type)
+    return request.app.state.templates.TemplateResponse('report_inventory_types.html',dict(request=request,user=user,branches=branches,warehouses=warehouses,warehouse=warehouse,branch_id=branch_id,start_date=start.isoformat(),end_date=end.isoformat(),direction=direction,income_type=income_type,expense_type=expense_type,income_types=income_types,expense_types=expense_types,groups=groups,totals=totals,can_view_labs=_has_permission(user,'access.inventory.egresos'),version=settings.UI_VERSION))
+
+
 @router.get("/reports/kardex")
 def report_kardex(
     request: Request,
