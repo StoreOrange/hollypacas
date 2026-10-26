@@ -22,3 +22,12 @@ assert.equal(classify('Compra de computadoras para oficina'),'asset');
 assert.equal(classify('Compra de pacas y pago de internet'),null);
 assert.equal(classify('Operación especial no descrita'),null);
 console.log('PASS: 13 operaciones cuadradas, pago parcial exacto, venta+costos, importes inválidos y orientación sin clasificación ambigua.');
+for(const payment of ['cash','bank','credit','partial']){
+ const lines=propose({...base,operation:'production_inventory',debit:'wip',payment,paid:'234.56',payable:'supplier'});
+ assert.equal(lines[0].cuenta_id,'wip');
+ assert.equal(lines[0].debe,1234.56);
+ assert.ok(lines.every(line=>line.cuenta_id!=='inv'&&line.cuenta_id!=='cost'));
+ assert.equal(lines.reduce((sum,line)=>sum+Math.round(line.haber*100),0),123456);
+ assert.equal(lines.length,payment==='partial'?3:2);
+}
+console.log('PASS: compras de producción al contado, banco, crédito y pago parcial sin cuenta de inventario general ni costo de venta.');

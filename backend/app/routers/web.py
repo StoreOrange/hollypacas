@@ -8037,6 +8037,7 @@ def _manual_accounting_response(request, db, user, entries, edit_entry, voucher_
     rate_row = db.query(ExchangeRate).filter(ExchangeRate.effective_date <= local_today()).order_by(ExchangeRate.effective_date.desc()).first()
     return request.app.state.templates.TemplateResponse("accounting_entries.html", {
         "request": request, "user": user, "entries": entries, "edit_entry": edit_entry, "manual_operation_key": uuid.uuid4().hex,
+        "production_purchase_enabled": get_active_company_key() == "hollywood_pacas",
         "edit_entry_lines_json": [{"cuenta_id": line.cuenta_id, "descripcion": line.descripcion or "", "debe": float(line.debe), "haber": float(line.haber)} for line in (edit_entry.lines if edit_entry else [])],
         "cuentas": accounts, "cuentas_json": [{"id": account.id, "codigo": account.codigo, "nombre": account.nombre, "descripcion": account.descripcion or "", "path": paths[account.id], "tipo": account.tipo, "naturaleza": account.naturaleza} for account in accounts],
         "voucher_types": voucher_types,

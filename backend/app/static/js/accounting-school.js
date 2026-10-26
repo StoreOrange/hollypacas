@@ -1,6 +1,7 @@
 (function(root){
 'use strict';
 const lessons={
+ production_inventory:{title:'Compra para producción en proceso',debit:'Inventario de producción en proceso',credit:'Proveedor o medio de pago',explain:'Registra la inversión de compra como activo contable separado. No agrega unidades, no cambia costos de Central o Estelí y no registra costo de ventas.',support:'Factura del proveedor, referencia y evidencia del pago o deuda.',rule:'Control monetario de compras. La aplicación a producción y costo de ventas queda para una fase posterior.'},
  inventory:{title:'Compra de inventario',debit:'Inventarios',credit:'Proveedor o medio de pago',explain:'La mercancía para revender es un activo. Debe aumenta inventario; Haber registra el pago o la deuda. La compra no es todavía costo de ventas.',support:'Factura del proveedor y documento del ingreso de mercancía.',rule:'Costo histórico y reconocimiento del costo al vender (NIC 2).'},
  expense:{title:'Gasto del negocio',debit:'Gasto correspondiente',credit:'Proveedor o medio de pago',explain:'Reconoce el servicio consumido en el período. Debe aumenta el gasto; Haber disminuye dinero o reconoce una deuda. Un pago anticipado para meses futuros puede ser un activo, no gasto inmediato.',support:'Factura, recibo o soporte del servicio, fecha y período que cubre.',rule:'Devengo, asociación de ingresos y gastos y soporte documental.'},
  asset:{title:'Compra de activo fijo',debit:'Activo fijo específico',credit:'Proveedor o medio de pago',explain:'Un equipo que dará beneficios durante varios períodos puede ser un activo. Debe reconoce su costo y Haber el pago o la deuda. La depreciación se registra aparte con vida útil y valor residual revisados.',support:'Factura y descripción del activo, fecha disponible para uso.',rule:'Distingue inversión de gasto y distribuye su consumo durante la vida útil.'},
@@ -22,7 +23,7 @@ function propose(input){
  if(!input.debit||!input.credit||input.debit===input.credit)throw Error('Revisa las cuentas: Debe y Haber deben ser diferentes.');
  const lines=[],add=(account,debit,credit,detail)=>lines.push({cuenta_id:account,debe:debit/100,haber:credit/100,descripcion:detail});
  add(input.debit,total,0,lesson.title);
- if(['inventory','expense','asset'].includes(input.operation)&&input.payment==='partial'){
+ if(['inventory','production_inventory','expense','asset'].includes(input.operation)&&input.payment==='partial'){
   const paid=cents(input.paid);if(paid===null||paid<=0||paid>=total)throw Error('El pago parcial debe ser mayor que cero y menor al total.');
   if(!input.payable||[input.debit,input.credit].includes(input.payable))throw Error('Selecciona una cuenta por pagar distinta de la cuenta del pago y de la compra.');
   add(input.credit,0,paid,'Pago parcial');add(input.payable,0,total-paid,'Saldo pendiente al proveedor');

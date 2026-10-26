@@ -204,7 +204,7 @@
       const school=window.AccountingSchool, field=name=>document.getElementById('school'+name);
       const escape=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
       let proposal=null;
-      const map={inventory:['inventarios'],expense:['gastos operativos'],asset:['mobiliario y equipo'],sale:['caja'],supplier:['proveedores'],collection:['caja'],transfer:['bancos'],capital:['caja'],loan:['bancos'],shortage:['otros gastos'],depreciation:['gasto de depreciacion','gastos de depreciacion'],quota:['impuestos y tasas','tributos','otros gastos'],advance:['anticipos a proveedores']};
+      const map={production_inventory:['inventario de produccion en proceso'],inventory:['inventarios'],expense:['gastos operativos'],asset:['mobiliario y equipo'],sale:['caja'],supplier:['proveedores'],collection:['caja'],transfer:['bancos'],capital:['caja'],loan:['bancos'],shortage:['otros gastos'],depreciation:['gasto de depreciacion','gastos de depreciacion'],quota:['impuestos y tasas','tributos','otros gastos'],advance:['anticipos a proveedores']};
       function selectSuggested(name,words,requiredType){
         const list=[...accounts.values()].filter(a=>!requiredType||a.tipo===requiredType);
         const chosen=words.map(word=>list.find(a=>normalize(a.nombre)===word)||list.find(a=>normalize(a.nombre).includes(word))).find(Boolean);
@@ -219,16 +219,21 @@
       function invalidate(){proposal=null;field('Apply').disabled=true;field('Proposal').hidden=true;field('Message').textContent='';}
       function lesson(){
         invalidate();const op=field('Operation').value,info=school.lessons[op];let payment=field('Payment').value;
-        if((payment==='partial'&&!['inventory','expense','asset'].includes(op))||(payment==='credit'&&!['inventory','expense','asset','sale'].includes(op))){payment='cash';field('Payment').value='cash';}
+        if((payment==='partial'&&!['inventory','production_inventory','expense','asset'].includes(op))||(payment==='credit'&&!['inventory','production_inventory','expense','asset','sale'].includes(op))){payment='cash';field('Payment').value='cash';}
         field('Explanation').textContent=info.explain;field('Support').textContent='Soporte: '+info.support;field('Rule').textContent=info.rule;
         field('DebitLabel').textContent='Debe · '+info.debit;field('CreditLabel').textContent='Haber · '+info.credit;
-        const acquisition=['inventory','expense','asset'].includes(op),partial=acquisition&&payment==='partial';
+        const acquisition=['inventory','production_inventory','expense','asset'].includes(op),partial=acquisition&&payment==='partial';
         field('Payment').querySelector('option[value="credit"]').disabled=!acquisition&&op!=='sale';
         field('Payment').querySelector('option[value="partial"]').disabled=!acquisition;
         field('Payment').disabled=!acquisition&&!['sale','supplier','collection','capital','loan','quota','advance'].includes(op);
         ['PaidWrap','PayableWrap'].forEach(name=>field(name).hidden=!partial);
         ['CostWrap','CostAccountWrap','InventoryAccountWrap'].forEach(name=>field(name).hidden=op!=='sale');
         selectSuggested('Debit',map[op],['expense','shortage','depreciation','quota'].includes(op)?'RESULTADO':'BALANCE');
+        if(op==='production_inventory'){
+          const account=[...accounts.values()].find(a=>a.codigo==='1112'&&a.tipo==='BALANCE'&&a.naturaleza==='DEBE'&&normalize(a.nombre)==='inventario de produccion en proceso');
+          field('Debit').value=account?String(account.id):'';
+        }
+        field('Debit').disabled=op==='production_inventory';
         if(['collection','capital','loan'].includes(op))selectSuggested('Debit',payment==='bank'?['bancos','banco']:['caja','efectivo'],'BALANCE');
         const cash=payment==='bank'?['bancos','banco']:['caja','efectivo'];
         if(acquisition)selectSuggested('Credit',payment==='credit'?['proveedores']:cash,'BALANCE');
@@ -237,7 +242,8 @@
         selectSuggested('Payable',['proveedores'],'BALANCE');selectSuggested('CostAccount',['costo de ventas'],'RESULTADO');selectSuggested('InventoryAccount',['inventarios'],'BALANCE');
       }
       field('Suggest').addEventListener('click',()=>{
-        const operation=school.classify(field('Concept').value);
+        let operation=school.classify(field('Concept').value);
+        if(operation==='inventory'&&field('Operation').querySelector('option[value="production_inventory"]'))operation='production_inventory';
         if(operation){field('Operation').value=operation;lesson();
           if(operation==='expense'){const text=normalize(field('Concept').value);const categories=[[/alquiler/,['alquileres']], [/energia|electricidad/,['energia electrica']], [/agua/,['agua potable']], [/internet|telefono/,['telefonia e internet']], [/papeleria|utiles/,['papeleria y utiles']]];const match=categories.find(([regex])=>regex.test(text));if(match)selectSuggested('Debit',match[1],'RESULTADO');}
           field('Message').textContent='Orientación sugerida: '+school.lessons[operation].title+'. Confirma las cuentas y el importe.';}
@@ -250,6 +256,10 @@
         try{
           if(field('Source').value!=='manual')throw Error(field('Source').value==='system'?'Revisa el asiento automático en el historial antes de registrar otro; esta propuesta no se carga para evitar duplicarlo.':'Indica si la operación ya está contabilizada.');
           if(!field('Reference').value.trim())throw Error('Indica el documento o referencia del soporte.');
+          if(field('Operation').value==='production_inventory'){
+            const account=accounts.get(field('Debit').value);
+            if(!account||account.codigo!=='1112'||account.tipo!=='BALANCE'||account.naturaleza!=='DEBE'||normalize(account.nombre)!=='inventario de produccion en proceso')throw Error('La cuenta 1112 de producción en proceso no está disponible. Actualiza el catálogo o consulta al administrador.');
+          }
           proposal=school.propose({operation:field('Operation').value,total:field('Amount').value,payment:field('Payment').value,debit:field('Debit').value,credit:field('Credit').value,paid:field('Paid').value,payable:field('Payable').value,cost:field('Cost').value,costAccount:field('CostAccount').value,inventoryAccount:field('InventoryAccount').value});
           if(proposal.some(line=>!accounts.has(String(line.cuenta_id))))throw Error('Una cuenta ya no está disponible. Actualiza el catálogo y revísala.');
           field('Proposal').innerHTML='<table class="table table-sm"><thead><tr><th>Cuenta</th><th>Debe</th><th>Haber</th></tr></thead><tbody>'+proposal.map(line=>{const a=accounts.get(String(line.cuenta_id));return `<tr><td>${escape(a.codigo)} · ${escape(a.nombre)}</td><td>${numberFormat.format(line.debe)}</td><td>${numberFormat.format(line.haber)}</td></tr>`;}).join('')+'</tbody></table>';
@@ -267,6 +277,10 @@
         });
         document.getElementById('entryDescription').value=field('Concept').value.trim()||school.lessons[field('Operation').value].title;
         document.getElementById('entryReference').value=field('Reference').value.trim();
+        if(field('Operation').value==='production_inventory'&&!data.editing){
+          const purchase=[...journal.options].find(option=>option.dataset.kind==='PURCHASE');
+          if(purchase){const captureCurrency=currency.value;journal.value=purchase.value;journal.dispatchEvent(new Event('change'));currency.value=captureCurrency;}
+        }
         update();field('Message').textContent='Líneas cargadas y editables. Revisa fecha, diario, sucursal, tercero y soporte antes de publicar.';
         body.rows[0]?.querySelector('.line-detail').focus();field('Apply').disabled=true;proposal=null;
       });
