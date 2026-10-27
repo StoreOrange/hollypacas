@@ -22,7 +22,7 @@ def example_entry(count=2, state='POSTEADO'):
                branch=Obj(name='Central'),tipo=Obj(nombre='Egreso'),journal=Obj(name='Compras'),referencia='FACT-PROV-273',
                descripcion='Compra para producción en proceso. Concepto con caracteres < > & y detalles completos. '*4,
                moneda='USD',tasa_cambio=Decimal('37'),total_debe=Decimal('3700')*(count//2),total_haber=Decimal('3700')*(count//2),
-               lines=lines,reversa_de=None,anulado_motivo=None,created_at=datetime(2026,10,27,10,30),creado_por='contador@ejemplo.com',
+               lines=lines,reversa_de=None,anulado_motivo=None,created_at=datetime(2026,10,27,16,30),creado_por='contador@ejemplo.com',
                publicado_por='supervisor@ejemplo.com',publicado_at=datetime(2026,10,27,10,35))
 
 PROFILE={'legal_name':'Pacas Hollywood','ruc':'J0000000000000','phone':'8900-0300','address':'Sucursal Central, Nicaragua','email':'contabilidad@ejemplo.com'}
@@ -65,3 +65,13 @@ class AccountingPdfTests(unittest.TestCase):
         self.assertIn('PENDIENTE',text)
         self.assertIn('100.00',text)
         self.assertNotIn('CUADRE: CORRECTO',text)
+
+    def test_registration_utc_and_publication_local_show_same_timezone(self):
+        entry=example_entry()
+        entry.created_at=datetime(2026,10,27,3,30)
+        entry.publicado_at=datetime(2026,10,26,21,31)
+        pdf=fitz.open(stream=build_accounting_entry_pdf(entry,PROFILE,LOGO),filetype='pdf')
+        text=''.join(page.get_text() for page in pdf)
+        self.assertIn('Fecha de registro: 26/10/2026 21:30',text)
+        self.assertIn('Fecha de publicación: 26/10/2026 21:31',text)
+        self.assertIn('hora de Nicaragua',text)

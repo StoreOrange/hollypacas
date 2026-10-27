@@ -2,6 +2,7 @@
 import io
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from xml.sax.saxutils import escape
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_RIGHT
@@ -10,7 +11,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, KeepTogether
 
 
-def build_accounting_entry_pdf(entry, profile, logo_path=None):
+def build_accounting_entry_pdf(entry, profile, logo_path=None, created_timezone="UTC"):
     buffer = io.BytesIO()
     ink = colors.HexColor('#243449')
     muted = colors.HexColor('#596777')
@@ -84,9 +85,14 @@ def build_accounting_entry_pdf(entry, profile, logo_path=None):
     if entry.anulado_motivo:
         summary.extend([Spacer(1,6),p('Motivo / trazabilidad: '+entry.anulado_motivo,small)])
     story.append(KeepTogether(summary))
-    created=entry.created_at.strftime('%d/%m/%Y %H:%M') if entry.created_at else '-'
-    posted=entry.publicado_at.strftime('%d/%m/%Y %H:%M') if entry.publicado_at else '-'
-    story.extend([Spacer(1,14),p(f'Registrado por: {entry.creado_por or "-"} | Fecha de registro: {created}',small),p(f'Publicado por: {entry.publicado_por or "-"} | Fecha de publicación: {posted}',small),Spacer(1,32)])
+    local_zone=ZoneInfo('America/Managua')
+    def timestamp(value, source_zone):
+        if not value:return '-'
+        aware=value if value.tzinfo else value.replace(tzinfo=ZoneInfo(source_zone))
+        return aware.astimezone(local_zone).strftime('%d/%m/%Y %H:%M')
+    created=timestamp(entry.created_at, created_timezone)
+    posted=timestamp(entry.publicado_at, 'America/Managua')
+    story.extend([Spacer(1,14),p(f'Registrado por: {entry.creado_por or "-"} | Fecha de registro: {created}',small),p(f'Publicado por: {entry.publicado_por or "-"} | Fecha de publicación: {posted} (hora de Nicaragua)',small),Spacer(1,32)])
     signatures=Table([[p('Elaborado por',small),p('Revisado por',small),p('Autorizado por',small)]],colWidths=[180]*3)
     signatures.setStyle(TableStyle([('LINEABOVE',(0,0),(-1,0),.5,border),('TOPPADDING',(0,0),(-1,-1),7)]))
     story.append(signatures)

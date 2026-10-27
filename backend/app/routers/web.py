@@ -4507,10 +4507,10 @@ def _build_accounting_entry_number(voucher_type: AccountingVoucherType, period: 
     return f"{prefix}-{compact_period}-{seq:05d}"
 
 
-def _build_accounting_entry_pdf_bytes(entry: AccountingEntry, company_profile=None) -> bytes:
+def _build_accounting_entry_pdf_bytes(entry: AccountingEntry, company_profile=None, created_timezone="UTC") -> bytes:
     from ..core.accounting_entry_pdf import build_accounting_entry_pdf
     profile = company_profile or _default_company_profile_payload()
-    return build_accounting_entry_pdf(entry, profile, _resolve_logo_path(profile.get("logo_url", "")))
+    return build_accounting_entry_pdf(entry, profile, _resolve_logo_path(profile.get("logo_url", "")), created_timezone=created_timezone)
 
 
 def _suggest_counter_account_id(
@@ -9787,7 +9787,8 @@ def accounting_entry_pdf(
     )
     if not entry:
         raise HTTPException(status_code=404, detail="Comprobante no encontrado")
-    pdf_bytes = _build_accounting_entry_pdf_bytes(entry, _company_profile_payload(db))
+    created_timezone = db.execute(sql_text("SHOW TIMEZONE")).scalar_one() if db.get_bind().dialect.name == "postgresql" else "UTC"
+    pdf_bytes = _build_accounting_entry_pdf_bytes(entry, _company_profile_payload(db), created_timezone)
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
