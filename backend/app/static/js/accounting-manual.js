@@ -192,16 +192,27 @@
     document.getElementById('refreshAccounts').addEventListener('click',refreshAccounts);
     window.addEventListener('focus',refreshAccounts);
     window.addEventListener('storage',event=>{if(event.key==='accounting-catalog-updated')refreshAccounts();});
+    const visible = input => input && !input.disabled && !input.readOnly && !input.closest('[hidden]') && !input.closest('details:not([open])') && input.getClientRects().length > 0;
     form.addEventListener('keydown',event=>{
-      if(event.key!=='Enter'||event.isComposing||event.target.closest('tr')||!event.target.matches('input:not([type="hidden"]),select,textarea'))return;
+      if(event.isComposing)return;
+      if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){
+        event.preventDefault();event.stopPropagation();
+        if(!document.getElementById('publishEntry').disabled)document.getElementById('publishEntry').focus();
+        else showError('Revisa el cuadre, las cuentas y la tasa antes de publicar.');
+        return;
+      }
+      if(event.key!=='Enter'||event.target.closest('tr')||!event.target.matches('input:not([type="hidden"]),select,textarea'))return;
       event.preventDefault();
-      const fields=[...form.querySelectorAll('input,select,textarea')].filter(input=>input.type!=='hidden'&&!input.disabled&&!input.readOnly&&!input.closest('[hidden]')&&!input.closest('details:not([open])')&&input.getClientRects().length>0);
+      if(!event.target.checkValidity()){event.target.reportValidity();return;}
+      const order=['entryDate','entryReference','entryDescription','entrySupplier','entryBranch','entryCurrency','manualRate','schoolOperation','schoolAmount','schoolPayment','schoolPaid','schoolDebit','schoolCredit','schoolPayable','schoolSource','schoolPreview'];
+      let fields=order.map(id=>document.getElementById(id)).filter(visible);
+      if(!fields.includes(event.target))fields=[...form.querySelectorAll('input,select,textarea,button[type="button"]')].filter(visible);
       const index=fields.indexOf(event.target);
       const next=fields[index+(event.shiftKey?-1:1)];
       if(next){next.focus();if(next.tagName==='INPUT'&&!['date','number'].includes(next.type))next.select();}
-    });
+    }, true);
     if(window.AccountingSchool&&document.getElementById('schoolPanel')){
-      const school=window.AccountingSchool, field=name=>document.getElementById('school'+name);
+      const school=window.AccountingSchool, field=name=>document.getElementById(({Concept:'entryDescription',Reference:'entryReference'})[name]||'school'+name);
       const escape=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
       let proposal=null;
       const map={production_inventory:['inventario de produccion en proceso'],inventory:['inventarios'],expense:['gastos operativos'],asset:['mobiliario y equipo'],sale:['caja'],supplier:['proveedores'],collection:['caja'],transfer:['bancos'],capital:['caja'],loan:['bancos'],shortage:['otros gastos'],depreciation:['gasto de depreciacion','gastos de depreciacion'],quota:['impuestos y tasas','tributos','otros gastos'],advance:['anticipos a proveedores']};
@@ -250,7 +261,7 @@
         else field('Message').textContent='No hay una clasificación única. Selecciona qué ocurrió; puedes combinar varias líneas manualmente.';
       });
       field('Operation').addEventListener('change',lesson);field('Payment').addEventListener('change',lesson);
-      document.getElementById('schoolPanel').querySelectorAll('input,select').forEach(input=>input.addEventListener('input',invalidate));
+      [...document.getElementById('schoolPanel').querySelectorAll('input,select'),field('Concept'),field('Reference')].forEach(input=>input.addEventListener('input',invalidate));
       field('Preview').addEventListener('click',()=>{
         invalidate();
         try{
@@ -263,7 +274,7 @@
           proposal=school.propose({operation:field('Operation').value,total:field('Amount').value,payment:field('Payment').value,debit:field('Debit').value,credit:field('Credit').value,paid:field('Paid').value,payable:field('Payable').value,cost:field('Cost').value,costAccount:field('CostAccount').value,inventoryAccount:field('InventoryAccount').value});
           if(proposal.some(line=>!accounts.has(String(line.cuenta_id))))throw Error('Una cuenta ya no está disponible. Actualiza el catálogo y revísala.');
           field('Proposal').innerHTML='<table class="table table-sm"><thead><tr><th>Cuenta</th><th>Debe</th><th>Haber</th></tr></thead><tbody>'+proposal.map(line=>{const a=accounts.get(String(line.cuenta_id));return `<tr><td>${escape(a.codigo)} · ${escape(a.nombre)}</td><td>${numberFormat.format(line.debe)}</td><td>${numberFormat.format(line.haber)}</td></tr>`;}).join('')+'</tbody></table>';
-          field('Proposal').hidden=false;field('Apply').disabled=false;field('Message').textContent='Propuesta en '+currency.value+'. Revisa las cuentas: cargarla solo prepara líneas; publicar requiere tu revisión.';
+          field('Proposal').hidden=false;field('Apply').disabled=false;field('Apply').focus();field('Message').textContent='Propuesta en '+currency.value+'. Revisa las cuentas: cargarla solo prepara líneas; publicar requiere tu revisión.';
         }catch(error){field('Message').textContent=error.message;proposal=null;}
       });
       field('Apply').addEventListener('click',()=>{
@@ -306,6 +317,14 @@
     if (!data.editing && new URLSearchParams(location.search).has('journal_id')) journal.dispatchEvent(new Event('change'));
     (data.lines.length ? data.lines : [{},{}]).forEach(line => addLine(line));
     switchTab(!!data.history);
+    const previewElement=document.getElementById('voucherPreviewModal');
+    const viewer=window.AccountingVoucherPreview(previewElement);
+    document.querySelectorAll('[data-voucher-preview]').forEach(link=>link.addEventListener('click',event=>{event.preventDefault();viewer.open(link.dataset.voucherPreview);}));
+    previewElement.addEventListener('hidden.bs.modal',()=>{
+      const clean=new URL(location.href);clean.searchParams.delete('pdf_entry_id');clean.searchParams.delete('success');history.replaceState(null,'',clean);
+      switchTab(false);document.getElementById('entryDate').focus();
+    });
+    if(data.pdfEntry)viewer.open(data.pdfEntry);
     update();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();

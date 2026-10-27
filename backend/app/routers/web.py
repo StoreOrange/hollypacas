@@ -4507,86 +4507,10 @@ def _build_accounting_entry_number(voucher_type: AccountingVoucherType, period: 
     return f"{prefix}-{compact_period}-{seq:05d}"
 
 
-def _build_accounting_entry_pdf_bytes(entry: AccountingEntry) -> bytes:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.pdfgen import canvas
-
-    buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-    margin = 42
-    y = height - 50
-
-    pdf.setFont("Helvetica-Bold", 13)
-    pdf.drawString(margin, y, "Comprobante contable")
-    y -= 20
-    pdf.setFont("Helvetica", 10)
-    pdf.drawString(margin, y, f"Numero: {entry.numero}")
-    y -= 14
-    tipo_nombre = entry.tipo.nombre if entry.tipo else "-"
-    pdf.drawString(margin, y, f"Tipo: {tipo_nombre}")
-    y -= 14
-    branch_name = entry.branch.name if entry.branch else "General"
-    pdf.drawString(margin, y, f"Sucursal: {branch_name}")
-    y -= 14
-    pdf.drawString(margin, y, f"Fecha: {entry.fecha.strftime('%Y-%m-%d') if entry.fecha else '-'}")
-    y -= 14
-    pdf.drawString(margin, y, f"Estado: {entry.estado}")
-    y -= 14
-    if entry.referencia:
-        pdf.drawString(margin, y, f"Referencia: {entry.referencia}")
-        y -= 14
-    pdf.drawString(margin, y, f"Concepto: {entry.descripcion or '-'}")
-
-    y -= 24
-    pdf.setFont("Helvetica-Bold", 9)
-    pdf.drawString(margin, y, "Codigo")
-    pdf.drawString(margin + 70, y, "Cuenta")
-    pdf.drawString(margin + 280, y, "Detalle")
-    pdf.drawRightString(width - 120, y, "Debe")
-    pdf.drawRightString(width - margin, y, "Haber")
-    y -= 12
-    pdf.line(margin, y, width - margin, y)
-    y -= 14
-
-    pdf.setFont("Helvetica", 8)
-    for line in entry.lines:
-        if y < 70:
-            pdf.showPage()
-            y = height - 50
-            pdf.setFont("Helvetica-Bold", 9)
-            pdf.drawString(margin, y, "Codigo")
-            pdf.drawString(margin + 70, y, "Cuenta")
-            pdf.drawString(margin + 280, y, "Detalle")
-            pdf.drawRightString(width - 120, y, "Debe")
-            pdf.drawRightString(width - margin, y, "Haber")
-            y -= 12
-            pdf.line(margin, y, width - margin, y)
-            y -= 14
-            pdf.setFont("Helvetica", 8)
-        code = line.cuenta.codigo if line.cuenta else "-"
-        name = line.cuenta.nombre if line.cuenta else "-"
-        detail = line.descripcion or ""
-        pdf.drawString(margin, y, code[:14])
-        pdf.drawString(margin + 70, y, name[:38])
-        pdf.drawString(margin + 280, y, detail[:22])
-        pdf.drawRightString(width - 120, y, f"{float(line.debe or 0):,.2f}")
-        pdf.drawRightString(width - margin, y, f"{float(line.haber or 0):,.2f}")
-        y -= 12
-
-    y -= 8
-    pdf.line(margin, y, width - margin, y)
-    y -= 14
-    pdf.setFont("Helvetica-Bold", 10)
-    pdf.drawRightString(width - 120, y, f"{float(entry.total_debe or 0):,.2f}")
-    pdf.drawRightString(width - margin, y, f"{float(entry.total_haber or 0):,.2f}")
-    y -= 18
-    pdf.drawString(margin, y, "Cuadre contable (debe = haber):")
-    pdf.drawString(margin + 175, y, "SI" if to_decimal(entry.total_debe) == to_decimal(entry.total_haber) else "NO")
-
-    pdf.showPage()
-    pdf.save()
-    return buffer.getvalue()
+def _build_accounting_entry_pdf_bytes(entry: AccountingEntry, company_profile=None) -> bytes:
+    from ..core.accounting_entry_pdf import build_accounting_entry_pdf
+    profile = company_profile or _default_company_profile_payload()
+    return build_accounting_entry_pdf(entry, profile, _resolve_logo_path(profile.get("logo_url", "")))
 
 
 def _suggest_counter_account_id(
@@ -9863,7 +9787,7 @@ def accounting_entry_pdf(
     )
     if not entry:
         raise HTTPException(status_code=404, detail="Comprobante no encontrado")
-    pdf_bytes = _build_accounting_entry_pdf_bytes(entry)
+    pdf_bytes = _build_accounting_entry_pdf_bytes(entry, _company_profile_payload(db))
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",

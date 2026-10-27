@@ -35,7 +35,7 @@ try:
         page.locator('#schoolPayment').select_option('partial')
         page.locator('#schoolPaid').fill('300')
         page.locator('#schoolSource').select_option('manual')
-        page.locator('#schoolReference').fill('COMPRA-QA-001')
+        page.locator('#entryReference').fill('COMPRA-QA-001')
         page.locator('#schoolPreview').click()
         assert page.locator('#schoolApply').is_enabled(),page.locator('#schoolMessage').inner_text()
         page.locator('#schoolApply').click()
