@@ -1672,6 +1672,10 @@ def _seed_company_profile_settings(db: Session) -> None:
 def init_db() -> None:
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
+    if get_active_company_key() == "hollywood_pacas":
+        from .mobile_expense_schema import ensure_mobile_expense_columns
+        with engine.begin() as connection:
+            ensure_mobile_expense_columns(connection)
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     if "moto_trips" in table_names:

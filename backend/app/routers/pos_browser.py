@@ -107,7 +107,7 @@ def ticket(station_id:str,job_id:int,request:Request,db=Depends(get_db),user=Dep
     if not invoice or invoice.bodega_id!=box.bodega_id:raise HTTPException(404)
     response=web.sales_ticket_print(request,invoice.id,db,user)
     context=dict(response.context)
-    context.update(browser_auto_job={'id':job.id,'claim_id':job.claim_id},browser_auto_copies=max(1,min(5,job.copies)))
+    context.update(browser_auto_job={'id':job.id,'claim_id':job.claim_id},browser_auto_copies=len(web._pos_invoice_copy_labels()) or max(1,min(5,job.copies)))
     result=request.app.state.templates.TemplateResponse('sales_ticket_print.html',context)
     result.headers['Cache-Control']='no-store'
     return result

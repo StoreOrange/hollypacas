@@ -423,6 +423,7 @@ SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "sales_comisiones", "label": "Registro de comisiones", "href": "/sales/comisiones", "icon": "bi-trophy-fill", "perm": "menu.sales.comisiones", "alt_perm": None},
     {"id": "sales_preventas", "label": "Panel de preventas", "href": "/sales/preventas", "icon": "bi-clipboard-check-fill", "perm": "menu.sales.preventas", "alt_perm": None},
     {"id": "sales_preventas_mobile", "label": "Nueva preventa movil", "href": "/m/preventas", "icon": "bi-phone-fill", "perm": "menu.sales.preventas.mobile", "alt_perm": "menu.sales.preventas"},
+    {"id": "mobile_expenses", "label": "Registrar gasto móvil", "href": "/m/gastos", "icon": "bi-receipt", "perm": "access.accounting.mobile_expenses", "alt_perm": None, "hollpacas_only": "1"},
     {"id": "inventory", "label": "Inventarios", "href": "/inventory", "icon": "bi-box-seam-fill", "perm": "menu.inventory", "alt_perm": None},
     {"id": "inventory_caliente", "label": "Mi inventario en Caliente", "href": "/inventory/caliente", "icon": "bi-lightning-charge-fill", "perm": "menu.inventory.caliente", "alt_perm": None},
     {"id": "inventory_ingresos", "label": "Ingresos Inventario", "href": "/inventory/ingresos", "icon": "bi-box-arrow-in-down", "perm": "menu.inventory.ingresos", "alt_perm": None},
@@ -831,6 +832,7 @@ PERMISSION_GROUPS = [
             {"name": "access.finance.rates", "label": "Configurar tasas"},
             {"name": "access.accounting", "label": "Acceso a contabilidad"},
             {"name": "access.accounting.financial_data", "label": "Datos financieros"},
+            {"name": "access.accounting.mobile_expenses", "label": "Registrar gastos asistidos desde móvil"},
             {"name": "access.accounting.entries", "label": "Comprobantes contables"},
             {"name": "access.accounting.voucher_types", "label": "Tipos de comprobantes"},
             {"name": "access.attendance", "label": "Acceso a control de marcadas"},
@@ -3160,7 +3162,7 @@ def _render_sales_close_email_html(
     return html, inline_images
 
 
-def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[str, str]] = None) -> bytes:
+def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[str, str]] = None, *, copy_labels: Optional[tuple[str, ...]] = None) -> bytes:
     from reportlab.lib.units import mm
     from reportlab.pdfgen import canvas
 
@@ -3288,6 +3290,9 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     for line in direccion_lines:
         add_line(line, "center")
     add_line(f"Sucursal: {sucursal}", "center", True, normal_size)
+    labels = copy_labels or (("ORIGINAL",) if _is_pacasholl_company() else ("",))
+    if any(labels):
+        add_line("__POS_COPY_LABEL__", "center", True, normal_size)
     add_line("-" * 32, "center")
     add_line(f"Factura: {factura.numero}", "left", True)
     if not is_amajo_mode:
@@ -3371,6 +3376,52 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
     add_line("No se aceptan cambios ni devoluciones", "center", False, normal_size)
     add_line("de mercaderia ni de dinero.", "center", False, normal_size)
 
+    warehouse_lines = []
+    if _warehouse_dispatch_only(factura):
+        def warehouse_line(text, align="left", bold=False, size=9):
+            warehouse_lines.append((text, align, bold, size))
+
+        warehouse_line(company_name.upper(), "center", True, title_size)
+        warehouse_line(f"RUC: {ruc}", "center")
+        warehouse_line(f"Tel: {telefono}", "center")
+        for line in direccion_lines:
+            warehouse_line(line, "center")
+        warehouse_line(f"Sucursal: {sucursal}", "center", True)
+        warehouse_line("__POS_COPY_LABEL__", "center", True, 10)
+        warehouse_line("-" * 32, "center")
+        warehouse_line("REFERENCIA / FACTURA", "center", True)
+        warehouse_line("", size=10)
+        warehouse_line(factura.numero, "center", True, 20)
+        warehouse_line("VENDEDOR", "center", True)
+        for line in wrap_text(vendedor, 25):
+            warehouse_line(line, "center", True, 13)
+        warehouse_line(f"Fecha: {fecha_str} {hora_str}".strip())
+        for line in wrap_text(f"Cliente: {cliente}", 34):
+            warehouse_line(line)
+        warehouse_line("-" * 32, "center")
+        warehouse_bultos = 0.0
+        for item in factura.items:
+            product = item.producto
+            qty = float(item.cantidad or 0)
+            if not bool(getattr(product, "servicio_producto", False)):
+                warehouse_bultos += qty
+            warehouse_line(f"Codigo: {product.cod_producto if product else '-'}", bold=True)
+            description = product.descripcion if product else "-"
+            if item.variante:
+                color = item.variante.color.nombre if item.variante.color else "-"
+                description += f" [{color} / Talla {item.variante.talla or '-'}]"
+            for line in wrap_text(description, 34):
+                warehouse_line(line)
+            if item.combo_role == "gift":
+                warehouse_line("REGALO", bold=True)
+            if bool(getattr(product, "es_libreado", False)) and float(item.peso_lbs or 0) > 0:
+                warehouse_line(f"Peso: {format_qty(float(item.peso_lbs))} Lbs")
+            warehouse_line(f"Cantidad: {format_qty(qty)}", bold=True)
+            warehouse_line("-" * 32, "center")
+        warehouse_line(f"TOTAL BULTOS: {format_qty(warehouse_bultos)}", "center", True, 14)
+        warehouse_line("")
+        warehouse_line("Documento exclusivo para despacho de bodega.", "center", False, 8)
+
     content_width = 70 * mm
     width = 80 * mm
     margin = (width - content_width) / 2
@@ -3400,43 +3451,69 @@ def _build_pos_ticket_pdf_bytes(factura: VentaFactura, profile: Optional[dict[st
 
     total_height = top_margin + bottom_margin + logo_height + logo_spacing
     total_height += sum(line_gap(size) for _, _, _, size in lines)
-    # Shoe receipts use their content height, with 1 mm for rounding safety.
-    page_height = total_height + mm if shoe_ticket else min(max(total_height, 120 * mm), 280 * mm)
+    # Shoe and Holl receipts use their content height, with 1 mm for rounding safety.
+    page_height = total_height + mm if shoe_ticket or _is_pacasholl_company() else min(max(total_height, 120 * mm), 280 * mm)
 
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=(width, page_height))
-    y = page_height - top_margin
-
-    if logo_height:
-        pdf.drawImage(
-            str(logo_path),
-            (width - logo_width) / 2,
-            y - logo_height,
-            width=logo_width,
-            height=logo_height,
-            preserveAspectRatio=True,
-            mask="auto",
-        )
-        y -= logo_height + logo_spacing
-
-    for text, align, bold, size in lines:
-        gap = line_gap(size)
-        if y - gap < bottom_margin:
-            pdf.showPage()
-            pdf.setPageSize((width, page_height))
-            y = page_height - top_margin
-        pdf.setFont("Helvetica-Bold" if bold else "Helvetica", size)
-        if align == "center":
-            pdf.drawCentredString(width / 2, y, text)
-        elif align == "right":
-            pdf.drawRightString(width - margin, y, text)
+    for copy_label in labels:
+        render_lines = warehouse_lines if warehouse_lines and copy_label == "EXCLUSIVA DE BODEGA" else lines
+        if render_lines is warehouse_lines:
+            receipt_height = top_margin + bottom_margin + logo_height + logo_spacing + sum(line_gap(size) for _, _, _, size in render_lines) + mm
         else:
-            pdf.drawString(margin, y, text)
-        y -= gap
+            receipt_height = page_height
+        pdf.setPageSize((width, receipt_height))
+        y = receipt_height - top_margin
 
-    pdf.showPage()
+        if logo_height:
+            pdf.drawImage(
+                str(logo_path),
+                (width - logo_width) / 2,
+                y - logo_height,
+                width=logo_width,
+                height=logo_height,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+            y -= logo_height + logo_spacing
+
+        for text, align, bold, size in render_lines:
+            if text == "__POS_COPY_LABEL__":
+                text = copy_label
+            gap = line_gap(size)
+            if y - gap < bottom_margin:
+                pdf.showPage()
+                pdf.setPageSize((width, receipt_height))
+                y = receipt_height - top_margin
+            pdf.setFont("Helvetica-Bold" if bold else "Helvetica", size)
+            if align == "center":
+                pdf.drawCentredString(width / 2, y, text)
+            elif align == "right":
+                pdf.drawRightString(width - margin, y, text)
+            else:
+                pdf.drawString(margin, y, text)
+            y -= gap
+
+        pdf.showPage()
     pdf.save()
     return buffer.getvalue()
+
+
+def _warehouse_dispatch_only(factura) -> bool:
+    branch = factura.bodega.branch if factura.bodega else None
+    return _is_pacasholl_company() and bool(branch and (branch.code or "").strip().lower() == "central")
+
+
+def _pos_invoice_copy_labels() -> tuple[str, ...]:
+    return ("ORIGINAL", "COPIA", "EXCLUSIVA DE BODEGA") if _is_pacasholl_company() else ()
+
+
+def _build_pos_print_payload(factura, profile, copies):
+    """One spool job containing the three distinct Holl receipts; never 3 x 3."""
+    labels = _pos_invoice_copy_labels()
+    if labels:
+        return _build_pos_ticket_pdf_bytes(factura, profile, copy_labels=labels), 1
+    return _build_pos_ticket_pdf_bytes(factura, profile), max(int(copies or 1), 1)
 
 
 def _print_pos_ticket(
@@ -3449,12 +3526,12 @@ def _print_pos_ticket(
     sumatra_path = _get_sumatra_path(sumatra_override)
     if not sumatra_path:
         return
-    pdf_bytes = _build_pos_ticket_pdf_bytes(factura, profile)
+    pdf_bytes, spool_copies = _build_pos_print_payload(factura, profile, copies)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         tmp_file.write(pdf_bytes)
         tmp_path = tmp_file.name
     try:
-        for _ in range(max(copies, 1)):
+        for _ in range(spool_copies):
             subprocess.run(
                 [
                     str(sumatra_path),
@@ -18701,6 +18778,10 @@ def sales_roc_anular(
             status_code=303,
         )
 
+    from ..models.sales import MobileExpense
+    if db.query(MobileExpense.id).filter_by(cash_receipt_id=recibo.id).first():
+        return RedirectResponse("/sales/roc?error=No+se+puede+eliminar+un+gasto+movil+contabilizado",status_code=303)
+
     if recibo.afecta_caja:
         caja = (
             db.query(CajaDiaria)
@@ -29096,7 +29177,7 @@ def data_pos_print_save(
     setting = db.query(PosPrintSetting).filter(PosPrintSetting.branch_id == branch_id).first()
     if setting:
         setting.printer_name = printer_name
-        setting.copies = max(copies, 2)
+        setting.copies = len(_pos_invoice_copy_labels()) or max(copies, 2)
         setting.auto_print = auto_print == "on"
         setting.roc_printer_name = roc_printer_name.strip() if roc_printer_name else None
         setting.roc_copies = max(roc_copies or 1, 1) if roc_copies is not None else None
@@ -29109,7 +29190,7 @@ def data_pos_print_save(
         setting = PosPrintSetting(
             branch_id=branch_id,
             printer_name=printer_name,
-            copies=max(copies, 2),
+            copies=len(_pos_invoice_copy_labels()) or max(copies, 2),
             auto_print=auto_print == "on",
             roc_printer_name=roc_printer_name.strip() if roc_printer_name else None,
             roc_copies=max(roc_copies or 1, 1) if roc_copies is not None else None,
@@ -29148,7 +29229,7 @@ def data_pos_print_update(
         return RedirectResponse("/data/pos-print?error=Configuracion+no+existe", status_code=303)
     setting.branch_id = branch_id
     setting.printer_name = printer_name.strip()
-    setting.copies = max(copies, 2)
+    setting.copies = len(_pos_invoice_copy_labels()) or max(copies, 2)
     setting.auto_print = auto_print == "on"
     setting.roc_printer_name = roc_printer_name.strip() if roc_printer_name else None
     setting.roc_copies = max(roc_copies or 1, 1) if roc_copies is not None else None
@@ -32816,7 +32897,10 @@ def sales_ticket_print(
             "items": items,
             "pagos": pagos_render,
             "format_amount": format_amount,
-            "copies": copies,
+            "copies": len(_pos_invoice_copy_labels()) or copies,
+            "pos_copy_labels": _pos_invoice_copy_labels(),
+            "warehouse_dispatch_only": _warehouse_dispatch_only(factura),
+            "warehouse_total_bultos": sum(float(item.cantidad or 0) for item in factura.items if not bool(getattr(item.producto, "servicio_producto", False))),
             "page_height_mm": page_height_mm,
             "fit_shoe_ticket": _is_shoes_mode(),
             "compact_ticket": is_amajo_mode,

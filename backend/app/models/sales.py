@@ -1161,3 +1161,34 @@ class AccountingSubrubroAccountLink(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     cuenta = relationship("CuentaContable")
+
+
+class MobileExpense(Base):
+    """Assisted expense metadata; amounts and posting remain in the linked ledger."""
+    __tablename__ = "mobile_expenses"
+
+    id = Column(Integer, primary_key=True)
+    operation_key = Column(String(32), nullable=False, unique=True)
+    entry_id = Column(Integer, ForeignKey("accounting_entries.id"), nullable=False, unique=True)
+    cash_receipt_id = Column(Integer, ForeignKey("recibos_caja.id"), nullable=True, unique=True)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False, index=True)
+    bodega_id = Column(Integer, ForeignKey("bodegas.id"), nullable=True)
+    amount = Column(Numeric(14, 2), nullable=False)
+    currency = Column(String(10), nullable=False)
+    exchange_rate = Column(Numeric(12, 4), nullable=True)
+    category = Column(String(40), nullable=False)
+    payment = Column(String(20), nullable=False)
+    beneficiary = Column(String(160), nullable=False)
+    paid_by = Column(String(160), nullable=True)
+    support_reference = Column(String(160), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    entry = relationship("AccountingEntry")
+    cash_receipt = relationship("ReciboCaja")
+    branch = relationship("Branch")
+    bodega = relationship("Bodega")
+
+    @property
+    def numero(self):
+        return f"GM-{self.entry.periodo.replace('-', '')}-{self.id:06d}"

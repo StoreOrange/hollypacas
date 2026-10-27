@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
+{% set holl_preventa = branding.get("company_key") in ["hollywood_pacas","pacasholl","hollpacas"] %}
 <style>
   body {
     background: linear-gradient(180deg, #f5f8ff 0%, #eef4ff 48%, #f8fafc 100%);
@@ -856,8 +857,22 @@
     }
   }
 </style>
+{% if holl_preventa %}<link rel="stylesheet" href="/static/css/holl-preventa-mobile.css?v=local-context-icons-20261027">{% endif %}
 
-<div class="container py-3 mobile-preventa{% if result_preventa %} has-result{% endif %}" style="max-width: 780px;">
+<div class="container py-3 mobile-preventa{% if holl_preventa %} holl-preventa{% endif %}{% if result_preventa %} has-result{% endif %}" style="max-width: 780px;">
+  {% if holl_preventa %}
+  <header class="app-topbar pv-heading mb-3">
+    <div class="pv-title-row"><span class="pv-app-icon"><i class="bi bi-cart-plus-fill" aria-hidden="true"></i></span><div><div class="app-topbar-title">Ventas · Registro guiado</div><h1>{{ 'Preventa registrada' if result_preventa else 'Nueva preventa' }}</h1></div></div>
+    <p class="pv-subtitle">{{ 'Tu pedido quedó guardado para darle seguimiento.' if result_preventa else 'Prepara tu pedido y envíalo a facturación.' }}</p>
+    <div class="pv-context"><span aria-label="Sucursal: {{ branch.name }}"><i class="bi bi-shop" aria-hidden="true"></i>{{ branch.name }}</span><span aria-label="Bodega: {{ bodega.name }}"><i class="bi bi-box-seam" aria-hidden="true"></i>{{ bodega.name }}</span></div>
+    <details class="pv-utilities"><summary><span><i class="bi bi-grid me-2" aria-hidden="true"></i>Accesos y alertas</span><i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+      <div class="pv-utility-links"><a class="btn" href="/home"><i class="bi bi-house-door" aria-hidden="true"></i>Inicio</a><a class="btn" href="/sales/preventas"><i class="bi bi-kanban" aria-hidden="true"></i>Panel de preventas</a>
+      {% if 'access.accounting.mobile_expenses' in (request.state.permission_names or []) %}<a class="btn" href="/m/gastos"><i class="bi bi-receipt" aria-hidden="true"></i>Registrar gasto</a>{% endif %}
+      {% if user.roles|selectattr('name','in',['vendedor','administrador'])|list|length > 0 %}<a class="btn" href="/motorizado?view=costos" id="seller-moto-access"><i class="bi bi-truck" aria-hidden="true"></i>Mis envíos y costos</a>{% endif %}</div>
+      <div class="pv-notifications"><button id="pushAlertsBtn" class="push-alert-btn" type="button"><i class="bi bi-bell me-1" aria-hidden="true"></i>Activar alertas</button><div id="pushAlertsHint" class="push-alert-hint" aria-live="polite"></div></div>
+    </details>
+  </header>
+  {% else %}
   <div class="app-topbar mb-3">
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div>
@@ -895,16 +910,17 @@
     </div>
   </div>
 
+  {% endif %}
   {% if result_preventa %}
   <section class="card result-card mb-3" aria-labelledby="resultTitle">
     <div class="result-hero">
-      <div class="result-progress" id="resultProgress" aria-live="polite">
-        <span class="result-progress-value" id="resultProgressValue">0%</span>
+      <div class="result-progress" id="resultProgress" aria-live="{{ 'off' if holl_preventa else 'polite' }}" {% if holl_preventa %}role="img" aria-label="Preventa guardada correctamente"{% endif %}>
+        <span class="result-progress-value" id="resultProgressValue" {% if holl_preventa %}aria-hidden="true"{% endif %}>0%</span>
         <i class="bi bi-check-lg result-progress-check" aria-hidden="true"></i>
       </div>
       <div class="result-number">{{ result_preventa.numero }}</div>
-      <h2 class="h5 fw-bold mt-1 mb-1" id="resultTitle">Preventa enviada correctamente</h2>
-      <div class="text-slate small">Ya está disponible para seguimiento y facturación.</div>
+      <h2 class="h5 fw-bold mt-1 mb-1" id="resultTitle">{{ 'Preventa guardada como congelada' if holl_preventa and result_preventa.estado=='CONGELADA' else 'Preventa enviada correctamente' }}</h2>
+      <div class="text-slate small">{{ 'Puedes darle seguimiento desde el panel de preventas.' if holl_preventa and result_preventa.estado=='CONGELADA' else 'Ya está disponible para seguimiento y facturación.' }}</div>
     </div>
     <div class="card-body">
       <div class="result-grid mb-3">
@@ -949,6 +965,14 @@
     </div>
   </div>
   {% else %}
+  {% if success %}
+  <div class="alert alert-success">{{ success }}</div>
+  {% endif %}
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  {% if not holl_preventa %}
   {% if preventa_vendor_score %}
   <div class="seller-score-card seller-score-{{ preventa_vendor_score.level }} mb-3">
     <div class="d-flex align-items-start justify-content-between gap-3">
@@ -962,17 +986,9 @@
       </div>
     </div>
     <div class="score-message">
-      <span class="score-emoji" aria-hidden="true">{{ preventa_vendor_score.emoji }}</span>
-      <span>{{ preventa_vendor_score.message }}</span>
+      {% if holl_preventa %}<i class="bi bi-graph-up-arrow" aria-hidden="true"></i><span>Bultos facturados hoy por este vendedor.</span>{% else %}<span class="score-emoji" aria-hidden="true">{{ preventa_vendor_score.emoji }}</span><span>{{ preventa_vendor_score.message }}</span>{% endif %}
     </div>
   </div>
-  {% endif %}
-
-  {% if success %}
-  <div class="alert alert-success">{{ success }}</div>
-  {% endif %}
-  {% if error %}
-  <div class="alert alert-danger">{{ error }}</div>
   {% endif %}
 
   <div class="card mb-3 preventas-report-card">
@@ -1009,30 +1025,32 @@
     </div>
   </div>
 
+  {% endif %}
+  {% if holl_preventa %}<nav class="pv-step-nav" aria-label="Pasos de la preventa"><button type="button" data-pv-step="preventaClientCard" aria-current="step"><span>1</span><i class="bi bi-person-check" aria-hidden="true"></i>Cliente</button><button type="button" data-pv-step="preventaProductsCard"><span>2</span><i class="bi bi-box-seam" aria-hidden="true"></i>Productos</button><button type="button" data-pv-step="preventaItemsCard"><span>3</span><i class="bi bi-clipboard-check" aria-hidden="true"></i>Revisar</button></nav>{% endif %}
   <form method="post" action="/m/preventas" id="preventaForm" autocomplete="off">
     <input type="hidden" name="moneda" value="USD">
     <input type="hidden" name="freeze_preventa" id="freezePreventa" value="0">
-    <div class="card mb-3">
+    <div class="card mb-3 pv-client" id="preventaClientCard">
       <div class="card-body">
         <div class="row g-2">
           <div class="col-12 col-md-6">
-            <label class="field-label"><span class="step-badge">1</span><i class="bi bi-person"></i> Cliente</label>
+            <label class="field-label" for="clienteSearch"><span class="step-badge">1</span><i class="bi bi-person-check-fill" aria-hidden="true"></i> Cliente</label>
             <div class="input-group">
               <input id="clienteSearch" class="form-control" type="text" placeholder="Buscar cliente por nombre o telefono">
-              <button class="btn btn-outline-secondary" type="button" id="btnClienteSearch">
+              <button class="btn btn-outline-secondary" type="button" id="btnClienteSearch" aria-label="Buscar cliente">
                 <i class="bi bi-search"></i>
               </button>
             </div>
             <div class="d-flex justify-content-between align-items-center mt-2">
               <button class="btn btn-link p-0 small text-decoration-none" type="button" id="btnNuevoClienteToggle">
-                + Nuevo cliente
+                <i class="bi bi-person-plus me-1" aria-hidden="true"></i>Nuevo cliente
               </button>
               <div id="clienteCreateMsg" class="small text-muted"></div>
             </div>
             <div id="clienteCreateBox" class="mt-2 d-none">
               <div class="input-group">
                 <input id="clienteNuevoNombre" class="form-control" type="text" placeholder="Nombre del cliente">
-                <button class="btn btn-success" type="button" id="btnCrearCliente">Guardar</button>
+                <button class="btn btn-success" type="button" id="btnCrearCliente"><i class="bi bi-person-check me-1" aria-hidden="true"></i>Guardar</button>
               </div>
             </div>
             <div id="clienteSearchResults" class="list-group search-results mt-2"></div>
@@ -1040,13 +1058,13 @@
             <div id="clientePicked" class="selected-client small"><i class="bi bi-check-circle-fill"></i><span>Seleccionado: <strong>{{ consumidor_final_nombre }}</strong></span></div>
           </div>
           <div class="col-12 col-md-6">
-            <label class="field-label"><i class="bi bi-person-badge"></i> Vendedor</label>
+            <label class="field-label" for="{{ 'vendedorAsignado' if is_vendedor_role and vendedor_user_id else 'vendedorSelect' }}"><i class="bi bi-person-badge" aria-hidden="true"></i> Vendedor</label>
             {% if is_vendedor_role and vendedor_user_id %}
             <input type="hidden" name="vendedor_id" value="{{ vendedor_user_id }}">
-            <input class="form-control" type="text" value="{{ user.full_name }}" readonly>
-            <div class="small text-muted mt-1">Asignado automaticamente por usuario logeado.</div>
+            <input class="form-control" type="text" value="{{ user.full_name }}" id="vendedorAsignado" readonly>
+            <div class="small text-muted mt-1">Asignado a tu usuario.</div>
             {% else %}
-            <select class="form-select" name="vendedor_id" required>
+            <select class="form-select" name="vendedor_id" id="vendedorSelect" required>
               <option value="">Selecciona</option>
               {% for v in vendedores %}
               <option value="{{ v.id }}" {% if default_vendedor_id == v.id %}selected{% endif %}>{{ v.nombre }}</option>
@@ -1058,33 +1076,45 @@
       </div>
     </div>
 
-    <div class="card mb-3">
+    <div class="card mb-3 pv-products" id="preventaProductsCard">
       <div class="card-body">
         <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
-          <label class="field-label m-0"><span class="step-badge">2</span><i class="bi bi-search"></i> Agregar producto</label>
-          {% if branding.get('company_key') in ['hollywood_pacas','pacasholl','hollpacas'] %}
-          <button id="mobileDiscountOpen" class="btn btn-outline-warning btn-sm" type="button" style="min-height:44px"><i class="bi bi-tags"></i> 2 por precio especial</button>
-          {% endif %}
-          <button id="btnOpenCombo" class="btn btn-outline-primary btn-sm" type="button">
-            <i class="bi bi-boxes"></i> Armar combo
-          </button>
-        </div>
+          <label class="field-label m-0" for="productSearch"><span class="step-badge">2</span><i class="bi bi-box-seam-fill" aria-hidden="true"></i> Agregar producto</label>
+        {% if holl_preventa %}
         <div class="input-group mb-2">
           <input id="productSearch" class="form-control" type="search" inputmode="search" enterkeyhint="search" placeholder="Escribe código o nombre...">
-          <button class="btn btn-outline-primary" type="button" id="btnProductSearch">
+          <button class="btn btn-outline-primary" type="button" id="btnProductSearch" aria-label="Buscar producto">
             <i class="bi bi-search"></i>
           </button>
         </div>
         <div id="productSearchResults" class="list-group search-results"></div>
+        {% endif %}
+
+          {% if branding.get('company_key') in ['hollywood_pacas','pacasholl','hollpacas'] %}
+          <button id="mobileDiscountOpen" class="btn btn-outline-warning btn-sm" type="button" style="min-height:44px"><i class="bi bi-tags-fill" aria-hidden="true"></i> 2 por precio especial</button>
+          {% endif %}
+          <button id="btnOpenCombo" class="btn btn-outline-primary btn-sm" type="button">
+            <i class="bi bi-boxes" aria-hidden="true"></i> Armar combo
+          </button>
+        </div>
+        {% if not holl_preventa %}
+        <div class="input-group mb-2">
+          <input id="productSearch" class="form-control" type="search" inputmode="search" enterkeyhint="search" placeholder="Escribe código o nombre...">
+          <button class="btn btn-outline-primary" type="button" id="btnProductSearch" aria-label="Buscar producto">
+            <i class="bi bi-search"></i>
+          </button>
+        </div>
+        <div id="productSearchResults" class="list-group search-results"></div>
+        {% endif %}
       </div>
     </div>
 
-    <div class="card mb-3">
+    <div class="card mb-3 pv-cart" id="preventaItemsCard">
       <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
-        <span class="field-label m-0"><span class="step-badge">3</span><i class="bi bi-bag-check"></i> Productos agregados</span>
+        <span class="field-label m-0"><span class="step-badge">3</span><i class="bi bi-bag-check-fill" aria-hidden="true"></i> Productos agregados</span>
         <div class="draft-summary">
-          <span class="draft-chip"><span id="draftItemCount">0</span> bultos</span>
-          <span class="draft-chip">$ <span id="draftTotalUsd">0.00</span></span>
+          <span class="draft-chip"><i class="bi bi-box-seam me-1" aria-hidden="true"></i><span id="draftItemCount">0</span> bultos</span>
+          <span class="draft-chip"><i class="bi bi-cash-coin me-1" aria-hidden="true"></i>$ <span id="draftTotalUsd">0.00</span></span>
         </div>
       </div>
       <div class="card-body p-0">
@@ -1101,7 +1131,7 @@
             </thead>
             <tbody id="itemsBody">
               <tr id="noItemsRow">
-                <td colspan="5" class="text-center text-muted py-3">Sin items</td>
+                <td colspan="5" class="text-center text-muted py-3"><div class="pv-empty-cart"><span><i class="bi bi-bag-plus" aria-hidden="true"></i></span><strong>Agrega tu primer producto</strong><small>Busca un producto o elige una promoción para comenzar.</small></div></td>
               </tr>
             </tbody>
           </table>
@@ -1114,6 +1144,60 @@
     </div>
   </form>
 
+  {% if holl_preventa %}<div class="pv-activity"><h2><i class="bi bi-clock-history me-2" aria-hidden="true"></i>Tu actividad</h2>
+  {% if preventa_vendor_score %}
+  <div class="seller-score-card seller-score-{{ preventa_vendor_score.level }} mb-3">
+    <div class="d-flex align-items-start justify-content-between gap-3">
+      <div>
+        <div class="score-label">Bultos hoy</div>
+        <div class="score-value">{{ preventa_vendor_score.total_bultos }}</div>
+      </div>
+      <div class="text-end">
+        <div class="score-label">Vendedor</div>
+        <div class="score-vendor">{{ preventa_vendor_score.vendedor }}</div>
+      </div>
+    </div>
+    <div class="score-message">
+      {% if holl_preventa %}<i class="bi bi-graph-up-arrow" aria-hidden="true"></i><span>Bultos facturados hoy por este vendedor.</span>{% else %}<span class="score-emoji" aria-hidden="true">{{ preventa_vendor_score.emoji }}</span><span>{{ preventa_vendor_score.message }}</span>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card mb-3 preventas-report-card">
+    <div class="card-body">
+      <details id="preventasReportPanel">
+        <summary class="preventas-report-head">
+          <div>
+            <div class="preventas-report-title">Preventas enviadas</div>
+            <div class="preventas-report-subtitle">{% if include_previous_pending %}Preventas de hoy y pendientes de días anteriores.{% else %}Solo muestra preventas del día actual.{% endif %}</div>
+          </div>
+          <i class="bi bi-chevron-down preventas-report-caret"></i>
+        </summary>
+        <div class="preventas-report-body">
+          {% if recent_preventas %}
+            {% for row in recent_preventas %}
+            <div class="preventa-report-row" data-preventa-report-row data-preventa-id="{{ row.id }}">
+              <button class="preventa-report-toggle" type="button" data-preventa-toggle data-preventa-id="{{ row.id }}">
+                <div class="preventa-report-main">
+                  <div class="preventa-report-number">{{ row.numero }}</div>
+                  {% if row.pending_age %}<div class="badge bg-warning text-dark mt-1"><i class="bi bi-clock-history me-1"></i>{{ row.pending_age }}</div>{% endif %}
+                  <div class="preventa-report-client">{{ row.cliente }}</div>
+                  <div class="preventa-report-meta">Enviada: {{ row.fecha_label }} · Ejecutivo: {{ row.vendedor }}</div>
+                </div>
+                <span class="preventa-report-status {{ row.badge.class }}">{{ row.badge.label }}</span>
+              </button>
+              <div class="preventa-report-detail" data-preventa-detail></div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-muted small">{% if include_previous_pending %}No hay preventas de hoy ni pendientes anteriores para mostrar.{% else %}Hoy aún no hay preventas enviadas para mostrar.{% endif %}</div>
+          {% endif %}
+        </div>
+      </details>
+    </div>
+  </div>
+
+</div>{% endif %}
   <div class="mobile-brand-footer" aria-hidden="true">
     <img src="{{ branding.get('logo_url', '/static/logo_hollywood.png') }}" alt="{{ branding.get('trade_name', 'Empresa') }}">
     <div class="brand-caption">{{ branding.get("trade_name", "Empresa") }}</div>
@@ -1125,8 +1209,8 @@
 <div class="app-actionbar">
   <div class="container" style="max-width: 780px;">
     <div class="app-action-summary">
-      <span><i class="bi bi-bag-check me-1 text-primary"></i><strong id="draftBarItemCount">0</strong> bultos</span>
-      <span>Total estimado: <strong>$ <span id="draftBarTotalUsd">0.00</span></strong></span>
+      <span><i class="bi bi-box-seam me-1 text-primary" aria-hidden="true"></i><strong id="draftBarItemCount">0</strong> bultos</span>
+      <span><i class="bi bi-cash-coin me-1" aria-hidden="true"></i>Total estimado: <strong>$ <span id="draftBarTotalUsd">0.00</span></strong></span>
     </div>
     <div class="d-grid gap-2 action-grid">
       <button id="freezePreventaBtn" class="btn btn-outline-primary w-100" type="submit" form="preventaForm" data-freeze-choice="1">
@@ -1158,12 +1242,12 @@
       <div class="modal-header border-0 pb-1">
         <div>
           <div class="text-uppercase small text-muted">Combos y ofertas</div>
-          <h5 class="m-0">Armar combo</h5>
+          <h5 class="m-0"><i class="bi bi-boxes me-2" aria-hidden="true"></i>Armar combo</h5>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
       <div class="modal-body pt-1">
-        <label class="form-label">Producto oferta</label>
+        <label class="form-label"><i class="bi bi-box2-heart me-1" aria-hidden="true"></i>Producto oferta</label>
         <div class="input-group mb-2">
           <input id="comboParentSearch" class="form-control" type="text" placeholder="Buscar oferta por codigo o descripcion">
           <button id="btnComboParentSearch" class="btn btn-outline-primary" type="button"><i class="bi bi-search"></i></button>
@@ -1174,7 +1258,7 @@
           <div class="small text-uppercase text-muted">Oferta seleccionada</div>
           <div id="comboParentSelected" class="fw-semibold">Sin seleccionar</div>
           <div class="d-flex align-items-center gap-2 mt-2">
-            <label class="small mb-0">Cantidad</label>
+            <label class="small mb-0"><i class="bi bi-123 me-1" aria-hidden="true"></i>Cantidad</label>
             <input id="comboParentQty" type="number" min="1" step="1" class="form-control form-control-sm" style="max-width: 100px;" value="1">
           </div>
           <div class="small mt-2">Saldo disponible: <strong id="comboParentAvailable">0</strong></div>
@@ -1182,7 +1266,7 @@
         </div>
 
         <div class="mt-3">
-          <div class="small text-uppercase text-muted">Regalias del combo</div>
+          <div class="small text-uppercase text-muted"><i class="bi bi-gift me-1" aria-hidden="true"></i>Regalías del combo</div>
           <div class="input-group mt-2">
             <input id="comboGiftSearch" class="form-control form-control-sm" type="text" placeholder="Filtrar regalias por codigo o descripcion">
             <button id="btnComboGiftSearch" class="btn btn-outline-secondary btn-sm" type="button">
@@ -1205,7 +1289,7 @@
 </div>
 
 {% if branding.get('company_key') in ['hollywood_pacas','pacasholl','hollpacas'] %}
-<div class="modal fade" id="mobileDiscountModal" tabindex="-1" aria-labelledby="mobileDiscountTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down"><div class="modal-content"><div class="modal-header"><div class="modal-title fw-bold" style="font-size:20px;color:#17365d" id="mobileDiscountTitle">2 por precio especial</div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><p class="small text-muted">Cada paquete incluye exactamente 2 unidades. El precio y las cantidades quedan protegidos al enviar la preventa.</p><div id="mobileDiscountList" role="status"></div></div></div></div></div>
+<div class="modal fade" id="mobileDiscountModal" tabindex="-1" aria-labelledby="mobileDiscountTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down"><div class="modal-content"><div class="modal-header"><div class="modal-title fw-bold" style="font-size:20px;color:#17365d" id="mobileDiscountTitle"><i class="bi bi-tags-fill me-2" aria-hidden="true"></i>2 por precio especial</div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><p class="small text-muted">Cada paquete incluye exactamente 2 unidades. El precio y las cantidades quedan protegidos al enviar la preventa.</p><div id="mobileDiscountList" role="status"></div></div></div></div></div>
 {% endif %}
 <script>
   document.addEventListener("DOMContentLoaded", () => {
@@ -1713,6 +1797,11 @@
       if (!preventaSendingOverlay || !preventaSendingRing || !preventaSendingPercent) return;
       preventaSendingOverlay.classList.add("is-visible");
       preventaSendingOverlay.setAttribute("aria-hidden", "false");
+      if ({{ holl_preventa|tojson }}) {
+        preventaSendingPercent.textContent = '';
+        preventaSendingRing.classList.add('is-busy');
+        return;
+      }
       let progress = 4;
       const paint = () => {
         preventaSendingPercent.textContent = `${Math.round(progress)}%`;
@@ -2546,4 +2635,5 @@
     }
   });
 </script>
+{% if holl_preventa %}<script src="/static/js/holl-preventa-mobile.js?v=local-context-icons-20261027" defer></script>{% endif %}
 {% endblock %}

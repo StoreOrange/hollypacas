@@ -149,9 +149,9 @@ async def next_job(station_id:str,request:Request,db=Depends(get_db)):
     if job:
         invoice=db.get(VentaFactura,job.invoice_id)
         if not invoice or invoice.bodega_id!=station.bodega_id:raise HTTPException(409,'La factura no pertenece a esta caja')
-        pdf=web._build_pos_ticket_pdf_bytes(invoice,web._company_profile_payload(db))
+        pdf,spool_copies=web._build_pos_print_payload(invoice,web._company_profile_payload(db),job.copies)
         job.status='DISPATCHED';job.claim_id=secrets.token_hex(16);job.dispatched_at=web.local_now_naive();job.message='Recibido por el agente; confirmación pendiente'
-        result['job']={'id':job.id,'claim_id':job.claim_id,'copies':job.copies,'pdf':base64.b64encode(pdf).decode(),'sha256':hashlib.sha256(pdf).hexdigest()}
+        result['job']={'id':job.id,'claim_id':job.claim_id,'copies':spool_copies,'pdf':base64.b64encode(pdf).decode(),'sha256':hashlib.sha256(pdf).hexdigest()}
     db.commit();return result
 
 

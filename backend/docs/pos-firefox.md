@@ -23,3 +23,13 @@ Sin evento tras 90 segundos se muestra Revisar Epson; si ni siquiera carga el ti
 ` .venv/bin/python tests/browser_pos_queue.py ` usa Firefox de Playwright y APIs simuladas. Usa el ticket HTML real renderizado con SQLite aislada e intercepta window.print para simular el ciclo silencioso. Verifica cuatro escenarios: navegar fuera de Ventas, entrar con el modo ya activado sin ventana, ventanas emergentes bloqueadas y cierre de la ventana estando inactiva. Cada escenario imprime tres tickets en orden, pierde un ACK sin reenviar el ticket y cuenta las llamadas a window.print. También excluye una segunda ventana. No genera facturas en producción ni impresiones físicas. `browser_pos_timer_recovery.py` conserva el punto de entrada anterior y ejecuta esta regresión.
 
 Las consultas de recepción y entrega/confirmación bloquean únicamente la fila de estación. La facturación conserva la serialización por bodega y las claves contra duplicados. El estado usa hasta cuatro consultas sin cargar productos de facturas históricas. Las rutas de base de datos usan el pool de hilos. La salida física Epson debe verificarse en la PC Windows.
+
+## Tres ejemplares de factura POS
+
+Holl imprime exactamente ORIGINAL, COPIA y EXCLUSIVA DE BODEGA, en ese orden. El rótulo se coloca en negrita debajo de Sucursal. Se aplica a impresión manual, cola automática y reimpresión; los recibos ROC, cierres y otras empresas conservan su comportamiento. Los enlaces antiguos `copies=2` también generan los tres ejemplares. En navegador se cambia el rótulo antes de cada impresión confirmada; en Sumatra/agente se envía una sola vez un PDF con los tres ejemplares, evitando nueve copias.
+
+Pruebas: `tests/test_pos_invoice_copies.py`, `tests/browser_pos_invoice_copies.py` y `tests/browser_pos_queue.py`. No activan impresoras físicas.
+
+El tercer ejemplar de Holl, sucursal con código `central`, es un despacho sin valores monetarios: no muestra precios, descuentos, subtotal, total monetario, equivalencias, pagos, saldo ni vuelto. Destaca la referencia/número de factura y el vendedor, conserva los productos, cantidades y pesos, y totaliza bultos físicos incluyendo regalos y excluyendo servicios. Original y copia conservan sus datos; Estelí conserva el formato anterior.
+
+Al finalizar la impresión manual de Holl se conserva la pantalla de ventas existente: el comprobante no navega el formulario de origen ni abre otro formulario. Si el navegador permite cerrar la ventana de impresión se cierra; si permanece abierta, muestra únicamente el PDF normal `/sales/{id}/ticket`. El enlace «Ver PDF» permite abrirlo explícitamente. La cola automática conserva su confirmación independiente.

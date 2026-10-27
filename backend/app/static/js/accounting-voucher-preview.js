@@ -1,6 +1,7 @@
 /* Local PDF rendering and letter printing; lazy-loaded Mozilla PDF.js. */
-window.AccountingVoucherPreview = function(element) {
+window.AccountingVoucherPreview = function(element, options) {
   'use strict';
+  options = options || {};
   const pages=element.querySelector('#voucherPdfPages');
   const link=element.querySelector('#voucherPdfOpen');
   const button=element.querySelector('#voucherPdfPrint');
@@ -39,7 +40,7 @@ window.AccountingVoucherPreview = function(element) {
   }
   function open(id){
     if(!/^\d+$/.test(String(id))||Number(id)<1)return;
-    url='/accounting/entries/'+id+'/pdf';link.href=url;
+    url=(options.basePath||'/accounting/entries/')+id+'/pdf';link.href=url;
     if(element.classList.contains('show'))render();
     else bootstrap.Modal.getOrCreateInstance(element).show();
   }

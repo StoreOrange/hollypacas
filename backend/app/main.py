@@ -42,6 +42,8 @@ web.SIDEBAR_MENU_ITEMS.insert(next((i + 1 for i, item in enumerate(web.SIDEBAR_M
 app.include_router(accounting_workspace.router)
 from .routers import accounting_registry
 app.include_router(accounting_registry.router)
+from .routers import mobile_expenses
+app.include_router(mobile_expenses.router)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.state.templates = Jinja2Templates(directory="app/templates")

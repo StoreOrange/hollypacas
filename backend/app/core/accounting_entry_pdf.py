@@ -11,7 +11,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, KeepTogether
 
 
-def build_accounting_entry_pdf(entry, profile, logo_path=None, created_timezone="UTC"):
+def build_accounting_entry_pdf(entry, profile, logo_path=None, created_timezone="UTC", document_title="COMPROBANTE CONTABLE", document_number=None, receipt_details=None):
     buffer = io.BytesIO()
     ink = colors.HexColor('#243449')
     muted = colors.HexColor('#596777')
@@ -26,7 +26,7 @@ def build_accounting_entry_pdf(entry, profile, logo_path=None, created_timezone=
         return f'{Decimal(str(value or 0)):,.2f}'
     def labelled(label, value):
         return Paragraph(f'<font color="#596777">{escape(label)}</font><br/><b>{escape(str(value or "-"))}</b>', base)
-    number = entry.numero or '-'
+    number = document_number or entry.numero or '-'
     status = {'POSTEADO': 'PUBLICADO', 'BORRADOR': 'BORRADOR - SIN EFECTO EN LIBROS', 'REVERSADO': 'REVERSADO', 'ANULADO': 'ANULADO'}.get(entry.estado, entry.estado or '-')
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=146,
                             bottomMargin=44, title=f'Comprobante contable {number}', author=profile.get('legal_name') or '')
@@ -41,7 +41,7 @@ def build_accounting_entry_pdf(entry, profile, logo_path=None, created_timezone=
         contact = ' | '.join(label+str(profile[key]) for key,label in (('ruc','RUC: '),('phone','Tel.: ')) if profile.get(key))
         info = p(contact, small); _, h2 = info.wrap(225, 30); info.drawOn(canvas,116,747-h-h2)
         canvas.setFont('Helvetica-Bold', 12)
-        canvas.drawRightString(576, 748, 'COMPROBANTE CONTABLE')
+        canvas.drawRightString(576, 748, document_title)
         label = p(number, right); _, nh = label.wrap(216, 40); label.drawOn(canvas,360,733-nh)
         state = p(status, ParagraphStyle('state',parent=right,fontSize=7,leading=10)); _, sh = state.wrap(216,40);state.drawOn(canvas,360,729-nh-sh)
         address = p(' | '.join(str(profile.get(key)) for key in ('address','email','website') if profile.get(key)), small)
@@ -57,7 +57,19 @@ def build_accounting_entry_pdf(entry, profile, logo_path=None, created_timezone=
         [labelled('TIPO',entry.tipo.nombre if entry.tipo else '-'),labelled('DIARIO',entry.journal.name if entry.journal else '-'),labelled('REFERENCIA / DOCUMENTO',entry.referencia)],
     ], colWidths=[180]*3, hAlign='LEFT')
     meta.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#f3f6f9')),('BOX',(0,0),(-1,-1),.5,border),('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10),('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8)]))
-    story=[meta,Spacer(1,12),p('CONCEPTO',bold),Spacer(1,4),p(entry.descripcion or '-'),Spacer(1,10)]
+    story=[meta,Spacer(1,12)]
+    if receipt_details:
+        detail_rows=[]
+        for index in range(0,len(receipt_details),2):
+            pairs=receipt_details[index:index+2]
+            cells=[]
+            for label,value in pairs:cells.extend([p(label,small),p(value)])
+            if len(cells)==2:cells.extend([p(''),p('')])
+            detail_rows.append(cells)
+        details=Table(detail_rows,colWidths=[85,185,85,185],hAlign='LEFT')
+        details.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),7),('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
+        story.extend([details,Spacer(1,10)])
+    story.extend([p('CONCEPTO',bold),Spacer(1,4),p(entry.descripcion or '-'),Spacer(1,10)])
     currency=entry.moneda or 'CS'
     rate=Decimal(str(entry.tasa_cambio or 0))
     currency_text=f'Moneda de captura: {"USD" if currency=="USD" else "C$"}. Moneda de los libros y de las líneas siguientes: C$.'
@@ -93,7 +105,8 @@ def build_accounting_entry_pdf(entry, profile, logo_path=None, created_timezone=
     created=timestamp(entry.created_at, created_timezone)
     posted=timestamp(entry.publicado_at, 'America/Managua')
     story.extend([Spacer(1,14),p(f'Registrado por: {entry.creado_por or "-"} | Fecha de registro: {created}',small),p(f'Publicado por: {entry.publicado_por or "-"} | Fecha de publicación: {posted} (hora de Nicaragua)',small),Spacer(1,32)])
-    signatures=Table([[p('Elaborado por',small),p('Revisado por',small),p('Autorizado por',small)]],colWidths=[180]*3)
+    signature_labels=('Registrado por','Recibido por','Autorizado por') if receipt_details else ('Elaborado por','Revisado por','Autorizado por')
+    signatures=Table([[p(label,small) for label in signature_labels]],colWidths=[180]*3)
     signatures.setStyle(TableStyle([('LINEABOVE',(0,0),(-1,0),.5,border),('TOPPADDING',(0,0),(-1,-1),7)]))
     story.append(signatures)
     doc.build(story,onFirstPage=page_frame,onLaterPages=page_frame)

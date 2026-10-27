@@ -49,13 +49,9 @@
  </div></section>
 </div>
 <div class="modal fade" id="reverseModal" tabindex="-1" aria-labelledby="reverseTitle" aria-hidden="true"><div class="modal-dialog"><form method="post" id="reverseForm" class="modal-content"><div class="modal-header"><h5 id="reverseTitle" class="modal-title">Revertir comprobante</h5><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><p>El comprobante original se conserva y se publica una contrapartida.</p><label class="form-label">Fecha de reversión</label><input class="form-control mb-3" type="date" name="fecha_reversa" id="reverseDate" value="{{ today }}" required><label class="form-label">Motivo</label><textarea class="form-control" name="motivo" minlength="5" maxlength="260" required></textarea></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-danger">Confirmar reversión</button></div></form></div></div>
-<div class="modal fade" id="voucherPreviewModal" tabindex="-1" aria-labelledby="voucherPreviewTitle" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-md-down"><div class="modal-content">
- <div class="modal-header"><div><h2 class="modal-title fs-5" id="voucherPreviewTitle">Comprobante contable · tamaño carta</h2><p class="small text-muted mb-0">PDF del registro guardado. Los borradores se identifican en el documento.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar visor"></button></div>
- <div class="modal-body p-0 bg-light" style="height:72vh;overflow:auto"><div id="voucherPdfPages" aria-label="Páginas del comprobante PDF" aria-live="polite"></div></div>
- <div class="modal-footer"><span class="small text-muted me-auto" id="voucherPrintMessage" role="status"></span><a class="btn btn-outline-secondary" id="voucherPdfOpen" target="_blank" rel="noopener">Abrir PDF</a><button class="btn btn-primary" type="button" id="voucherPdfPrint" disabled><i class="bi bi-printer"></i> Imprimir</button><button class="btn btn-outline-secondary" type="button" id="voucherNext" data-bs-dismiss="modal">Registrar siguiente</button></div>
-</div></div></div>
+{% include "partials/accounting_voucher_modal.html" %}
 <script id="accountingManualData" type="application/json">{{ {'pdfEntry':pdf_entry_id, 'accounts':cuentas_json, 'lines':edit_entry_lines_json, 'editing':(edit_entry.id if edit_entry else None), 'history':(request.query_params.get('tab')=='history' or request.query_params.get('estado') or request.query_params.get('tipo_id'))}|tojson }}</script>
 <script src="/static/js/accounting-school.js?v=guided-20261027"></script>
-<script src="/static/js/accounting-voucher-preview.js?v=guided-20261027" defer></script>
+<script src="/static/js/accounting-voucher-preview.js?v=expenses-20261027" defer></script>
 <script src="/static/js/accounting-manual.js?v=guided-20261027" defer></script>
 {% endblock %}

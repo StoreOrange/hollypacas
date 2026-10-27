@@ -99,6 +99,12 @@
       .ticket.shoe-ticket .top-meta { margin-bottom: 3px; }
       .ticket.shoe-ticket .footer { margin-top: 5px; }
       {% endif %}
+      .warehouse-only { display: none; }
+      .warehouse-dispatch .pos-money, .warehouse-dispatch .pos-invoice-details, .warehouse-dispatch .pos-commercial-footer { display: none !important; }
+      .warehouse-dispatch .warehouse-only { display: block; }
+      .warehouse-dispatch .warehouse-invoice { font-size: 26px; font-weight: 800; line-height: 1.3; overflow-wrap: anywhere; }
+      .warehouse-dispatch .warehouse-vendor { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+      .warehouse-dispatch .warehouse-total { margin: 12px 0; font-size: 21px; font-weight: 800; }
       @media print {
         .screen-actions { display: none !important; }
         html, body { width: 80mm !important; min-width: 80mm !important; overflow: visible !important; }
@@ -121,7 +127,11 @@
         <button class="screen-btn primary" type="button" id="ticket-print-now">Imprimir ahora</button>
       </div>
       <div class="group">
+        {% if pos_copy_labels %}
+        <a class="screen-btn" href="/sales/{{ factura.id }}/ticket">Ver PDF</a>
+        {% else %}
         <button class="screen-btn" type="button" id="ticket-refresh-return">Nueva venta</button>
+        {% endif %}
       </div>
     </div>
     <div class="ticket{% if fit_shoe_ticket %} shoe-ticket{% endif %}{% if compact_ticket %} compact{% endif %}{% if lock_ticket_font %} lock-font{% endif %}">
@@ -137,15 +147,24 @@
       <div class="center small">{{ line }}</div>
       {% endfor %}
       <div class="center bold">Sucursal: {{ sucursal }}</div>
+      {% if pos_copy_labels %}<div class="center bold" id="pos-copy-label" style="font-weight:700;text-transform:uppercase">{{ pos_copy_labels[0] }}</div>{% endif %}
       <div class="line"></div>
-      <div class="row"><span class="bold">Factura:</span><span>{{ factura.numero }}</span></div>
+      {% if warehouse_dispatch_only %}
+      <div class="warehouse-only center">
+        <div class="small bold">REFERENCIA / FACTURA</div>
+        <div class="warehouse-invoice">{{ factura.numero }}</div>
+        <div class="small bold">VENDEDOR</div>
+        <div class="warehouse-vendor">{{ vendedor }}</div>
+      </div>
+      {% endif %}
+      <div class="row pos-invoice-details"><span class="bold">Factura:</span><span>{{ factura.numero }}</span></div>
       {% if show_sale_type %}
-      <div class="row"><span class="bold">Tipo:</span><span>{{ condicion_venta }}</span></div>
+      <div class="row pos-invoice-details"><span class="bold">Tipo:</span><span>{{ condicion_venta }}</span></div>
       {% endif %}
       <div class="row"><span>Fecha:</span><span>{{ fecha_str }} {{ hora_str }}</span></div>
       <div class="row"><span>Cliente:</span><span>{{ cliente }}</span></div>
       <div class="row"><span>Identificacion R/C:</span><span>{{ cliente_id }}</span></div>
-      <div class="row"><span>Vendedor:</span><span>{{ vendedor }}</span></div>
+      <div class="row pos-invoice-details"><span>Vendedor:</span><span>{{ vendedor }}</span></div>
       <div class="line"></div>
 
       <div class="items">
@@ -156,20 +175,20 @@
           {% endif %}
           <div class="item-desc">{{ item.descripcion }}</div>
           {% if item.es_regalia %}
-          <div class="small bold">REGALO - no suma a la factura</div>
+          <div class="small bold"><span class="pos-money">REGALO - no suma a la factura</span><span class="warehouse-only">REGALO</span></div>
           {% endif %}
           {% if item.es_libreado and item.peso_lbs > 0 %}
           <div class="small">Peso: {{ "%.2f"|format(item.peso_lbs) }} Lbs</div>
           {% endif %}
           {% if item.descuento and item.descuento > 0 %}
-          <div class="small">Desc item: {{ currency_label }} {{ format_amount(item.descuento) }}</div>
+          <div class="small pos-money">Desc item: {{ currency_label }} {{ format_amount(item.descuento) }}</div>
           {% endif %}
           <div class="row small">
             <span>Cant: {{ "%.2f"|format(item.cantidad) }}</span>
             {% if show_item_subtotal or item.es_libreado or (show_item_subtotal_if_multi_qty and item.cantidad >= 2) %}
-            <span class="item-price-line">Precio: {{ currency_label }} {{ format_amount(item.precio) }} | Subt: {{ currency_label }} {{ format_amount(item.subtotal) }}</span>
+            <span class="item-price-line pos-money">Precio: {{ currency_label }} {{ format_amount(item.precio) }} | Subt: {{ currency_label }} {{ format_amount(item.subtotal) }}</span>
             {% else %}
-            <span class="item-price-line">Precio: {{ currency_label }} {{ format_amount(item.precio) }}</span>
+            <span class="item-price-line pos-money">Precio: {{ currency_label }} {{ format_amount(item.precio) }}</span>
             {% endif %}
           </div>
           <div class="line"></div>
@@ -177,6 +196,11 @@
         {% endfor %}
       </div>
 
+      {% if warehouse_dispatch_only %}
+      <div class="warehouse-only center warehouse-total">TOTAL BULTOS: {{ "%g"|format(warehouse_total_bultos) }}</div>
+      <div class="warehouse-only center small">Documento exclusivo para despacho de bodega.</div>
+      {% endif %}
+      <div class="pos-money">
       <div class="row bold"><span>Total unds</span><span>{{ "%.2f"|format(total_unidades) }}</span></div>
       <div class="row bold"><span>Subtotal</span><span>{{ currency_label }} {{ format_amount(subtotal_amount) }}</span></div>
       <div class="row"><span>Descuentos</span><span>{{ currency_label }} {{ format_amount(discount_amount or 0) }}</span></div>
@@ -202,7 +226,9 @@
       <div class="row bold"><span>Saldo</span><span>{{ currency_label }} {{ format_amount(saldo * -1) }}</span></div>
       {% endif %}
 
-      <div class="footer center small">
+      </div>
+
+      <div class="footer center small pos-commercial-footer">
         <div class="bold">Gracias por su compra</div>
         <div>Revise su mercaderia antes de salir.</div>
         <div>No se aceptan cambios ni devoluciones</div>
@@ -219,6 +245,15 @@
         if (!Number.isFinite(copies) || copies < 1) {
           copies = 2;
         }
+        const copyLabels = {{ (pos_copy_labels or [])|tojson }};
+        if (copyLabels.length) copies = copyLabels.length;
+        const showCopy = (index) => {
+          const label = document.getElementById("pos-copy-label");
+          if (label && copyLabels[index]) label.textContent = copyLabels[index];
+          {% if warehouse_dispatch_only %}
+          document.querySelector(".ticket")?.classList.toggle("warehouse-dispatch", copyLabels[index] === "EXCLUSIVA DE BODEGA");
+          {% endif %}
+        };
         const waitForTicketReady = async () => {
           if (document.fonts && document.fonts.ready) {
             try { await document.fonts.ready; } catch (_) {}
@@ -238,19 +273,7 @@
           await new Promise((resolve) => setTimeout(resolve, 50));
         };
 
-        {% if browser_auto_job %}
-        const job={{ browser_auto_job|tojson }};
-        const storageKey='holl-native-print:'+job.claim_id;
-        let completed=0,requested=false,finished=false;
-        const report=(status)=>{if(finished)return;finished=true;window.parent.postMessage({type:'holl-native-print',job_id:job.id,claim_id:job.claim_id,status},window.location.origin);};
-        const send=()=>{if(finished)return;requested=true;try{window.print();}catch(error){report('UNKNOWN');}};
-        window.addEventListener('afterprint',()=>{if(!requested||finished)return;requested=false;completed++;if(completed<{{ browser_auto_copies }})setTimeout(send,250);else report('SENT');});
-        waitForTicketReady().then(()=>{try{if(sessionStorage.getItem(storageKey)){report('UNKNOWN');return;}sessionStorage.setItem(storageKey,'requested');}catch(error){report('UNKNOWN');return;}setTimeout(send,180);}).catch(()=>report('UNKNOWN'));
-        setTimeout(()=>report('UNKNOWN'),90000);
-        return;
-        {% endif %}
-
-        {% if fit_shoe_ticket %}
+        {% if fit_shoe_ticket or pos_copy_labels %}
         // Measure the actual receipt after images and fonts load, instead of
         // estimating its roll length from the number of lines.
         const fitReceiptPaper = () => {
@@ -276,19 +299,47 @@
         window.addEventListener("beforeprint", fitReceiptPaper);
         {% endif %}
 
-        {% if fit_shoe_ticket %}
+        {% if browser_auto_job %}
+        const job={{ browser_auto_job|tojson }};
+        const storageKey='holl-native-print:'+job.claim_id;
+        let completed=0,requested=false,finished=false;
+        const report=(status)=>{if(finished)return;finished=true;window.parent.postMessage({type:'holl-native-print',job_id:job.id,claim_id:job.claim_id,status},window.location.origin);};
+        const send=()=>{if(finished)return;requested=true;showCopy(completed);{% if pos_copy_labels %}fitReceiptPaper();{% endif %}try{window.print();}catch(error){report('UNKNOWN');}};
+        window.addEventListener('afterprint',()=>{if(!requested||finished)return;requested=false;completed++;if(completed<{{ browser_auto_copies }})setTimeout(send,250);else report('SENT');});
+        waitForTicketReady().then(()=>{try{if(sessionStorage.getItem(storageKey)){report('UNKNOWN');return;}sessionStorage.setItem(storageKey,'requested');}catch(error){report('UNKNOWN');return;}setTimeout(send,180);}).catch(()=>report('UNKNOWN'));
+        setTimeout(()=>report('UNKNOWN'),90000);
+        return;
+        {% endif %}
+
+
+
+        {% if fit_shoe_ticket or pos_copy_labels %}
         let printed = 0;
         let printing = false;
         let printRequestedAt = 0;
         let nextPrintTimer = null;
+        {% if not pos_copy_labels %}
         const returnUrl = {{ (return_to or '/sales')|tojson }};
         const salesReturnUrl = new URL(returnUrl, window.location.origin);
         salesReturnUrl.searchParams.set("scan_ready", "1");
+        {% endif %}
 
         const finishFlow = () => {
           if (exited) return;
           exited = true;
           clearTimeout(nextPrintTimer);
+          {% if pos_copy_labels %}
+          // Preserve the existing sales form; a receipt must never open another one.
+          if (window.opener && !window.opener.closed) {
+            try {
+              window.opener.focus();
+              window.close();
+            } catch (_) {}
+          }
+          setTimeout(() => {
+            if (!window.closed) window.location.replace({{ ('/sales/' ~ factura.id ~ '/ticket')|tojson }});
+          }, 180);
+          {% else %}
           if (window.opener && !window.opener.closed) {
             try {
               window.opener.location.replace(salesReturnUrl.href);
@@ -301,6 +352,7 @@
           setTimeout(() => {
             if (!window.closed) window.location.replace(salesReturnUrl.href);
           }, 180);
+          {% endif %}
         };
 
         const completeCopy = () => {
@@ -320,7 +372,8 @@
           printing = true;
           printRequestedAt = Date.now();
           window.focus();
-          fitReceiptPaper();
+          showCopy(printed);
+          {% if fit_shoe_ticket or pos_copy_labels %}fitReceiptPaper();{% endif %}
           window.print();
           // Some browsers omit afterprint but return from a blocking dialog.
           if (printing && Date.now() - printRequestedAt > 600) completeCopy();
@@ -351,7 +404,7 @@
               finishFlow();
             }
           }, Math.max(3500, copies * 2200));
-          {% if fit_shoe_ticket %}fitReceiptPaper();{% endif %}
+          {% if fit_shoe_ticket or pos_copy_labels %}fitReceiptPaper();{% endif %}
           window.print();
         };
 
@@ -404,7 +457,7 @@
         }
 
         waitForTicketReady().finally(() => {
-          {% if fit_shoe_ticket %}fitReceiptPaper();{% endif %}
+          {% if fit_shoe_ticket or pos_copy_labels %}fitReceiptPaper();{% endif %}
           setTimeout(() => triggerPrint(), 180);
         });
       });

@@ -1,0 +1,4 @@
+{% set expense_branding = request.state.branding if request and request.state.branding else {} %}
+{% if expense_branding.get('company_key') in ['hollywood_pacas','pacasholl','hollpacas'] and 'access.accounting.mobile_expenses' in (request.state.permission_names or []) %}
+<a class="btn btn-success w-100 mb-3" href="/m/gastos" style="min-height:48px;font-size:16px;display:flex;align-items:center;justify-content:center;gap:8px"><i class="bi bi-receipt"></i> Registrar gasto</a>
+{% endif %}

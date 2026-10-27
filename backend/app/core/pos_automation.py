@@ -70,6 +70,8 @@ def queue_invoice(db,invoice,station_id,task_id):
     if not task or not station or task.station_id!=station.id or task.status!='WAITING':raise ValueError('La operación automática ya no está disponible')
     setting=db.query(PosPrintSetting).filter_by(branch_id=station.branch_id).first()
     copies=max(1,min(5,int(setting.copies or 1))) if setting else 1
+    from ..routers import web
+    copies = len(web._pos_invoice_copy_labels()) or copies
     db.add(PosPrintJob(station_id=station.id,invoice_id=invoice.id,copies=copies,status='QUEUED'))
     task.invoice_id=invoice.id;task.status='FACTURADA';task.message='Factura generada; impresión pendiente'
     db.flush()

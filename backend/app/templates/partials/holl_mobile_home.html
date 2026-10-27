@@ -1,0 +1,46 @@
+<section class="holl-home d-lg-none" aria-label="Inicio móvil de Holl Pacas">
+  <header class="holl-home-heading">
+    <div><p class="holl-home-eyebrow">Tu espacio de trabajo</p><h1>Hola, {{ (user.full_name or user.email or 'usuario').split(' ')[0] }}</h1></div>
+    <span class="holl-home-avatar" aria-hidden="true">{{ (user.full_name or user.email or 'U')[:1]|upper }}</span>
+  </header>
+  <div class="holl-home-assist">
+    <label for="hollHomeSearch"><i class="bi bi-compass" aria-hidden="true"></i>¿Qué necesitas hacer?</label>
+    <div class="holl-home-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" id="hollHomeSearch" placeholder="Buscar una acción o módulo" autocomplete="off" enterkeyhint="search" aria-describedby="hollHomeSearchHelp"><button type="button" id="hollHomeClear" aria-label="Limpiar búsqueda" hidden><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
+    <p id="hollHomeSearchHelp">Tus operaciones, organizadas y siempre a mano.</p>
+  </div>
+  <div class="holl-home-filters" role="group" aria-label="Filtrar accesos">
+    <button type="button" data-home-filter="all" aria-pressed="true"><i class="bi bi-grid-fill" aria-hidden="true"></i>Todo</button><button type="button" data-home-filter="register" aria-pressed="false"><i class="bi bi-plus-circle" aria-hidden="true"></i>Registrar</button><button type="button" data-home-filter="view" aria-pressed="false"><i class="bi bi-bar-chart-line" aria-hidden="true"></i>Consultar</button>
+  </div>
+  {% macro task(href,title,description,icon,tags,tone='teal',kind='register') -%}
+  <a class="holl-home-action {{ 'holl-home-task' if kind=='register' else 'holl-home-row' }}" href="{{ href }}" data-home-action data-home-tone="{{ tone }}" data-home-kind="{{ kind }}" data-home-search="{{ tags }}">
+    <span class="holl-home-icon {{ tone }}" aria-hidden="true"><i class="bi {{ icon }}"></i></span><span class="holl-home-copy"><strong>{{ title }}</strong><small>{{ description }}</small></span><i class="bi bi-arrow-up-right holl-home-arrow" aria-hidden="true"></i>
+  </a>
+  {%- endmacro %}
+  <section class="holl-home-section" data-home-section>
+    <div class="holl-home-section-heading"><h2><i class="bi bi-plus-square-fill" aria-hidden="true"></i>Crear y registrar</h2><span><i class="bi bi-signpost-split me-1" aria-hidden="true"></i>Registro guiado</span></div>
+    <div class="holl-home-tasks">
+      {% if can_mobile_preventas %}{{ task('/m/preventas','Nueva preventa','Prepara y envía tu pedido','bi-cart-plus-fill','crear registrar vender venta pedido preventa cliente','blue') }}{% endif %}
+      {% if 'access.accounting.mobile_expenses' in perms %}{{ task('/m/gastos','Registrar gasto','Motivo, monto y recibo PDF','bi-receipt-cutoff','crear registrar gasto gastos egreso extraordinario imprevisto pago recibo pdf dinero','emerald') }}{% endif %}
+      {% if can_mobile_prefactura %}{{ task('/m/pre-factura','Pre Factura','Cotiza y comparte con tu cliente','bi-file-earmark-text-fill','crear registrar cotizar cotizacion factura prefactura precio cliente','amber') }}{% endif %}
+      {% if 'access.inventory.preproduction.mobile' in perms or 'access.inventory.requisas' in perms or 'access.inventory' in perms %}{{ task('/m/bodega/preproduccion','Preproducción','Insumos y resultados de bodega','bi-gear-wide-connected','crear registrar produccion preproduccion bodega requisar insumo resultado','coral') }}{% endif %}
+    </div>
+  </section>
+  <section class="holl-home-section" data-home-section>
+    <div class="holl-home-section-heading"><h2><i class="bi bi-grid-1x2-fill" aria-hidden="true"></i>Consultas y control</h2></div>
+    <div class="holl-home-rows">
+      {% if can_inventory_hot %}{{ task('/inventory/caliente','Consultar inventario','Existencias por bodega','bi-box-seam-fill','consultar reporte inventario existencias saldo stock bodega producto costo','teal','view') }}{% endif %}
+      {% if can_sales_hot %}{{ task('/sales/ventas-caliente','Revisar ventas','Totales y tendencia de ventas','bi-bar-chart-line-fill','consultar reporte ventas venta totales sucursal tendencia mes','blue','view') }}{% endif %}
+      {% if can_mobile_sales_report %}{{ task('/m/mis-ventas','Mis ventas','Facturas y productos vendidos','bi-bag-check-fill','consultar reporte mis ventas factura producto vendido','orange','view') }}{% endif %}
+      {% if can_mobile_commissions %}{{ task('/m/mis-comisiones','Mis comisiones','Consulta la comisión asignada','bi-cash-stack','consultar reporte mis comisiones comision cierre','green','view') }}{% endif %}
+    </div>
+  </section>
+  <div class="holl-home-empty" id="hollHomeEmpty" hidden><i class="bi bi-search" aria-hidden="true"></i><strong>No encontramos ese acceso</strong><p>Prueba con “gasto”, “inventario” o “ventas”.</p><button type="button" class="btn btn-sm btn-outline-secondary" id="hollHomeReset">Mostrar todos</button></div>
+  <p class="holl-home-result" id="hollHomeResult" role="status" aria-live="polite"></p>
+  {% if can_mobile_preventas %}
+  <details class="holl-home-recent">
+    <summary><span><i class="bi bi-clock-history me-2" aria-hidden="true"></i>Mis preventas recientes</span><span class="holl-home-count">{{ home_preventas|length }}</span><i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+    <div>{% for p in home_preventas %}<div class="holl-home-recent-row"><div class="d-flex justify-content-between gap-2"><strong>{{ p.numero }}</strong><span class="badge {{ p.estado_class }}">{{ p.estado_label }}</span></div><div class="d-flex justify-content-between gap-2 mt-1"><span>{{ p.cliente }}</span><strong>{{ p.monto_label }}</strong></div><small>{{ p.fecha_label }}</small></div>{% else %}<p class="holl-home-help mb-0">Todavía no tienes preventas recientes.</p>{% endfor %}</div>
+  </details>
+  {% endif %}
+  <button class="holl-home-menu" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar"><span><i class="bi bi-grid-3x3-gap-fill me-2" aria-hidden="true"></i>Todos los módulos</span><i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+</section>

@@ -36,13 +36,14 @@ def run(mode="persistent"):
     console=env.get_template('pos_console.html').render(**context,pos_worker=True)
     script=Path('app/static/js/pos-browser.js').read_text()
     state={'ok':True,'enabled':mode=='already_enabled','tasks':[],'delay_seconds':15}
+    snapshots=[]
     claimed=[];acked=[];printed=[];lost=[False];next_job=[1];allow_jobs=[mode!='closed_popup']
     ticket=ticket_html()
     with sync_playwright() as p:
         browser=p.firefox.launch(headless=True)
         ctx=browser.new_context()
-        ctx.expose_function('recordPrint',lambda path:printed.append(int(path.rsplit('/',1)[1])))
-        ctx.add_init_script("window.print=()=>{window.recordPrint(location.pathname);setTimeout(()=>dispatchEvent(new Event('afterprint')),0)}")
+        ctx.expose_function('recordPrint',lambda path,label,text:(printed.append((int(path.rsplit('/',1)[1]),label)),snapshots.append(text)))
+        ctx.add_init_script("window.print=()=>{window.recordPrint(location.pathname,document.getElementById('pos-copy-label')?.textContent,document.querySelector('.ticket').innerText);setTimeout(()=>dispatchEvent(new Event('afterprint')),0)}")
         def route(r):
             path=r.request.url.split('https://pos.test',1)[1]
             body=json.loads(r.request.post_data or '{}')
@@ -92,10 +93,15 @@ def run(mode="persistent"):
         while len(acked)<3 and time.monotonic()<deadline:worker.wait_for_timeout(100)
         assert claimed==[1,2,3],claimed
         assert acked==[1,2,3],acked
-        assert printed==[1,2,3],printed
+        assert printed==[(job,label) for job in (1,2,3) for label in ('ORIGINAL','COPIA','EXCLUSIVA DE BODEGA')],printed
+        for index,text in enumerate(snapshots):
+            if index % 3 == 2:
+                assert 'TOTAL BULTOS' in text and 'Precio:' not in text and 'Pagos aplicados' not in text and 'C$' not in text,text
+            else:
+                assert 'Precio:' in text and 'Pagos aplicados' in text,text
         assert not errors,errors
         browser.close()
-    print('PASS '+mode+': tres tickets FIFO y ACK perdido sin duplicar.')
+    print('PASS '+mode+': tres facturas FIFO con tres ejemplares cada una y ACK perdido sin duplicar.')
 
 if __name__=='__main__':
     for mode in ('persistent','already_enabled','blocked_popup','closed_popup'):run(mode)

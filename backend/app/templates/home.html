@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
+{% set home_brand = request.state.branding if request and request.state.branding else {} %}
+{% set holl_mobile_home = home_brand.get("company_key") in ["hollywood_pacas","pacasholl","hollpacas"] %}
+{% if holl_mobile_home %}<link rel="stylesheet" href="/static/css/holl-mobile-home.css?v=local-color-ui-20261027">{% endif %}
 <style>
   .home-workspace {
     background: radial-gradient(circle at 92% 0%, rgba(37,99,235,.08), transparent 28%), linear-gradient(180deg,#f8fafc,#f3f6fb);
@@ -504,7 +507,7 @@
     }
   }
 </style>
-<div id="layout" class="home-workspace min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface {% if comestibles_theme_enabled %}home-comestibles{% endif %}">
+<div id="layout" class="home-workspace {% if holl_mobile_home %}home-holl-mobile{% endif %} min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface {% if comestibles_theme_enabled %}home-comestibles{% endif %}">
   {% include "partials/sidebar.html" %}
 
   <main class="p-4 sm:p-6 lg:p-8 text-[18px]">
@@ -517,7 +520,9 @@
     {% set can_mobile_sales_report = (not has_perms) or ('menu.sales.mis_ventas.mobile' in perms) or ('access.sales.mis_ventas.mobile' in perms) %}
     {% set can_mobile_commissions = (not has_perms) or ('menu.sales.mis_comisiones.mobile' in perms) or ('access.sales.mis_comisiones.mobile' in perms) %}
     <div class="odoo-page">
+      {% if holl_mobile_home %}{% include "partials/holl_mobile_home.html" %}{% endif %}
       <div class="odoo-header">
+      {% if not holl_mobile_home %}
       <div class="home-mobile-hero d-lg-none">
         {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
         <div class="d-flex align-items-center justify-content-between gap-2">
@@ -548,6 +553,7 @@
           </button>
         </div>
       </div>
+      {% endif %}
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 position-relative">
           <div>
             <nav aria-label="breadcrumb">
@@ -987,4 +993,5 @@
     </div>
   </main>
 </div>
+{% if holl_mobile_home %}<script src="/static/js/holl-mobile-home.js?v=local-20261027" defer></script>{% endif %}
 {% endblock %}

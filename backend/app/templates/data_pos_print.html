@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% set holl_three_copies = request.state.branding.get("company_key") in ["pacasholl", "hollywood_pacas", "hollpacas"] %}
 <div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
   {% include "partials/sidebar.html" %}
 
@@ -65,7 +66,8 @@
               </div>
               <div class="col-md-3">
                 <label class="odoo-field-label">Copias *</label>
-                <input class="form-control odoo-input" type="number" min="2" name="copies" value="{{ edit_item.copies if edit_item else 2 }}" />
+                <input class="form-control odoo-input" type="number" min="{{ 3 if holl_three_copies else 2 }}" name="copies" value="{{ 3 if holl_three_copies else (edit_item.copies if edit_item else 2) }}" {% if holl_three_copies %}readonly{% endif %} />
+                {% if holl_three_copies %}<div class="form-text">Original, copia y exclusiva de bodega.</div>{% endif %}
               </div>
               <div class="col-md-3">
                 <label class="odoo-field-label">Copias ROC</label>
@@ -133,7 +135,7 @@
                     <td>{{ item.roc_printer_name or "-" }}</td>
                     <td>{{ item.cierre_printer_name or "-" }}</td>
                     <td class="text-slate text-sm">{{ item.sumatra_path or "-" }}</td>
-                    <td>{{ item.copies }}</td>
+                    <td>{{ 3 if holl_three_copies else item.copies }}</td>
                     <td>{{ item.roc_copies or "-" }}</td>
                     <td>{{ item.cierre_copies or "-" }}</td>
                     <td>
