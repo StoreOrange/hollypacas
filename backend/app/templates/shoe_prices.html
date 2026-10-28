@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="/static/css/shoe-prices.css?v=saved-success-20261028">
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+ {% include "partials/sidebar.html" %}
+ <main class="shoe-prices">
+  <header class="sp-heading">
+   <div class="sp-heading-copy"><span class="sp-hero-icon"><i class="bi bi-tags-fill" aria-hidden="true"></i></span><div><p class="sp-eyebrow">MISS ZAPATOS · PRODUCTOS</p><h1>Cambiar precios</h1><p class="sp-subtitle">Busca, compara y guarda los precios de tus productos.</p></div></div>
+   <a class="btn sp-button-outline" href="/sales"><i class="bi bi-arrow-left" aria-hidden="true"></i> Ventas</a>
+  </header>
+  <section class="sp-card" aria-labelledby="spSearchTitle">
+   <div class="sp-section-heading"><h2 id="spSearchTitle"><span class="sp-step blue"><i class="bi bi-search" aria-hidden="true"></i></span>Buscar productos</h2><span class="sp-currency"><i class="bi bi-cash-coin" aria-hidden="true"></i> Precios en C$</span></div>
+   <form id="spSearchForm" class="sp-search-grid">
+    <div><label for="spQuery">Código o nombre</label><input id="spQuery" class="form-control" type="search" placeholder="Escribe un código o nombre, o escanea" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="spSuggestionsList" aria-expanded="false" aria-describedby="spSuggestionStatus"></div>
+    <div><label for="spColor"><i class="bi bi-palette" aria-hidden="true"></i> Color</label><input id="spColor" class="form-control" placeholder="Todos" autocomplete="off"></div>
+    <div><label for="spSize"><i class="bi bi-rulers" aria-hidden="true"></i> Talla</label><input id="spSize" class="form-control" placeholder="Todas" autocomplete="off"></div>
+    <button id="spSearch" class="btn btn-primary" type="submit"><i class="bi bi-search" aria-hidden="true"></i> Buscar</button>
+   </form>
+   <section id="spSuggestions" class="sp-suggestions" aria-label="Opciones de productos encontrados" hidden>
+    <div class="sp-suggestions-heading"><span><i class="bi bi-search" aria-hidden="true"></i> Posibles coincidencias</span><span class="sp-suggestions-hint">Elige un item para filtrar</span></div>
+    <div class="sp-suggestions-columns" aria-hidden="true"><span>Código / variante</span><span>Color · talla</span><span>Central</span><span>KG</span><span>KGF</span><span></span></div>
+    <div id="spSuggestionsList" class="sp-suggestions-list" role="listbox" aria-label="Código, color, talla y existencias por bodega"></div>
+    <p id="spSuggestionStatus" class="sp-suggestions-status" role="status" aria-live="polite"></p>
+   </section>
+  </section>
+  <section class="sp-card" aria-labelledby="spScaleTitle">
+   <div class="sp-section-heading"><h2 id="spScaleTitle"><span class="sp-step green"><i class="bi bi-pencil-square" aria-hidden="true"></i></span>Nuevos precios</h2><button id="spClearPrices" type="button" class="btn sp-text-button"><i class="bi bi-eraser" aria-hidden="true"></i> Limpiar</button></div>
+   {% set short_labels = ['Unitario','Unitario especial','Tercio','Media docena','Docena','Docena especial','Cajón'] %}
+   <div class="sp-scale">
+    {% for tier in range(1,8) %}
+    <div class="sp-price-cell"><label for="spPrice{{ tier }}"><span class="sp-tier">{{ tier }}</span>{{ short_labels[tier-1] }}</label><div class="sp-money-input"><span>C$</span><input id="spPrice{{ tier }}" data-price-tier="{{ tier }}" type="number" min="0" max="9999999999.99" step="0.01" inputmode="decimal" placeholder="0.00" aria-label="Nuevo precio {{ short_labels[tier-1] }}"></div></div>
+    {% endfor %}
+   </div>
+   <details class="sp-generator"><summary><i class="bi bi-magic" aria-hidden="true"></i> Generar escala desde un precio base <i class="bi bi-chevron-down" aria-hidden="true"></i></summary><div class="sp-generator-fields"><div><label for="spBase">Precio base C$</label><input id="spBase" type="number" min="0.01" step="0.01" class="form-control" placeholder="Ej.: 1200.00"></div><div><label for="spStep">Rebaja por nivel C$</label><input id="spStep" type="number" min="0" step="0.01" class="form-control" value="10.00"></div><button id="spGenerate" class="btn sp-button-outline" type="button"><i class="bi bi-magic" aria-hidden="true"></i> Generar</button></div></details>
+  </section>
+  <section class="sp-card sp-results" aria-labelledby="spResultsTitle">
+   <div class="sp-section-heading sp-results-heading"><div><h2 id="spResultsTitle"><span class="sp-step amber"><i class="bi bi-box-seam" aria-hidden="true"></i></span>Comparar y seleccionar</h2><p id="spResultsCount" class="sp-small">Busca un producto para comenzar.</p></div><div class="sp-list-control"><label for="spCompareTier">Comparar lista</label><select id="spCompareTier" class="form-select">{% for tier in range(1,8) %}<option value="{{ tier }}">{{ short_labels[tier-1] }}</option>{% endfor %}</select></div></div>
+   <div class="sp-table-scroll" tabindex="0" aria-label="Comparación de precios por producto">
+    <table class="table sp-table"><thead><tr><th class="sp-check-cell"><input id="spCheckAll" class="form-check-input" type="checkbox" aria-label="Seleccionar todos los productos" disabled></th><th>Producto</th><th>Variantes encontradas</th><th class="sp-number" title="Suma de las variantes encontradas">Existencia encontrada</th><th class="sp-number">Actual</th><th class="sp-number sp-new-heading">Nuevo</th><th class="sp-number">Diferencia</th></tr></thead><tbody id="spRows"><tr><td colspan="7"><div class="sp-empty"><i class="bi bi-search" aria-hidden="true"></i><strong>Encuentra tus productos</strong><span>Busca por código, nombre, color o talla.</span></div></td></tr></tbody></table>
+   </div>
+   <footer class="sp-actions"><div><strong id="spSelectionCount">0 productos seleccionados</strong><p><i class="bi bi-info-circle" aria-hidden="true"></i> El cambio incluye todas las tallas y colores de cada producto.</p></div><button id="spReview" type="button" class="btn btn-primary" disabled><i class="bi bi-check2-square" aria-hidden="true"></i> Revisar cambios</button></footer>
+  </section>
+  <div id="spStatus" class="sp-status" role="status" aria-live="polite"></div>
+ </main>
+</div>
+<div class="modal fade" id="spConfirmModal" tabindex="-1" aria-labelledby="spConfirmTitle" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content sp-confirm">
+ <div class="modal-header"><h2 class="modal-title fs-5" id="spConfirmTitle"><i class="bi bi-check2-circle" aria-hidden="true"></i> Confirmar nuevos precios</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+ <div class="modal-body"><p id="spConfirmSummary"></p><div id="spConfirmProducts" class="sp-confirm-products"></div><div class="sp-table-scroll"><table class="table sp-confirm-scale"><thead><tr><th>Lista</th><th class="sp-number">Precio nuevo C$</th></tr></thead><tbody id="spConfirmPrices"></tbody></table></div><p class="sp-small mb-0">Se actualizarán las 7 listas de los productos seleccionados, incluidas todas sus tallas y colores.</p><p id="spZeroWarning" class="sp-zero-warning" hidden><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Hay listas con precio cero. Revísalas antes de guardar.</p><p id="spConfirmError" class="text-danger mt-3 mb-0" role="alert" hidden></p></div>
+ <div class="modal-footer"><button class="btn sp-button-outline" type="button" data-bs-dismiss="modal">Volver a revisar</button><button id="spSave" type="button" class="btn btn-primary"><i class="bi bi-floppy" aria-hidden="true"></i> Confirmar y guardar</button></div>
+</div></div></div>
+<div class="modal fade" id="spSuccessModal" tabindex="-1" aria-labelledby="spSuccessTitle" aria-describedby="spSuccessDescription" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content sp-success-card">
+ <button type="button" class="btn-close sp-success-close" data-bs-dismiss="modal" aria-label="Cerrar confirmación"></button>
+ <div class="sp-success-body">
+  <span class="sp-success-icon"><i class="bi bi-check-lg" aria-hidden="true"></i></span>
+  <p class="sp-success-eyebrow">CAMBIO GUARDADO</p>
+  <h2 id="spSuccessTitle">¡Precios actualizados!</h2>
+  <p id="spSuccessDescription">El cambio se ejecutó correctamente.</p>
+  <div id="spSuccessCount" class="sp-success-count" role="status"></div>
+  <div id="spSuccessProducts" class="sp-success-products"></div>
+  <p class="sp-success-note"><i class="bi bi-shield-check" aria-hidden="true"></i> Se guardaron las 7 listas de precios de los productos indicados.</p>
+ </div>
+ <div class="sp-success-footer"><button id="spSuccessContinue" class="btn btn-primary" type="button" data-bs-dismiss="modal"><i class="bi bi-arrow-right" aria-hidden="true"></i> Seguir trabajando</button></div>
+</div></div></div>
+<script id="shoePriceLabels" type="application/json">{{ short_labels|tojson }}</script>
+<script src="/static/js/shoe-prices.js?v=saved-success-20261028" defer></script>
+{% endblock %}

@@ -411,6 +411,7 @@ SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id":"motorizado","label":"Motorizado","href":"/motorizado","icon":"bi-moto-delivery","perm":"menu.motorizado","alt_perm":None,"hollpacas_only":True},
     {"id": "home", "label": "Panel", "href": "/home", "icon": "bi-speedometer2", "perm": "menu.home", "alt_perm": None},
     {"id": "sales", "label": "Ventas", "href": "/sales", "icon": "bi-cart-check-fill", "perm": "menu.sales", "alt_perm": None},
+    {"id": "shoe_prices", "label": "Cambiar precios", "href": "/inventory/shoes/prices", "icon": "bi-tags-fill", "perm": "access.inventory.productos", "alt_perm": None, "shoes_only": True},
     {"id": "sales_caliente", "label": "Ventas en Caliente", "href": "/sales/ventas-caliente", "icon": "bi-activity", "perm": "menu.sales.caliente", "alt_perm": None},
     {"id": "reports", "label": "Informes", "href": "/reports", "icon": "bi-bar-chart-line-fill", "perm": "menu.reports", "alt_perm": None},
     {"id": "sales_devoluciones", "label": "Devoluciones", "href": "/sales/devoluciones", "icon": "bi-arrow-counterclockwise", "perm": "menu.sales.devoluciones", "alt_perm": None, "shoes_only": True},
@@ -483,6 +484,9 @@ def get_sidebar_menu_layout(db: Session) -> list[dict[str, str | None]]:
         normalized_ids.remove("sales_devoluciones")
         anchor = "sales_utilitario" if "sales_utilitario" in normalized_ids else "sales"
         normalized_ids.insert(normalized_ids.index(anchor) + 1, "sales_devoluciones")
+    if company_key == "bdzapatos" and "shoe_prices" in normalized_ids and "sales" in normalized_ids:
+        normalized_ids.remove("shoe_prices")
+        normalized_ids.insert(normalized_ids.index("sales") + 1, "shoe_prices")
     by_id = {str(item["id"]): item for item in SIDEBAR_MENU_ITEMS}
     items = [dict(by_id[item_id]) for item_id in normalized_ids if item_id in by_id]
     if company_key == "bdzapatos":
@@ -33511,6 +33515,17 @@ async def inventory_grid_bulk_update(
     return JSONResponse({"ok": True, "message": f"Se actualizaron {updated} productos", "updated_count": updated})
 
 
+@router.get("/inventory/shoes/prices")
+def inventory_shoes_prices_page(request: Request, user: User = Depends(_require_admin_web)):
+    if not _is_shoes_mode():
+        raise HTTPException(status_code=404, detail="Disponible solo en Miss Zapatos")
+    _enforce_permission(request, user, "access.inventory.productos")
+    return request.app.state.templates.TemplateResponse("shoe_prices.html", {
+        "request": request, "user": user, "version": settings.UI_VERSION,
+    })
+
+
+
 @router.post("/inventory/shoes/prices/apply")
 def inventory_shoes_prices_apply(
     request: Request,
@@ -33576,6 +33591,25 @@ def inventory_shoes_prices_apply(
             setattr(producto, f"precio_venta{tier}", float(value_cs))
             setattr(producto, f"precio_venta{tier}_usd", float(value_usd))
 
+    # Build the receipt from the products really updated, including variants
+    # outside the search filter. Prices belong to the complete product.
+    updated_products = {
+        producto.id: {"producto_id": producto.id, "cod_producto": producto.cod_producto,
+                      "descripcion": producto.descripcion, "variantes": []}
+        for producto in products
+    }
+    variants = (
+        db.query(ShoeProductVariant, ColorCatalog.nombre)
+        .outerjoin(ColorCatalog, ColorCatalog.id == ShoeProductVariant.color_id)
+        .filter(ShoeProductVariant.producto_id.in_(list(updated_products)))
+        .order_by(ShoeProductVariant.producto_id, ColorCatalog.nombre, ShoeProductVariant.talla, ShoeProductVariant.id)
+        .all()
+    )
+    for variant, color_name in variants:
+        updated_products[variant.producto_id]["variantes"].append({
+            "cod_variante": variant.cod_variante, "color": color_name or "—", "talla": variant.talla or "—",
+        })
+    saved_products = list(updated_products.values())
     db.commit()
     return JSONResponse(
         {
@@ -33583,7 +33617,8 @@ def inventory_shoes_prices_apply(
             "message": f"Se actualizaron {len(products)} producto(s)",
             "updated_count": len(products),
             "product_ids": unique_ids,
-            "sample_codes": [str(producto.cod_producto or "") for producto in products[:10]],
+            "sample_codes": [str(product["cod_producto"] or "") for product in saved_products[:10]],
+            "updated_products": saved_products,
         }
     )
 
