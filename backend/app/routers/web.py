@@ -23857,6 +23857,13 @@ def _build_kardex_movements(
     return rows, resumen
 
 
+def _detailed_sales_report_branch_ids(db: Session, user: User) -> set[int]:
+    """Let Miss Zapatos administrators report all active stores in this company."""
+    if _shoe_admin_all_stores(user):
+        return {int(branch.id) for branch in _scoped_branches_query(db).all()}
+    return _user_scoped_branch_ids(db, user)
+
+
 def _build_sales_report_rows(
     db: Session,
     user: User,
@@ -23867,7 +23874,7 @@ def _build_sales_report_rows(
     producto_q: str,
 ):
     allowed_codes = _allowed_branch_codes(db)
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _detailed_sales_report_branch_ids(db, user)
     _, bodega_user = _resolve_branch_bodega(db, user)
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
@@ -24008,7 +24015,12 @@ def report_sales_detailed(
         producto_q,
     )
 
-    branches = _scoped_branches_query(db).order_by(Branch.name).all()
+    branches = (
+        _scoped_branches_query(db)
+        .filter(Branch.id.in_(_detailed_sales_report_branch_ids(db, user)))
+        .order_by(Branch.name)
+        .all()
+    )
     _, bodega = _resolve_branch_bodega(db, user)
     vendedores = _vendedores_for_bodega(db, bodega)
 
@@ -26041,7 +26053,7 @@ def report_sales_export(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _detailed_sales_report_branch_ids(db, user)
     company_profile = _company_profile_payload(db)
     start_date, end_date, branch_id, vendedor_id, producto_q = _sales_report_filters(request)
     display_currency = (request.query_params.get("moneda") or "USD").strip().upper()
