@@ -1475,7 +1475,7 @@
           <i class="bi bi-pencil"></i>
           Editar producto
         </button>
-        {% if shoes_mode %}
+        {% if shoes_mode and user.roles|selectattr('name', 'equalto', 'administrador')|list|length > 0 %}
         <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" href="/inventory/shoes/prices">
           <i class="bi bi-tags-fill" aria-hidden="true"></i>Cambiar precios
         </a>

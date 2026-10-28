@@ -33515,10 +33515,16 @@ async def inventory_grid_bulk_update(
     return JSONResponse({"ok": True, "message": f"Se actualizaron {updated} productos", "updated_count": updated})
 
 
+def _enforce_shoe_price_admin(user: User) -> None:
+    if not any(role.name == "administrador" for role in (user.roles or [])):
+        raise HTTPException(status_code=403, detail="Cambiar precios está disponible solo para el rol administrador")
+
+
 @router.get("/inventory/shoes/prices")
 def inventory_shoes_prices_page(request: Request, user: User = Depends(_require_admin_web)):
     if not _is_shoes_mode():
         raise HTTPException(status_code=404, detail="Disponible solo en Miss Zapatos")
+    _enforce_shoe_price_admin(user)
     _enforce_permission(request, user, "access.inventory.productos")
     return request.app.state.templates.TemplateResponse("shoe_prices.html", {
         "request": request, "user": user, "version": settings.UI_VERSION,
@@ -33540,9 +33546,10 @@ def inventory_shoes_prices_apply(
     db: Session = Depends(get_db),
     user: User = Depends(_require_admin_web),
 ):
-    _enforce_permission(request, user, "access.inventory.productos")
     if not _is_shoes_mode():
         return JSONResponse({"ok": False, "message": "Disponible solo en modo zapatos"}, status_code=404)
+    _enforce_shoe_price_admin(user)
+    _enforce_permission(request, user, "access.inventory.productos")
 
     try:
         parsed_ids = [int(str(raw).strip()) for raw in str(product_ids or "").split(",") if str(raw).strip()]
