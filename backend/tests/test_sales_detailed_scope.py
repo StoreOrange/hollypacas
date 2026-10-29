@@ -24,10 +24,6 @@ class DetailedSalesScopeTests(unittest.TestCase):
         self.db.add_all([Bodega(id=b.id, branch_id=b.id, code=b.code, name=b.name) for b in branches])
         self.db.add(Producto(id=1, cod_producto='QA', descripcion='QA'))
         self.db.flush()
-        self.admin = User(email='admin@qa.invalid', default_branch_id=1, default_bodega_id=1,
-                          branches=[branches[0]], roles=[Role(name='administrador')])
-        self.cashier = User(email='cashier@qa.invalid', default_branch_id=2, default_bodega_id=2,
-                            branches=[branches[1]], roles=[Role(name='cajero', permissions=[Permission(name='access.reports')])])
         for i, (branch, amount, when, state) in enumerate([
             (1, 100, datetime(2026, 10, 24), 'ACTIVA'),
             (2, 200, datetime(2026, 10, 24, 12), 'ACTIVA'),
@@ -40,6 +36,12 @@ class DetailedSalesScopeTests(unittest.TestCase):
             self.db.add(VentaFactura(id=i, numero=str(i), bodega_id=branch, fecha=when,
                                     moneda='CS', tasa_cambio=37, total_cs=amount, estado=state))
             self.db.add(VentaItem(factura_id=i, producto_id=1, cantidad=1, subtotal_cs=amount, precio_unitario_cs=amount))
+        self.db.commit()
+        self.admin = User(email='admin@qa.invalid', hashed_password='qa', default_branch_id=1, default_bodega_id=1,
+                          branches=[branches[0]], roles=[Role(name='administrador')])
+        self.cashier = User(email='cashier@qa.invalid', hashed_password='qa', default_branch_id=2, default_bodega_id=2,
+                            branches=[branches[1]], roles=[Role(name='cajero', permissions=[Permission(name='access.reports')])])
+        self.db.add_all([self.admin, self.cashier])
         self.db.commit()
         self.mode = patch.object(web, '_is_shoes_mode', return_value=True)
         self.codes = patch.object(web, '_allowed_branch_codes', return_value={'central', 'kg', 'kgf', 'closed'})
@@ -76,3 +78,29 @@ class DetailedSalesScopeTests(unittest.TestCase):
         for user, expected in ((self.admin, {1, 2, 3}), (self.cashier, {2})):
             context = web.report_sales_detailed(request, self.db, user)
             self.assertEqual({b.id for b in context['branches']}, expected)
+
+    def test_product_reports_use_all_admin_stores_but_keep_cashier_scope(self):
+        day = date(2026, 10, 24)
+        for user, expected in ((self.admin, 600), (self.cashier, 200)):
+            result = web._build_sales_products_report(self.db, user, day, day, 'all', '', '', '')
+            self.assertEqual(result[4], expected)
+            request = Request({'type': 'http', 'query_string': b'start_date=2026-10-24&end_date=2026-10-24&branch_id=all'})
+            filters = web._sales_products_pivot_filters(request)
+            pivot = web._build_sales_products_pivot_report(self.db, user, filters)
+            self.assertEqual(pivot['total_cs'], expected)
+        self.assertEqual(web._build_sales_products_report(self.db, self.cashier, day, day, '3', '', '', '')[4], 0)
+
+    def test_inventory_matrix_admin_and_cashier_store_choices(self):
+        day = date(2026, 10, 24)
+        for user, expected in ((self.admin, {1, 2, 3}), (self.cashier, {2})):
+            payload = web._build_inventory_matrix_payload(self.db, user, day, day, 'all', 'all', '')
+            self.assertEqual({b.id for b in payload['branches']}, expected)
+            self.assertEqual({b.branch_id for b in payload['bodegas']}, expected)
+
+    def test_admin_seller_filter_includes_other_store(self):
+        from app.models.sales import Vendedor, VendedorBodega
+        self.db.add_all([Vendedor(id=1, nombre='Central seller'), Vendedor(id=2, nombre='KG seller')])
+        self.db.add_all([VendedorBodega(vendedor_id=1, bodega_id=1), VendedorBodega(vendedor_id=2, bodega_id=2)])
+        self.db.flush()
+        self.assertEqual({v.id for v in web._report_vendedores(self.db, self.admin, self.db.get(Bodega, 1))}, {1, 2})
+        self.assertEqual({v.id for v in web._report_vendedores(self.db, self.cashier, self.db.get(Bodega, 2))}, {2})

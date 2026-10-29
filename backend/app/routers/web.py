@@ -19284,7 +19284,7 @@ def _build_restaurant_sales_report(
     producto_q: str,
 ):
     allowed_codes = _allowed_branch_codes(db)
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
@@ -19545,7 +19545,7 @@ def _sales_products_pivot_filters(request: Request):
 
 def _build_sales_products_pivot_report(db: Session, user: User, filters: dict[str, object]) -> dict[str, object]:
     allowed_codes = _allowed_branch_codes(db)
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     start_date = filters["start_date"]
     end_date = filters["end_date"]
     start_dt = datetime.combine(start_date, datetime.min.time())
@@ -19933,7 +19933,7 @@ def _build_vendor_effort_report(db: Session, user: User, filters: dict[str, obje
     status_filter = str(filters.get("status_filter") or "all")
     q = str(filters.get("q") or "").strip()
 
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     branches = (
         _scoped_branches_query(db)
         .filter(Branch.id.in_(scoped_branch_ids))
@@ -20449,7 +20449,7 @@ def _build_production_opening_report_payload(
     branch_id: str,
     bodega_id: str,
 ) -> dict[str, object]:
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     branches = (
         _scoped_branches_query(db)
         .filter(Branch.id.in_(scoped_branch_ids))
@@ -20629,7 +20629,7 @@ def _build_inventory_matrix_payload(
     bodega_id: str,
     producto_q: str,
 ):
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     branches = (
         _scoped_branches_query(db)
         .filter(Branch.id.in_(scoped_branch_ids))
@@ -20648,7 +20648,7 @@ def _build_inventory_matrix_payload(
         if selected_branch is None:
             selected_branch_id = None
             branch_id = "all"
-    bodegas_q = _scoped_bodegas_query(db)
+    bodegas_q = _scoped_bodegas_query(db).filter(Bodega.branch_id.in_(scoped_branch_ids))
     if selected_branch_id is not None:
         bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch_id)
     bodegas = bodegas_q.order_by(Bodega.name).all()
@@ -20884,7 +20884,7 @@ def report_inventory_matrix_mini_kardex(
     if not producto:
         return JSONResponse({"ok": False, "error": "Producto no encontrado"}, status_code=404)
 
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     selected_branch_id: Optional[int] = None
     if (branch_id or "all") != "all":
         try:
@@ -20894,7 +20894,7 @@ def report_inventory_matrix_mini_kardex(
     if selected_branch_id is not None and selected_branch_id not in scoped_branch_ids:
         return JSONResponse({"ok": False, "error": "Sucursal no permitida"}, status_code=403)
 
-    bodegas_q = _scoped_bodegas_query(db)
+    bodegas_q = _scoped_bodegas_query(db).filter(Bodega.branch_id.in_(scoped_branch_ids))
     if selected_branch_id is not None:
         bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch_id)
     bodega_ids = [b.id for b in bodegas_q.all()]
@@ -21089,7 +21089,7 @@ def report_inventory_matrix_mini_kardex_xlsx(
     if not producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     selected_branch_id: Optional[int] = None
     if (branch_id or "all") != "all":
         try:
@@ -21099,7 +21099,7 @@ def report_inventory_matrix_mini_kardex_xlsx(
     if selected_branch_id is not None and selected_branch_id not in scoped_branch_ids:
         raise HTTPException(status_code=403, detail="Sucursal no permitida")
 
-    bodegas_q = _scoped_bodegas_query(db)
+    bodegas_q = _scoped_bodegas_query(db).filter(Bodega.branch_id.in_(scoped_branch_ids))
     if selected_branch_id is not None:
         bodegas_q = bodegas_q.filter(Bodega.branch_id == selected_branch_id)
     bodega_ids = [b.id for b in bodegas_q.all()]
@@ -22086,7 +22086,7 @@ def report_sales_special(
     start_date, end_date, branch_id, currency, selected_year, top_n = _sales_special_report_filters(request)
 
     allowed_codes = _allowed_branch_codes(db)
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     branches = (
         _scoped_branches_query(db)
         .filter(Branch.id.in_(scoped_branch_ids))
@@ -22347,7 +22347,7 @@ def _build_sales_products_report(
     producto_q: str,
 ):
     allowed_codes = _allowed_branch_codes(db)
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
@@ -22515,7 +22515,7 @@ def _build_stagnant_inventory_report(
     producto_q: str,
 ):
     allowed_codes = _allowed_branch_codes(db)
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     days = [start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1)]
     day_keys = [day.isoformat() for day in days]
 
@@ -23857,11 +23857,17 @@ def _build_kardex_movements(
     return rows, resumen
 
 
-def _detailed_sales_report_branch_ids(db: Session, user: User) -> set[int]:
-    """Let Miss Zapatos administrators report all active stores in this company."""
+def _report_branch_ids(db: Session, user: User) -> set[int]:
+    """Shared report scope: Miss administrators can read all active company stores."""
     if _shoe_admin_all_stores(user):
         return {int(branch.id) for branch in _scoped_branches_query(db).all()}
     return _user_scoped_branch_ids(db, user)
+
+
+def _report_vendedores(db: Session, user: User, bodega: Optional[Bodega]):
+    if _shoe_admin_all_stores(user):
+        return db.query(Vendedor).filter(Vendedor.activo.is_(True)).order_by(Vendedor.nombre.asc()).all()
+    return _vendedores_for_bodega(db, bodega)
 
 
 def _build_sales_report_rows(
@@ -23874,7 +23880,7 @@ def _build_sales_report_rows(
     producto_q: str,
 ):
     allowed_codes = _allowed_branch_codes(db)
-    scoped_branch_ids = _detailed_sales_report_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     _, bodega_user = _resolve_branch_bodega(db, user)
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
@@ -24017,12 +24023,12 @@ def report_sales_detailed(
 
     branches = (
         _scoped_branches_query(db)
-        .filter(Branch.id.in_(_detailed_sales_report_branch_ids(db, user)))
+        .filter(Branch.id.in_(_report_branch_ids(db, user)))
         .order_by(Branch.name)
         .all()
     )
     _, bodega = _resolve_branch_bodega(db, user)
-    vendedores = _vendedores_for_bodega(db, bodega)
+    vendedores = _report_vendedores(db, user, bodega)
 
     return request.app.state.templates.TemplateResponse(
         "report_sales_detailed.html",
@@ -24348,7 +24354,7 @@ def report_sales_products(
         total_facturas,
     ) = _build_sales_products_report(db, user, start_date, end_date, branch_id, vendedor_id, producto_id, producto_q)
 
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     branches = (
         _scoped_branches_query(db)
         .filter(Branch.id.in_(scoped_branch_ids))
@@ -24356,7 +24362,7 @@ def report_sales_products(
         .all()
     )
     _, bodega = _resolve_branch_bodega(db, user)
-    vendedores = _vendedores_for_bodega(db, bodega)
+    vendedores = _report_vendedores(db, user, bodega)
     productos = (
         db.query(Producto)
         .filter(Producto.activo.is_(True))
@@ -24401,7 +24407,7 @@ def report_sales_products_pivot(
     filters = _sales_products_pivot_filters(request)
     payload = _build_sales_products_pivot_report(db, user, filters)
 
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     branches = (
         _scoped_branches_query(db)
         .filter(Branch.id.in_(scoped_branch_ids))
@@ -24465,7 +24471,7 @@ def report_stagnant_inventory_sales(
     start_date, end_date, branch_id, vendedor_id, producto_q = _stagnant_inventory_report_filters(request)
     payload = _build_stagnant_inventory_report(db, user, start_date, end_date, branch_id, vendedor_id, producto_q)
 
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     branches = (
         _scoped_branches_query(db)
         .filter(Branch.id.in_(scoped_branch_ids))
@@ -25242,7 +25248,7 @@ def report_profit(
         total_facturas,
     ) = _build_sales_products_report(db, user, start_date, end_date, branch_id, vendedor_id, producto_id, producto_q)
 
-    scoped_branch_ids = _user_scoped_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     branches = (
         _scoped_branches_query(db)
         .filter(Branch.id.in_(scoped_branch_ids))
@@ -25250,7 +25256,7 @@ def report_profit(
         .all()
     )
     _, bodega = _resolve_branch_bodega(db, user)
-    vendedores = _vendedores_for_bodega(db, bodega)
+    vendedores = _report_vendedores(db, user, bodega)
     productos = (
         db.query(Producto)
         .filter(Producto.activo.is_(True))
@@ -26053,7 +26059,7 @@ def report_sales_export(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.reports")
-    scoped_branch_ids = _detailed_sales_report_branch_ids(db, user)
+    scoped_branch_ids = _report_branch_ids(db, user)
     company_profile = _company_profile_payload(db)
     start_date, end_date, branch_id, vendedor_id, producto_q = _sales_report_filters(request)
     display_currency = (request.query_params.get("moneda") or "USD").strip().upper()
