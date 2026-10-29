@@ -1,7 +1,8 @@
 (() => {
   const el = id => document.getElementById('unit-' + id);
   let rows = [], saving = false;
-  const token = JSON.parse(el('data').textContent).token;
+  const config = JSON.parse(el('data').textContent);
+  const token = config.token;
   const fields = ['code', 'name', 'line', 'brand', 'color', 'size', 'qty', 'cost', 'price', 'scan'];
   const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   function feedback(message, error = true) {
@@ -92,10 +93,14 @@
       el('form').classList.add('d-none'); el('feedback').className = ''; el('feedback').textContent = '';
       el('result').classList.remove('d-none'); el('result-text').textContent = `Ingreso #${data.receipt_id}. Los productos ya están disponibles en la bodega seleccionada.`;
       el('labels').href = data.labels_url;
+      if (config.embedded) window.parent.postMessage({type:'shoe-receipt-saved'}, location.origin);
     } catch (error) { feedback(error.message + '. La lista se conserva para corregir o reintentar.'); }
     finally { saving = false; render(); el('save').innerHTML = '<i class="bi bi-check-circle me-1"></i> Registrar ingreso'; }
   });
+  window.shoeReceiptCanClose = () => !saving && (el('form').classList.contains('d-none') || !rows.length || window.confirm('Hay artículos pendientes de registrar. ¿Cerrar y descartar esta lista?'));
+  el('return')?.addEventListener('click', () => window.parent.postMessage({type:'shoe-receipt-close', saved:true}, location.origin));
   el('new').addEventListener('click', () => location.reload());
   document.querySelectorAll('.toggle-sidebar').forEach(button => button.addEventListener('click', () => document.getElementById('layout').classList.toggle('sidebar-collapsed')));
   render();
+  if (config.initial_query) { el('code').value = config.initial_query; runSearch(); }
 })();

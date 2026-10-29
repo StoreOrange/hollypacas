@@ -45,3 +45,10 @@ class ReceiptShortcutTests(unittest.TestCase):
         cashier=w.User(email='cashier',roles=[w.Role(name='cajero')],default_branch_id=1,default_bodega_id=1)
         with self.assertRaises(HTTPException) as error:unit.page(self.request('bodega_id=1'),self.db,cashier)
         self.assertEqual(error.exception.status_code,303)
+
+    def test_embedded_page_preserves_scope_and_initial_search(self):
+        result=unit.page(self.request('bodega_id=3&embed=1&q=EQUAL02'),self.db,self.admin)
+        self.assertTrue(result['embedded'])
+        self.assertEqual(result['initial_query'],'EQUAL02')
+        self.assertEqual(result['selected_warehouse_id'],3)
+        self.assertEqual(self.db.query(w.IngresoInventario).count(),0)

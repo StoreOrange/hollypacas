@@ -35,25 +35,41 @@ try:
         page.locator('#bodega-origen').select_option('3')
         link=page.locator('[data-receipt-origin-selector="#bodega-origen"]')
         assert 'bodega_id=3' in link.get_attribute('href')
-        with page.expect_popup() as opened:link.click()
-        receipt=opened.value
+        link.click()
+        receipt=page.frame_locator("#shoe-receipt-modal iframe")
         receipt.locator('#unit-warehouse').wait_for()
         assert receipt.locator('#unit-warehouse').input_value()=='3'
         assert page.locator('#bodega-origen').input_value()=='3'
+        assert len(ctx.pages)==1
+        assert receipt.locator('[data-bs-sidebar]').count()==0
+        page.locator('#shoe-receipt-modal [aria-label="Cerrar ingreso rápido"]').click()
+        page.locator('#shoe-receipt-modal.show').wait_for(state='hidden')
         page.get_by_role('button',name='Buscar variante manual').click()
         page.locator('#variant-search-modal.show').wait_for()
         page.locator('#search-bodega-origen').select_option('1')
         modal_link=page.locator('#variant-search-modal [data-receipt-origin-selector]')
         assert 'bodega_id=1' in modal_link.get_attribute('href')
         page.locator('#variant-search-modal .modal-content').screenshot(path='/tmp/miss-transfer-receipt-shortcut.png',animations='disabled')
-        with page.expect_popup() as opened:modal_link.click()
-        second=opened.value;second.locator('#unit-warehouse').wait_for()
+        page.locator('#variant-q').fill('EQUAL02')
+        modal_link.click()
+        second=page.frame_locator('#shoe-receipt-modal iframe');second.locator('#unit-warehouse').wait_for()
         assert second.locator('#unit-warehouse').input_value()=='1'
         assert second.locator('#unit-qty').input_value()=='1'
+        assert second.locator('#unit-code').input_value()=='EQUAL02'
+        assert not page.locator('#variant-search-modal').is_visible()
+        page.locator('#shoe-receipt-modal .modal-content').screenshot(path='/tmp/miss-guided-receipt-desktop.png')
+        page.locator('#shoe-receipt-modal [aria-label="Cerrar ingreso rápido"]').click()
+        page.locator('#variant-search-modal.show').wait_for()
+        assert page.locator('#variant-q').input_value()=='EQUAL02'
+        assert len(ctx.pages)==1
+        page.set_viewport_size({'width':390,'height':844})
+        modal_link.click(); second.locator('#unit-warehouse').wait_for()
+        page.locator('#shoe-receipt-modal .modal-content').screenshot(path='/tmp/miss-guided-receipt-mobile.png')
+        assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
         assert not posts,posts
         assert fixture.db.query(w.IngresoInventario).count()==0
         assert not errors,errors
         browser.close()
-    print('PASS: botón de interfaz y pie del buscador; origen KGF/Central se conserva en ingreso individual; nueva pestaña y cero registros automáticos.')
+    print('PASS: botón de interfaz y pie del buscador; origen KGF/Central se conserva en ingreso individual; modal integrado, retorno al buscador, búsqueda heredada, vista móvil y cero registros automáticos.')
 finally:
     fixture.tearDown()

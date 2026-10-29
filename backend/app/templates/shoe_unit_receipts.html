@@ -1,13 +1,14 @@
 {% extends 'base.html' %}
 {% block content %}
 <style>
-.unit-page{max-width:1250px;margin:auto}.unit-card{background:#fff;border:1px solid #e7dfec;border-radius:16px;padding:20px;margin-bottom:16px}.unit-page .form-control:focus,.unit-page .form-select:focus{border-color:#b596d0;box-shadow:0 0 0 .2rem #b596d025}.unit-grid{min-width:850px}.unit-page label{font-weight:600;font-size:.9rem}.unit-summary{color:#704986;font-weight:700}.unit-page .form-control,.unit-page .form-select{font-size:1rem}
-.unit-search-wrap{position:relative}.unit-search-results{position:absolute;top:100%;left:0;width:min(520px,calc(100vw - 64px));max-height:260px;overflow-y:auto;background:#fff;border:1px solid #cdb5df;border-radius:10px;box-shadow:0 8px 24px #34213d20;z-index:30;margin-top:4px}.unit-search-result{display:block;width:100%;border:0;border-bottom:1px solid #eee6f2;background:#fff;text-align:left;padding:9px 12px;font-size:.9rem;line-height:1.3}.unit-search-result small{display:block;color:#6f6677;margin-top:3px}.unit-search-result:is(:hover,.active){background:#f3eafa;color:#683583}.unit-search-result strong,.unit-search-result small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+{% if embedded %}.mobile-global-nav{display:none!important}body.mobile-with-global-nav{padding-top:0!important}{% endif %}
+.unit-page{max-width:1250px;margin:auto}.unit-card{background:#fff;border:1px solid #dce8f3;border-radius:16px;padding:20px;margin-bottom:16px}.unit-page .form-control:focus,.unit-page .form-select:focus{border-color:#8ab8e5;box-shadow:0 0 0 .2rem #8ab8e525}.unit-grid{min-width:850px}.unit-page label{font-weight:600;font-size:.9rem}.unit-summary{color:#246397;font-weight:700}.unit-page .form-control,.unit-page .form-select{font-size:1rem}
+.unit-search-wrap{position:relative}.unit-search-results{position:absolute;top:100%;left:0;width:min(520px,calc(100vw - 64px));max-height:260px;overflow-y:auto;background:#fff;border:1px solid #b8d6f0;border-radius:10px;box-shadow:0 8px 24px #20406020;z-index:30;margin-top:4px}.unit-search-result{display:block;width:100%;border:0;border-bottom:1px solid #e8f0f8;background:#fff;text-align:left;padding:9px 12px;font-size:.9rem;line-height:1.3}.unit-search-result small{display:block;color:#60758a;margin-top:3px}.unit-search-result:is(:hover,.active){background:#edf6ff;color:#245e91}.unit-search-result strong,.unit-search-result small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
-<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
-{% include 'partials/sidebar.html' %}
+<div id="layout" class="min-h-screen {% if not embedded %}grid lg:grid-cols-[260px_1fr]{% endif %} bg-surface">
+{% if not embedded %}{% include 'partials/sidebar.html' %}{% endif %}
 <main class="p-4 lg:p-8"><div class="unit-page">
-<div class="d-flex align-items-center gap-2 mb-3"><button type="button" class="toggle-sidebar btn btn-outline-secondary" aria-label="Mostrar u ocultar menú"><i class="bi bi-list"></i></button><div><h1 class="h3 mb-1"><i class="bi bi-box-seam me-2"></i>Ingresos por unidad</h1><p class="text-muted mb-0">Un modelo, un color y una talla por fila. Agrega varios y registra el lote.</p></div></div>
+<div class="d-flex align-items-center gap-2 mb-3">{% if not embedded %}<button type="button" class="toggle-sidebar btn btn-outline-secondary" aria-label="Mostrar u ocultar menú"><i class="bi bi-list"></i></button>{% endif %}<div><h1 class="h3 mb-1"><i class="bi bi-box-seam me-2"></i>Ingresos por unidad</h1><p class="text-muted mb-0">Un modelo, un color y una talla por fila. Agrega varios y registra el lote.</p></div></div>
 <div id="unit-feedback" role="status" aria-live="polite"></div>
 <form id="unit-form">
 <div class="unit-card"><div class="row g-3">
@@ -32,8 +33,8 @@
 </div><p class="small text-muted mt-3 mb-0">El precio se aplica al modelo y a sus listas de venta, igual que en el ingreso habitual. Las filas de un mismo modelo deben tener el mismo costo y precio.</p></div>
 <div class="unit-card"><h2 class="h5">2. Revisa y registra</h2><div class="table-responsive"><table class="table align-middle unit-grid"><thead><tr><th>Modelo / artículo</th><th>Color</th><th>Talla</th><th>Unidades</th><th>Costo C$</th><th>Precio C$</th><th>Código etiqueta</th><th></th></tr></thead><tbody id="unit-rows"></tbody></table></div><div class="d-flex flex-wrap justify-content-between align-items-center gap-3"><span id="unit-summary" class="unit-summary"></span><button id="unit-save" class="btn btn-primary" type="submit" disabled><i class="bi bi-check-circle me-1"></i>Registrar ingreso</button></div></div>
 </form>
-<div id="unit-result" class="unit-card d-none"><h2 class="h5 text-success"><i class="bi bi-check-circle me-1"></i>Ingreso registrado</h2><p id="unit-result-text"></p><div class="d-flex flex-wrap gap-2"><a id="unit-labels" class="btn btn-outline-primary"><i class="bi bi-upc-scan me-1"></i>Revisar e imprimir etiquetas</a><button type="button" id="unit-new" class="btn btn-primary">Nuevo ingreso</button></div></div>
+<div id="unit-result" class="unit-card d-none"><h2 class="h5 text-success"><i class="bi bi-check-circle me-1"></i>Ingreso registrado</h2><p id="unit-result-text"></p><div class="d-flex flex-wrap gap-2"><a id="unit-labels" class="btn btn-outline-primary"><i class="bi bi-upc-scan me-1"></i>Revisar e imprimir etiquetas</a>{% if embedded %}<button type="button" id="unit-return" class="btn btn-success"><i class="bi bi-arrow-return-left me-1"></i>Volver y continuar</button>{% endif %}<button type="button" id="unit-new" class="btn btn-primary">Nuevo ingreso</button></div></div>
 </div></main></div>
-<script id="unit-data" type="application/json">{{ {'token':token}|tojson }}</script>
-<script src="/static/js/shoe-unit-receipts.js?v=20261013"></script>
+<script id="unit-data" type="application/json">{{ {'token':token,'initial_query':initial_query,'embedded':embedded}|tojson }}</script>
+<script src="/static/js/shoe-unit-receipts.js?v=20261029"></script>
 {% endblock %}

@@ -94,6 +94,7 @@ def page(request: Request, db=Depends(w.get_db), user=Depends(w._require_admin_w
         selected_id = user.default_bodega_id
     return request.app.state.templates.TemplateResponse('shoe_unit_receipts.html', dict(
         request=request, user=user, version=w.settings.UI_VERSION, today=w.local_today(), token=str(uuid4()),
+        embedded=request.query_params.get('embed') == '1', initial_query=str(request.query_params.get('q') or '').strip()[:120],
         warehouses=warehouses, selected_warehouse_id=selected_id, types=[t for t in db.query(w.IngresoTipo).all() if 'traslado' not in w._ascii_lower(t.nombre)],
         suppliers=db.query(w.Proveedor).all(), lines=db.query(w.Linea).filter(w.Linea.activo.is_(True)).all(),
         colors=db.query(w.ColorCatalog).filter(w.ColorCatalog.activo.is_(True)).all()))
