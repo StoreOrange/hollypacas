@@ -19,6 +19,7 @@
   <section class="holl-home-section" data-home-section>
     <div class="holl-home-section-heading"><h2><i class="bi bi-plus-square-fill" aria-hidden="true"></i>Crear y registrar</h2><span><i class="bi bi-signpost-split me-1" aria-hidden="true"></i>Registro guiado</span></div>
     <div class="holl-home-tasks">
+      {% if user.vendedor_id or 'administrador' in (user.roles|map(attribute='name')|list) %}{{ task('/m/cartera','Cartera y abonos','Pendientes, pagos y sus soportes','bi-wallet2','crear registrar abono pago deposito credito cartera saldo pendiente cliente vendedor','blue') }}{% endif %}
       {% if can_mobile_preventas %}{{ task('/m/preventas','Nueva preventa','Prepara y envía tu pedido','bi-cart-plus-fill','crear registrar vender venta pedido preventa cliente','blue') }}{% endif %}
       {% if 'access.accounting.mobile_expenses' in perms %}{{ task('/m/gastos','Registrar gasto','Motivo, monto y recibo PDF','bi-receipt-cutoff','crear registrar gasto gastos egreso extraordinario imprevisto pago recibo pdf dinero','emerald') }}{% endif %}
       {% if can_mobile_prefactura %}{{ task('/m/pre-factura','Pre Factura','Cotiza y comparte con tu cliente','bi-file-earmark-text-fill','crear registrar cotizar cotizacion factura prefactura precio cliente','amber') }}{% endif %}
@@ -28,6 +29,7 @@
   <section class="holl-home-section" data-home-section>
     <div class="holl-home-section-heading"><h2><i class="bi bi-grid-1x2-fill" aria-hidden="true"></i>Consultas y control</h2></div>
     <div class="holl-home-rows">
+      {% if user.vendedor_id or 'administrador' in (user.roles|map(attribute='name')|list) %}{{ task('/m/deudas','Revisión de deudas','Cartera, saldos y control por vendedor','bi-clipboard-check','consultar revisar deudas cartera creditos pendientes saldos vendedor administrador','blue','view') }}{% endif %}
       {% if can_inventory_hot %}{{ task('/inventory/caliente','Consultar inventario','Existencias por bodega','bi-box-seam-fill','consultar reporte inventario existencias saldo stock bodega producto costo','teal','view') }}{% endif %}
       {% if can_sales_hot %}{{ task('/sales/ventas-caliente','Revisar ventas','Totales y tendencia de ventas','bi-bar-chart-line-fill','consultar reporte ventas venta totales sucursal tendencia mes','blue','view') }}{% endif %}
       {% if can_mobile_sales_report %}{{ task('/m/mis-ventas','Mis ventas','Facturas y productos vendidos','bi-bag-check-fill','consultar reporte mis ventas factura producto vendido','orange','view') }}{% endif %}

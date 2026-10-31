@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block extra_head %}<meta name="theme-color" content="#edf6ff"><link rel="stylesheet" href="/static/css/mobile-collections.css?v=20261030">{% endblock %}
+{% block content %}
+<main class="mc-app">
+ <header class="mc-header"><a class="mc-back" href="{% block back_url %}/home{% endblock %}" aria-label="Volver"><i class="bi bi-arrow-left"></i></a><div><span class="mc-eyebrow">Holl Pacas · Cobranza móvil</span><h1>{% block title %}Cartera y abonos{% endblock %}</h1></div><button class="mc-menu-button" type="button" data-bs-toggle="offcanvas" data-bs-target="#mc-menu" aria-controls="mc-menu" aria-label="Abrir menú de cartera"><i class="bi bi-list" aria-hidden="true"></i><span>Menú</span></button></header>
+ {% block collection_body %}{% endblock %}
+</main>
+<aside class="offcanvas offcanvas-end mc-menu" tabindex="-1" id="mc-menu" aria-labelledby="mc-menu-title">
+ <div class="offcanvas-header"><h2 class="offcanvas-title fs-5" id="mc-menu-title"><i class="bi bi-wallet2 text-primary me-2"></i>Menú de cartera</h2><button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar menú de cartera"></button></div>
+ <nav class="offcanvas-body" aria-label="Acciones de cartera">
+  <a href="/home"><i class="bi bi-house-door"></i>Inicio del sistema</a>
+  {% if user.vendedor_id or user.roles|selectattr('name','equalto','administrador')|list|length > 0 %}
+  <a href="/m/cartera"><i class="bi bi-wallet2"></i>Cartera y abonos</a>
+  <a href="/m/deudas"><i class="bi bi-clipboard-check"></i>Revisión de deudas</a>
+  <a href="/m/cartera?view=history"><i class="bi bi-clock-history"></i>Historial de abonos</a>
+  {% endif %}
+ </nav>
+</aside>
+<script src="/static/js/mobile-collections.js?v=20261030"></script>
+{% endblock %}

@@ -857,7 +857,7 @@
     }
   }
 </style>
-{% if holl_preventa %}<link rel="stylesheet" href="/static/css/holl-preventa-mobile.css?v=local-context-icons-20261027">{% endif %}
+{% if holl_preventa %}<link rel="stylesheet" href="/static/css/holl-preventa-mobile.css?v=cartera-20261031">{% endif %}
 
 <div class="container py-3 mobile-preventa{% if holl_preventa %} holl-preventa{% endif %}{% if result_preventa %} has-result{% endif %}" style="max-width: 780px;">
   {% if holl_preventa %}
@@ -865,6 +865,7 @@
     <div class="pv-title-row"><span class="pv-app-icon"><i class="bi bi-cart-plus-fill" aria-hidden="true"></i></span><div><div class="app-topbar-title">Ventas · Registro guiado</div><h1>{{ 'Preventa registrada' if result_preventa else 'Nueva preventa' }}</h1></div></div>
     <p class="pv-subtitle">{{ 'Tu pedido quedó guardado para darle seguimiento.' if result_preventa else 'Prepara tu pedido y envíalo a facturación.' }}</p>
     <div class="pv-context"><span aria-label="Sucursal: {{ branch.name }}"><i class="bi bi-shop" aria-hidden="true"></i>{{ branch.name }}</span><span aria-label="Bodega: {{ bodega.name }}"><i class="bi bi-box-seam" aria-hidden="true"></i>{{ bodega.name }}</span></div>
+    {% if holl_preventa and (user.vendedor_id or user.roles|selectattr('name', 'equalto', 'administrador')|list|length > 0) %}<a class="btn pv-cartera-access" href="/m/cartera"><i class="bi bi-wallet2" aria-hidden="true"></i>Mi cartera y abonos</a>{% endif %}
     <details class="pv-utilities"><summary><span><i class="bi bi-grid me-2" aria-hidden="true"></i>Accesos y alertas</span><i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
       <div class="pv-utility-links"><a class="btn" href="/home"><i class="bi bi-house-door" aria-hidden="true"></i>Inicio</a><a class="btn" href="/sales/preventas"><i class="bi bi-kanban" aria-hidden="true"></i>Panel de preventas</a>
       {% if 'access.accounting.mobile_expenses' in (request.state.permission_names or []) %}<a class="btn" href="/m/gastos"><i class="bi bi-receipt" aria-hidden="true"></i>Registrar gasto</a>{% endif %}

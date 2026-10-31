@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Boolean, LargeBinary, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -371,6 +371,7 @@ class VentaFactura(Base):
     items = relationship("VentaItem", back_populates="factura")
     pagos = relationship("VentaPago", back_populates="factura")
     abonos = relationship("CobranzaAbono", back_populates="factura")
+    mobile_collection_basis = relationship("MobileCollectionBasis", uselist=False, back_populates="factura")
 
 
 class VentaItem(Base):
@@ -1192,3 +1193,30 @@ class MobileExpense(Base):
     @property
     def numero(self):
         return f"GM-{self.entry.periodo.replace('-', '')}-{self.id:06d}"
+
+
+class MobileCollectionPayment(Base):
+    """Private support and idempotency metadata; the payment is a normal CobranzaAbono."""
+    __tablename__ = 'mobile_collection_payments'
+    id = Column(Integer, primary_key=True)
+    operation_key = Column(String(32), nullable=False, unique=True)
+    abono_id = Column(Integer, ForeignKey('cobranza_abonos.id'), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    vendedor_id = Column(Integer, ForeignKey('vendedores.id'), nullable=True)
+    method = Column(String(20), nullable=False)
+    reference = Column(String(100), nullable=False, default='')
+    bank = Column(String(100), nullable=False, default='')
+    support = Column(LargeBinary, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    abono = relationship('CobranzaAbono')
+    user = relationship('User')
+
+
+class MobileCollectionBasis(Base):
+    """Payment rows recorded at invoicing but explicitly deferred to collection."""
+    __tablename__ = 'mobile_collection_bases'
+    factura_id = Column(Integer, ForeignKey('ventas_facturas.id'), primary_key=True)
+    ignored_payment_ids = Column(Text, nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    factura = relationship('VentaFactura', back_populates='mobile_collection_basis')

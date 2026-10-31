@@ -424,6 +424,8 @@ SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "sales_comisiones", "label": "Registro de comisiones", "href": "/sales/comisiones", "icon": "bi-trophy-fill", "perm": "menu.sales.comisiones", "alt_perm": None},
     {"id": "sales_preventas", "label": "Panel de preventas", "href": "/sales/preventas", "icon": "bi-clipboard-check-fill", "perm": "menu.sales.preventas", "alt_perm": None},
     {"id": "sales_preventas_mobile", "label": "Nueva preventa movil", "href": "/m/preventas", "icon": "bi-phone-fill", "perm": "menu.sales.preventas.mobile", "alt_perm": "menu.sales.preventas"},
+    {"id": "mobile_collections", "label": "Cartera y abonos", "href": "/m/cartera", "icon": "bi-wallet2", "perm": None, "alt_perm": None, "hollpacas_only": "1"},
+    {"id": "collection_review", "label": "Revisión de deudas", "href": "/m/deudas", "icon": "bi-clipboard-check", "perm": None, "alt_perm": None, "hollpacas_only": "1"},
     {"id": "mobile_expenses", "label": "Registrar gasto móvil", "href": "/m/gastos", "icon": "bi-receipt", "perm": "access.accounting.mobile_expenses", "alt_perm": None, "hollpacas_only": "1"},
     {"id": "inventory", "label": "Inventarios", "href": "/inventory", "icon": "bi-box-seam-fill", "perm": "menu.inventory", "alt_perm": None},
     {"id": "inventory_caliente", "label": "Mi inventario en Caliente", "href": "/inventory/caliente", "icon": "bi-lightning-charge-fill", "perm": "menu.inventory.caliente", "alt_perm": None},
@@ -457,6 +459,10 @@ def _normalize_sidebar_menu_order(raw_ids: list[str]) -> list[str]:
         if default_id not in ordered:
             if default_id == "inventory_production_labs" and "inventory_egresos" in ordered:
                 ordered.insert(ordered.index("inventory_egresos") + 1, default_id)
+            elif default_id == "collection_review" and "mobile_collections" in ordered:
+                ordered.insert(ordered.index("mobile_collections") + 1, default_id)
+            elif default_id == "mobile_collections" and "sales_preventas_mobile" in ordered:
+                ordered.insert(ordered.index("sales_preventas_mobile") + 1, default_id)
             elif default_id == "inventory_shoe_labels" and "inventory_ingresos" in ordered:
                 ordered.insert(ordered.index("inventory_ingresos") + 1, default_id)
             else:
@@ -38708,7 +38714,7 @@ async def sales_cobranza_abono(
     if monto <= 0:
         return JSONResponse({"ok": False, "message": "Monto invalido"}, status_code=400)
 
-    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
+    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).with_for_update().first()
     if not factura:
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
     if factura.estado == "ANULADA":
@@ -38737,6 +38743,7 @@ async def sales_cobranza_abono(
     if factura.estado_cobranza == "PAGADA" and tipo_mov != "NOTA_DEBITO":
         return JSONResponse({"ok": False, "message": "Factura ya pagada"}, status_code=400)
 
+    db.query(Bodega).filter(Bodega.id == factura.bodega_id).with_for_update().first()
     last_abono = (
         db.query(CobranzaAbono)
         .filter(CobranzaAbono.bodega_id == factura.bodega_id)
@@ -38852,7 +38859,7 @@ async def sales_cobranza_abono_update(
     if monto <= 0:
         return JSONResponse({"ok": False, "message": "Monto invalido"}, status_code=400)
 
-    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
+    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).with_for_update().first()
     if not factura:
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
     _, bodega = _resolve_branch_bodega(db, user)
@@ -38910,7 +38917,7 @@ def sales_cobranza_abono_delete(
     user: User = Depends(_require_user_web),
 ):
     _enforce_permission(request, user, "access.sales.pagos")
-    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).first()
+    factura = db.query(VentaFactura).filter(VentaFactura.id == venta_id).with_for_update().first()
     if not factura:
         return JSONResponse({"ok": False, "message": "Factura no encontrada"}, status_code=404)
     if factura.estado == "ANULADA":
@@ -38927,6 +38934,9 @@ def sales_cobranza_abono_delete(
     if not abono:
         return JSONResponse({"ok": False, "message": "Abono no encontrado"}, status_code=404)
 
+    from ..models.sales import MobileCollectionPayment
+    if db.query(MobileCollectionPayment.id).filter(MobileCollectionPayment.abono_id == abono.id).first():
+        return JSONResponse({"ok": False, "message": "Este abono tiene un registro móvil y soporte de auditoría; no se puede eliminar. Puedes revisar sus datos desde cobranza."}, status_code=409)
     db.delete(abono)
 
     total_abono_usd, total_abono_cs = _cobranza_abonos_totals([a for a in factura.abonos if a.id != abono_id])

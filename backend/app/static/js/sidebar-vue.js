@@ -23,7 +23,7 @@
     window.Vue.createApp({
       data() {
         return {
-          items: menuItems,
+          items: menuItems.filter((item) => !item.mobile_only || isMobile),
           query: "",
           collapsed: !isMobile && localStorage.getItem("sidebarCollapsed") === "1",
           currentPath: normalizePath(window.location.pathname),

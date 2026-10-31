@@ -184,3 +184,4 @@ body.holl-preventa-active{background:linear-gradient(180deg,#f8fbff,#f0f6fd 70%,
 .holl-preventa .pv-cart>.card-header>.field-label{width:100%}
 .holl-preventa .pv-cart .draft-summary{justify-content:space-between}
 .holl-preventa .pv-cart .draft-chip:last-child{background:#edf7f1;border-color:#d1e7da;color:#5e8d74}
+.holl-preventa .pv-cartera-access{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:46px;margin:12px 0;background:#e8f3ff;border:1px solid #bad8f2;border-radius:12px;color:#205d91;font-size:14px;font-weight:700}
