@@ -80,3 +80,52 @@ class CarryoverTests(unittest.TestCase):
   self.f.user=self.f.other;self.assertEqual(self.f.client.get('/m/cartera/1').status_code,404)
   self.assertEqual(self.f.post().status_code,404)
   self.f.user=self.f.admin;self.assertEqual(self.f.client.get('/m/cartera/1').status_code,200)
+
+ def legacy(self,amount='100'):
+  from app.models.sales import MobileCollectionPayment
+  general.register(self.db,self.f.seller,1,self.f.values(amount=amount),self.f.png())
+  self.db.flush();payment=self.db.query(MobileCollectionPayment).one()
+  payment.created_at=datetime(2026,10,30,12);payment.abono.created_at=payment.created_at
+  self.db.commit();return payment
+ def test_recover_paid_legacy_mobile_debt_after_close_with_support_and_no_financial_write(self):
+  self.close();old=self.legacy();self.start()
+  self.assertEqual(self.db.query(CollectionCarryover).count(),0)
+  restored=tracking.recover_legacy_payment(self.db,self.f.admin,old.id);self.db.commit();self.db.expire_all()
+  self.assertEqual(restored.monto_usd,100);self.assertEqual(restored.support,old.support)
+  self.assertEqual(restored.created_at,old.created_at)
+  self.assertEqual(restored.operation_key,old.operation_key)
+  self.assertEqual(tracking.balance(restored.carryover)['due'],0)
+  self.assertEqual(self.db.query(w.CobranzaAbono).count(),1)
+  self.assertEqual(self.db.get(w.VentaFactura,1).estado_cobranza,'PAGADA')
+  self.assertEqual(tracking.recover_legacy_payment(self.db,self.f.admin,old.id).id,restored.id)
+  self.assertEqual(self.db.query(CollectionPanelPayment).count(),1)
+  page=self.f.client.get('/m/deudas?view=recent')
+  self.assertEqual(page.context['count'],1);self.assertEqual(page.context['stats']['recent_usd'],100)
+  self.assertIn('Factura F-1',page.text)
+  self.assertEqual(self.f.client.get(f'/m/cartera/comprobantes/{restored.id}').status_code,200)
+  self.f.user=self.f.other;self.assertEqual(self.f.client.get(f'/m/cartera/comprobantes/{restored.id}').status_code,404)
+ def test_recovery_excludes_sale_paid_on_same_business_day(self):
+  self.db.get(w.VentaFactura,1).fecha=datetime(2026,10,30,9)
+  self.close(day=date(2026,10,30),at=datetime(2026,10,30,10));old=self.legacy();self.start()
+  with self.assertRaisesRegex(ValueError,'día siguiente'):tracking.recover_legacy_payment(self.db,self.f.admin,old.id)
+  self.assertEqual(self.db.query(CollectionPanelPayment).count(),0)
+ def test_recovery_excludes_backdated_close_executed_after_payment(self):
+  self.close(at=datetime(2026,10,30,13));old=self.legacy();self.start()
+  with self.assertRaisesRegex(ValueError,'día siguiente'):tracking.recover_legacy_payment(self.db,self.f.admin,old.id)
+  self.assertEqual(self.db.query(CollectionPanelPayment).count(),0)
+ def test_recovery_excludes_receipt_before_epoch_day_and_requires_admin(self):
+  self.close();old=self.legacy();old.abono.fecha=date(2026,10,29);self.db.commit();self.start()
+  with self.assertRaises(ValueError):tracking.recover_legacy_payment(self.db,self.f.admin,old.id)
+  from fastapi import HTTPException
+  with self.assertRaises(HTTPException):tracking.recover_legacy_payment(self.db,self.f.seller,old.id)
+  self.assertEqual(self.db.query(CollectionPanelPayment).count(),0)
+ def test_recovery_preserves_deferred_cash_basis_for_original_fully_tendered_sale(self):
+  f=self.db.get(w.VentaFactura,1);f.moneda='CS'
+  self.db.add(w.VentaPago(factura_id=1,forma_pago_id=3,moneda='CS',monto_usd=100,monto_cs=3700));self.db.commit()
+  self.close();old=self.legacy();self.start()
+  restored=tracking.recover_legacy_payment(self.db,self.f.admin,old.id);self.db.commit();self.db.expire_all()
+  self.assertEqual(restored.carryover.moneda,'CS')
+  self.assertEqual(restored.carryover.opening_cs,3700)
+  self.assertEqual(tracking.balance(restored.carryover)['due'],0)
+  self.assertEqual(self.db.query(w.VentaPago).one().monto_cs,3700)
+  self.assertEqual(self.db.query(w.CobranzaAbono).count(),1)

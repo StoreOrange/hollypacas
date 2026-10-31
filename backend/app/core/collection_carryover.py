@@ -135,3 +135,63 @@ def register(db,user,invoice_id,values,image=b''):
         observacion=note,usuario_registro=user.full_name or user.email,support=support)
     db.add(result);db.flush()
     return result
+
+
+def recover_legacy_payment(db,user,payment_id):
+    """Recover a verified pre-cutover mobile receipt for a debt carried by a close.
+
+    General collection receipts and same-business-day sales never qualify.
+    Reuse the original operation key so retries cannot duplicate the receipt.
+    """
+    from types import SimpleNamespace
+    from ..models.sales import MobileCollectionPayment
+    general.enforce(user)
+    if not general.is_admin(user):raise w.HTTPException(403,'Solo el administrador puede recuperar un pago')
+    lock_setup(db)
+    start=epoch(db)
+    if not start:raise ValueError('El seguimiento aún no está iniciado')
+    source=db.query(MobileCollectionPayment).filter_by(id=payment_id).first()
+    if not source:raise ValueError('No existe ese pago de cartera móvil')
+    existing=db.query(CollectionPanelPayment).filter_by(operation_key=source.operation_key).first()
+    if existing:return existing
+    a=source.abono
+    if a.tipo_mov!='ABONO' or a.fecha<start.start_date or not a.created_at or not source.created_at or source.created_at>start.created_at:
+        raise ValueError('Solo se recuperan abonos de cartera del inicio, anteriores al cambio de versión')
+    f=general.loaded(db.query(w.VentaFactura).filter_by(id=a.factura_id).with_for_update(of=w.VentaFactura)).first()
+    # Scope and the physical execution time of the close both matter.
+    if not general.invoice_query(db,user).filter(w.VentaFactura.id==f.id).first() or f.estado=='ANULADA':
+        raise ValueError('La factura no pertenece a una cartera válida')
+    close=db.query(w.CierreCaja).filter(w.CierreCaja.bodega_id==f.bodega_id,
+        w.CierreCaja.fecha>=f.fecha.date(),w.CierreCaja.fecha<a.fecha,
+        w.CierreCaja.created_at>=f.created_at,w.CierreCaja.created_at<a.created_at,
+        w.CierreCaja.created_at<source.created_at).order_by(w.CierreCaja.fecha.desc(),w.CierreCaja.id.desc()).first()
+    if not close:raise ValueError('El pago no corresponde a una deuda pendiente del día siguiente a un cierre ejecutado')
+    # Reconstruct only the balance at the close, without changing ORM collections.
+    if any(not item.created_at for item in f.abonos):raise ValueError('Faltan fechas de auditoría para reconstruir el cierre')
+    snapshot=SimpleNamespace(moneda=f.moneda,total_cs=f.total_cs,total_usd=f.total_usd,
+        pagos=f.pagos,mobile_collection_basis=f.mobile_collection_basis,estado_cobranza='PENDIENTE',
+        abonos=[item for item in f.abonos if item.created_at<=close.created_at])
+    opening=general.balance(snapshot)
+    native=Decimal(str(a.monto_usd if opening['currency']=='USD' else a.monto_cs))
+    if native<=0 or native>opening['due']:raise ValueError('El abono no coincide con el saldo pendiente del cierre')
+    record=db.query(CollectionCarryover).filter_by(factura_id=f.id).with_for_update().first()
+    if record:
+        if record.cierre_id!=close.id or record.opening_usd!=opening['due_usd'] or record.opening_cs!=opening['due_cs']:
+            raise ValueError('Ya existe otro saldo de seguimiento; requiere revisión antes de recuperar el pago')
+        if native>balance(record)['due']:raise ValueError('El pago ya no cabe en el saldo del seguimiento')
+    else:
+        record=CollectionCarryover(factura_id=f.id,epoch_id=start.id,cierre_id=close.id,
+            vendedor_id=source.vendedor_id,moneda=opening['currency'],opening_usd=opening['due_usd'],
+            opening_cs=opening['due_cs'],eligible_on=max(close.fecha+timedelta(days=1),start.start_date))
+        db.add(record);db.flush()
+    rate=a.tasa_cambio or f.tasa_cambio
+    if not rate and a.monto_cs and a.monto_usd:rate=a.monto_cs/a.monto_usd
+    if not rate or rate<=0:raise ValueError('El pago original no tiene una tasa válida')
+    result=CollectionPanelPayment(operation_key=source.operation_key,carryover_id=record.id,user_id=source.user_id,
+        fecha=a.fecha,moneda=a.moneda,tasa_cambio=rate,
+        monto_usd=a.monto_usd,monto_cs=a.monto_cs,method=source.method,bank=source.bank,
+        reference=source.reference,observacion=(f'Recibo original de cartera: {a.numero}. '+(a.observacion or ''))[:300],
+        usuario_registro=a.usuario_registro or source.user.full_name or source.user.email,
+        support=source.support,created_at=source.created_at)
+    db.add(result);db.flush()
+    return result
