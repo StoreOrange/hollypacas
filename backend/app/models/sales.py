@@ -1232,3 +1232,60 @@ class CollectionReviewSetting(Base):
     aged_color = Column(String(16), nullable=False, default='red')
     updated_by = Column(Integer, ForeignKey('users.id'), nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class CollectionTrackingEpoch(Base):
+    __tablename__ = 'collection_tracking_epochs'
+    id = Column(Integer, primary_key=True)
+    start_date = Column(Date, nullable=False)
+    started_by = Column(Integer, ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class CollectionCarryover(Base):
+    __tablename__ = 'collection_carryovers'
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey('ventas_facturas.id'), nullable=False, unique=True)
+    epoch_id = Column(Integer, ForeignKey('collection_tracking_epochs.id'), nullable=False)
+    cierre_id = Column(Integer, ForeignKey('cierres_caja.id'), nullable=False)
+    vendedor_id = Column(Integer, ForeignKey('vendedores.id'), nullable=True, index=True)
+    moneda = Column(String(10), nullable=False)
+    opening_usd = Column(Numeric(14,2), nullable=False)
+    opening_cs = Column(Numeric(14,2), nullable=False)
+    eligible_on = Column(Date, nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    factura = relationship('VentaFactura')
+    cierre = relationship('CierreCaja')
+    vendedor = relationship('Vendedor')
+    payments = relationship('CollectionPanelPayment', back_populates='carryover')
+
+
+class CollectionPanelPayment(Base):
+    __tablename__ = 'collection_panel_payments'
+    id = Column(Integer, primary_key=True)
+    operation_key = Column(String(32), nullable=False, unique=True)
+    carryover_id = Column(Integer, ForeignKey('collection_carryovers.id'), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    fecha = Column(Date, nullable=False)
+    moneda = Column(String(10), nullable=False)
+    tasa_cambio = Column(Numeric(12,4), nullable=False)
+    monto_usd = Column(Numeric(14,2), nullable=False)
+    monto_cs = Column(Numeric(14,2), nullable=False)
+    method = Column(String(20), nullable=False)
+    bank = Column(String(100), nullable=False, default='')
+    reference = Column(String(100), nullable=False, default='')
+    observacion = Column(String(300), nullable=False, default='')
+    usuario_registro = Column(String(160), nullable=False)
+    support = Column(LargeBinary, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    carryover = relationship('CollectionCarryover', back_populates='payments')
+    user = relationship('User')
+
+    @property
+    def numero(self):return f'CP-{self.fecha:%Y%m%d}-{self.id:06d}'
+    @property
+    def tipo_mov(self):return 'ABONO'
+    @property
+    def factura(self):return self.carryover.factura
+    @property
+    def factura_id(self):return self.carryover.factura_id

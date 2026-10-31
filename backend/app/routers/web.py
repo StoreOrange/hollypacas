@@ -18396,6 +18396,9 @@ async def sales_cierre_create(
     db.flush()
     if opening:
         opening.cierre_id = cierre.id
+    if _is_pacasholl_company():
+        from ..core.collection_carryover import enroll_close
+        enroll_close(db, cierre)
     db.commit()
     db.refresh(cierre)
 

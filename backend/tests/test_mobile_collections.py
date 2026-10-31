@@ -13,7 +13,8 @@ from PIL import Image
 from app.database import Base
 from app.core import mobile_collections as s
 from app.routers import mobile_collections as route, web as w
-from app.models.sales import MobileCollectionPayment
+from app.models.sales import MobileCollectionPayment as LegacyMobilePayment, CollectionCarryover, CollectionPanelPayment as MobileCollectionPayment
+from app.core import collection_carryover as tracking
 
 class MobileCollectionTests(unittest.TestCase):
  def setUp(self):
@@ -32,6 +33,19 @@ class MobileCollectionTests(unittest.TestCase):
   app=FastAPI();app.include_router(route.router);app.state.templates=Jinja2Templates(directory=str(__import__('pathlib').Path(__file__).resolve().parents[1]/'app/templates'))
   app.dependency_overrides[w.get_db]=lambda:self.db;app.dependency_overrides[w._require_user_web]=lambda:self.user
   self.client=TestClient(app)
+  self.seed_tracking()
+ def seed_tracking(self):
+  # Explicit closed-day snapshots, isolated from the financial ledger.
+  from app.models.sales import CollectionTrackingEpoch
+  self.db.add(CollectionTrackingEpoch(id=1,start_date=date(2026,10,1),started_by=1))
+  for i in (1,2):
+   close=w.CierreCaja(id=i,branch_id=i,bodega_id=i,fecha=date(2026,10,1),created_at=datetime(2026,10,2))
+   self.db.add(close)
+   self.db.add(CollectionCarryover(factura_id=i,epoch_id=1,cierre_id=i,vendedor_id=i,moneda='USD',opening_usd=100,opening_cs=3700,eligible_on=date(2026,10,2)))
+  self.db.commit()
+ def panel_balance(self,id=1):
+  self.db.expire_all()
+  return tracking.balance(self.db.query(CollectionCarryover).filter_by(factura_id=id).one())
  def tearDown(self):
   self.client.close()
   for p in reversed(self.patches):p.stop()
@@ -46,29 +60,31 @@ class MobileCollectionTests(unittest.TestCase):
   html=self.client.get('/m/cartera').text;self.assertIn('F-1',html);self.assertNotIn('F-2',html)
   self.assertEqual(self.client.get('/m/cartera/2').status_code,404);self.assertEqual(self.post(2).status_code,404)
   self.assertEqual(self.post().status_code,303);payment=self.db.query(MobileCollectionPayment).one();self.user=self.other
-  self.assertEqual(self.client.get(f'/m/cartera/soportes/{payment.id}').status_code,404)
-  self.user=self.admin;self.assertEqual(self.client.get(f'/m/cartera/soportes/{payment.id}').status_code,200)
+  self.assertEqual(self.client.get(f'/m/cartera/comprobantes/{payment.id}').status_code,404)
+  self.user=self.admin;self.assertEqual(self.client.get(f'/m/cartera/comprobantes/{payment.id}').status_code,200)
   self.assertIn('F-2',self.client.get('/m/cartera').text)
  def test_abono_and_private_jpeg_support(self):
-  self.assertEqual(self.post().status_code,303);abono=self.db.query(w.CobranzaAbono).one()
-  self.assertEqual(abono.monto_usd,20);self.assertEqual(abono.monto_cs,740);self.assertFalse(abono.afecta_caja)
-  self.assertEqual(s.balance(self.db.get(w.VentaFactura,1))['due'],80)
-  payment=self.db.query(MobileCollectionPayment).one();response=self.client.get(f'/m/cartera/soportes/{payment.id}')
+  self.assertEqual(self.post().status_code,303);abono=self.db.query(MobileCollectionPayment).one()
+  self.assertEqual(abono.monto_usd,20);self.assertEqual(abono.monto_cs,740);self.assertEqual(self.db.query(w.CobranzaAbono).count(),0)
+  self.assertEqual(self.panel_balance()['due'],80)
+  payment=self.db.query(MobileCollectionPayment).one();response=self.client.get(f'/m/cartera/comprobantes/{payment.id}')
   self.assertIn('no-store',response.headers['cache-control']);self.assertEqual(Image.open(io.BytesIO(response.content)).format,'JPEG')
   self.assertIn('REF123',self.client.get('/m/cartera?view=history').text)
  def test_replay_is_idempotent_even_after_full_payment(self):
   values=self.values(amount='100.00');self.assertEqual(self.post(values=values).status_code,303);self.assertEqual(self.post(values=values).status_code,303)
-  self.assertEqual(self.db.query(w.CobranzaAbono).count(),1);self.assertEqual(self.db.get(w.VentaFactura,1).estado_cobranza,'PAGADA')
+  self.assertEqual(self.db.query(MobileCollectionPayment).count(),1);self.assertEqual(self.db.get(w.VentaFactura,1).estado_cobranza,'PENDIENTE')
   self.assertEqual(self.post().status_code,400)
  def test_duplicate_reference_partial_payment_is_rejected(self):
-  self.assertEqual(self.post().status_code,303);self.assertEqual(self.post().status_code,400);self.assertEqual(self.db.query(w.CobranzaAbono).count(),1)
+  self.assertEqual(self.post().status_code,303);self.assertEqual(self.post().status_code,400);self.assertEqual(self.db.query(MobileCollectionPayment).count(),1)
  def test_initial_payments_credit_and_debit_notes(self):
   self.db.add(w.VentaPago(factura_id=1,forma_pago_id=1,monto_usd=20,monto_cs=740))
   for i,(kind,value) in enumerate([('ABONO',10),('NOTA_CREDITO',5),('NOTA_DEBITO',2)],1):
    self.db.add(w.CobranzaAbono(factura_id=1,branch_id=1,bodega_id=1,secuencia=i,numero='AB'+str(i),fecha=date(2026,10,2),tipo_mov=kind,moneda='USD',monto_usd=value,monto_cs=value*37))
   self.db.commit();self.db.expire_all();f=self.db.get(w.VentaFactura,1);self.assertEqual(s.balance(f)['due'],67)
-  self.assertEqual(self.post(values=self.values(amount='68')).status_code,400);self.assertEqual(self.post(values=self.values(amount='67')).status_code,303)
-  self.assertEqual(f.estado_cobranza,'PAGADA')
+  self.assertEqual(self.panel_balance()['due'],100)
+  self.assertEqual(self.post(values=self.values(amount='100')).status_code,303)
+  self.assertEqual(f.estado_cobranza,'PENDIENTE')
+  self.assertEqual(s.balance(f)['due'],67)
  def test_bad_inputs_and_missing_support_make_no_payments(self):
   for changes in [{'amount':'NaN'},{'amount':'-1'},{'amount':'1.001'},{'amount':'101'},{'date':'2026-11-01'},{'date':'2026-09-30'},{'date':'bad'},{'currency':'XXX'},{'method':'fake'},{'reference':''}]:
    with self.subTest(changes=changes):self.assertEqual(self.post(values=self.values(**changes)).status_code,400)
@@ -82,10 +98,10 @@ class MobileCollectionTests(unittest.TestCase):
   self.user=w.User(id=9,email='unlinked@qa.invalid',roles=[w.Role(name='vendedor')]);self.assertEqual(self.client.get('/m/cartera').status_code,403)
  def test_cross_currency_limits_and_cash(self):
   self.assertEqual(self.post(values=self.values(currency='CS',amount='3700.01')).status_code,400)
-  self.assertEqual(self.post(values=self.values(currency='CS',amount='3700')).status_code,303);self.assertEqual(s.balance(self.db.get(w.VentaFactura,1))['due'],0)
+  self.assertEqual(self.post(values=self.values(currency='CS',amount='3700')).status_code,303);self.assertEqual(self.panel_balance()['due'],0)
   self.user=self.other;self.assertEqual(self.post(2,values=self.values(2,method='efectivo',reference='',bank=''),photo=False).status_code,303)
  def test_annulled_invoice_and_missing_rate(self):
-  f=self.db.get(w.VentaFactura,1);f.estado='ANULADA';self.db.commit();self.assertEqual(self.post().status_code,400)
+  f=self.db.get(w.VentaFactura,1);f.estado='ANULADA';self.db.commit();self.assertEqual(self.panel_balance()['due'],100)
   f.estado='ACTIVA';self.db.query(w.ExchangeRate).delete();self.db.commit();self.assertEqual(self.post().status_code,400)
  def test_failure_rolls_back_payment_and_invoice_state(self):
   with patch.object(self.db,'commit',side_effect=RuntimeError('disk failure')):
@@ -100,21 +116,33 @@ class MobileCollectionTests(unittest.TestCase):
   html=self.client.get('/m/cartera?vendor=2').text
   self.assertIn('F-2',html);self.assertNotIn('href="/m/cartera/1"',html)
  def test_cordoba_invoice_and_unassigned_admin_filter(self):
-  f=self.db.get(w.VentaFactura,1);f.moneda='CS';self.db.commit()
+  f=self.db.get(w.VentaFactura,1);f.moneda='CS';self.db.query(CollectionCarryover).filter_by(factura_id=1).one().moneda='CS';self.db.commit()
   self.assertEqual(self.post(values=self.values(currency='CS',amount='500')).status_code,303)
-  self.assertEqual(s.balance(f)['due'],3200)
-  f.vendedor_id=None;self.db.commit();self.user=self.admin
+  self.assertEqual(self.panel_balance()['due'],3200)
+  f.vendedor_id=None;self.db.query(CollectionCarryover).filter_by(factura_id=1).one().vendedor_id=None;self.db.commit();self.user=self.admin
   html=self.client.get('/m/cartera?vendor=0').text
   self.assertIn('F-1',html);self.assertNotIn('href="/m/cartera/2"',html)
 
- def test_legacy_delete_preserves_mobile_support_audit(self):
+ def test_historical_mobile_support_remains_protected_in_general_collection(self):
   from starlette.requests import Request
-  self.assertEqual(self.post().status_code,303)
-  payment=self.db.query(MobileCollectionPayment).one()
+  s.register(self.db,self.user,1,self.values(),self.png());self.db.commit()
+  old=self.db.query(LegacyMobilePayment).one()
   with patch.object(w,'_resolve_branch_bodega',return_value=(None,self.db.get(w.Bodega,1))):
-   response=w.sales_cobranza_abono_delete(venta_id=1,abono_id=payment.abono_id,request=Request({'type':'http','headers':[]}),db=self.db,user=self.admin)
+   response=w.sales_cobranza_abono_delete(venta_id=1,abono_id=old.abono_id,request=Request({'type':'http','headers':[]}),db=self.db,user=self.admin)
   self.assertEqual(response.status_code,409)
   self.assertEqual(self.db.query(w.CobranzaAbono).count(),1)
+  self.assertEqual(self.db.query(MobileCollectionPayment).count(),0)
+  self.assertEqual(self.panel_balance()['due'],100)
+
+ def test_general_collection_does_not_reduce_panel_or_show_history(self):
+  f=self.db.get(w.VentaFactura,1);f.estado_cobranza='PAGADA'
+  self.db.add(w.CobranzaAbono(factura_id=1,branch_id=1,bodega_id=1,secuencia=1,numero='OLD-GENERAL',fecha=date(2026,10,30),tipo_mov='ABONO',moneda='USD',monto_usd=100,monto_cs=3700))
+  self.db.commit()
+  self.assertEqual(self.panel_balance()['due'],100)
+  self.assertNotIn('OLD-GENERAL',self.client.get('/m/cartera?view=history').text)
+  self.assertEqual(self.post().status_code,303)
+  self.assertEqual(self.panel_balance()['due'],80)
+  self.assertEqual(f.estado_cobranza,'PAGADA')
 
  def test_mobile_menu_is_visible_to_sellers_without_broad_payment_permissions(self):
   import json,re
@@ -145,20 +173,21 @@ class MobileCollectionTests(unittest.TestCase):
   self.assertEqual(s.balance(f)['due'],100)
   self.assertIn('F-1',self.client.get('/m/cartera').text)
   self.assertEqual(self.post().status_code,303)
-  self.db.expire_all();self.assertEqual(s.balance(f)['due'],80)
-  self.assertEqual(s.balance(f)['paid'],20)
+  self.db.expire_all();self.assertEqual(self.panel_balance()['due'],80)
+  self.assertEqual(self.panel_balance()['paid'],20)
   self.assertEqual(self.post(values=self.values(amount='80.00',reference='SECOND')).status_code,303)
   self.db.expire_all()
-  self.assertEqual(f.estado_cobranza,'PAGADA')
-  self.assertEqual(s.balance(f)['due'],0)
-  self.assertEqual(s.balance(f)['paid'],100)
+  self.assertEqual(f.estado_cobranza,'PENDIENTE')
+  self.assertEqual(self.panel_balance()['due'],0)
+  self.assertEqual(self.panel_balance()['paid'],100)
   self.assertEqual(initial.monto_usd,100)
   self.assertNotIn('Pago inicial de factura',self.client.get('/m/cartera/1').text)
- def test_paid_cash_invoice_is_not_reopened(self):
+ def test_general_paid_invoice_keeps_independent_carried_balance(self):
   f=self.db.get(w.VentaFactura,1);f.estado_cobranza='PAGADA'
   self.db.add(w.VentaPago(factura_id=1,forma_pago_id=3,moneda='USD',monto_usd=100,monto_cs=3700));self.db.commit()
   self.assertEqual(s.balance(f)['due'],0)
-  self.assertEqual(self.post().status_code,400)
+  self.assertEqual(self.panel_balance()['due'],100)
+  self.assertEqual(self.post().status_code,303)
  def test_failed_pending_cash_collection_rolls_back_deferred_basis(self):
   from app.models.sales import MobileCollectionBasis
   self.db.add(w.VentaPago(factura_id=1,forma_pago_id=3,moneda='USD',monto_usd=100,monto_cs=3700));self.db.commit()
@@ -169,11 +198,11 @@ class MobileCollectionTests(unittest.TestCase):
   self.assertEqual(self.db.query(w.CobranzaAbono).count(),0)
   self.assertEqual(self.db.get(w.VentaFactura,1).estado_cobranza,'PENDIENTE')
 
- def test_new_pending_invoices_appear_before_older_debts(self):
+ def test_new_pending_invoices_wait_for_cash_close(self):
   self.db.add(w.VentaFactura(id=3,numero='RECENT-3',vendedor_id=1,bodega_id=1,cliente_id=1,moneda='USD',total_usd=25,total_cs=925,fecha=datetime(2026,10,29),estado='ACTIVA',condicion_venta='CONTADO',estado_cobranza='PENDIENTE'))
   self.db.commit()
   html=self.client.get('/m/cartera').text
-  self.assertLess(html.index('RECENT-3'),html.index('F-1'))
+  self.assertNotIn('RECENT-3',html);self.assertIn('F-1',html)
 
  def test_review_panel_respects_ownership_and_administrator_scope(self):
   page=self.client.get('/m/deudas?vendor=2')

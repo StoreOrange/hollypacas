@@ -28,30 +28,19 @@ def build(rows,today,config):
     vendors={};clients={};receipts=[];invoices=[]
     first_recent=today-timedelta(days=config['recent_days']-1)
     for row in rows:
-        f=row['invoice'];vendor=f.vendedor_id or 0;client=f.cliente_id or 0
-        vendor_name=f.vendedor.nombre if f.vendedor else 'Sin vendedor asignado'
+        f=row['invoice'];vendor=row['vendor_id'];client=f.cliente_id or 0
+        vendor_name=row['vendor_name']
         client_name=f.cliente.nombre if f.cliente else 'Consumidor final / sin cliente'
         if vendor not in vendors:vendors[vendor]=dict(blank(),id=vendor,name=vendor_name,client_keys=set())
         key=(vendor,client)
         if key not in clients:clients[key]=dict(blank(),vendor=vendor,client=client,name=client_name,vendor_name=vendor_name,rows=[],receipts=[])
         v,g=vendors[vendor],clients[key];v['client_keys'].add(key)
-        age=max((today-f.fecha.date()).days,0) if f.fecha else 0
+        age=max((today-row['tracking_date']).days,0)
         aged=bool(row['due'] and age>=config['overdue_days'])
         cash_cs=Decimal(0);cash_usd=Decimal(0);adj_cs=Decimal(0);adj_usd=Decimal(0)
         events=[];adjustments=[]
-        for initial in f.pagos:
-            if initial.id in row['deferred_ids']:continue
-            cs=Decimal(str(initial.monto_cs or 0));usd=Decimal(str(initial.monto_usd or 0))
-            cash_cs+=cs;cash_usd+=usd
-            events.append(dict(kind='initial',number='Pago al facturar',date=f.fecha.date() if f.fecha else None,
-                cs=cs,usd=usd,currency=f.moneda or 'CS',amount=usd if f.moneda=='USD' else cs,
-                registered_by=f.usuario_registro or 'Registro de factura',recent=False,abono_id=None,
-                invoice=f,vendor=vendor,client=client,client_name=client_name,vendor_name=vendor_name))
-        for a in f.abonos:
+        for a in row['panel_payments']:
             cs=Decimal(str(a.monto_cs or 0));usd=Decimal(str(a.monto_usd or 0))
-            if (a.tipo_mov or 'ABONO').strip().upper()!='ABONO':
-                factor=Decimal(-1) if a.tipo_mov=='NOTA_DEBITO' else Decimal(1)
-                adj_cs+=cs*factor;adj_usd+=usd*factor;adjustments.append(a);continue
             cash_cs+=cs;cash_usd+=usd
             recent=bool(a.fecha and first_recent<=a.fecha<=today)
             event=dict(kind='abono',number=a.numero,date=a.fecha,cs=cs,usd=usd,currency=a.moneda or 'CS',

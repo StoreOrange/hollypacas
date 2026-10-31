@@ -1,15 +1,17 @@
 """Responsive one-click review with fake invoices/payments in isolated SQLite."""
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import date,datetime
 from urllib.parse import urlsplit
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from playwright.sync_api import sync_playwright
 from tests import test_mobile_collections as fixtures
 from app.routers import web as w
+from app.models.sales import CollectionCarryover
 f=fixtures.MobileCollectionTests();f.setUp()
 try:
  f.db.add(w.VentaFactura(id=3,numero='EXTRA-3',vendedor_id=1,bodega_id=1,cliente_id=1,moneda='USD',total_usd=50,total_cs=1850,fecha=datetime(2026,9,30),estado='ACTIVA',estado_cobranza='PENDIENTE'));f.db.commit()
+ f.db.add(CollectionCarryover(factura_id=3,epoch_id=1,cierre_id=1,vendedor_id=1,moneda='USD',opening_usd=50,opening_cs=1850,eligible_on=date(2026,9,30)));f.db.commit()
  assert f.post().status_code==303
  f.user=f.admin
  with sync_playwright() as p:

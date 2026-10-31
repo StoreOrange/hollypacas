@@ -1,0 +1,14 @@
+<section class="mc-card" aria-label="Artículos de la factura">
+<h3 class="mc-section-title"><i class="bi bi-box-seam"></i>Artículos de {{ invoice.numero }}</h3>
+{% set usd=invoice.moneda=='USD' %}{% set symbol='USD' if usd else 'C$' %}
+{% for item in invoice.items %}
+<article class="mc-payment-item">
+ <strong>{{ item.producto.cod_producto if item.producto else 'Producto' }}</strong>
+ <p class="mc-help mb-1">{{ item.producto.descripcion if item.producto else '' }}</p>
+ <div class="mc-row"><span>Cantidad: <strong>{{ '{:g}'.format(item.cantidad) }}</strong>{% if item.peso_lbs %} · {{ '{:g}'.format(item.peso_lbs) }} lbs{% endif %}</span><strong>{{ symbol }} {{ '{:,.2f}'.format((item.subtotal_usd if usd else item.subtotal_cs) or 0) }}</strong></div>
+ <p class="mc-help mb-0">Precio unitario: {{ symbol }} {{ '{:,.2f}'.format((item.precio_unitario_usd if usd else item.precio_unitario_cs) or 0) }}{% if item.descuento_usd or item.descuento_cs %} · Descuento: {{ symbol }} {{ '{:,.2f}'.format((item.descuento_usd if usd else item.descuento_cs) or 0) }}{% endif %}</p>
+</article>
+{% else %}<p class="mc-help">No hay artículos registrados en esta factura.</p>{% endfor %}
+{% if invoice.descuento_total_usd or invoice.descuento_total_cs %}<p class="mc-help">Descuento total: {{ symbol }} {{ '{:,.2f}'.format((invoice.descuento_total_usd if usd else invoice.descuento_total_cs) or 0) }}</p>{% endif %}
+<div class="mc-row mt-2"><strong>Total original de factura</strong><strong>{{ symbol }} {{ '{:,.2f}'.format((invoice.total_usd if usd else invoice.total_cs) or 0) }}</strong></div>
+</section>

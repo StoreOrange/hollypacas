@@ -6,7 +6,7 @@ from unittest.mock import patch
 from tests import test_mobile_collections as fixtures
 from app.routers import web as w
 from app.core import mobile_collections as service
-from app.models.sales import CollectionReviewSetting
+from app.models.sales import CollectionReviewSetting, CollectionCarryover
 
 class DebtReviewTests(unittest.TestCase):
  def setUp(self):
@@ -14,6 +14,7 @@ class DebtReviewTests(unittest.TestCase):
  def tearDown(self):self.f.tearDown()
  def extra(self,date_value=datetime(2026,9,30)):
   self.db.add(w.VentaFactura(id=3,numero='EXTRA-3',vendedor_id=1,bodega_id=1,cliente_id=1,moneda='USD',total_usd=50,total_cs=1850,fecha=date_value,estado='ACTIVA',estado_cobranza='PENDIENTE'));self.db.commit()
+  self.db.add(CollectionCarryover(factura_id=3,epoch_id=1,cierre_id=1,vendedor_id=1,moneda='USD',opening_usd=50,opening_cs=1850,eligible_on=date_value.date()));self.db.commit()
  def configuration(self,**changes):
   data=dict(token=service.form_token(self.f.user,-1),overdue_days='30',recent_days='7',recent_color='green',aged_color='red');data.update(changes);return data
  def test_client_groups_multiple_invoices_and_owns_only_its_vendor(self):
@@ -44,7 +45,7 @@ class DebtReviewTests(unittest.TestCase):
   self.assertEqual(response.context['count'],1);self.assertEqual(response.context['stats']['recent_usd'],20)
   self.assertNotIn('CIERRE-FAKE',response.text);self.assertNotIn('OLD-PAY',response.text)
   self.assertIn('Factura F-1',response.text);self.assertIn('is-recent',response.text)
- def test_aged_uses_issue_date_and_partial_payment_does_not_reset_age(self):
+ def test_aged_uses_carryover_date_and_partial_payment_does_not_reset_age(self):
   self.extra();response=self.client.get('/m/deudas?view=aged')
   self.assertEqual(response.context['count'],1);self.assertIn('EXTRA-3',response.text)
   self.assertEqual(self.f.post().status_code,303)
