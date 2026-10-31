@@ -23,3 +23,12 @@ La solicitud lleva un identificador firmado asociado al usuario y factura. Un re
 `python tests/browser_mobile_collections.py` comprueba interfaz móvil de vendedor y administrador, pago parcial/completo, foto, visor, historial y ancho adaptable con la misma base aislada. Los pagos de prueba no se envían a la base del negocio.
 
 El menú «Revisión de deudas» abre `/m/deudas`: el administrador consulta la cartera completa y el vendedor únicamente la suya. El cierre masivo autorizado se ejecuta como operación administrativa independiente, con respaldo y excepciones explícitas; genera ajustes de cartera sin movimiento de caja y conserva las ventas y sus registros originales.
+
+
+## Revisión simplificada por vendedor y cliente
+
+`/m/deudas` presenta tres opciones: Resumen, Pagos recientes y Cuentas antiguas. El administrador comienza por vendedores; cada vendedor entra directamente a sus propios clientes. Al abrir un cliente se muestran sus facturas, lo pagado y lo pendiente; cada factura despliega sus recibos, quién los registró y sus soportes. Un mismo cliente de varios vendedores no permite mezclar las carteras al consultar con un usuario vendedor.
+
+Las alertas usan 30 días desde la emisión para una cuenta antigua (rojo) y los últimos 7 días inclusive para un abono reciente (verde). Solo el administrador configura días y colores en «Configurar días y colores»; guarda en `collection_review_settings` y registra el usuario que actualizó. La configuración únicamente cambia señalización. Los pagos al facturar se identifican como tales; las notas de crédito/débito y cierres administrativos se muestran aparte y nunca se cuentan como abonos recientes ni como dinero recibido.
+
+Pruebas adicionales: `python -m unittest tests.test_debt_review` y `python tests/browser_debt_review.py`, ambas con SQLite aislado.

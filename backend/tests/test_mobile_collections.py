@@ -179,10 +179,12 @@ class MobileCollectionTests(unittest.TestCase):
   page=self.client.get('/m/deudas?vendor=2')
   self.assertEqual(page.status_code,200)
   self.assertIn('Revisión de deudas',page.text)
-  self.assertIn('F-1',page.text);self.assertNotIn('F-2',page.text)
+  self.assertIn('Ana',page.text);self.assertNotIn('Otra persona',page.text)
+  detail=self.client.get('/m/deudas?client=1')
+  self.assertIn('F-1',detail.text);self.assertNotIn('F-2',detail.text)
   self.user=self.admin
   page=self.client.get('/m/deudas')
-  self.assertIn('F-1',page.text);self.assertIn('F-2',page.text)
+  self.assertIn('Carlos',page.text);self.assertIn('Otra persona',page.text)
   self.assertIn('Cartera pendiente por vendedor',page.text)
  def test_owner_closure_preserves_exceptions_cash_and_sales(self):
   from app.core.collection_closure import close_pending

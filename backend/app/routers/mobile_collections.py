@@ -10,7 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import defer, joinedload
 from . import web as w
 from ..core import mobile_collections as service
-from ..models.sales import MobileCollectionPayment
+from ..core import debt_review
+from ..models.sales import MobileCollectionPayment, CollectionReviewSetting
 
 router = APIRouter()
 BASE = '/m/cartera'
@@ -91,7 +92,87 @@ def page(request: Request, db=Depends(w.get_db), user=Depends(w._require_user_we
 
 @router.get('/m/deudas')
 def review_page(request: Request, db=Depends(w.get_db), user=Depends(w._require_user_web)):
-    return render_page(request,db,user,review=True)
+    return render_review(request,db,user)
+
+
+def render_review(request,db,user,error='',status_code=200):
+    try:service.enforce(user)
+    except HTTPException as exc:
+        if exc.status_code!=403:raise
+        return request.app.state.templates.TemplateResponse('mobile_collection_access.html',dict(request=request,user=user,version=w.settings.UI_VERSION,message=exc.detail),status_code=403)
+    admin=service.is_admin(user);config=debt_review.settings(db)
+    vendor=request.query_params.get('vendor','') if admin else str(user.vendedor_id)
+    client=request.query_params.get('client','')
+    if any(value and not value.isdigit() for value in (vendor,client)):
+        raise HTTPException(400,'Selecciona un vendedor o cliente válido')
+    if client and not vendor:raise HTTPException(400,'Selecciona primero un vendedor')
+    mode=request.query_params.get('view','summary')
+    if mode=='history':mode='recent'
+    if mode not in {'summary','recent','aged'}:mode='summary'
+    q=request.query_params.get('q','').strip()[:100]
+    all_rows=service.portfolio(db,user)
+    vendor_options={r['invoice'].vendedor_id or 0:r['invoice'].vendedor.nombre if r['invoice'].vendedor else 'Sin vendedor asignado' for r in all_rows}
+    if vendor and int(vendor) not in vendor_options:raise HTTPException(404,'Vendedor no encontrado en tu cartera')
+    rows=[r for r in all_rows if not vendor or (r['invoice'].vendedor_id or 0)==int(vendor)]
+    if client:
+        rows=[r for r in rows if (r['invoice'].cliente_id or 0)==int(client)]
+        if not rows:raise HTTPException(404,'Cliente no encontrado en tu cartera')
+    if q:
+        query=w._ascii_lower(q)
+        rows=[r for r in rows if query in w._ascii_lower(r['invoice'].numero+' '+(r['invoice'].cliente.nombre if r['invoice'].cliente else 'Consumidor final')+' '+(r['invoice'].vendedor.nombre if r['invoice'].vendedor else ''))]
+    data=debt_review.build(rows,w.local_today(),config)
+    stats=debt_review.blank()
+    for group in data['clients']:
+        for key in stats:stats[key]+=group[key]
+    selected_client=data['clients'][0] if client and data['clients'] else None
+    if mode=='recent':items=[e for e in data['receipts'] if e['recent']];level='recent'
+    elif mode=='aged':items=sorted([r for r in data['invoices'] if r['aged']],key=lambda r:(-r['age'],-r['due_cs']));level='aged'
+    elif client:items=data['invoices'];level='invoices'
+    elif vendor:items=data['clients'];level='clients'
+    else:items=data['vendors'];level='vendors'
+    focus=request.query_params.get('invoice','')
+    if focus and level=='invoices':
+        if not focus.isdigit() or int(focus) not in {r['invoice'].id for r in items}:raise HTTPException(404,'Factura no encontrada en este cliente')
+        items=sorted(items,key=lambda r:r['invoice'].id!=int(focus))
+    try:page_no=max(1,min(int(request.query_params.get('page','1')),100000))
+    except ValueError:page_no=1
+    count=len(items);items=items[(page_no-1)*20:page_no*20]
+    visible=[]
+    if level=='recent':visible=items
+    elif level=='invoices':visible=[e for r in items for e in r['events']]
+    meta=metadata(db,[e['abono_id'] for e in visible if e['abono_id']])
+    return request.app.state.templates.TemplateResponse('debt_review.html',dict(
+        request=request,user=user,version=w.settings.UI_VERSION,admin=admin,config=config,palette=debt_review.PALETTE,
+        token=service.form_token(user,-1) if admin else '',vendor=vendor,client=client,mode=mode,q=q,
+        vendor_options=vendor_options,vendor_name=vendor_options.get(int(vendor)) if vendor else '',
+        selected_client=selected_client,stats=stats,items=items,level=level,count=count,page_no=page_no,
+        has_next=count>page_no*20,metadata=meta,focus=focus,error=error,configured=request.query_params.get('configured')=='1'),status_code=status_code)
+
+
+@router.post('/m/deudas/configuracion')
+async def configure_review(request:Request,db=Depends(w.get_db),user=Depends(w._require_user_web)):
+    service.enforce(user)
+    if not service.is_admin(user):raise HTTPException(403,'Solo el administrador puede configurar las alertas')
+    origin=request.headers.get('origin')
+    if origin and urlparse(origin).netloc!=request.url.netloc:raise HTTPException(403,'Origen del formulario inválido')
+    form=await request.form(max_fields=5,max_files=0)
+    try:
+        try:service.operation_key(user,-1,str(form.get('token','')))
+        except ValueError:raise ValueError('Recarga el panel y vuelve a guardar la configuración.')
+        raw={key:str(form.get(key,'')).strip() for key in ('overdue_days','recent_days')}
+        if any(not value.isdigit() for value in raw.values()):raise ValueError('Escribe los días como números enteros entre 1 y 3650.')
+        numbers={key:int(value) for key,value in raw.items()}
+        if any(not 1<=value<=3650 for value in numbers.values()):raise ValueError('Los días deben estar entre 1 y 3650')
+        colors={key:str(form.get(key,'')) for key in ('recent_color','aged_color')}
+        if any(value not in debt_review.PALETTE for value in colors.values()):raise ValueError('Selecciona los colores disponibles')
+        if db.get_bind().dialect.name=='postgresql':db.execute(w.sql_text('SELECT pg_advisory_xact_lock(83742032)'))
+        setting=db.query(CollectionReviewSetting).filter_by(id=1).with_for_update().first()
+        if not setting:setting=CollectionReviewSetting(id=1);db.add(setting)
+        for key,value in dict(numbers,**colors).items():setattr(setting,key,value)
+        setting.updated_by=user.id;db.commit()
+    except ValueError as exc:
+        db.rollback();return render_review(request,db,user,str(exc),400)
+    return RedirectResponse('/m/deudas?configured=1',status_code=303)
 
 
 def detail(request, db, user, invoice_id, values=None, error='', status=200):

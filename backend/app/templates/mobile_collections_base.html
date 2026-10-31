@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block extra_head %}<meta name="theme-color" content="#edf6ff"><link rel="stylesheet" href="/static/css/mobile-collections.css?v=20261030">{% endblock %}
+{% block extra_head %}<meta name="theme-color" content="#edf6ff"><link rel="stylesheet" href="/static/css/mobile-collections.css?v=review-20261031">{% endblock %}
 {% block content %}
 <main class="mc-app">
  <header class="mc-header"><a class="mc-back" href="{% block back_url %}/home{% endblock %}" aria-label="Volver"><i class="bi bi-arrow-left"></i></a><div><span class="mc-eyebrow">Holl Pacas · Cobranza móvil</span><h1>{% block title %}Cartera y abonos{% endblock %}</h1></div><button class="mc-menu-button" type="button" data-bs-toggle="offcanvas" data-bs-target="#mc-menu" aria-controls="mc-menu" aria-label="Abrir menú de cartera"><i class="bi bi-list" aria-hidden="true"></i><span>Menú</span></button></header>
@@ -12,6 +12,8 @@
   {% if user.vendedor_id or user.roles|selectattr('name','equalto','administrador')|list|length > 0 %}
   <a href="/m/cartera"><i class="bi bi-wallet2"></i>Cartera y abonos</a>
   <a href="/m/deudas"><i class="bi bi-clipboard-check"></i>Revisión de deudas</a>
+  <a href="/m/deudas?view=recent"><i class="bi bi-check-circle"></i>Pagos recientes</a>
+  <a href="/m/deudas?view=aged"><i class="bi bi-exclamation-circle"></i>Cuentas antiguas</a>
   <a href="/m/cartera?view=history"><i class="bi bi-clock-history"></i>Historial de abonos</a>
   {% endif %}
  </nav>

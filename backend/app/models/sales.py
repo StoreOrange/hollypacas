@@ -1220,3 +1220,15 @@ class MobileCollectionBasis(Base):
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     factura = relationship('VentaFactura', back_populates='mobile_collection_basis')
+
+
+class CollectionReviewSetting(Base):
+    """Holl debt-review alerts; display configuration never changes balances."""
+    __tablename__ = 'collection_review_settings'
+    id = Column(Integer, primary_key=True)
+    overdue_days = Column(Integer, nullable=False, default=30)
+    recent_days = Column(Integer, nullable=False, default=7)
+    recent_color = Column(String(16), nullable=False, default='green')
+    aged_color = Column(String(16), nullable=False, default='red')
+    updated_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
