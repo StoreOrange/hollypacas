@@ -43,11 +43,14 @@ def initialize(db,user,start_date):
     existing=epoch(db)
     if existing:return existing,[]
     record=CollectionTrackingEpoch(id=1,start_date=start_date,started_by=user.id);db.add(record);db.flush()
-    latest={}
+    latest_prior={};today_closes=[]
     for close in db.query(w.CierreCaja).filter(w.CierreCaja.fecha<=start_date).order_by(w.CierreCaja.fecha.desc(),w.CierreCaja.id.desc()).all():
-        latest.setdefault(close.bodega_id,close)
+        if close.fecha<start_date:latest_prior.setdefault(close.bodega_id,close)
+        else:today_closes.append(close)
     created=[]
-    for close in latest.values():created.extend(enroll_close(db,close))
+    # Preserve debts already carried into today before queuing today's new debts.
+    for close in latest_prior.values():created.extend(enroll_close(db,close))
+    for close in reversed(today_closes):created.extend(enroll_close(db,close))
     return record,created
 
 

@@ -32,6 +32,14 @@ class CarryoverTests(unittest.TestCase):
   self.assertEqual(tracking.enroll_close(self.db,self.close(id=11,day=date(2026,10,31))),[])
   self.assertEqual(self.db.query(CollectionCarryover).count(),1)
   self.assertEqual(self.start()[1],[])
+ def test_todays_close_does_not_delay_preexisting_carried_debt_at_startup(self):
+  self.close()
+  self.close(id=11,day=date(2026,10,30),at=datetime(2026,10,31,1))
+  self.start()
+  rows=tracking.portfolio(self.db,self.f.seller)
+  self.assertEqual(len(rows),1)
+  self.assertEqual(rows[0]['tracking_date'],date(2026,10,30))
+  self.assertEqual(rows[0]['carryover'].cierre_id,10)
  def test_only_pending_at_close_in_its_warehouse_and_before_its_timestamp(self):
   f=self.db.get(w.VentaFactura,1);f.created_at=datetime(2026,10,30,2)
   self.close();self.start();self.assertEqual(self.db.query(CollectionCarryover).count(),0)
