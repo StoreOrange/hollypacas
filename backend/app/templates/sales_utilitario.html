@@ -15,7 +15,7 @@
               </ol>
             </nav>
             <div class="odoo-title mt-2 text-xl">Utilitario de ventas</div>
-            <div class="odoo-subtitle mt-1 text-sm">Facturas del dia y busqueda historica.</div>
+            <div class="odoo-subtitle mt-1 text-sm">{{ 'Historial de facturas de todas las sucursales autorizadas. Filtra por fecha o selecciona Central.' if show_full_history else 'Facturas del día y búsqueda histórica.' }}</div>
           </div>
           <form class="d-flex flex-wrap align-items-center gap-2" method="get" action="/sales/utilitario">
             <div class="input-group input-group-sm rounded-pill overflow-hidden border border-slate-200 bg-white">
@@ -48,10 +48,11 @@
               <i class="bi bi-search"></i>
               Filtrar
             </button>
-            <a class="btn btn-outline-secondary btn-sm" href="/sales/utilitario">
+            <a class="btn btn-outline-secondary btn-sm" href="/sales/utilitario?start_date={{ today }}&amp;end_date={{ today }}{% if branch_id != 'all' %}&amp;branch_id={{ branch_id }}{% endif %}">
               <i class="bi bi-eraser"></i>
               Hoy
             </a>
+            {% if show_full_history %}<a class="btn btn-outline-secondary btn-sm" href="/sales/utilitario">Ver historial</a>{% endif %}
           </form>
         </div>
         <ul class="nav nav-tabs mt-3">

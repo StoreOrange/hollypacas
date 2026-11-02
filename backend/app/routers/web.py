@@ -15263,7 +15263,7 @@ def sales_utilitario(
     cliente_q = (request.query_params.get("cliente") or "").strip()
     vendedor_q = (request.query_params.get("vendedor") or "").strip()
     producto_q = (request.query_params.get("producto") or "").strip()
-    if not start_date and not end_date:
+    if not start_date and not end_date and not _is_shoes_mode():
         start_date = local_today()
         end_date = local_today()
 
@@ -15326,6 +15326,8 @@ def sales_utilitario(
             "request": request,
             "user": user,
             "ventas": ventas,
+            "today": local_today().isoformat(),
+            "show_full_history": _is_shoes_mode(),
             "vendedores": vendedores,
             "vendedores_utilitario": vendedores_utilitario,
             "branches": branches,

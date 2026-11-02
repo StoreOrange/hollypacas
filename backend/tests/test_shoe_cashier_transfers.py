@@ -58,6 +58,28 @@ class ShoeCashierTests(unittest.TestCase):
    self.assertEqual(web._utility_branch_ids(self.db,admin),{1,2,3})
    self.assertFalse(web._shoe_admin_all_stores(self.user))
    self.assertEqual(web._utility_branch_ids(self.db,self.user),{3})
+ def test_shoe_utilities_show_historical_central_invoices_and_date_filters(self):
+  from types import SimpleNamespace
+  from datetime import date
+  class Templates:
+   def TemplateResponse(self,name,context):return context
+  app=SimpleNamespace(state=SimpleNamespace(templates=Templates()))
+  admin=User(email='history-admin',roles=[Role(name='administrador')],default_branch_id=1,default_bodega_id=1)
+  self.db.add(VentaFactura(numero='CENTRAL-HISTORY',bodega_id=1,fecha=datetime(2026,10,4),moneda='CS',estado='ACTIVA'))
+  self.db.commit()
+  def request(query=b''):
+   return Request({'type':'http','method':'GET','path':'/sales/utilitario','headers':[],'query_string':query,'app':app})
+  with patch.object(web,'get_active_company_key',return_value='bdzapatos'),patch.object(web,'_enforce_permission'),patch.object(web,'local_today',return_value=date(2026,11,2)):
+   result=web.sales_utilitario(request(),self.db,admin)
+   self.assertEqual([v.numero for v in result['ventas']],['CENTRAL-HISTORY'])
+   self.assertEqual(result['start_date'],'')
+   result=web.sales_utilitario(request(b'branch_id=1'),self.db,admin)
+   self.assertEqual(len(result['ventas']),1)
+   result=web.sales_utilitario(request(b'start_date=2026-11-02&end_date=2026-11-02'),self.db,admin)
+   self.assertEqual(result['ventas'],[])
+   result=web.sales_utilitario(request(b'branch_id=2'),self.db,admin)
+   self.assertEqual(result['ventas'],[])
+
  def test_admin_cross_store_access_is_only_shoes(self):
   admin=User(email='admin-test',roles=[Role(name='administrador')],default_branch_id=1)
   with patch.object(web,'get_active_company_key',return_value='hollywood_pacas'):
