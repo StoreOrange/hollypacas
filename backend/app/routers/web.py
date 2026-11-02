@@ -2924,6 +2924,11 @@ def _product_price_map(producto: Producto) -> dict[str, float]:
     return values
 
 
+def _shoe_sale_date(requested: date, today: date) -> date:
+    # The open cash register belongs to today; a client clock must not future-date sales.
+    return min(requested, today)
+
+
 def _shoe_admin_all_stores(user: User) -> bool:
     return _is_shoes_mode() and any(role.name == "administrador" for role in user.roles or [])
 
@@ -36861,6 +36866,8 @@ async def sales_create_invoice(
             fecha_value = date.fromisoformat(str(fecha).split("T")[0])
         except (TypeError, ValueError):
             fecha_value = local_today()
+        if _is_shoes_mode():
+            fecha_value = _shoe_sale_date(fecha_value, now_local.date())
         fecha_dt = datetime.combine(fecha_value, now_local.time()).replace(tzinfo=None)
     factura = VentaFactura(
         secuencia=next_seq,

@@ -80,6 +80,13 @@ class ShoeCashierTests(unittest.TestCase):
    result=web.sales_utilitario(request(b'branch_id=2'),self.db,admin)
    self.assertEqual(result['ventas'],[])
 
+ def test_shoe_sale_date_prevents_future_dates_without_changing_history(self):
+  from datetime import date
+  today=date(2026,11,2)
+  self.assertEqual(web._shoe_sale_date(date(2026,12,2),today),today)
+  self.assertEqual(web._shoe_sale_date(today,today),today)
+  self.assertEqual(web._shoe_sale_date(date(2026,11,1),today),date(2026,11,1))
+
  def test_admin_cross_store_access_is_only_shoes(self):
   admin=User(email='admin-test',roles=[Role(name='administrador')],default_branch_id=1)
   with patch.object(web,'get_active_company_key',return_value='hollywood_pacas'):
