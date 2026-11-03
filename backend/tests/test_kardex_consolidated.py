@@ -53,3 +53,20 @@ class KardexConsolidatedTests(unittest.TestCase):
         self.assertEqual(rows, [])
         self.assertEqual(summary['saldo_inicial'], 4)
         self.assertEqual(summary['saldo_final'], 4)
+
+    def test_transfer_route_and_direct_pdf_for_both_warehouses(self):
+        self.db.add(w.EgresoTipo(id=1, nombre='Traslado entre bodegas'))
+        self.db.add(w.IngresoTipo(id=2, nombre='Traslado entre bodegas'))
+        self.db.add(w.EgresoInventario(id=10, tipo_id=1, bodega_id=1, bodega_destino_id=2, fecha=self.today, moneda='CS'))
+        self.db.add(w.EgresoItem(egreso_id=10, producto_id=1, cantidad=2))
+        self.db.add(w.IngresoInventario(id=10, tipo_id=2, bodega_id=2, fecha=self.today, moneda='CS', observacion='Traslado desde Central hacia Custodio. Egreso #10'))
+        self.db.add(w.IngresoItem(ingreso_id=10, producto_id=1, cantidad=2))
+        self.db.commit()
+        rows, summary = self.report()
+        transfers = [r for r in rows if r['source_id'] == 10]
+        self.assertEqual(len(transfers), 2)
+        for row in transfers:
+            self.assertEqual(row['transfer_route'], 'Central → Custodio')
+            self.assertIn('Central → Custodio', row['concepto'])
+            self.assertEqual(row['pdf_url'], f"/inventory/{'ingresos' if row['source_kind'] == 'ingreso' else 'egresos'}/10/pdf")
+        self.assertEqual(summary['saldo_final'], 4)

@@ -23814,6 +23814,11 @@ def _build_kardex_movements(
                 codigo=variant.cod_variante, descripcion=variant.producto.descripcion,
                 vendedor='-', cantidad=quantity, costo_unit_cs=legacy['cost_cs'], costo_unit_usd=legacy['cost_usd']))
 
+    # Resolve transfer routes from the actual source document, including receipts
+    # whose only historical link is the explicit "Egreso #..." reference.
+    from ..core.kardex_transfers import enrich_movement_documents
+    enrich_movement_documents(db, movimientos)
+
     movement_priority = {"Ingreso": 0, "Venta": 1, "Egreso": 2}
     movimientos.sort(
         key=lambda row: (

@@ -141,7 +141,7 @@
             </thead>
             <tbody>
               {% for row in rows %}
-              <tr>
+              <tr data-movement-pdf="{{ row.pdf_url }}" title="Doble clic para abrir el PDF del movimiento">
                 <td>
                   {% if row.tipo_base == "Ingreso" %}
                   <i class="bi bi-arrow-up-circle-fill text-success me-1"></i>
@@ -152,7 +152,7 @@
                 </td>
                 <td>
                   {% if row.source_url %}
-                  <a href="{{ row.source_url }}" class="fw-semibold text-decoration-none">{{ row.tipo }}</a>
+                  <a href="{{ row.pdf_url }}" target="_blank" rel="noopener" class="fw-semibold text-decoration-none" aria-label="Abrir PDF del movimiento">{{ row.tipo }}</a>
                   {% else %}
                   {{ row.tipo }}
                   {% endif %}
@@ -181,6 +181,8 @@
     </div>
   </main>
 </div>
+<script src="/static/js/kardex_documents.js?v=1" defer></script>
+<p class="text-secondary small px-3">Doble clic en una fila para abrir su PDF. También puedes tocar el tipo de movimiento.</p>
 {% if is_shoes %}
 <div class="modal fade" id="kardex-item-modal" tabindex="-1" aria-labelledby="kardex-item-title" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="kardex-item-title"><i class="bi bi-search"></i> Elegir artículo para el Kardex</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><label for="kardex-item-search" class="form-label">Código, descripción, color o talla</label><input id="kardex-item-search" class="form-control" autocomplete="off" placeholder="Escribe el código o nombre del artículo" role="combobox" aria-controls="kardex-item-results" aria-expanded="false" aria-autocomplete="list"><p id="kardex-item-status" class="text-secondary small mt-2" role="status">Escribe para buscar. Usa ↑ ↓ y Enter para elegir.</p><div id="kardex-item-results" role="listbox" aria-label="Artículos encontrados"></div></div><div class="modal-footer"><span class="text-secondary small me-auto">Elige el modelo completo o una talla y color específicos.</span><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cerrar</button></div></div></div></div>
 <style>#kardex-item-modal .modal-dialog{max-width:min(760px,calc(100vw - 24px));margin:12px auto;min-height:calc(100% - 24px);height:calc(100% - 24px)}#kardex-item-modal .modal-content{border-radius:18px;min-height:0;max-height:100%}#kardex-item-modal .modal-body{flex:0 1 auto}#kardex-item-search{border:2px solid #c4a5df;min-height:50px;font-size:17px}#kardex-item-search:focus{box-shadow:0 0 0 4px #ede1f7}#kardex-item-results{max-height:min(46vh,360px);overflow:auto;display:grid;gap:8px}#kardex-item-results button{text-align:left;padding:12px 14px;border:1px solid #e0dce8;border-radius:12px;background:white;min-height:65px}#kardex-item-results button[aria-selected=true]{border:2px solid #b445a0;background:#faedf8}#kardex-item-results strong,#kardex-item-results small{display:block}#kardex-item-results small{color:#655e71;margin-top:3px}#kardex-filters .input-group .btn{min-width:44px}#kardex-filters :is(input,select){min-height:44px;font-size:16px}</style>

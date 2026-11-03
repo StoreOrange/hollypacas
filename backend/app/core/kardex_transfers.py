@@ -8,7 +8,7 @@ from collections import defaultdict
 from decimal import Decimal
 from sqlalchemy.orm import selectinload
 from ..models.inventory import (IngresoInventario, IngresoItem, EgresoInventario,
-    EgresoItem, ShoeProductVariant)
+    EgresoItem, ShoeProductVariant, Bodega)
 
 
 def legacy_variant_receipts(db, variant_id, end_date, allowed_bodega_ids=None, bodega_id=None):
@@ -66,3 +66,30 @@ def legacy_variant_receipts(db, variant_id, end_date, allowed_bodega_ids=None, b
             cost_cs=sum(i.cantidad * (i.costo_unitario_cs or 0) for i in lines) / qty,
             cost_usd=sum(i.cantidad * (i.costo_unitario_usd or 0) for i in lines) / qty))
     return result
+
+
+def enrich_movement_documents(db, movements):
+    """Attach direct PDFs and verified transfer warehouse names without writes."""
+    receipts = {r.id: r for r in db.query(IngresoInventario).filter(
+        IngresoInventario.id.in_({m['source_id'] for m in movements if m['source_kind'] == 'ingreso'})).all()}
+    references = {}
+    for receipt in receipts.values():
+        ids = re.findall(r'\bEgreso\s*#\s*(\d+)\b', receipt.observacion or '', re.I)
+        if len(ids) == 1:
+            references[receipt.id] = int(ids[0])
+    source_ids = set(references.values()) | {m['source_id'] for m in movements if m['source_kind'] == 'egreso'}
+    sources = {e.id: e for e in db.query(EgresoInventario).filter(EgresoInventario.id.in_(source_ids)).all()}
+    warehouses = {b.id: b.name for b in db.query(Bodega).all()}
+    paths = {'ingreso': '/inventory/ingresos', 'egreso': '/inventory/egresos', 'venta': '/sales'}
+    for movement in movements:
+        kind, ident = movement['source_kind'], movement['source_id']
+        movement['pdf_url'] = f"{paths[kind]}/{ident}/pdf"
+        source = sources.get(ident if kind == 'egreso' else references.get(ident)) if kind != 'venta' else None
+        if not source or not source.bodega_destino_id or 'traslado' not in (source.tipo.nombre or '').lower():
+            continue
+        if kind == 'ingreso' and receipts[ident].bodega_id != source.bodega_destino_id:
+            continue
+        origin = warehouses.get(source.bodega_id, 'Origen no identificado')
+        destination = warehouses.get(source.bodega_destino_id, 'Destino no identificado')
+        movement['transfer_route'] = f'{origin} → {destination}'
+        movement['concepto'] = f"{movement['concepto']} · {origin} → {destination}"
