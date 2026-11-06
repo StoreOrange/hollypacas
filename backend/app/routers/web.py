@@ -12759,6 +12759,7 @@ def sales_page(
             "restaurant_tables": restaurant_tables,
             "workshop_services": workshop_services,
             "sales_interface_code": interface_code,
+            "pacasholl_thanksgiving_video": _is_pacasholl_company() and bool(branch and (branch.code or "").strip().lower() in {"central", "esteli"}),
             "active_company": (get_active_company_key() or "").strip().lower(),
             "sale_datetime_override_enabled": _is_global_company(),
             "pacasholl_libreado_enabled": _is_pacasholl_company(),

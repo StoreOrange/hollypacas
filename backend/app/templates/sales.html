@@ -481,7 +481,7 @@
             </div>
             {% if pacasholl_libreado_enabled %}
             <video id="pacasholl-sales-header-video" class="pacasholl-sales-banner" autoplay loop muted playsinline preload="auto" aria-label="Encabezado animado de Pacas Hollywood">
-              <source src="/static/hollywood_header.mp4?v=20261013" type="video/mp4">
+              <source src="{{ '/static/hollywood_header_gracias.mp4?v=20261106' if pacasholl_thanksgiving_video else '/static/hollywood_header.mp4?v=20261013' }}" type="video/mp4">
             </video>
             {% else %}
             <div class="text-xl font-semibold text-ink leading-tight">Terminal de Venta Empresarial</div>
