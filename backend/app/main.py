@@ -46,6 +46,8 @@ from .routers import mobile_expenses
 app.include_router(mobile_expenses.router)
 from .routers import mobile_collections
 app.include_router(mobile_collections.router)
+from .routers import inventory_requests
+app.include_router(inventory_requests.router)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.state.templates = Jinja2Templates(directory="app/templates")

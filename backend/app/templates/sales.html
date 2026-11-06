@@ -479,6 +479,7 @@
                 </ol>
               </nav>
             </div>
+            {% if pacasholl_libreado_enabled %}<a class="btn btn-outline-primary btn-sm my-2" href="/sales/requisas"><i class="bi bi-box-arrow-in-down me-1"></i>Requisas de inventario</a>{% endif %}
             {% if pacasholl_libreado_enabled %}
             <video id="pacasholl-sales-header-video" class="pacasholl-sales-banner" autoplay loop muted playsinline preload="auto" aria-label="Encabezado animado de Pacas Hollywood">
               <source src="{{ '/static/hollywood_header_gracias.mp4?v=20261106' if pacasholl_thanksgiving_video else '/static/hollywood_header.mp4?v=20261013' }}" type="video/mp4">

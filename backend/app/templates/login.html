@@ -59,6 +59,7 @@
           </div>
 
           <form class="mt-6 space-y-4" method="post" action="/login">
+          {% if requisition_next %}<input type="hidden" name="requisition_next" value="{{ requisition_next }}">{% endif %}
             <label class="block text-[15px] font-semibold text-ink">
               Usuario o correo
               <input

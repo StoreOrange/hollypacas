@@ -521,6 +521,7 @@
     {% set can_mobile_commissions = (not has_perms) or ('menu.sales.mis_comisiones.mobile' in perms) or ('access.sales.mis_comisiones.mobile' in perms) %}
     <div class="odoo-page">
       {% if holl_mobile_home %}{% include "partials/holl_mobile_home.html" %}{% endif %}
+      {% if holl_mobile_home and user.roles|selectattr('name','in',['administrador','cajero','vendedor'])|list|length > 0 %}<a class="d-lg-none btn btn-outline-primary w-100 my-3 py-3" href="/sales/requisas"><i class="bi bi-box-arrow-in-down me-2"></i>Requisas de inventario</a>{% endif %}
       <div class="odoo-header">
       {% if not holl_mobile_home %}
       <div class="home-mobile-hero d-lg-none">

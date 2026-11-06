@@ -417,6 +417,7 @@ SIDEBAR_MENU_ITEMS: list[dict[str, str | None]] = [
     {"id": "sales_devoluciones", "label": "Devoluciones", "href": "/sales/devoluciones", "icon": "bi-arrow-counterclockwise", "perm": "menu.sales.devoluciones", "alt_perm": None, "shoes_only": True},
     {"id": "sales_cobranza", "label": "Gestion de cobranza", "href": "/sales/cobranza", "icon": "bi-wallet-fill", "perm": "menu.sales.cobranza", "alt_perm": None},
     {"id": "sales_cierre", "label": "Cierre de caja", "href": "/sales/cierre", "icon": "bi-cash-stack", "perm": "menu.sales.cierre", "alt_perm": None},
+    {"id": "inventory_requests", "label": "Requisas de inventario", "href": "/sales/requisas", "icon": "bi-box-arrow-in-down", "perm": "menu.sales", "alt_perm": "menu.sales.preventas.mobile", "hollpacas_only": "1"},
     {"id": "sales_utilitario", "label": "Utilitario Ventas", "href": "/sales/utilitario", "icon": "bi-wrench-adjustable-circle", "perm": "menu.sales.utilitario", "alt_perm": None},
     {"id": "sales_etiquetas", "label": "Impresion de etiquetas", "href": "/sales/etiquetas", "icon": "bi-upc-scan", "perm": "menu.sales.etiquetas", "alt_perm": None, "hollpacas_only": "1"},
     {"id": "sales_roc", "label": "Recibos de caja", "href": "/sales/roc", "icon": "bi-file-earmark-text", "perm": "menu.sales.roc", "alt_perm": None},
@@ -4262,7 +4263,7 @@ def _send_html_email(
             continue
 
     try:
-        with smtplib.SMTP(config["host"], config["port"]) as smtp:
+        with smtplib.SMTP(config["host"], config["port"], timeout=20) as smtp:
             smtp.starttls()
             smtp.login(config["user"], config["password"])
             smtp.send_message(message)
@@ -4277,6 +4278,7 @@ def login_page(request: Request):
         {
             "request": request,
             "version": settings.UI_VERSION,
+            "requisition_next": request.query_params.get("next", "") if re.fullmatch(r"/sales/requisas(?:/[0-9]+)?", request.query_params.get("next", "")) else "",
         },
     )
 
@@ -4287,8 +4289,10 @@ def login_action(
     username: str = Form(...),
     password: str = Form(...),
     remember: Optional[str] = Form(None),
+    requisition_next: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
+    safe_requisition_next = requisition_next if isinstance(requisition_next, str) and re.fullmatch(r"/sales/requisas(?:/[0-9]+)?", requisition_next) else ""
     identifier = username.strip().lower()
     user = db.query(User).filter(
         (func.lower(User.email) == identifier)
@@ -4301,6 +4305,7 @@ def login_action(
                 "request": request,
                 "error": "Credenciales incorrectas",
                 "version": settings.UI_VERSION,
+                "requisition_next": safe_requisition_next,
             },
             status_code=401,
         )
@@ -4311,6 +4316,7 @@ def login_action(
                 "request": request,
                 "error": "Usuario inactivo",
                 "version": settings.UI_VERSION,
+                "requisition_next": safe_requisition_next,
             },
             status_code=403,
         )
@@ -4318,7 +4324,9 @@ def login_action(
     # Hollpacas: cookie persistente y JWT con la misma vigencia.
     expires = timedelta(days=90 if _is_pacasholl_company() else 365)
     token = create_access_token({"sub": user.email}, expires_delta=expires)
-    response = RedirectResponse("/motorizado" if _is_pacasholl_company() and any(role.name == "motorizado" for role in user.roles) else "/sales" if _is_shoes_mode() else "/home", status_code=302)
+    response = RedirectResponse("/motorizado" if _is_pacasholl_company() and any(role.name == "motorizado" for role in getattr(user,"roles",[]) or []) else "/sales" if _is_shoes_mode() else "/home", status_code=302)
+    if safe_requisition_next and _is_pacasholl_company():
+        response.headers["location"] = safe_requisition_next
     if _is_pacasholl_company():
         from ..core.browser_session import persist_browser_session
         persist_browser_session(response,request,token,expires)
@@ -35196,6 +35204,12 @@ async def inventory_create_egreso(
             f"/inventory/laboratorios-produccion?success=Ingreso+adicional+aplicado+a+{quote_plus(selected_laboratory.numero)}",
             status_code=303,
         )
+
+    if _is_pacasholl_company():
+        lock_ids = {int(bodega_id)}
+        if es_traslado and bodega_destino_id:
+            lock_ids.add(int(bodega_destino_id))
+        db.query(Bodega).filter(Bodega.id.in_(lock_ids)).order_by(Bodega.id).with_for_update().all()
 
     ingreso_resultado_id: Optional[int] = None
     egreso = EgresoInventario(
