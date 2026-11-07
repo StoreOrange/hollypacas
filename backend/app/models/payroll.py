@@ -371,3 +371,16 @@ class PayrollStartDateChange(Base):
     adjustment_entry_id = Column(Integer, ForeignKey('accounting_entries.id'), nullable=True)
     draft_period_ids = Column(Text, nullable=False, default='[]')
     draft_settlement_ids = Column(Text, nullable=False, default='[]')
+
+
+class PayrollVacationDraftAdjustment(Base):
+    """Evidence that a direct vacation payment reduced an unpaid settlement."""
+    __tablename__ = 'payroll_vacation_draft_adjustments'
+    __table_args__ = (UniqueConstraint('movement_id','settlement_id',name='uq_vacation_draft_adjustment'),)
+    id = Column(Integer, primary_key=True)
+    movement_id = Column(Integer, ForeignKey('payroll_vacation_movements.id'), nullable=False)
+    settlement_id = Column(Integer, ForeignKey('payroll_settlements.id'), nullable=False)
+    before_json = Column(Text, nullable=False)
+    after_json = Column(Text, nullable=False)
+    created_by = Column(String(160), nullable=False)
+    created_at = Column(DateTime, nullable=False)

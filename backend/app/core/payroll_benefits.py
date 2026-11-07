@@ -1,4 +1,5 @@
 """Prestaciones: saldo laboral, provisión acumulada y salida se mantienen separados."""
+import json
 from calendar import monthrange
 from datetime import date, timedelta, datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -45,6 +46,8 @@ def balance(db, profile, as_of, exclude_settlement=None):
     if available < Decimal('-.0001'):
         raise ValueError('El historial de vacaciones supera los días acumulados. Revisa las fechas antes de continuar')
     available = max(ZERO, available)
+    # Stored/requested days have four decimals; discard only sub-precision residue.
+    if available < Decimal('.00005'):available=ZERO
     return {'earned': earned, 'used': used, 'days': available, 'amount': money(available * Decimal(profile.monthly_salary) / 30)}
 
 
@@ -143,7 +146,7 @@ def release_rest(db, period, actor):
         db.flush()
 
 
-def record(db, profile, kind, effective, days, start, end, reason, token, actor, method='EFECTIVO', journal_id=None, warehouse=None):
+def record(db, profile, kind, effective, days, start, end, reason, token, actor, method='EFECTIVO', journal_id=None, warehouse=None, update_settlement=False):
     from ..routers import web
     ledger.lock(db)
     existing=db.query(PayrollVacationMovement).filter_by(operation_key=token).first()
@@ -153,7 +156,15 @@ def record(db, profile, kind, effective, days, start, end, reason, token, actor,
         return existing
     if len(token)!=32 or kind not in {'REST','CASH'} or len(reason.strip())<5:raise ValueError('Completa la operación y su motivo')
     if effective!=web.local_today():raise ValueError('Registra el movimiento con la fecha actual; los saldos históricos se revisan por separado')
-    if db.query(PayrollSettlement.id).filter_by(employee_id=profile.employee_id,status='DRAFT').first():raise ValueError('Anula o actualiza primero la liquidación pendiente del trabajador')
+    drafts=db.query(PayrollSettlement).filter_by(employee_id=profile.employee_id,status='DRAFT').order_by(PayrollSettlement.id).with_for_update().all()
+    if drafts:
+        if kind!='CASH':raise ValueError('Anula o actualiza primero la liquidación pendiente antes de registrar un descanso')
+        if not update_settlement:raise ValueError('El trabajador tiene una liquidación en borrador. Confirma descontar de ella este pago de vacaciones para evitar pagarlo dos veces')
+        for draft in drafts:
+            if draft.termination_date<effective:raise ValueError('La liquidación en borrador tiene un cese anterior a hoy. Anúlala y calcula otra con la fecha correcta antes de registrar el pago')
+            prior=balance(db,profile,draft.termination_date)
+            if money(draft.salary_snapshot)!=money(profile.monthly_salary) or abs(Decimal(draft.vacation_days)-prior['days'])>Decimal('.0001') or money(draft.vacation_amount)!=prior['amount']:
+                raise ValueError('La liquidación en borrador está desactualizada. Anúlala y vuelve a calcularla antes de pagar vacaciones')
     if kind=='REST':
         if not start or not end or start<effective or end<start:raise ValueError('Selecciona un descanso desde hoy, con fecha final válida')
         days=Decimal((end-start).days+1)
@@ -162,10 +173,11 @@ def record(db, profile, kind, effective, days, start, end, reason, token, actor,
     days=Decimal(str(days))
     if not days.is_finite() or days<=0 or days!=days.quantize(Decimal('.0001')):raise ValueError('Escribe una cantidad positiva de días, con hasta cuatro decimales')
     available=balance(db,profile,effective)
-    if days>available['days']:raise ValueError('El trabajador no tiene suficientes días de vacaciones disponibles')
+    full_balance=abs(days-available['days'])<=Decimal('.00005')
+    if days>available['days'] and not full_balance:raise ValueError('El trabajador no tiene suficientes días de vacaciones disponibles')
     accrued=sync_profile(db,profile,effective,actor)
     setting, expense, opening, liabilities=config(db)
-    value=money(days*Decimal(profile.monthly_salary)/30)
+    value=available['amount'] if full_balance else money(days*Decimal(profile.monthly_salary)/30)
     move=PayrollVacationMovement(operation_key=token,employee_id=profile.employee_id,kind=kind,effective_date=effective,date_from=start if kind=='REST' else None,date_to=end if kind=='REST' else None,days=days,salary=profile.monthly_salary,amount=value,reason=reason.strip(),created_by=actor)
     db.add(move);db.flush()
     if kind=='CASH':
@@ -178,7 +190,21 @@ def record(db, profile, kind, effective, days, start, end, reason, token, actor,
             adapter=SimpleNamespace(branch_id=profile.employee.branch_id,amount=value,period=SimpleNamespace(accounting_payable_id=liabilities[0].id,code=f'Vacaciones {move.id} · {profile.employee.full_name}'))
             receipt=ledger.cash_movement(db,adapter,entry,warehouse,effective,'EGRESO',source.id,actor)
             move.cash_receipt_id=receipt.id
-    db.flush();return move
+    db.flush()
+    if drafts:
+        from ..models.payroll import PayrollVacationDraftAdjustment
+        for draft in drafts:
+            fields=('vacation_days','vacation_amount','gross_amount','net_amount')
+            before={field:str(getattr(draft,field)) for field in fields}
+            remaining=balance(db,profile,draft.termination_date)
+            gross=money(Decimal(draft.gross_amount)-Decimal(draft.vacation_amount)+remaining['amount'])
+            if Decimal(draft.deductions_amount)>gross-Decimal(draft.bonus_amount):
+                raise ValueError('El pago dejaría descuentos excesivos en la liquidación. Ajusta o anula primero ese borrador')
+            draft.vacation_days=remaining['days'];draft.vacation_amount=remaining['amount']
+            draft.gross_amount=gross;draft.net_amount=money(gross-Decimal(draft.deductions_amount))
+            db.add(PayrollVacationDraftAdjustment(movement_id=move.id,settlement_id=draft.id,before_json=json.dumps(before),after_json=json.dumps({field:str(getattr(draft,field)) for field in fields}),created_by=actor,created_at=web.local_now_naive()))
+        db.flush()
+    return move
 
 
 def run_daily():
