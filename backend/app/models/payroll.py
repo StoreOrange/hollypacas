@@ -350,3 +350,24 @@ class PayrollVacationReversal(Base):
     cash_receipt_id = Column(Integer, ForeignKey('recibos_caja.id'), nullable=True)
     created_by = Column(String(160), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PayrollStartDateChange(Base):
+    """Immutable evidence for a reviewed employment-date correction."""
+    __tablename__ = 'payroll_start_date_changes'
+    id = Column(Integer, primary_key=True)
+    operation_key = Column(String(32), nullable=False, unique=True)
+    employee_id = Column(Integer, ForeignKey('hr_employees.id'), nullable=False, index=True)
+    old_contract_start = Column(Date, nullable=True)
+    old_hire_date = Column(Date, nullable=True)
+    new_start = Column(Date, nullable=False)
+    as_of = Column(Date, nullable=False)
+    reason = Column(String(1000), nullable=False)
+    changed_by_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    changed_by = Column(String(160), nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    before_json = Column(Text, nullable=False)
+    after_json = Column(Text, nullable=False)
+    adjustment_entry_id = Column(Integer, ForeignKey('accounting_entries.id'), nullable=True)
+    draft_period_ids = Column(Text, nullable=False, default='[]')
+    draft_settlement_ids = Column(Text, nullable=False, default='[]')

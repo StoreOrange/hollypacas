@@ -33,6 +33,8 @@ app.include_router(attendance.router)
 app.include_router(attendance.web_router)
 app.include_router(payroll.router)
 app.include_router(payroll_vacations.router)
+from .routers import payroll_start_date
+app.include_router(payroll_start_date.router)
 app.include_router(pos_browser.router)
 app.include_router(motorizado.router)
 app.include_router(web.router)

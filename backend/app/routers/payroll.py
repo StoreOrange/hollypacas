@@ -389,18 +389,22 @@ def save_employee_profile(
     payroll_ledger.lock(db)
     _check_accounting_branch(db,_browser_admin(request,db),employee)
     from ..models.payroll import PayrollBenefitAccrual
-    if _linked_accounting() and db.query(PayrollBenefitAccrual.id).filter_by(employee_id=employee_id).first():
+    if _linked_accounting():
         try:
-            desired_start=date.fromisoformat(contract_start) if contract_start.strip() else None
+            desired = date.fromisoformat(contract_start) if contract_start.strip() else None
         except ValueError:
             return RedirectResponse('/payroll?error=Fecha+de+contrato+invalida',status_code=303)
-        if desired_start!=profile.contract_start or (branch_id.strip().isdigit() and int(branch_id)!=employee.branch_id):
-            return RedirectResponse('/payroll?error=El+trabajador+ya+tiene+prestaciones+contabilizadas.+La+fecha+de+ingreso+y+sucursal+requieren+regularizacion+contable',status_code=303)
+        if desired != (profile.contract_start or employee.hire_date):
+            return RedirectResponse(f'/payroll/employees/{employee_id}/start-date?error=Usa+esta+correccion+para+comparar+y+recalcular+las+prestaciones',status_code=303)
+    if _linked_accounting() and db.query(PayrollBenefitAccrual.id).filter_by(employee_id=employee_id).first():
+        if branch_id.strip().isdigit() and int(branch_id)!=employee.branch_id:
+            return RedirectResponse('/payroll?error=La+sucursal+del+trabajador+con+prestaciones+contabilizadas+requiere+regularizacion+contable',status_code=303)
     if not monthly_salary.is_finite() or monthly_salary<0:
         return RedirectResponse('/payroll?error=Salario+invalido',status_code=303)
     profile.monthly_salary = _money(monthly_salary)
     try:
-        profile.contract_start = date.fromisoformat(contract_start) if contract_start.strip() else None
+        if not _linked_accounting():
+            profile.contract_start = date.fromisoformat(contract_start) if contract_start.strip() else None
     except ValueError:
         return RedirectResponse("/payroll?error=Fecha+de+contrato+invalida", status_code=303)
     profile.pay_frequency = "QUINCENAL"
@@ -1137,7 +1141,7 @@ def _build_employee_kardex(db: Session, period: PayrollPeriod, calculation: Payr
     }
 
 
-def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, Optional[str]]:
+def _calculate_period_records(db: Session, period: PayrollPeriod, *, employee_id=None, commit=True) -> tuple[int, Optional[str]]:
     """Actualiza el acumulado de una planilla abierta al corte del día actual."""
     if _linked_accounting():
         payroll_ledger.lock(db)
@@ -1164,6 +1168,8 @@ def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, 
     )
     if period.branch_id:
         profiles_query = profiles_query.filter(HREmployee.branch_id == period.branch_id)
+    if employee_id is not None:
+        profiles_query = profiles_query.filter(PayrollEmployeeProfile.employee_id == employee_id)
     profiles = profiles_query.all()
     if not profiles:
         branch_name = period.branch.name if period.branch else "seleccionada"
@@ -1173,7 +1179,8 @@ def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, 
         hourly = salary / Decimal("240")
         _attendance_days, overtime_minutes, holiday_days, late_minutes = _employee_time(db, profile.employee_id, period, policy, holidays)
         overtime_pay = _money((Decimal(overtime_minutes) / 60) * hourly * 2)
-        cutoff = min(date.today(), period.date_to)
+        from . import web
+        cutoff = min(web.local_today() if _linked_accounting() else date.today(), period.date_to)
         employment_start = period.date_from
         employee_start = profile.contract_start or profile.employee.hire_date
         if employee_start:
@@ -1270,7 +1277,10 @@ def _calculate_period_records(db: Session, period: PayrollPeriod) -> tuple[int, 
         total_deductions += manual_deductions
         calc.gross_pay, calc.total_deductions, calc.net_pay = gross, _money(total_deductions), _money(gross - total_deductions)
         calc.calculated_at = datetime.utcnow()
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return len(profiles), None
 
 

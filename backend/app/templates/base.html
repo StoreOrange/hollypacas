@@ -874,7 +874,7 @@
           window.history.replaceState({}, document.title, next);
         }
         if (!window.$ || !$.fn.datepicker) return;
-        const inputs = document.querySelectorAll('input[type="date"], input.datepicker');
+        const inputs = document.querySelectorAll('input[type="date"]:not([data-native-date]), input.datepicker:not([data-native-date])');
         inputs.forEach((input) => {
           if (input.type === "date") {
             input.type = "text";
