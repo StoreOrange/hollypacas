@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import uuid4
 from urllib.parse import quote_plus
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import or_
 from ..core.deps import get_db
 from ..core import payroll_benefits as benefits, accounting_payroll as ledger
@@ -49,7 +49,7 @@ def home(request:Request, employee_id:str='', db=Depends(get_db)):
         adjustments.setdefault(adjustment.movement_id,[]).append(adjustment.settlement_id)
     history=db.query(PayrollVacationMovement).join(HREmployee, HREmployee.id==PayrollVacationMovement.employee_id)
     if scope:history=history.filter(HREmployee.branch_id.in_(scope))
-    if employee_id.isdigit():history=history.filter_by(employee_id=int(employee_id))
+    if employee_id.isdigit():history=history.filter(PayrollVacationMovement.employee_id==int(employee_id))
     defaults={}
     for field,code,name in [('expense_id','6209','Prestaciones Laborales'),('vacation_payable_id','21131','Vacaciones por Pagar'),('bonus_payable_id','21132','Aguinaldo por Pagar'),('seniority_payable_id','21133','Provisión de Indemnización')]:
         account=db.query(CuentaContable).filter_by(codigo=code,nombre=name,activo=True).first()
@@ -113,3 +113,43 @@ def void(movement_id:int,request:Request,reason:str=Form(...),db=Depends(get_db)
         benefits.void_movement(db,move,reason,user.email)
         db.commit();return response('Movimiento anulado y saldo restaurado. El pago anulado registra el reintegro correspondiente')
     except (ValueError,HTTPException) as exc:db.rollback();return response(exc,True)
+
+
+def _pdf_response(db,moves,individual=False):
+    from . import web
+    from ..models.sales import AccountingEntry,ReciboCaja
+    from ..models.payroll import PayrollVacationReversal
+    from ..core.payroll_vacation_pdf import build
+    ids=[m.id for m in moves]
+    entries={e.id:e for e in db.query(AccountingEntry).filter(AccountingEntry.id.in_([m.accounting_entry_id for m in moves if m.accounting_entry_id])).all()} if individual else {}
+    receipts={r.id:r for r in db.query(ReciboCaja).filter(ReciboCaja.id.in_([m.cash_receipt_id for m in moves if m.cash_receipt_id])).all()} if individual else {}
+    adjustments={}
+    if individual:
+        for adjustment in db.query(PayrollVacationDraftAdjustment).filter(PayrollVacationDraftAdjustment.movement_id.in_(ids)).all():adjustments.setdefault(adjustment.movement_id,[]).append(adjustment)
+    reversals={r.movement_id:r for r in db.query(PayrollVacationReversal).filter(PayrollVacationReversal.movement_id.in_(ids)).all()} if individual else {}
+    data=build(moves,web._company_profile_payload(db),web.local_now_naive(),entries,receipts,adjustments,reversals,individual)
+    filename=f'vacaciones_VAC-{moves[0].id:06d}.pdf' if individual else 'historial_vacaciones.pdf'
+    return Response(data,media_type='application/pdf',headers={'Content-Disposition':f'inline; filename="{filename}"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
+
+
+@router.get('/payroll/vacations/history.pdf')
+def history_pdf(request:Request,employee_id:str='',db=Depends(get_db)):
+    from . import web
+    user=access(request,db);scope=web._user_scoped_branch_ids(db,user)
+    query=db.query(PayrollVacationMovement).join(HREmployee,HREmployee.id==PayrollVacationMovement.employee_id)
+    if scope:query=query.filter(HREmployee.branch_id.in_(scope))
+    if employee_id:
+        if not employee_id.isdigit():raise HTTPException(400,'Trabajador inválido')
+        query=query.filter(PayrollVacationMovement.employee_id==int(employee_id))
+    moves=query.order_by(PayrollVacationMovement.effective_date.desc(),PayrollVacationMovement.id.desc()).limit(1001).all()
+    if len(moves)>1000:raise HTTPException(400,'Filtra por trabajador para generar un reporte de hasta 1,000 movimientos')
+    return _pdf_response(db,moves)
+
+
+@router.get('/payroll/vacations/{movement_id}/pdf')
+def movement_pdf(movement_id:int,request:Request,db=Depends(get_db)):
+    user=access(request,db)
+    move=db.get(PayrollVacationMovement,movement_id)
+    if not move:raise HTTPException(404,'Movimiento de vacaciones no encontrado')
+    _check_accounting_branch(db,user,move.employee)
+    return _pdf_response(db,[move],individual=True)
