@@ -37,3 +37,12 @@ Las tres tablas nuevas son `inventory_requests`, `inventory_request_items` e `in
 Pruebas unitarias: `python -m unittest tests.test_inventory_requests`.
 UI aislada: `python tests/browser_inventory_requests.py` (Firefox móvil y escritorio).
 Concurrencia: `python tests/postgres_inventory_requests.py`, exclusivamente en PostgreSQL local con esquemas temporales eliminados al terminar; nunca ejecutar pruebas de escritura contra inventario productivo.
+
+
+## Interfaz móvil (noviembre 2026)
+
+La vista móvil tiene navegación propia, origen/destino destacados, datos de usuario/fecha compactos y selector de bodega/vendedor plegable. Al preparar una solicitud se priorizan los productos; los filtros de estado reaparecen al cerrar el formulario. La búsqueda distingue existencias locales y disponibles en el origen. Cada producto tiene controles de cantidad entera con +/−, eliminación y aviso cuando supera el saldo consultado.
+
+La barra inferior muestra unidades y permite revisar una solicitud con productos. Una hoja de confirmación presenta bodega, vendedor, productos, cantidades y observaciones antes del envío definitivo. Volver a editar conserva los datos. La barra se oculta cuando el teclado reduce el área visible, y se respetan las áreas seguras del teléfono. Los detalles agrupan correo e historial; un error de correo se despliega para poder reintentarlo. Los cambios son de interfaz: se mantienen los endpoints, permisos y validaciones de inventario.
+
+Pruebas de navegador en anchos 320, 360, 390 y 430 px, más escritorio: cantidades, avisos de saldo, revisión/edición/confirmación, solicitud pendiente, autorización y comprobante. Todos los movimientos de prueba se realizan en SQLite aislado, con correo simulado.
