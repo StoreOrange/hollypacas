@@ -22750,25 +22750,16 @@ def _depositos_report_query(
 def _kardex_report_filters(request: Request):
     start_raw = request.query_params.get("start_date")
     end_raw = request.query_params.get("end_date")
-    bodega_id = request.query_params.get("bodega_id")
+    bodega_id = request.query_params.get("bodega_id") or "all"
     producto_q = (request.query_params.get("producto") or "").strip()
-
     today = local_today()
-    start_date = today
-    end_date = today
-    if start_raw or end_raw:
-        try:
-            if start_raw:
-                start_date = date.fromisoformat(start_raw)
-            if end_raw:
-                end_date = date.fromisoformat(end_raw)
-        except ValueError:
-            start_date = today
-            end_date = today
-
-    if not bodega_id:
-        bodega_id = "all"
-
+    try:
+        end_date = date.fromisoformat(end_raw) if end_raw else today
+        start_date = date.fromisoformat(start_raw) if start_raw else end_date
+    except ValueError:
+        raise HTTPException(400, 'Fecha inválida: utiliza el formato AAAA-MM-DD.')
+    if start_date > end_date:
+        raise HTTPException(400, 'La fecha Desde no puede ser posterior a Hasta.')
     return start_date, end_date, bodega_id, producto_q
 
 
@@ -25836,6 +25827,24 @@ def _kardex_selection(request, db, user):
         product = db.get(Producto, product_id)
         if not product: raise HTTPException(404, 'Producto no encontrado')
         selected = f'{product.cod_producto} · {product.descripcion} · Todas las tallas y colores'
+    if request.query_params.get('history') == '1':
+        first_dates = []
+        scope = [int(bodega_id)] if str(bodega_id).isdigit() else list(ids)
+        for document, item, link in ((IngresoInventario, IngresoItem, IngresoItem.ingreso_id),
+                                    (EgresoInventario, EgresoItem, EgresoItem.egreso_id),
+                                    (VentaFactura, VentaItem, VentaItem.factura_id)):
+            query = db.query(func.min(document.fecha)).join(item, link == document.id).join(Producto, Producto.id == item.producto_id).filter(document.bodega_id.in_(scope))
+            if document is VentaFactura:
+                query = query.filter(VentaFactura.estado != 'ANULADA')
+            if product_id:
+                query = query.filter(item.producto_id == product_id)
+            elif text:
+                like = f'%{text.lower()}%'
+                query = query.filter(or_(func.lower(Producto.cod_producto).like(like), func.lower(Producto.descripcion).like(like)))
+            first = query.scalar()
+            if first:
+                first_dates.append(first.date() if isinstance(first, datetime) else first)
+        start = min(first_dates + [end])
     rows, summary = _build_kardex_movements(db, start, end, bodega_id, text,
         allowed_bodega_ids=ids, producto_id=product_id, variante_id=variant_id)
     if variant_id:

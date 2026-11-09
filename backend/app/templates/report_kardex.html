@@ -72,12 +72,12 @@
       <div class="odoo-card">
         <form id="kardex-filters" class="row g-2 align-items-end" method="get" action="/reports/kardex">
           <div class="col-12 col-md-3">
-            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde</label>
-            <input name="start_date" type="date" class="form-control form-control-sm" value="{{ start_date }}">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Desde · fecha del documento</label>
+            <input name="start_date" type="date" required class="form-control form-control-sm" value="{{ start_date }}">
           </div>
           <div class="col-12 col-md-3">
-            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta</label>
-            <input name="end_date" type="date" class="form-control form-control-sm" value="{{ end_date }}">
+            <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Hasta · incluye todo el día</label>
+            <input name="end_date" type="date" required class="form-control form-control-sm" value="{{ end_date }}">
           </div>
           <div class="col-12 col-md-3">
             <label class="form-label text-xs uppercase tracking-[0.2em] text-slate">Bodega</label>
@@ -111,6 +111,7 @@
               <i class="bi bi-file-earmark-pdf-fill"></i>
               PDF
             </a>
+            <a class="btn btn-outline-primary btn-sm" href="{{ request.url.include_query_params(history='1') }}">Historial completo del producto y bodega</a>
             <a class="btn btn-outline-secondary btn-sm" href="/reports/kardex">
               <i class="bi bi-eraser"></i>
               Hoy
@@ -147,7 +148,21 @@
               </tr>
             </thead>
             <tbody>
+              {% set opening = namespace(seen=[]) %}
               {% for row in rows %}
+              {% set ledger_key = (row.producto_id, row.bodega_id) %}
+              {% if ledger_key not in opening.seen %}
+              {% set opening.seen = opening.seen + [ledger_key] %}
+              <tr class="table-info" data-opening-balance="true">
+                <td>{{ start_date }}</td><td class="fw-semibold">Saldo anterior</td>
+                <td>Acumulado antes del {{ start_date }}</td><td>{{ row.branch }} / {{ row.bodega }}</td>
+                <td>{{ row.codigo }} - {{ row.descripcion }}</td>
+                <td class="text-end">{{ "%.2f"|format(row.saldo_anterior) }}</td>
+                <td class="text-end">—</td><td class="text-end">—</td>
+                <td class="text-end fw-semibold">{{ "%.2f"|format(row.saldo_anterior) }}</td>
+                <td>—</td><td>—</td><td>—</td>
+              </tr>
+              {% endif %}
               <tr data-movement-pdf="{{ row.pdf_url }}" title="Doble clic para abrir el PDF del movimiento">
                 <td>
                   {% if row.tipo_base == "Ingreso" %}

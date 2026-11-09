@@ -50,6 +50,16 @@ class KardexTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as error:w._kardex_selection(self.request('bodega_id=2'),self.db,self.member)
         self.assertEqual(error.exception.status_code,403)
 
+    def test_full_history_preserves_scope_and_closing_balance(self):
+        query = 'producto_id=1&bodega_id=1'
+        filtered = w._kardex_selection(self.request(query), self.db, self.member)
+        complete = w._kardex_selection(self.request(query + '&history=1'), self.db, self.member)
+        self.assertEqual(complete[0], date(2026, 10, 1))
+        self.assertEqual(complete[6]['saldo_inicial'], 0)
+        self.assertEqual(complete[6]['saldo_final'], filtered[6]['saldo_final'])
+        self.assertEqual({r['bodega_id'] for r in complete[5]}, {1})
+        self.assertEqual({r['producto_id'] for r in complete[5]}, {1})
+
     def test_exact_product_and_variant_filters_do_not_match_partial_codes(self):
         result=w._kardex_selection(self.request('producto_id=2&producto=ZAP-1'),self.db,self.admin)
         self.assertEqual(result[5],[])
@@ -154,6 +164,11 @@ class KardexTests(unittest.TestCase):
     def test_report_and_export_keep_the_same_filters(self):
         request=self.request('variante_id=1&bodega_id=2')
         response=w.report_kardex(request,self.db,self.admin)
+        html = response.body.decode()
+        self.assertEqual(html.count('data-opening-balance="true"'), 1)
+        self.assertIn('Saldo anterior', html)
+        self.assertIn('20.00', html)
+        self.assertLess(html.index('data-opening-balance="true"'), html.index('data-movement-pdf='))
         self.assertIn('kardex-item-modal',response.body.decode());self.assertIn('variante_id=1',response.body.decode())
         with patch.object(w,'_company_profile_payload',return_value={}):pdf=w.report_kardex_export(request,self.db,self.admin)
         self.assertEqual(pdf.media_type,'application/pdf')

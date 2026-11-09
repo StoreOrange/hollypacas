@@ -5,6 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database import Base
 from app.routers import web as w
+from starlette.requests import Request
+from fastapi import HTTPException
 
 
 class KardexConsolidatedTests(unittest.TestCase):
@@ -90,6 +92,29 @@ class KardexConsolidatedTests(unittest.TestCase):
         self.assertEqual(rows[0]['registrado_en'], datetime(2026, 10, 12, 8))
         self.assertEqual([r['saldo'] for r in rows], [2, -1, 1])
         self.assertEqual(summary['saldo_final'], 3)
+
+    def test_range_does_not_change_same_movement_balance(self):
+        receipt = self.db.get(w.IngresoInventario, 1)
+        receipt.fecha = date(2026, 10, 10)
+        self.db.add(w.VentaFactura(id=1, numero='RANGE', bodega_id=1,
+            fecha=datetime(2026, 10, 12, 9), moneda='CS', estado='ACTIVA'))
+        self.db.add(w.VentaItem(factura_id=1, producto_id=1, cantidad=1))
+        self.db.commit()
+        full, _ = w._build_kardex_movements(self.db, date(2026, 10, 1), self.today, '1', '')
+        short, summary = self.report('1')
+        expected = next(r for r in full if r['source_kind'] == 'venta')
+        self.assertEqual(short[0]['saldo_anterior'], expected['saldo_anterior'])
+        self.assertEqual(short[0]['saldo'], expected['saldo'])
+        self.assertEqual(summary['saldo_inicial'], 2)
+
+    def test_invalid_ranges_are_rejected_instead_of_silently_using_today(self):
+        for query in ('start_date=incorrecta', 'start_date=2026-10-20&end_date=2026-10-01'):
+            with self.assertRaises(HTTPException) as exc:
+                w._kardex_report_filters(Request({'type': 'http', 'query_string': query.encode()}))
+            self.assertEqual(exc.exception.status_code, 400)
+        start, end, _, _ = w._kardex_report_filters(Request({'type': 'http', 'query_string': b'end_date=2026-08-29'}))
+        self.assertEqual(start, date(2026, 8, 29))
+        self.assertEqual(start, end)
 
     def test_transfer_route_and_direct_pdf_for_both_warehouses(self):
         self.db.add(w.EgresoTipo(id=1, nombre='Traslado entre bodegas'))
