@@ -23678,6 +23678,7 @@ def _build_kardex_movements(
         movimientos.append(
             {
                 "fecha": ingreso.fecha,
+                "registro_utc": ingreso.created_at,
                 "tipo": tipo_label,
                 "tipo_base": "Ingreso",
                 "concepto": concepto or "-",
@@ -23730,6 +23731,7 @@ def _build_kardex_movements(
         movimientos.append(
             {
                 "fecha": egreso.fecha,
+                "registro_utc": egreso.created_at,
                 "tipo": tipo_label,
                 "tipo_base": "Egreso",
                 "concepto": concepto or "-",
@@ -23783,6 +23785,7 @@ def _build_kardex_movements(
         movimientos.append(
             {
                 "fecha": fecha_mov,
+                "registro_utc": factura.created_at,
                 "tipo": "Venta",
                 "tipo_base": "Venta",
                 "concepto": "Venta",
@@ -23814,7 +23817,7 @@ def _build_kardex_movements(
                 opening_balances[key] = opening_balances.get(key, Decimal('0')) + quantity
                 continue
             warehouse = receipt.bodega
-            movimientos.append(dict(fecha=receipt.fecha, tipo='Ingreso - Traslado entre bodegas',
+            movimientos.append(dict(fecha=receipt.fecha, registro_utc=receipt.created_at, tipo='Ingreso - Traslado entre bodegas',
                 tipo_base='Ingreso', concepto=f'Traslado recibido · Egreso #{legacy["source_id"]}',
                 source_kind='ingreso', source_id=receipt.id,
                 source_url=f'/inventory/ingresos?start_date={receipt.fecha}&end_date={receipt.fecha}&focus_ingreso_id={receipt.id}&focus_producto_id={variant.producto_id}',
@@ -23828,17 +23831,10 @@ def _build_kardex_movements(
     from ..core.kardex_transfers import enrich_movement_documents
     enrich_movement_documents(db, movimientos)
 
-    movement_priority = {"Ingreso": 0, "Venta": 1, "Egreso": 2}
-    movimientos.sort(
-        key=lambda row: (
-            row["fecha"],
-            int(row.get("branch_id") or 0),
-            int(row.get("bodega_id") or 0),
-            int(row.get("producto_id") or 0),
-            movement_priority.get(str(row.get("tipo_base") or ""), 9),
-            int(row.get("source_id") or 0),
-        )
-    )
+    # Database-generated created_at values are UTC, unlike document dates.
+    # Sort before calculating running balances; never group by warehouse first.
+    from ..core.kardex_chronology import prepare_chronology
+    prepare_chronology(movimientos)
 
     saldos = dict(opening_balances)
     rows = []

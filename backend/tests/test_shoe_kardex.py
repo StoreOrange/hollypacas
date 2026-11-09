@@ -183,7 +183,7 @@ class KardexTests(unittest.TestCase):
         self.assertEqual(sheet['D5'].value,float(expected[6]['saldo_final']))
         self.assertEqual(sheet['K9'].data_type,'n')
         self.assertEqual(sheet['A9'].value.date(),date(2026,10,19))
-        self.assertEqual(sheet.auto_filter.ref,'A8:N9')
+        self.assertEqual(sheet.auto_filter.ref,'A8:O9')
         self.assertEqual(sheet.freeze_panes,'H9')
 
     def test_excel_empty_report_and_text_are_safe(self):

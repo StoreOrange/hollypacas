@@ -54,6 +54,21 @@ class KardexConsolidatedTests(unittest.TestCase):
         self.assertEqual(summary['saldo_inicial'], 4)
         self.assertEqual(summary['saldo_final'], 4)
 
+    def test_registration_time_precedes_type_and_document_id(self):
+        self.db.get(w.IngresoInventario, 1).created_at = datetime(2026, 10, 12, 21, 0, 0, 20)
+        self.db.get(w.IngresoInventario, 2).created_at = datetime(2026, 10, 12, 14)
+        self.db.add(w.EgresoTipo(id=1, nombre='Salida'))
+        self.db.add(w.EgresoInventario(id=8, tipo_id=1, bodega_id=1, fecha=self.today,
+            moneda='CS', created_at=datetime(2026, 10, 12, 21, 0, 0, 10)))
+        self.db.add(w.EgresoItem(egreso_id=8, producto_id=1, cantidad=1))
+        self.db.commit()
+        rows, summary = self.report()
+        self.assertEqual([(r['source_kind'], r['source_id']) for r in rows],
+            [('ingreso', 2), ('egreso', 8), ('ingreso', 1)])
+        self.assertEqual(rows[0]['registrado_en'], datetime(2026, 10, 12, 8))
+        self.assertEqual([r['saldo'] for r in rows], [2, -1, 1])
+        self.assertEqual(summary['saldo_final'], 3)
+
     def test_transfer_route_and_direct_pdf_for_both_warehouses(self):
         self.db.add(w.EgresoTipo(id=1, nombre='Traslado entre bodegas'))
         self.db.add(w.IngresoTipo(id=2, nombre='Traslado entre bodegas'))

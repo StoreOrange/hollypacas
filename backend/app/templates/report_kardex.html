@@ -148,7 +148,7 @@
                   {% elif row.tipo_base in ["Egreso", "Venta"] %}
                   <i class="bi bi-arrow-down-circle-fill text-danger me-1"></i>
                   {% endif %}
-                  {{ row.fecha }}
+                  {{ row.fecha }}<small class="d-block text-muted">{% if row.registrado_en %}Registro: {{ row.registrado_en.strftime("%d/%m/%Y %H:%M:%S") }} · Nicaragua{% else %}Hora de registro no disponible{% endif %}</small>
                 </td>
                 <td>
                   {% if row.source_url %}

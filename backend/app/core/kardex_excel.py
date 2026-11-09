@@ -22,10 +22,10 @@ def build_kardex_excel(start, end, warehouse, product, rows, summary):
     sheet.append(['Los saldos de cada movimiento corresponden a su producto y bodega. Costos en córdobas (C$).'])
     sheet.merge_cells('A7:N7')
     sheet['A7'].font = Font(italic=True, color='595959')
-    sheet.append(['Fecha', 'Tipo', 'Concepto', 'Sucursal', 'Bodega', 'Código', 'Producto', 'Saldo anterior', 'Entradas', 'Salidas', 'Saldo', 'Costo unitario C$', 'Costo total C$', 'Vendedor'])
+    sheet.append(['Fecha', 'Tipo', 'Concepto', 'Sucursal', 'Bodega', 'Código', 'Producto', 'Saldo anterior', 'Entradas', 'Salidas', 'Saldo', 'Costo unitario C$', 'Costo total C$', 'Vendedor', 'Registro · Nicaragua'])
     for row in rows:
         sheet.append([row.get('fecha'), row.get('tipo'), row.get('concepto'), row.get('branch'), row.get('bodega'), row.get('codigo'), row.get('descripcion'),
-            *[float(row.get(key) or 0) for key in ('saldo_anterior', 'entrada', 'salida', 'saldo', 'costo_unit_cs', 'costo_total_cs')], row.get('vendedor') or '-'])
+            *[float(row.get(key) or 0) for key in ('saldo_anterior', 'entrada', 'salida', 'saldo', 'costo_unit_cs', 'costo_total_cs')], row.get('vendedor') or '-', row.get('registrado_en')])
     # Códigos, conceptos y nombres son texto, incluso si comienzan por '='.
     for row in sheet:
         for cell in row:
@@ -38,12 +38,13 @@ def build_kardex_excel(start, end, warehouse, product, rows, summary):
     sheet.row_dimensions[8].height = 32
     for row in sheet.iter_rows(min_row=9):
         row[0].number_format = 'dd/mm/yyyy'
+        row[14].number_format = 'dd/mm/yyyy hh:mm:ss'
         for cell in row[7:13]:
             cell.number_format = '#,##0.00'
-    for index, width in enumerate((13, 23, 38, 22, 24, 20, 48, 18, 16, 16, 18, 20, 20, 25), start=1):
+    for index, width in enumerate((13, 23, 38, 22, 24, 20, 48, 18, 16, 16, 18, 20, 20, 25, 25), start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.freeze_panes = 'H9'
-    sheet.auto_filter.ref = f'A8:N{max(8, sheet.max_row)}'
+    sheet.auto_filter.ref = f'A8:O{max(8, sheet.max_row)}'
     sheet.sheet_view.showGridLines = False
     sheet.print_title_rows = '1:8'
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
