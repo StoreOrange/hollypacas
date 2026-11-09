@@ -148,21 +148,18 @@
               </tr>
             </thead>
             <tbody>
-              {% set opening = namespace(seen=[]) %}
-              {% for row in rows %}
-              {% set ledger_key = (row.producto_id, row.bodega_id) %}
-              {% if ledger_key not in opening.seen %}
-              {% set opening.seen = opening.seen + [ledger_key] %}
+              {% for balance in resumen.saldos_por_bodega %}
               <tr class="table-info" data-opening-balance="true">
                 <td>{{ start_date }}</td><td class="fw-semibold">Saldo anterior</td>
-                <td>Acumulado antes del {{ start_date }}</td><td>{{ row.branch }} / {{ row.bodega }}</td>
-                <td>{{ row.codigo }} - {{ row.descripcion }}</td>
-                <td class="text-end">{{ "%.2f"|format(row.saldo_anterior) }}</td>
+                <td>Acumulado antes del {{ start_date }}</td><td>{{ balance.bodega }}</td>
+                <td>{{ balance.codigo }} - {{ balance.descripcion }}</td>
+                <td class="text-end">{{ "%.2f"|format(balance.inicial) }}</td>
                 <td class="text-end">—</td><td class="text-end">—</td>
-                <td class="text-end fw-semibold">{{ "%.2f"|format(row.saldo_anterior) }}</td>
+                <td class="text-end fw-semibold">{{ "%.2f"|format(balance.inicial) }}</td>
                 <td>—</td><td>—</td><td>—</td>
               </tr>
-              {% endif %}
+              {% endfor %}
+              {% for row in rows %}
               <tr data-movement-pdf="{{ row.pdf_url }}" title="Doble clic para abrir el PDF del movimiento">
                 <td>
                   {% if row.tipo_base == "Ingreso" %}
@@ -193,7 +190,7 @@
               {% endfor %}
               {% if rows|length == 0 %}
               <tr>
-                <td colspan="12" class="text-center text-slate py-3">Sin resultados.</td>
+                <td colspan="12" class="text-center text-slate py-3">Sin movimientos en el período. El saldo anterior se conserva.</td>
               </tr>
               {% endif %}
             </tbody>

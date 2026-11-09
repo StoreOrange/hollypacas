@@ -60,6 +60,14 @@ class KardexTests(unittest.TestCase):
         self.assertEqual({r['bodega_id'] for r in complete[5]}, {1})
         self.assertEqual({r['producto_id'] for r in complete[5]}, {1})
 
+    def test_opening_row_remains_visible_without_period_movements(self):
+        request = self.request('producto_id=1&bodega_id=2&start_date=2026-10-20&end_date=2026-10-20')
+        response = w.report_kardex(request, self.db, self.admin)
+        html = response.body.decode()
+        self.assertEqual(html.count('data-opening-balance="true"'), 1)
+        self.assertIn('23.00', html)
+        self.assertNotIn('<tr data-movement-pdf=', html)
+
     def test_exact_product_and_variant_filters_do_not_match_partial_codes(self):
         result=w._kardex_selection(self.request('producto_id=2&producto=ZAP-1'),self.db,self.admin)
         self.assertEqual(result[5],[])
