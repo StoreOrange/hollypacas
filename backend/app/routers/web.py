@@ -23822,7 +23822,7 @@ def _build_kardex_movements(
     from ..core.kardex_transfers import enrich_movement_documents
     enrich_movement_documents(db, movimientos)
 
-    # Database-generated created_at values are UTC, unlike document dates.
+    # Inventory created_at defaults to UTC; POS explicitly stores local time.
     # Keep the document date consistent with period filters/opening balances.
     # Within each day use registration order before calculating running balances.
     from ..core.kardex_chronology import prepare_chronology

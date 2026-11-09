@@ -8,7 +8,10 @@ def prepare_chronology(movements):
     for row in movements:
         stamp = row.get('registro_utc')
         if stamp is not None:
-            stamp = stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp
+            # POS explicitly writes local_now_naive(); inventory documents use
+            # the database UTC default. Applying UTC to both shifts sales by 6h.
+            origin = local if row.get('source_kind') == 'venta' else timezone.utc
+            stamp = stamp.replace(tzinfo=origin) if stamp.tzinfo is None else stamp
             row['registrado_en'] = stamp.astimezone(local).replace(tzinfo=None)
         else:
             row['registrado_en'] = None

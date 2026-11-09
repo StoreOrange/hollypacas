@@ -107,6 +107,21 @@ class KardexConsolidatedTests(unittest.TestCase):
         self.assertEqual(short[0]['saldo'], expected['saldo'])
         self.assertEqual(summary['saldo_inicial'], 2)
 
+    def test_local_pos_sale_follows_utc_inventory_receipt_without_false_negative(self):
+        receipt = self.db.get(w.IngresoInventario, 1)
+        receipt.created_at = datetime(2026, 10, 12, 22, 10, 50)
+        self.db.add(w.VentaFactura(id=1, numero='TZ', bodega_id=1,
+            fecha=datetime(2026, 10, 12, 16, 38),
+            created_at=datetime(2026, 10, 12, 16, 38, 53), moneda='CS', estado='ACTIVA'))
+        self.db.add(w.VentaItem(factura_id=1, producto_id=1, cantidad=1))
+        self.db.commit()
+        rows, summary = self.report('1')
+        self.assertEqual([r['source_kind'] for r in rows], ['ingreso', 'venta'])
+        self.assertEqual(rows[0]['registrado_en'], datetime(2026, 10, 12, 16, 10, 50))
+        self.assertEqual(rows[1]['registrado_en'], datetime(2026, 10, 12, 16, 38, 53))
+        self.assertEqual([r['saldo'] for r in rows], [2, 1])
+        self.assertEqual(summary['movimientos_negativos'], 0)
+
     def test_invalid_ranges_are_rejected_instead_of_silently_using_today(self):
         for query in ('start_date=incorrecta', 'start_date=2026-10-20&end_date=2026-10-01'):
             with self.assertRaises(HTTPException) as exc:
