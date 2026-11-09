@@ -52,6 +52,20 @@ def build_kardex_excel(start, end, warehouse, product, rows, summary):
     sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
     sheet.page_setup.fitToWidth = 1
     sheet.page_setup.fitToHeight = 0
+    balances = workbook.create_sheet('Saldos iniciales')
+    balances.append(['Producto', 'Descripción', 'Bodega', 'Saldo inicial', 'Saldo final'])
+    for row in summary.get('saldos_por_bodega', []):
+        balances.append([row['codigo'], row['descripcion'], row['bodega'], float(row['inicial']), float(row['final'])])
+    for row in balances:
+        for cell in row:
+            if isinstance(cell.value, str):
+                cell.data_type = 's'
+    for index, width in enumerate((22, 48, 25, 20, 20), 1):
+        balances.column_dimensions[get_column_letter(index)].width = width
+    for cell in balances[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill('solid', fgColor='17365D')
+    balances.freeze_panes = 'A2'
     output = BytesIO()
     workbook.save(output)
     output.seek(0)

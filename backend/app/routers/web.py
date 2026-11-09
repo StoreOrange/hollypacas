@@ -23832,7 +23832,8 @@ def _build_kardex_movements(
     enrich_movement_documents(db, movimientos)
 
     # Database-generated created_at values are UTC, unlike document dates.
-    # Sort before calculating running balances; never group by warehouse first.
+    # Keep the document date consistent with period filters/opening balances.
+    # Within each day use registration order before calculating running balances.
     from ..core.kardex_chronology import prepare_chronology
     prepare_chronology(movimientos)
 
@@ -23860,7 +23861,23 @@ def _build_kardex_movements(
             }
         )
 
+    # Reconcile each independent ledger, including stock with no period activity.
+    ledger_keys = set(opening_balances) | set(saldos)
+    products = {p.id: p for p in db.query(Producto).filter(Producto.id.in_({k[0] for k in ledger_keys})).all()}
+    warehouses = {b.id: b for b in db.query(Bodega).filter(Bodega.id.in_({k[1] for k in ledger_keys})).all()}
+    ledger_summaries = []
+    for pid, wid in sorted(ledger_keys):
+        product, warehouse = products.get(pid), warehouses.get(wid)
+        ledger_summaries.append(dict(producto_id=pid, bodega_id=wid,
+            codigo=product.cod_producto if product else str(pid),
+            descripcion=product.descripcion if product else '',
+            bodega=warehouse.name if warehouse else str(wid),
+            inicial=opening_balances.get((pid, wid), Decimal('0')),
+            final=saldos.get((pid, wid), Decimal('0'))))
+
     resumen = {
+        "saldos_por_bodega": ledger_summaries,
+        "movimientos_negativos": sum(r["saldo"] < 0 for r in rows),
         "movimientos": len(rows),
         "dias": (end_date - start_date).days + 1,
         # Each running balance belongs to one product/warehouse. The report

@@ -53,6 +53,28 @@ class KardexConsolidatedTests(unittest.TestCase):
         self.assertEqual(rows, [])
         self.assertEqual(summary['saldo_inicial'], 4)
         self.assertEqual(summary['saldo_final'], 4)
+        self.assertEqual([r['inicial'] for r in summary['saldos_por_bodega']], [2, 2])
+
+    def test_backdated_receipt_keeps_document_day_and_opening_balance(self):
+        receipt = self.db.get(w.IngresoInventario, 1)
+        receipt.fecha = date(2026, 10, 11)
+        receipt.created_at = datetime(2026, 10, 13, 18)
+        self.db.get(w.IngresoInventario, 2).created_at = datetime(2026, 10, 12, 14)
+        self.db.add(w.VentaFactura(id=1, numero='BACKDATE', bodega_id=1,
+            fecha=datetime(2026, 10, 12, 9), created_at=datetime(2026, 10, 12, 15),
+            moneda='CS', estado='ACTIVA'))
+        self.db.add(w.VentaItem(factura_id=1, producto_id=1, cantidad=1))
+        self.db.commit()
+        rows, summary = w._build_kardex_movements(self.db, date(2026, 10, 11),
+            self.today, 'all', 'HL-SHORTCAMS')
+        self.assertEqual(rows[0]['source_id'], 1)
+        self.assertEqual(rows[0]['source_kind'], 'ingreso')
+        self.assertTrue(all(r['saldo'] >= 0 for r in rows))
+        daily, daily_summary = self.report('1')
+        self.assertEqual(daily_summary['saldo_inicial'], 2)
+        self.assertEqual(daily[0]['saldo_anterior'], 2)
+        self.assertEqual(daily[0]['saldo'], 1)
+        self.assertEqual(summary['saldo_final'], 3)
 
     def test_registration_time_precedes_type_and_document_id(self):
         self.db.get(w.IngresoInventario, 1).created_at = datetime(2026, 10, 12, 21, 0, 0, 20)

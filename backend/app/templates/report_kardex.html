@@ -121,6 +121,13 @@
 
       <div class="odoo-card text-sm">
         <div class="odoo-section-title mb-3 text-base">Movimientos detallados</div>
+        <p class="text-secondary small">Orden: fecha del documento y, dentro de cada día, registro del servidor. El saldo inicial incluye todos los movimientos anteriores al {{ start_date }}. Cada producto y bodega mantiene su propio saldo.</p>
+        <details class="mb-3" open><summary class="fw-semibold">Saldos iniciales y finales por producto y bodega</summary>
+          <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Producto</th><th>Bodega</th><th class="text-end">Saldo inicial</th><th class="text-end">Saldo final</th></tr></thead><tbody>
+          {% for balance in resumen.saldos_por_bodega %}<tr><td>{{ balance.codigo }} · {{ balance.descripcion }}</td><td>{{ balance.bodega }}</td><td class="text-end">{{ "%.2f"|format(balance.inicial) }}</td><td class="text-end">{{ "%.2f"|format(balance.final) }}</td></tr>{% endfor %}
+          </tbody></table></div>
+        </details>
+        {% if resumen.movimientos_negativos %}<p class="alert alert-warning" role="status">{{ resumen.movimientos_negativos }} movimientos tienen saldo histórico negativo en su producto y bodega. El saldo refleja los documentos registrados; requiere revisar ingresos, salidas y fechas de ese producto.</p>{% endif %}
         <div class="table-responsive">
           <table class="table table-sm table-hover odoo-table text-sm align-middle">
             <thead class="odoo-table-head text-xs uppercase tracking-[0.15em]">

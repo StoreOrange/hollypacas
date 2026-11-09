@@ -1,4 +1,4 @@
-"""Read-only ordering using server registration instants, including microseconds."""
+"""Document-date ledger with registration order within each accounting day."""
 from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
 
@@ -13,6 +13,7 @@ def prepare_chronology(movements):
         else:
             row['registrado_en'] = None
     movements.sort(key=lambda row: (
+        row['fecha'],
         row['registrado_en'] or datetime.combine(row['fecha'], time.min),
         # Simultaneous transfers: show dispatch before destination receipt.
         {'Egreso': 0, 'Ingreso': 1, 'Venta': 2}.get(row.get('tipo_base'), 9),
