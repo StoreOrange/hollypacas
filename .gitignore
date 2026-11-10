@@ -26,3 +26,6 @@ Thumbs.db
 # Calibración local de etiquetas (se conserva entre actualizaciones)
 backend/settings/miss_zapatos_labels.json
 backend/settings/miss_zapatos_labels.before_*.json
+
+# APK firmado distribuido por la VPS (la fuente está en android/)
+/backend/app/static/hollywood-app/*.apk

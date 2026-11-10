@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "ni.hollywoodpacas.app",
+      "sha256_cert_fingerprints": [
+        "7D:F1:51:B0:8E:E5:9F:17:9C:A0:8F:B7:A4:D7:0E:A6:01:2D:5B:B4:55:37:8D:C7:FF:B8:F2:85:3B:C7:AB:BA"
+      ]
+    }
+  }
+]

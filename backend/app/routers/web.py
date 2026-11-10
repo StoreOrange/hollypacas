@@ -40,7 +40,7 @@ from reportlab.lib import colors
 from PIL import Image, ImageDraw, ImageFont
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import String, and_, create_engine, func, or_, text as sql_text
 from sqlalchemy.orm import Session, aliased, joinedload, object_session, selectinload
@@ -13504,6 +13504,13 @@ def mobile_preventas_push_config(
     }
 
 
+@router.get("/.well-known/assetlinks.json")
+def hollywood_android_assetlinks():
+    if get_active_company_key() not in {"hollywood_pacas", "pacasholl", "hollpacas"}:
+        raise HTTPException(404, "No encontrado")
+    return FileResponse(Path(__file__).resolve().parents[1] / "static/hollywood-app/assetlinks.json", media_type="application/json", headers={"Cache-Control": "public, max-age=3600"})
+
+
 @router.get("/m-preventas.webmanifest")
 def mobile_preventas_manifest(
     request: Request,
@@ -13512,22 +13519,30 @@ def mobile_preventas_manifest(
     branding = request.state.branding if getattr(request, "state", None) and getattr(request.state, "branding", None) else _company_profile_payload(db)
     app_name = branding.get("trade_name") or branding.get("app_title") or "ERP Preventas"
     icon_url = branding.get("logo_url") or "/static/logo_hollywood.png"
+    holl = (branding.get("company_key") or get_active_company_key()) in {"hollywood_pacas", "pacasholl", "hollpacas"}
     theme_color = "#0b3b6f"
     return JSONResponse(
         {
-            "name": f"{app_name} Preventas Movil",
-            "short_name": "Preventas",
-            "start_url": "/m/preventas",
+            "name": "Hollywood App" if holl else f"{app_name} Preventas Movil",
+            "short_name": "Hollywood App" if holl else "Preventas",
+            "id": "/m/preventas",
+            "start_url": "/" if holl else "/m/preventas",
             "scope": "/",
             "display": "standalone",
             "background_color": "#f8fafc",
             "theme_color": theme_color,
-            "description": "Notificaciones de preventas facturadas y gestion movil de preventas.",
-            "icons": [
+            "description": "Ventas y gestión de Pacas Hollywood." if holl else "Notificaciones de preventas facturadas y gestion movil de preventas.",
+            "icons": ([
+                {"src": "/static/hollywood-app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                {"src": "/static/hollywood-app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                {"src": "/static/hollywood-app/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            ] if holl else [
                 {"src": f"{icon_url}?v={settings.UI_VERSION}", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
                 {"src": f"{icon_url}?v={settings.UI_VERSION}", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
-            ],
-        }
+            ]),
+        },
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache"},
     )
 
 

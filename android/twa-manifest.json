@@ -1,0 +1,49 @@
+{
+  "packageId": "ni.hollywoodpacas.app",
+  "host": "www.hollywoodpacas.ovh",
+  "name": "Hollywood App",
+  "launcherName": "Hollywood App",
+  "display": "standalone",
+  "themeColor": "#0B3B6F",
+  "themeColorDark": "#000000",
+  "navigationColor": "#FFFFFF",
+  "navigationColorDark": "#000000",
+  "navigationDividerColor": "#000000",
+  "navigationDividerColorDark": "#000000",
+  "backgroundColor": "#FFFFFF",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://www.hollywoodpacas.ovh/static/hollywood-app/icon-512.png",
+  "maskableIconUrl": "https://www.hollywoodpacas.ovh/static/hollywood-app/icon-maskable-512.png",
+  "splashScreenFadeOutDuration": 200,
+  "signingKey": {
+    "path": "release.keystore",
+    "alias": "hollywood-app"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "unknown",
+  "webManifestUrl": "https://www.hollywoodpacas.ovh/m-preventas.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "minSdkVersion": 24,
+  "orientation": "default",
+  "fingerprints": [
+    {
+      "value": "7D:F1:51:B0:8E:E5:9F:17:9C:A0:8F:B7:A4:D7:0E:A6:01:2D:5B:B4:55:37:8D:C7:FF:B8:F2:85:3B:C7:AB:BA"
+    }
+  ],
+  "additionalTrustedOrigins": [
+    "hollywoodpacas.ovh"
+  ],
+  "retainedBundles": [],
+  "displayOverride": [],
+  "appVersion": "1.0.0"
+}
