@@ -518,7 +518,7 @@
     {% set can_mobile_preventas = (not has_perms) or ('menu.sales.preventas.mobile' in perms) or ('menu.sales.preventas' in perms) or ('access.sales.preventas.mobile' in perms) or ('access.sales.preventas' in perms) %}
     {% set can_mobile_prefactura = (not has_perms) or ('menu.sales.prefactura.mobile' in perms) or ('access.sales.prefactura.mobile' in perms) %}
     {% set can_mobile_sales_report = (not has_perms) or ('menu.sales.mis_ventas.mobile' in perms) or ('access.sales.mis_ventas.mobile' in perms) %}
-    {% set can_mobile_commissions = (not has_perms) or ('menu.sales.mis_comisiones.mobile' in perms) or ('access.sales.mis_comisiones.mobile' in perms) %}
+    {% set can_mobile_commissions = not hide_esteli_mobile_commissions and ((not has_perms) or ('menu.sales.mis_comisiones.mobile' in perms) or ('access.sales.mis_comisiones.mobile' in perms)) %}
     <div class="odoo-page">
       {% if holl_mobile_home %}{% include "partials/holl_mobile_home.html" %}{% endif %}
       {% if holl_mobile_home and user.roles|selectattr('name','in',['administrador','cajero','vendedor'])|list|length > 0 %}<a class="d-lg-none btn btn-outline-primary w-100 my-3 py-3" href="/sales/requisas"><i class="bi bi-box-arrow-in-down me-2"></i>Requisas de inventario</a>{% endif %}

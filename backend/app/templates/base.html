@@ -4,6 +4,8 @@
     {% set branding = request.state.branding if request and request.state and request.state.branding else {} %}
     {% set theme_code = (branding.get("theme_code", "default") or "default")|lower %}
     {% set company_key = (branding.get("company_key", "default") or "default")|lower %}
+    {% set esteli_branch = user.default_branch if user is defined and user else none %}
+    {% set hide_esteli_mobile_commissions = company_key in ['hollywood_pacas', 'pacasholl', 'hollpacas'] and esteli_branch and ((esteli_branch.code or '')|lower in ['esteli', 'estelí'] or (esteli_branch.name or '')|lower in ['esteli', 'estelí']) %}
     {% set bootswatch_codes = ['cerulean','cosmo','flatly','journal','litera','lumen','lux','materia','minty','morph','pulse','quartz','sandstone','simplex','sketchy','solar','spacelab','superhero','united','vapor','yeti','zephyr'] %}
     {% set theme_bootswatch_url = '/static/vendor/bootswatch/' ~ theme_code ~ '.min.css' if theme_code in bootswatch_codes else '' %}
     {% set theme_primary = "#0b3b6f" %}
@@ -816,7 +818,7 @@
     <style>.bi-moto-delivery::before{content:""!important;display:inline-block!important;width:1.5em;height:1em;background:currentColor;-webkit-mask:url('/static/icons/moto-delivery.svg') center/contain no-repeat;mask:url('/static/icons/moto-delivery.svg') center/contain no-repeat;vertical-align:-.08em}</style>
     {% block extra_head %}{% endblock %}
   </head>
-  <body class="{% if request and request.url and request.url.path != '/login' %}mobile-with-global-nav{% endif %} company-{{ company_key }}">
+  <body data-hide-mobile-commissions="{{ 'true' if hide_esteli_mobile_commissions else 'false' }}" class="{% if request and request.url and request.url.path != '/login' %}mobile-with-global-nav{% endif %} company-{{ company_key }}">
     {% block content %}{% endblock %}
     {% if request and request.url and request.url.path != '/login' %}
     <div class="mobile-global-nav d-lg-none" aria-label="Navegacion movil">

@@ -23,7 +23,11 @@
     window.Vue.createApp({
       data() {
         return {
-          items: menuItems.filter((item) => !item.mobile_only || isMobile),
+          items: menuItems.filter((item) => {
+            if (item.mobile_only && !isMobile) return false;
+            const hideCommissions = isMobile && document.body.dataset.hideMobileCommissions === 'true';
+            return !hideCommissions || !['/m/mis-comisiones', '/sales/comisiones'].includes(normalizePath(item.href));
+          }),
           query: "",
           collapsed: !isMobile && localStorage.getItem("sidebarCollapsed") === "1",
           currentPath: normalizePath(window.location.pathname),
