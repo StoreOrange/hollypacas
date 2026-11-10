@@ -13504,6 +13504,13 @@ def mobile_preventas_push_config(
     }
 
 
+@router.get("/instalar", response_class=HTMLResponse)
+def hollywood_install_page(request: Request):
+    if get_active_company_key() not in {"hollywood_pacas", "pacasholl", "hollpacas"}:
+        raise HTTPException(404, "No encontrado")
+    return request.app.state.templates.TemplateResponse("hollywood_install.html", {"request": request}, headers={"Cache-Control": "no-cache"})
+
+
 @router.get("/.well-known/assetlinks.json")
 def hollywood_android_assetlinks():
     if get_active_company_key() not in {"hollywood_pacas", "pacasholl", "hollpacas"}:
