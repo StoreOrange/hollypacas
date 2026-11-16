@@ -18962,6 +18962,7 @@ def sales_depositos(
             "success": success,
             "version": settings.UI_VERSION,
         },
+        headers={"Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache"},
     )
 
 

@@ -59,12 +59,12 @@
 
       <div class="odoo-kpis">
         <div class="odoo-kpi border-0 shadow-lg" style="background: linear-gradient(130deg, #ffffff 0%, #f4f6ff 60%, #eef2ff 100%);">
-          <div class="text-xs uppercase tracking-[0.2em] text-slate">Total C$</div>
-          <strong class="d-block mt-2 text-brand">C$ {{ "{:,.2f}".format(total_cs) }}</strong>
+          <div class="text-xs uppercase tracking-[0.2em] text-slate">Depósitos en córdobas</div>
+          <strong id="depositos-kpi-cs" class="d-block mt-2 text-brand">C$ {{ "{:,.2f}".format(total_cs) }}</strong>
         </div>
         <div class="odoo-kpi border-0 shadow-lg" style="background: linear-gradient(130deg, #ffffff 0%, #f0fdf4 60%, #dcfce7 100%);">
-          <div class="text-xs uppercase tracking-[0.2em] text-slate">Total USD</div>
-          <strong class="d-block mt-2 text-success">$ {{ "{:,.2f}".format(total_usd) }}</strong>
+          <div class="text-xs uppercase tracking-[0.2em] text-slate">Depósitos en dólares</div>
+          <strong id="depositos-kpi-usd" class="d-block mt-2 text-success">$ {{ "{:,.2f}".format(total_usd) }}</strong>
         </div>
         <div class="odoo-kpi border-0 shadow-lg" style="background: linear-gradient(130deg, #ffffff 0%, #fdf2f8 60%, #fce7f3 100%);">
           <div class="text-xs uppercase tracking-[0.2em] text-slate">Depositos</div>
@@ -175,6 +175,7 @@
                 <i class="bi bi-clipboard-check text-brand"></i>
                 Depositos del dia / historico
               </div>
+              <a id="depositos-refresh" class="btn btn-sm btn-outline-primary" href="{{ request.url }}"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Recargar totales</a>
               <form class="d-flex flex-wrap align-items-end gap-2" method="get" action="/sales/depositos">
                 <div>
                   <label class="odoo-field-label text-xs text-slate">Desde</label>
@@ -229,10 +230,11 @@
               </form>
             </div>
             <div class="text-xs text-slate mb-2">
-              Mostrando del {{ start_date }} al {{ end_date }}
+              Mostrando del {{ start_date }} al {{ end_date }} · {{ bodega.name if bodega else 'Bodega' }}.
+              <span id="depositos-sum-status" role="status">Cada moneda se suma por separado, sin conversiones.</span>
             </div>
             <div class="table-responsive">
-              <table class="table table-sm table-hover odoo-table text-sm">
+              <table id="depositos-list" class="table table-sm table-hover odoo-table text-sm">
                 <thead>
                   <tr>
                     <th>Fecha</th>
@@ -240,14 +242,15 @@
                     <th>Metodo</th>
                     <th>Banco</th>
                     <th>Moneda</th>
-                    <th class="text-end">Monto depositado</th>
+                    <th class="text-end">Monto C$</th>
+                    <th class="text-end">Monto US$</th>
                     <th>Obs.</th>
                     <th class="text-end">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {% for dep in depositos %}
-                  <tr data-id="{{ dep.id }}"
+                  <tr data-sum-cs="{{ dep.monto_cs if dep.moneda != 'USD' else 0 }}" data-sum-usd="{{ dep.monto_usd if dep.moneda == 'USD' else 0 }}" data-id="{{ dep.id }}"
                       data-fecha="{{ dep.fecha }}"
                       data-vendedor="{{ dep.vendedor_id }}"
                       data-metodo="{{ dep.metodo or 'DEPOSITO_BANCARIO' }}"
@@ -261,7 +264,8 @@
                     <td>{{ "Tarjeta Afiliacion" if (dep.metodo or "") == "TARJETA_AFILIACION" else "Deposito Bancario" }}</td>
                     <td>{{ dep.banco.nombre if dep.banco else '-' }}</td>
                     <td>{{ dep.moneda }}</td>
-                    <td class="text-end">{{ "{:,.2f}".format(dep.monto_usd if dep.moneda == 'USD' else dep.monto_cs) }}</td>
+                    <td class="text-end text-nowrap">{% if dep.moneda != 'USD' %}C$ {{ "{:,.2f}".format(dep.monto_cs) }}{% else %}—{% endif %}</td>
+                    <td class="text-end text-nowrap">{% if dep.moneda == 'USD' %}US$ {{ "{:,.2f}".format(dep.monto_usd) }}{% else %}—{% endif %}</td>
                     <td>{{ dep.observacion or "-" }}</td>
                     <td class="text-end">
                       <form method="post" action="/sales/depositos/{{ dep.id }}/delete" class="d-inline delete-deposito-form">
@@ -273,16 +277,12 @@
                   </tr>
                   {% endfor %}
                 </tbody>
-                <tfoot>
+                <tfoot class="table-light">
                   <tr>
-                    <th colspan="5" class="text-end">Total C$</th>
-                    <th class="text-end">C$ {{ "{:,.2f}".format(total_cs) }}</th>
-                    <th></th>
-                  </tr>
-                  <tr>
-                    <th colspan="5" class="text-end">Total USD</th>
-                    <th class="text-end">$ {{ "{:,.2f}".format(total_usd) }}</th>
-                    <th></th>
+                    <th colspan="5" class="text-end">TOTAL DEL LISTADO</th>
+                    <th id="depositos-footer-cs" class="text-end text-nowrap">C$ {{ "{:,.2f}".format(total_cs) }}</th>
+                    <th id="depositos-footer-usd" class="text-end text-nowrap">US$ {{ "{:,.2f}".format(total_usd) }}</th>
+                    <th colspan="2"></th>
                   </tr>
                 </tfoot>
               </table>
@@ -325,6 +325,7 @@
   </main>
 </div>
 </div>
+<script src="/static/js/depositos-totals.js?v=20261116" defer></script>
 <script>
   const formatMoney = (value, currency) => {
     const number = Number(value || 0);
