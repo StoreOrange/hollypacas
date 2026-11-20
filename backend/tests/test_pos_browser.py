@@ -181,7 +181,7 @@ class NativePosTests(unittest.TestCase):
         html=native.console(self.station.id,request,self.db,self.user).body.decode()
         self.assertIn('data-worker="1"',html)
         self.assertIn('data-station="'+self.station.id+'"',html)
-        self.assertIn('pos-browser.js?v=8',html)
+        self.assertIn('pos-browser.js?v=9',html)
 
     def test_dispatch_timeout_becomes_review_without_rebilling(self):
         sale,job=self.invoice();native.claim(self.station.id,self.request(),self.db,self.user)
@@ -220,3 +220,18 @@ class NativePosTests(unittest.TestCase):
         native.backup_claim(self.station.id,self.request(),{'confirmed':True,'job_ids':[job.id]},self.db,self.user)
         with self.assertRaises(HTTPException):native.backup_ack(self.station.id,self.request(),{'job_ids':[job.id],'claim_id':'old-claim','status':'SENT'},self.db,self.user)
         self.assertEqual(job.status,'DISPATCHED')
+
+    def test_warehouse_backup_contains_no_financial_nodes_even_without_css(self):
+        from app.core.pos_browser_receipts import receipt_copies
+        sale,job=self.invoice();claim=native.claim(self.station.id,self.request(),self.db,self.user)['job']
+        request=self.request();request.scope['query_string']=('claim='+claim['claim_id']).encode()
+        request.scope['app']=SimpleNamespace(state=SimpleNamespace(templates=Jinja2Templates(directory='app/templates')))
+        response=native.ticket(self.station.id,job.id,request,self.db,self.user)
+        receipts,_=receipt_copies(response.body.decode(),('ORIGINAL','COPIA','EXCLUSIVA DE BODEGA'),3)
+        for receipt in receipts[:2]:
+            self.assertIn('Precio:',receipt)
+            self.assertIn('Pagos aplicados',receipt)
+        for forbidden in ('pos-money','pos-invoice-details','pos-commercial-footer','Precio:','Subtotal','Descuentos','Pagos aplicados','C$','Vuelto'):
+            self.assertNotIn(forbidden,receipts[2])
+        for expected in ('EXCLUSIVA DE BODEGA','REFERENCIA / FACTURA','VENDEDOR','TOTAL BULTOS','Ropa por libra'):
+            self.assertIn(expected,receipts[2])

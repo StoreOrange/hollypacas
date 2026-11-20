@@ -37,13 +37,13 @@ def run(mode="persistent"):
     script=Path('app/static/js/pos-browser.js').read_text()
     state={'ok':True,'enabled':mode=='already_enabled','tasks':[],'delay_seconds':15}
     snapshots=[]
-    claimed=[];acked=[];printed=[];lost=[False];next_job=[1];allow_jobs=[mode!='closed_popup']
+    claimed=[];acked=[];printed=[];financial=[];lost=[False];next_job=[1];allow_jobs=[mode!='closed_popup']
     ticket=ticket_html()
     with sync_playwright() as p:
         browser=p.firefox.launch(headless=True)
         ctx=browser.new_context()
-        ctx.expose_function('recordPrint',lambda path,label,text:(printed.append((int(path.rsplit('/',1)[1]),label)),snapshots.append(text)))
-        ctx.add_init_script("window.print=()=>{document.querySelectorAll('.ticket').forEach(receipt=>window.recordPrint(location.pathname,receipt.querySelector('[data-pos-copy-label]')?.textContent,receipt.innerText));setTimeout(()=>dispatchEvent(new Event('afterprint')),0)}")
+        ctx.expose_function('recordPrint',lambda path,label,text,money:(printed.append((int(path.rsplit('/',1)[1]),label)),snapshots.append(text),financial.append(money)))
+        ctx.add_init_script("window.print=()=>{document.querySelectorAll('.ticket').forEach(receipt=>window.recordPrint(location.pathname,receipt.querySelector('[data-pos-copy-label]')?.textContent,receipt.innerText,receipt.querySelectorAll('.pos-money,.pos-invoice-details,.pos-commercial-footer').length));setTimeout(()=>dispatchEvent(new Event('afterprint')),0)}")
         def route(r):
             path=r.request.url.split('https://pos.test',1)[1]
             body=json.loads(r.request.post_data or '{}')
@@ -96,6 +96,7 @@ def run(mode="persistent"):
         assert printed==[(job,label) for job in (1,2,3) for label in ('ORIGINAL','COPIA','EXCLUSIVA DE BODEGA')],printed
         for index,text in enumerate(snapshots):
             if index % 3 == 2:
+                assert financial[index]==0,financial
                 assert 'TOTAL BULTOS' in text and 'Precio:' not in text and 'Pagos aplicados' not in text and 'C$' not in text,text
             else:
                 assert 'Precio:' in text and 'Pagos aplicados' in text,text

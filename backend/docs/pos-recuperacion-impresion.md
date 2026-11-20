@@ -16,4 +16,6 @@ Validación aislada:
 - `python tests/browser_pos_queue.py`: tres preventas FIFO, ventana persistente, popup bloqueado/cerrado y ACK perdido.
 - `python -m tests.browser_pos_recovery`: Firefox sin afterprint o con print() rechazado; respaldo de dos facturas/seis ejemplares, confirmación perdida, ausencia de ventas nuevas y selección estable.
 
-Después del despliegue, recargar Ventas y la ventana «Impresión de caja» para obtener pos-browser.js v8. No se modifica Firefox ni se instala software en la caja automáticamente. La salida física debe comprobarse en la Epson real.
+Después del despliegue, recargar Ventas y la ventana «Impresión de caja» para obtener pos-browser.js v9. No se modifica Firefox ni se instala software en la caja automáticamente. La salida física debe comprobarse en la Epson real.
+
+La exclusiva de bodega del flujo automático y el respaldo elimina físicamente los nodos de precios, descuentos, pagos, vuelto y pie comercial. La protección no depende únicamente de CSS. Se conservan los ejemplares comercial original/copia y los saltos de página existentes.

@@ -317,6 +317,7 @@
             const label=receipt.querySelector('#pos-copy-label');
             if(label){label.dataset.posCopyLabel='true';label.textContent=labels[index];if(index)label.removeAttribute('id');}
             receipt.classList.toggle('warehouse-dispatch',labels[index]==='EXCLUSIVA DE BODEGA');
+            if(labels[index]==='EXCLUSIVA DE BODEGA')receipt.querySelectorAll('.pos-money,.pos-invoice-details,.pos-commercial-footer').forEach(node=>node.remove());
             if(index){previous.after(receipt);previous=receipt;}
           }
           const style=document.createElement('style');style.textContent='@media print{.ticket + .ticket{break-before:page!important;page-break-before:always!important}}';document.head.appendChild(style);
