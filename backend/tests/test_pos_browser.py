@@ -181,4 +181,42 @@ class NativePosTests(unittest.TestCase):
         html=native.console(self.station.id,request,self.db,self.user).body.decode()
         self.assertIn('data-worker="1"',html)
         self.assertIn('data-station="'+self.station.id+'"',html)
-        self.assertIn('pos-browser.js?v=7',html)
+        self.assertIn('pos-browser.js?v=8',html)
+
+    def test_dispatch_timeout_becomes_review_without_rebilling(self):
+        sale,job=self.invoice();native.claim(self.station.id,self.request(),self.db,self.user)
+        self.clock+=timedelta(seconds=41)
+        result=asyncio.run(native.tick(self.station.id,self.request({'busy':False}),self.db,self.user))
+        self.assertEqual(job.status,'UNKNOWN');self.assertTrue(result['tasks'][0]['retry_allowed'])
+        self.assertEqual(self.db.query(VentaFactura).count(),1)
+        self.assertIsNone(native.claim(self.station.id,self.request(),self.db,self.user)['job'])
+
+    def test_backup_uses_existing_invoice_and_all_three_copies(self):
+        sale,job=self.invoice();job.status='UNKNOWN';self.db.commit()
+        result=native.backup_claim(self.station.id,self.request(),{'confirmed':True,'job_ids':[job.id]},self.db,self.user)
+        self.assertEqual(result['job_ids'],[job.id]);self.assertEqual(job.status,'DISPATCHED')
+        request=self.request();request.scope['query_string']=('claim='+result['claim_id']).encode()
+        request.scope['app']=SimpleNamespace(state=SimpleNamespace(templates=Jinja2Templates(directory='app/templates')))
+        html=native.backup_ticket(self.station.id,request,self.db,self.user).body.decode()
+        self.assertEqual(html.count('data-pos-copy-label="true"'),3)
+        self.assertIn('warehouse-dispatch',html);self.assertIn('EXCLUSIVA DE BODEGA',html)
+        self.assertIn('window.print()',html)
+        result=native.backup_ack(self.station.id,self.request(),{'claim_id':result['claim_id'],'job_ids':[job.id],'status':'SENT'},self.db,self.user)
+        self.assertEqual(job.status,'SENT');self.assertEqual(result['tasks'],[])
+        self.assertEqual(self.db.query(VentaFactura).count(),1)
+        self.assertEqual(sale.venta_factura_id,job.invoice_id)
+
+    def test_backup_rejects_active_sent_foreign_and_unconfirmed_jobs(self):
+        from fastapi import HTTPException
+        sale,job=self.invoice();native.claim(self.station.id,self.request(),self.db,self.user)
+        for status,payload in [('DISPATCHED',{'confirmed':True,'job_ids':[job.id]}),('SENT',{'confirmed':True,'job_ids':[job.id]}),('UNKNOWN',{'confirmed':False,'job_ids':[job.id]}),('UNKNOWN',{'confirmed':True,'job_ids':[999999]})]:
+            job.status=status;self.db.commit()
+            with self.assertRaises(HTTPException):native.backup_claim(self.station.id,self.request(),payload,self.db,self.user)
+        self.assertEqual(self.db.query(VentaFactura).count(),1)
+
+    def test_backup_old_ack_cannot_clear_new_print_attempt(self):
+        from fastapi import HTTPException
+        sale,job=self.invoice();job.status='UNKNOWN';self.db.commit()
+        native.backup_claim(self.station.id,self.request(),{'confirmed':True,'job_ids':[job.id]},self.db,self.user)
+        with self.assertRaises(HTTPException):native.backup_ack(self.station.id,self.request(),{'job_ids':[job.id],'claim_id':'old-claim','status':'SENT'},self.db,self.user)
+        self.assertEqual(job.status,'DISPATCHED')

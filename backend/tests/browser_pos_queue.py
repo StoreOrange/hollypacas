@@ -43,7 +43,7 @@ def run(mode="persistent"):
         browser=p.firefox.launch(headless=True)
         ctx=browser.new_context()
         ctx.expose_function('recordPrint',lambda path,label,text:(printed.append((int(path.rsplit('/',1)[1]),label)),snapshots.append(text)))
-        ctx.add_init_script("window.print=()=>{window.recordPrint(location.pathname,document.getElementById('pos-copy-label')?.textContent,document.querySelector('.ticket').innerText);setTimeout(()=>dispatchEvent(new Event('afterprint')),0)}")
+        ctx.add_init_script("window.print=()=>{document.querySelectorAll('.ticket').forEach(receipt=>window.recordPrint(location.pathname,receipt.querySelector('[data-pos-copy-label]')?.textContent,receipt.innerText));setTimeout(()=>dispatchEvent(new Event('afterprint')),0)}")
         def route(r):
             path=r.request.url.split('https://pos.test',1)[1]
             body=json.loads(r.request.post_data or '{}')

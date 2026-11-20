@@ -302,12 +302,28 @@
         {% if browser_auto_job %}
         const job={{ browser_auto_job|tojson }};
         const storageKey='holl-native-print:'+job.claim_id;
-        let completed=0,requested=false,finished=false;
+        let finished=false,requested=false,returned=false,after=false;
         const report=(status)=>{if(finished)return;finished=true;window.parent.postMessage({type:'holl-native-print',job_id:job.id,claim_id:job.claim_id,status},window.location.origin);};
-        const send=()=>{if(finished)return;requested=true;showCopy(completed);{% if pos_copy_labels %}fitReceiptPaper();{% endif %}try{window.print();}catch(error){report('UNKNOWN');}};
-        window.addEventListener('afterprint',()=>{if(!requested||finished)return;requested=false;completed++;if(completed<{{ browser_auto_copies }})setTimeout(send,250);else report('SENT');});
-        waitForTicketReady().then(()=>{try{if(sessionStorage.getItem(storageKey)){report('UNKNOWN');return;}sessionStorage.setItem(storageKey,'requested');}catch(error){report('UNKNOWN');return;}setTimeout(send,180);}).catch(()=>report('UNKNOWN'));
-        setTimeout(()=>report('UNKNOWN'),90000);
+        const complete=()=>{if(requested&&returned&&after&&!finished)setTimeout(()=>report('SENT'),200);};
+        window.addEventListener('afterprint',()=>{after=true;complete();});
+        waitForTicketReady().then(()=>{
+          if(finished)return;
+          try{if(sessionStorage.getItem(storageKey)){report('UNKNOWN');return;}sessionStorage.setItem(storageKey,'requested');}catch(error){report('UNKNOWN');return;}
+          const original=document.querySelector('.ticket');
+          const labels=copyLabels.length?copyLabels:Array({{ browser_auto_copies }}).fill('');
+          let previous=original;
+          for(let index=0;index<labels.length;index++){
+            const receipt=index?original.cloneNode(true):original;
+            const label=receipt.querySelector('#pos-copy-label');
+            if(label){label.dataset.posCopyLabel='true';label.textContent=labels[index];if(index)label.removeAttribute('id');}
+            receipt.classList.toggle('warehouse-dispatch',labels[index]==='EXCLUSIVA DE BODEGA');
+            if(index){previous.after(receipt);previous=receipt;}
+          }
+          const style=document.createElement('style');style.textContent='@media print{.ticket + .ticket{break-before:page!important;page-break-before:always!important}}';document.head.appendChild(style);
+          {% if pos_copy_labels %}fitReceiptPaper();{% endif %}
+          setTimeout(()=>{if(finished)return;requested=true;const started=Date.now();try{window.print();returned=true;if(Date.now()-started>600)after=true;complete();}catch(error){report('UNKNOWN');}},100);
+        }).catch(()=>report('UNKNOWN'));
+        setTimeout(()=>report('UNKNOWN'),35000);
         return;
         {% endif %}
 
