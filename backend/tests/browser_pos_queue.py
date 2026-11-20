@@ -43,13 +43,13 @@ def run(mode="persistent"):
         browser=p.firefox.launch(headless=True)
         ctx=browser.new_context()
         ctx.expose_function('recordPrint',lambda path,label,text,money:(printed.append((int(path.rsplit('/',1)[1]),label)),snapshots.append(text),financial.append(money)))
-        ctx.add_init_script("window.print=()=>{document.querySelectorAll('.ticket').forEach(receipt=>window.recordPrint(location.pathname,receipt.querySelector('[data-pos-copy-label]')?.textContent,receipt.innerText,receipt.querySelectorAll('.pos-money,.pos-invoice-details,.pos-commercial-footer').length));setTimeout(()=>dispatchEvent(new Event('afterprint')),0)}")
+        ctx.add_init_script("window.print=()=>{[...document.querySelectorAll('.ticket')].filter(r=>getComputedStyle(r).display!=='none').forEach(receipt=>window.recordPrint(location.pathname,receipt.querySelector('[data-pos-copy-label]')?.textContent,receipt.innerText,receipt.querySelectorAll('.pos-money,.pos-invoice-details,.pos-commercial-footer').length));setTimeout(()=>dispatchEvent(new Event('afterprint')),0)}")
         def route(r):
             path=r.request.url.split('https://pos.test',1)[1]
             body=json.loads(r.request.post_data or '{}')
             if path=='/sales':return r.fulfill(content_type='text/html',body=main)
             if path.endswith('/console'):return r.fulfill(content_type='text/html',body=console)
-            if path.startswith('/static/js/'):return r.fulfill(content_type='text/javascript',body=script)
+            if path.startswith('/static/js/'):return r.fulfill(content_type='text/javascript',body=Path('app/static/js/pos-receipt-sequence.js').read_text() if 'pos-receipt-sequence' in path else script)
             if path.startswith('/static/'):return r.fulfill(body='')
             if path=='/other':return r.fulfill(content_type='text/html',body='<h1>Inventario</h1>')
             if '/ticket/' in path:
@@ -66,6 +66,7 @@ def run(mode="persistent"):
                 claimed.append(n);task['print_status']='DISPATCHED'
                 return r.fulfill(json={'job':dict(id=n,claim_id='claim'+str(n),url='/ticket/'+str(n))})
             if path.endswith('/ack'):
+                if body.get('status')=='PROGRESS':return r.fulfill(json=state)
                 if not lost[0]:lost[0]=True;return r.abort()
                 acked.append(body['job_id']);state['tasks']=[]
             r.fulfill(json=state)
@@ -91,7 +92,7 @@ def run(mode="persistent"):
         # already_enabled reproduce la caja real: activada pero sin ventana.
         deadline=time.monotonic()+20
         while len(acked)<3 and time.monotonic()<deadline:worker.wait_for_timeout(100)
-        assert claimed==[1,2,3],claimed
+        assert claimed==[1,2,3],(claimed,acked,printed,errors,state)
         assert acked==[1,2,3],acked
         assert printed==[(job,label) for job in (1,2,3) for label in ('ORIGINAL','COPIA','EXCLUSIVA DE BODEGA')],printed
         for index,text in enumerate(snapshots):

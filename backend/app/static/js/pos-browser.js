@@ -23,7 +23,7 @@ recovery.querySelector('[data-backup]').addEventListener('click',async()=>{
  if(!backupWindow){recovery.querySelector('[role="status"]').textContent='Permite ventanas emergentes para abrir el respaldo.';return;}
  backupWindow.document.body.textContent='Preparando comprobantes existentes…';
  const button=recovery.querySelector('[data-backup]');button.disabled=true;backupStarting=true;
- try{backupClaim=await api(station+'/backup/claim',{confirmed:true,job_ids:ids});clearTimeout(printTimeout);frame?.remove();frame=null;active=null;backupWindow.location.replace(backupClaim.url);const batch=backupClaim;setTimeout(()=>{if(backupClaim?.claim_id===batch.claim_id)recordAck({batch:true,job_ids:batch.job_ids,claim_id:batch.claim_id,status:'UNKNOWN'});},40000);}
+ try{backupClaim=await api(station+'/backup/claim',{confirmed:true,job_ids:ids});clearTimeout(printTimeout);frame?.remove();frame=null;active=null;backupWindow.location.replace(backupClaim.url);armPrintTimeout();}
  catch(error){backupWindow.close();backupClaim=null;recovery.querySelector('[role="status"]').textContent=error.message;button.disabled=false;}finally{backupStarting=false;}
 });
 function status(text,error=false){badge.hidden=!text;badge.textContent=text;badge.className='badge '+(error?'text-bg-warning':'text-bg-success');badge.title=text;}
@@ -47,7 +47,7 @@ async function doFlushAck(){const raw=localStorage.getItem(key+':ack');if(!raw)r
 function flushAck(){if(!ackInFlight)ackInFlight=doFlushAck().finally(()=>{ackInFlight=null;});return ackInFlight;}
 
 
-async function printNext(){if(frame||active||!data?.tasks.some(task=>task.print_status==='QUEUED'))return;const result=await api(station+'/claim');if(!result.job)return;active=result.job;frame=document.createElement('iframe');frame.title='Ticket POS';frame.style.cssText='position:fixed;left:-10000px;top:0;width:320px;height:600px;border:0;';frame.src=active.url;document.body.appendChild(frame);printTimeout=setTimeout(()=>{if(active)recordAck({job_id:active.id,claim_id:active.claim_id,status:'UNKNOWN'});},40000);}
+async function printNext(){if(frame||active||!data?.tasks.some(task=>task.print_status==='QUEUED'))return;const result=await api(station+'/claim');if(!result.job)return;active=result.job;frame=document.createElement('iframe');frame.title='Ticket POS';frame.style.cssText='position:fixed;left:-10000px;top:0;width:320px;height:600px;border:0;';frame.src=active.url;document.body.appendChild(frame);armPrintTimeout();}
 async function tick(){
  if(!ownsQueue||!station||working||changing)return;
  if(worker)return poll(true);
@@ -64,7 +64,10 @@ async function poll(processQueue){if(working||changing)return;working=true;const
  }catch(error){connectionError=error.message||'Reconectando…';status(connectionError,true);}finally{working=false;}}
 
 async function recordAck(message){try{if(message.batch&&backupClaim?.claim_id===message.claim_id)backupClaim=null;localStorage.setItem(key+':ack',JSON.stringify(message));if(data)render(data);await flushAck();tick();}catch(error){status('Confirmación pendiente',true);}}
-window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===backupWindow&&event.data?.type==='holl-pos-backup'&&event.data.claim_id===backupClaim?.claim_id&&['SENT','UNKNOWN'].includes(event.data.status)){recordAck({batch:true,job_ids:backupClaim.job_ids,claim_id:backupClaim.claim_id,status:event.data.status});return;}if(!frame||event.source!==frame.contentWindow||event.origin!==location.origin||event.data?.type!=='holl-native-print')return;const message=event.data;if(message.claim_id!==active?.claim_id||message.job_id!==active?.id||!['SENT','UNKNOWN'].includes(message.status))return;recordAck(message);});
+
+function armPrintTimeout(){clearTimeout(printTimeout);printTimeout=setTimeout(()=>{if(backupClaim)recordAck({batch:true,job_ids:backupClaim.job_ids,claim_id:backupClaim.claim_id,status:'UNKNOWN'});else if(active)recordAck({job_id:active.id,claim_id:active.claim_id,status:'UNKNOWN'});},40000);}
+function progress(payload){armPrintTimeout();api(payload.batch?`${station}/backup/ack`:`${station}/jobs/${payload.job_id}/ack`,{...payload,status:'PROGRESS'}).catch(()=>{});}
+window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===backupWindow&&event.data?.type==='holl-pos-backup'&&event.data.claim_id===backupClaim?.claim_id&&['SENT','UNKNOWN','PROGRESS'].includes(event.data.status)){const payload={batch:true,job_ids:backupClaim.job_ids,claim_id:backupClaim.claim_id,status:event.data.status};if(event.data.status==='PROGRESS')progress(payload);else recordAck(payload);return;}if(!frame||event.source!==frame.contentWindow||event.origin!==location.origin||event.data?.type!=='holl-native-print')return;const message=event.data;if(message.claim_id!==active?.claim_id||message.job_id!==active?.id||!['SENT','UNKNOWN','PROGRESS'].includes(message.status))return;if(message.status==='PROGRESS')progress(message);else recordAck(message);});
 toggle.addEventListener('change',async()=>{const desired=toggle.checked;if(desired&&!worker)openConsole();version++;changing=true;toggle.disabled=true;try{const result=await api(station+'/enable',{enabled:desired});connectionError=null;render(result);}catch(error){toggle.checked=!desired;status(error.message,true);}finally{changing=false;toggle.disabled=false;tick();}});
 retry.addEventListener('click',()=>{recoveryForced=true;renderRecovery();recovery.scrollIntoView({block:'center',behavior:'smooth'});});
 

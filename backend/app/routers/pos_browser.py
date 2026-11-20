@@ -123,8 +123,10 @@ async def ack(station_id:str,job_id:int,request:Request,db=Depends(get_db),user=
     job=db.query(PosPrintJob).filter_by(id=job_id,station_id=box.id).with_for_update().first()
     if not job or not job.claim_id or not secrets.compare_digest(job.claim_id,str(payload.get('claim_id') or '')):raise HTTPException(409,'Confirmación de otro intento')
     status=payload.get('status')
-    if status not in {'SENT','UNKNOWN'}:raise HTTPException(400)
-    if job.status=='DISPATCHED':
+    if status not in {'SENT','UNKNOWN','PROGRESS'}:raise HTTPException(400)
+    if job.status=='DISPATCHED' and status=='PROGRESS':
+        job.dispatched_at=web.local_now_naive()
+    elif job.status=='DISPATCHED':
         job.status=status;job.completed_at=web.local_now_naive();job.message='Diálogo/ciclo de impresión finalizado; verifica salida en Epson' if status=='SENT' else 'Sin confirmación del navegador; revisa la Epson antes de reimprimir'
     db.commit();return state(db,box)
 
@@ -216,11 +218,13 @@ def backup_ticket(station_id:str,request:Request,db=Depends(get_db),user=Depends
 @router.post('/{station_id}/backup/ack')
 def backup_ack(station_id:str,request:Request,payload=Depends(_json_body),db=Depends(get_db),user=Depends(web._require_admin_web)):
     box=browser(request,db,user,station_id);ids=_backup_ids(payload);token=str(payload.get('claim_id') or '')
-    if payload.get('status') not in {'SENT','UNKNOWN'}:raise HTTPException(400,'Estado inválido')
+    if payload.get('status') not in {'SENT','UNKNOWN','PROGRESS'}:raise HTTPException(400,'Estado inválido')
     auto.lock_station(db,box)
     jobs=db.query(PosPrintJob).filter(PosPrintJob.station_id==box.id,PosPrintJob.id.in_(ids)).with_for_update().all()
     if len(jobs)!=len(ids) or any(not job.claim_id or not secrets.compare_digest(job.claim_id,token) for job in jobs):raise HTTPException(409,'Confirmación de un intento anterior')
     for job in jobs:
-        if job.status=='DISPATCHED':
+        if job.status=='DISPATCHED' and payload['status']=='PROGRESS':
+            job.dispatched_at=web.local_now_naive()
+        elif job.status=='DISPATCHED':
             job.status=payload['status'];job.completed_at=web.local_now_naive();job.message='Ciclo del lote de respaldo finalizado; verifica salida física' if job.status=='SENT' else 'Respaldo sin confirmación de Firefox; requiere revisión'
     db.commit();return state(db,box)

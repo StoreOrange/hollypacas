@@ -58,7 +58,7 @@ class NativePosTests(unittest.TestCase):
         sale,job=self.invoice();claim=native.claim(self.station.id,self.request(),self.db,self.user)['job']
         request=self.request();request.scope['query_string']=('claim='+claim['claim_id']).encode();request.scope['app']=SimpleNamespace(state=SimpleNamespace(templates=Jinja2Templates(directory='app/templates')))
         result=native.ticket(self.station.id,job.id,request,self.db,self.user)
-        html=result.body.decode();self.assertIn("type:'holl-native-print'",html);self.assertIn('Ropa por libra',html);self.assertIn('window.print()',html);self.assertEqual(result.headers['cache-control'],'no-store')
+        html=result.body.decode();self.assertIn("type:'holl-native-print'",html);self.assertIn('Ropa por libra',html);self.assertIn('hollPrintReceipts',html);self.assertEqual(result.headers['cache-control'],'no-store')
 
     def test_old_agent_routes_stay_absent(self):
         from app.main import app
@@ -181,7 +181,7 @@ class NativePosTests(unittest.TestCase):
         html=native.console(self.station.id,request,self.db,self.user).body.decode()
         self.assertIn('data-worker="1"',html)
         self.assertIn('data-station="'+self.station.id+'"',html)
-        self.assertIn('pos-browser.js?v=9',html)
+        self.assertIn('pos-browser.js?v=10',html)
 
     def test_dispatch_timeout_becomes_review_without_rebilling(self):
         sale,job=self.invoice();native.claim(self.station.id,self.request(),self.db,self.user)
@@ -200,7 +200,7 @@ class NativePosTests(unittest.TestCase):
         html=native.backup_ticket(self.station.id,request,self.db,self.user).body.decode()
         self.assertEqual(html.count('data-pos-copy-label="true"'),3)
         self.assertIn('warehouse-dispatch',html);self.assertIn('EXCLUSIVA DE BODEGA',html)
-        self.assertIn('window.print()',html)
+        self.assertIn('hollPrintReceipts',html)
         result=native.backup_ack(self.station.id,self.request(),{'claim_id':result['claim_id'],'job_ids':[job.id],'status':'SENT'},self.db,self.user)
         self.assertEqual(job.status,'SENT');self.assertEqual(result['tasks'],[])
         self.assertEqual(self.db.query(VentaFactura).count(),1)
@@ -235,3 +235,12 @@ class NativePosTests(unittest.TestCase):
             self.assertNotIn(forbidden,receipts[2])
         for expected in ('EXCLUSIVA DE BODEGA','REFERENCIA / FACTURA','VENDEDOR','TOTAL BULTOS','Ropa por libra'):
             self.assertIn(expected,receipts[2])
+
+    def test_progress_extends_live_claim_without_marking_sent_or_reviving_failure(self):
+        _,job=self.invoice();claim=native.claim(self.station.id,self.request(),self.db,self.user)['job']
+        self.clock+=timedelta(seconds=30)
+        asyncio.run(native.ack(self.station.id,job.id,self.request({'claim_id':claim['claim_id'],'status':'PROGRESS'}),self.db,self.user))
+        self.assertEqual(job.status,'DISPATCHED');self.assertEqual(job.dispatched_at,self.clock)
+        job.status='UNKNOWN';self.db.commit()
+        asyncio.run(native.ack(self.station.id,job.id,self.request({'claim_id':claim['claim_id'],'status':'PROGRESS'}),self.db,self.user))
+        self.assertEqual(job.status,'UNKNOWN')

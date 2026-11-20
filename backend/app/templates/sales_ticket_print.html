@@ -235,6 +235,7 @@
         <div>de mercaderia ni de dinero.</div>
       </div>
     </div>
+    <script src="/static/js/pos-receipt-sequence.js?v=1"></script>
     <script>
       window.addEventListener("load", () => {
         const params = new URLSearchParams(window.location.search);
@@ -296,35 +297,29 @@
           }
           paperStyle.textContent = `@page { size: 80mm ${heightMm}mm; margin: 0.5mm 2mm; }`;
         };
-        window.addEventListener("beforeprint", fitReceiptPaper);
+        {% if not browser_auto_job %}window.addEventListener("beforeprint", fitReceiptPaper);{% endif %}
         {% endif %}
 
         {% if browser_auto_job %}
         const job={{ browser_auto_job|tojson }};
         const storageKey='holl-native-print:'+job.claim_id;
-        let finished=false,requested=false,returned=false,after=false;
-        const report=(status)=>{if(finished)return;finished=true;window.parent.postMessage({type:'holl-native-print',job_id:job.id,claim_id:job.claim_id,status},window.location.origin);};
-        const complete=()=>{if(requested&&returned&&after&&!finished)setTimeout(()=>report('SENT'),200);};
-        window.addEventListener('afterprint',()=>{after=true;complete();});
+        let finished=false;
+        const report=(status)=>{if(finished)return;if(status!=='PROGRESS')finished=true;window.parent.postMessage({type:'holl-native-print',job_id:job.id,claim_id:job.claim_id,status},window.location.origin);};
         waitForTicketReady().then(()=>{
-          if(finished)return;
           try{if(sessionStorage.getItem(storageKey)){report('UNKNOWN');return;}sessionStorage.setItem(storageKey,'requested');}catch(error){report('UNKNOWN');return;}
-          const original=document.querySelector('.ticket');
+          const original=document.querySelector('.ticket'),pristine=original.cloneNode(true);
           const labels=copyLabels.length?copyLabels:Array({{ browser_auto_copies }}).fill('');
-          let previous=original;
-          for(let index=0;index<labels.length;index++){
-            const receipt=index?original.cloneNode(true):original;
+          const receipts=labels.map((name,index)=>{
+            const receipt=index?pristine.cloneNode(true):original;
             const label=receipt.querySelector('#pos-copy-label');
-            if(label){label.dataset.posCopyLabel='true';label.textContent=labels[index];if(index)label.removeAttribute('id');}
-            receipt.classList.toggle('warehouse-dispatch',labels[index]==='EXCLUSIVA DE BODEGA');
-            if(labels[index]==='EXCLUSIVA DE BODEGA')receipt.querySelectorAll('.pos-money,.pos-invoice-details,.pos-commercial-footer').forEach(node=>node.remove());
-            if(index){previous.after(receipt);previous=receipt;}
-          }
-          const style=document.createElement('style');style.textContent='@media print{.ticket + .ticket{break-before:page!important;page-break-before:always!important}}';document.head.appendChild(style);
-          {% if pos_copy_labels %}fitReceiptPaper();{% endif %}
-          setTimeout(()=>{if(finished)return;requested=true;const started=Date.now();try{window.print();returned=true;if(Date.now()-started>600)after=true;complete();}catch(error){report('UNKNOWN');}},100);
+            if(label){label.dataset.posCopyLabel='true';label.textContent=name;if(index)label.removeAttribute('id');}
+            receipt.classList.toggle('warehouse-dispatch',name==='EXCLUSIVA DE BODEGA');
+            if(name==='EXCLUSIVA DE BODEGA')receipt.querySelectorAll('.pos-money,.pos-invoice-details,.pos-commercial-footer').forEach(node=>node.remove());
+            if(index)original.parentNode.appendChild(receipt);
+            return receipt;
+          });
+          window.hollPrintReceipts(receipts,report);
         }).catch(()=>report('UNKNOWN'));
-        setTimeout(()=>report('UNKNOWN'),35000);
         return;
         {% endif %}
 

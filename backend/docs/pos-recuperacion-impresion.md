@@ -1,8 +1,8 @@
 # Recuperación de impresión nativa de Hollpacas
 
-La impresión automática sigue facturando una sola vez por preventa, después del plazo existente de 15 segundos y respetando el carrito en uso. Cada factura imprime ORIGINAL, COPIA y EXCLUSIVA DE BODEGA en **un único documento y una llamada a window.print()**, en lugar de tres llamadas sucesivas. La copia de bodega conserva su presentación sin precios. No se cambia el flujo manual de impresión ni los PDF existentes.
+La impresión automática sigue facturando una sola vez por preventa, después del plazo existente de 15 segundos y respetando el carrito en uso. Cada factura imprime ORIGINAL, COPIA y EXCLUSIVA DE BODEGA con **una llamada independiente a window.print() por ejemplar**, esperando el cierre del ciclo anterior antes de continuar para que Epson corte al terminar cada trabajo. La copia de bodega conserva su presentación sin precios. No se cambia el flujo manual de impresión ni los PDF existentes.
 
-El ticket espera recursos y responde solo tras el aviso afterprint y el retorno de print(). Se conserva una breve separación antes de liberar el iframe. Si no hay respuesta, el ticket informa UNKNOWN a los 35 segundos, el contenedor tiene un límite de 40 segundos y el servidor identifica DISPATCHED vencidos en los siguientes ciclos. El respaldo no reintenta por sí solo una impresión de resultado desconocido.
+El ticket espera recursos y responde solo tras el aviso afterprint y el retorno de print(). Se conserva una breve separación antes de liberar el iframe. Cada avance renueva el plazo de inactividad del contenedor y del servidor, sin marcar el trabajo como enviado ni reactivar fallos. Si no hay respuesta, el ticket informa UNKNOWN a los 35 segundos, el contenedor tiene un límite de 40 segundos y el servidor identifica DISPATCHED vencidos en los siguientes ciclos. El respaldo no reintenta por sí solo una impresión de resultado desconocido.
 
 En Ventas y en la consola aparece el panel central «Comprobantes pendientes de impresión» al fallar. «Ver pendientes» permite abrirlo antes. «Imprimir todos los pendientes» utiliza las facturas seleccionadas y crea un lote HTML de sus ejemplares existentes; no crea ventas, mueve inventario ni reenvía preventas. El usuario confirma tras revisar impresora/cola de Windows. Puede desmarcar comprobantes ya revisados; las selecciones sobreviven al refresco del estado.
 
@@ -16,6 +16,6 @@ Validación aislada:
 - `python tests/browser_pos_queue.py`: tres preventas FIFO, ventana persistente, popup bloqueado/cerrado y ACK perdido.
 - `python -m tests.browser_pos_recovery`: Firefox sin afterprint o con print() rechazado; respaldo de dos facturas/seis ejemplares, confirmación perdida, ausencia de ventas nuevas y selección estable.
 
-Después del despliegue, recargar Ventas y la ventana «Impresión de caja» para obtener pos-browser.js v9. No se modifica Firefox ni se instala software en la caja automáticamente. La salida física debe comprobarse en la Epson real.
+Después del despliegue, recargar Ventas y la ventana «Impresión de caja» para obtener pos-browser.js v10. No se modifica Firefox ni se instala software en la caja automáticamente. La salida física debe comprobarse en la Epson real.
 
-La exclusiva de bodega del flujo automático y el respaldo elimina físicamente los nodos de precios, descuentos, pagos, vuelto y pie comercial. La protección no depende únicamente de CSS. Se conservan los ejemplares comercial original/copia y los saltos de página existentes.
+La exclusiva de bodega del flujo automático y el respaldo elimina físicamente los nodos de precios, descuentos, pagos, vuelto y pie comercial. La protección no depende únicamente de CSS. Se conservan los ejemplares comercial original/copia y los trabajos separados por ejemplar.

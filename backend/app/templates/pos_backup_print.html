@@ -1,19 +1,18 @@
 <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Respaldo de impresión · {{ job_ids|length }} facturas</title><style>{{ receipt_styles|safe }}
-@media print{.ticket + .ticket{break-before:page!important;page-break-before:always!important}.backup-help{display:none!important}}.backup-help{padding:12px;font-size:13px;background:#fff6df}button{min-height:44px;padding:10px;font:inherit}</style></head><body>
+@media print{.backup-help{display:none!important}}.backup-help{padding:12px;font-size:13px;background:#fff6df}button{min-height:44px;padding:10px;font:inherit}</style></head><body>
 <div class="screen-actions"><button id="backup-print" disabled>Preparando comprobantes…</button><button onclick="window.close()">Cerrar</button></div>
 <p class="backup-help" id="backup-status">{{ job_ids|length }} facturas existentes, {{ receipts|length }} ejemplares. No se generarán ventas nuevas.</p>
 {% for receipt in receipts %}{{ receipt|safe }}{% endfor %}
+<script src="/static/js/pos-receipt-sequence.js?v=1"></script>
 <script>
 (()=>{
 const claim={{ claim_id|tojson }},ids={{ job_ids|tojson }},key='holl-native-backup:'+claim;
 const button=document.getElementById('backup-print'),info=document.getElementById('backup-status');
-let finished=false,requested=false,returned=false,after=false;
-const report=status=>{if(finished)return;finished=true;button.disabled=true;info.textContent=status==='SENT'?'Lote enviado al navegador. Comprueba que todos los ejemplares salieron en la impresora.':'Firefox no confirmó el lote. Vuelve a Ventas y revisa la impresora antes de usar el respaldo nuevamente.';window.opener?.postMessage({type:'holl-pos-backup',claim_id:claim,job_ids:ids,status},location.origin);};
-const complete=()=>{if(requested&&returned&&after)setTimeout(()=>report('SENT'),200);};
-addEventListener('afterprint',()=>{after=true;complete();});
-function send(){if(requested||finished)return;requested=true;button.disabled=true;let height=0;document.querySelectorAll('.ticket').forEach(receipt=>{height=Math.max(height,receipt.getBoundingClientRect().height);});const style=document.createElement('style');style.textContent=`@page{size:80mm ${Math.ceil(height*25.4/96+3)}mm;margin:.5mm 2mm}`;document.head.appendChild(style);const start=Date.now();try{window.print();returned=true;if(Date.now()-start>600)after=true;complete();}catch(error){report('UNKNOWN');}}
+let finished=false,started=false;
+const report=status=>{if(finished)return;if(status!=='PROGRESS'){finished=true;button.disabled=true;info.textContent=status==='SENT'?'Ejemplares enviados uno por uno. Comprueba la salida en la Epson.':'Firefox no confirmó la impresión. Revisa la Epson y vuelve a Ventas para usar el respaldo.';}window.opener?.postMessage({type:'holl-pos-backup',claim_id:claim,job_ids:ids,status},location.origin);};
+function send(){if(started||finished)return;started=true;button.disabled=true;window.hollPrintReceipts([...document.querySelectorAll('.ticket')],report);}
 button.addEventListener('click',send);
-async function ready(){try{if(sessionStorage.getItem(key)){info.textContent='Este lote ya fue solicitado. Revisa la impresora y vuelve a Ventas para una nueva revisión.';return;}sessionStorage.setItem(key,'requested');await Promise.race([Promise.all([document.fonts?.ready,...Array.from(document.images).map(image=>image.decode?image.decode().catch(()=>{}):Promise.resolve())]),new Promise(resolve=>setTimeout(resolve,5000))]);button.disabled=false;button.textContent='Imprimir lote';setTimeout(send,100);}catch(error){report('UNKNOWN');}}
-ready();setTimeout(()=>report('UNKNOWN'),35000);
+async function ready(){try{if(sessionStorage.getItem(key)){report('UNKNOWN');return;}sessionStorage.setItem(key,'requested');await Promise.race([Promise.all([document.fonts?.ready,...Array.from(document.images).map(image=>image.decode?image.decode().catch(()=>{}):Promise.resolve())]),new Promise(resolve=>setTimeout(resolve,5000))]);button.disabled=false;button.textContent='Imprimir ejemplares';setTimeout(send,100);}catch(error){report('UNKNOWN');}}
+ready();
 })();
 </script></body></html>

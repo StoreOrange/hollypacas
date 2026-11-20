@@ -39,11 +39,11 @@ def run(mode):
             browser=p.firefox.launch(headless=True);ctx=browser.new_context(viewport={'width':1280,'height':900})
             ctx.expose_function('recordPrint',lambda path,labels:calls.append((path,labels)))
             trigger="throw Error('printer unavailable')" if mode=='throw' else 'return'
-            ctx.add_init_script("window.print=()=>{window.recordPrint(location.pathname,[...document.querySelectorAll('.ticket')].map(r=>r.querySelector('[data-pos-copy-label]')?.textContent));if(location.pathname.includes('/backup/'))setTimeout(()=>dispatchEvent(new Event('afterprint')),0);else {"+trigger+";}}")
+            ctx.add_init_script("window.print=()=>{window.recordPrint(location.pathname,[...document.querySelectorAll('.ticket')].filter(r=>getComputedStyle(r).display!=='none').map(r=>r.querySelector('[data-pos-copy-label]')?.textContent));if(location.pathname.includes('/backup/'))setTimeout(()=>dispatchEvent(new Event('afterprint')),0);else {"+trigger+";}}")
             def route(r):
                 path=r.request.url.split('https://pos.test',1)[1];payload=json.loads(r.request.post_data or '{}')
                 if path=='/sales':return r.fulfill(content_type='text/html',body=main)
-                if path.startswith('/static/js/'):return r.fulfill(content_type='text/javascript',body=script)
+                if path.startswith('/static/js/'):return r.fulfill(content_type='text/javascript',body=Path('app/static/js/pos-receipt-sequence.js').read_text().replace(',35000);',',300);') if 'pos-receipt-sequence' in path else script)
                 if path.startswith('/static/'):
                     asset=Path('app'+path.split('?')[0])
                     return r.fulfill(content_type='text/css' if path.split('?')[0].endswith('.css') else 'application/octet-stream',body=asset.read_bytes() if asset.is_file() else b'')
@@ -55,7 +55,7 @@ def run(mode):
                     return r.fulfill(content_type='text/html',body=response.body.decode())
                 if path.endswith('/backup/ack'):
                     result=native.backup_ack(f.station.id,request(),payload,f.db,f.user)
-                    if not lost[0]:lost[0]=True;return r.abort()
+                    if payload.get('status')!='PROGRESS' and not lost[0]:lost[0]=True;return r.abort()
                     return r.fulfill(json=result)
                 if path.endswith('/claim'):
                     result=native.claim(f.station.id,request(),f.db,f.user)
@@ -84,12 +84,12 @@ def run(mode):
             page.wait_for_timeout(2500)
             assert len(batches)==1 and claims==[jobs[0].id],(batches,claims)
             batch_calls=[entry for entry in calls if '/backup/' in entry[0]]
-            assert len(batch_calls)==1 and batch_calls[0][1]==['ORIGINAL','COPIA','EXCLUSIVA DE BODEGA']*2,batch_calls
+            assert len(batch_calls)==6 and [entry[1] for entry in batch_calls]==[[label] for label in ['ORIGINAL','COPIA','EXCLUSIVA DE BODEGA']*2],batch_calls
             assert f.db.query(web.VentaFactura).count()==2
             assert all(job.status=='SENT' for job in jobs)
             assert not errors,errors
             browser.close()
-            print('PASS',mode,': stalled/failed print shows central backup; 2 invoices/6 receipts in one call; lost ACK retried without rebilling or reprinting.')
+            print('PASS',mode,': stalled/failed print shows central backup; 2 invoices/6 receipts in six separate calls; lost ACK retried without rebilling or reprinting.')
     finally:f.tearDown()
 
 if __name__=='__main__':
