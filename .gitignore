@@ -29,3 +29,6 @@ backend/settings/miss_zapatos_labels.before_*.json
 
 # APK firmado distribuido por la VPS (la fuente está en android/)
 /backend/app/static/hollywood-app/*.apk
+
+# Private operational audit files (never public assets or source control)
+/backend/private_audit/

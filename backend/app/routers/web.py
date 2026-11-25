@@ -19080,7 +19080,7 @@ def sales_ventas_caliente(
     month_total = sum(Decimal(str(p["value"])) for p in chart_points)
     default_currency = "CS" if (get_active_company_key() or "").strip().lower() == "racingmoto" else "USD"
 
-    return request.app.state.templates.TemplateResponse(
+    response = request.app.state.templates.TemplateResponse(
         "sales_caliente.html",
         {
             "request": request,
@@ -19097,6 +19097,11 @@ def sales_ventas_caliente(
             "version": settings.UI_VERSION,
         },
     )
+
+    if _is_hollpacas_mode():
+        from ..core.hot_sales_audit import record_access
+        record_access(request, user)
+    return response
 
 
 @router.get("/reports")
@@ -27719,6 +27724,7 @@ def data_home(
             "version": settings.UI_VERSION,
             "attendance_policy": attendance_policy,
             "shoe_label_design_enabled": _is_shoes_mode(),
+            "audit_enabled": _is_hollpacas_mode() and any((role.name or "").lower() == "administrador" for role in user.roles or []),
         },
     )
 
@@ -27767,6 +27773,39 @@ async def shoe_label_design_action(action: str, request: Request, user: User = D
         except OSError as exc:
             raise HTTPException(500, "No se pudo escribir la configuración de etiquetas en el servidor. Revise los permisos de la carpeta settings.") from exc
     return Response(content=content, media_type="application/pdf")
+
+
+@router.get("/data/audit")
+def data_sales_access_audit(request: Request, db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
+    _enforce_permission(request, user, "access.data")
+    if not _is_hollpacas_mode() or not any((role.name or "").lower() == "administrador" for role in user.roles or []):
+        raise HTTPException(403, "Audit está disponible únicamente para administradores de Pacas Holl")
+    from ..core.hot_sales_audit import TZ, build_report, duration
+    today = datetime.now(TZ).date()
+    try:
+        start = date.fromisoformat(request.query_params.get("start_date") or today.isoformat())
+        end = date.fromisoformat(request.query_params.get("end_date") or start.isoformat())
+        page = max(1, int(request.query_params.get("page") or 1))
+    except ValueError:
+        raise HTTPException(400, "Fecha o página inválida")
+    if end < start or (end-start).days > 30:
+        raise HTTPException(400, "Selecciona un rango de hasta 31 días, con la fecha final posterior a la inicial")
+    account_filter = (request.query_params.get("account") or "").strip().lower()[:160]
+    device = request.query_params.get("device") or ""
+    kind = request.query_params.get("kind") or "apertura"
+    if device not in {"", "Móvil", "PC"} or kind not in {"apertura", "regreso", "todas"}:
+        raise HTTPException(400, "Filtro inválido")
+    names = {(email or "").lower(): name for email, name in db.query(User.email, User.full_name).all()}
+    report = build_report(start, end, account=account_filter, device=device, kind=kind, names=names)
+    total = len(report["rows"]);pages = max(1, (total+99)//100);page = min(page, pages)
+    report["rows"] = report["rows"][(page-1)*100:page*100]
+    filters = dict(start_date=start.isoformat(), end_date=end.isoformat(), account=account_filter, device=device, kind=kind)
+    page_url = lambda number: "/data/audit?" + urlencode({**filters, "page": number})
+    return request.app.state.templates.TemplateResponse("data_audit.html", {
+        "request": request, "user": user, "version": settings.UI_VERSION, "report": report, "filters": filters,
+        "generated_at": datetime.now(TZ), "duration": duration, "total": total, "page": page, "pages": pages,
+        "previous_url": page_url(page-1) if page > 1 else "", "next_url": page_url(page+1) if page < pages else "",
+    }, headers={"Cache-Control": "no-store, private"})
 
 
 @router.get("/data/setato")

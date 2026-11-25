@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="layout" class="min-h-screen grid lg:grid-cols-[260px_1fr] bg-surface">
+  {% include "partials/sidebar.html" %}
+  <main class="p-3 p-lg-5">
+    <div class="container-fluid">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div><nav aria-label="breadcrumb"><ol class="breadcrumb mb-1"><li class="breadcrumb-item"><a href="/data">Datos</a></li><li class="breadcrumb-item active" aria-current="page">Audit</li></ol></nav><h1 class="h4 mb-1">Audit</h1><p class="text-muted mb-0">Accesos a Ventas en caliente · Hora de Nicaragua</p></div>
+        <a class="btn btn-outline-secondary" href="/data"><i class="bi bi-arrow-left"></i> Datos</a>
+      </div>
+      <form class="card card-body border-0 shadow-sm mb-3" method="get" action="/data/audit">
+        <div class="row g-2 align-items-end">
+          <div class="col-6 col-lg-2"><label class="form-label small mb-1" for="audit-start">Desde</label><input id="audit-start" class="form-control" type="date" name="start_date" value="{{ filters.start_date }}" required></div>
+          <div class="col-6 col-lg-2"><label class="form-label small mb-1" for="audit-end">Hasta</label><input id="audit-end" class="form-control" type="date" name="end_date" value="{{ filters.end_date }}" required></div>
+          <div class="col-12 col-lg-3"><label class="form-label small mb-1" for="audit-account">Usuario</label><select id="audit-account" class="form-select" name="account"><option value="">Todos</option>{% for email,name in report.users %}<option value="{{ email }}" {% if filters.account==email %}selected{% endif %}>{{ name }} · {{ email }}</option>{% endfor %}<option value="__unknown__" {% if filters.account=='__unknown__' %}selected{% endif %}>Sin usuario identificado</option></select></div>
+          <div class="col-6 col-lg-2"><label class="form-label small mb-1" for="audit-device">Dispositivo</label><select id="audit-device" class="form-select" name="device"><option value="">Todos</option><option value="Móvil" {% if filters.device=='Móvil' %}selected{% endif %}>Móvil</option><option value="PC" {% if filters.device=='PC' %}selected{% endif %}>PC</option></select></div>
+          <div class="col-6 col-lg-2"><label class="form-label small mb-1" for="audit-kind">Eventos</label><select id="audit-kind" class="form-select" name="kind"><option value="apertura" {% if filters.kind=='apertura' %}selected{% endif %}>Aperturas</option><option value="regreso" {% if filters.kind=='regreso' %}selected{% endif %}>Regresos</option><option value="todas" {% if filters.kind=='todas' %}selected{% endif %}>Todos</option></select></div>
+          <div class="col-12 col-lg-1"><button class="btn btn-primary w-100" type="submit">Ver</button></div>
+        </div>
+      </form>
+      {% for warning in report.warnings %}<div class="alert alert-warning">{{ warning }}</div>{% endfor %}
+      {% if not report.days_with_logs %}<div class="alert alert-info">No hay registros disponibles en este rango. Esto no confirma ausencia de accesos.</div>{% endif %}
+      {% if report.days_with_logs and report.missing_days %}<div class="alert alert-info small">Hay {{ report.missing_days|length }} días sin registros disponibles en el rango seleccionado. Los conteos cubren las fechas con registros.</div>{% endif %}
+      {% if report.unknown %}<div class="alert alert-light border small">Hay accesos históricos de PC sin usuario identificado. Se conservan sin atribuirlos a una persona.</div>{% endif %}
+      <div class="row g-2 mb-3">
+        {% for label,value in [('Aperturas confirmadas',report.opens),('Regresos del navegador',report.returns),('Móvil',report.mobile),('PC',report.pc)] %}<div class="col-6 col-lg-3"><div class="card card-body border-0 shadow-sm py-3"><span class="text-muted small">{{ label }}</span><strong class="h3 mb-0">{{ value }}</strong></div></div>{% endfor %}
+      </div>
+      <div class="card border-0 shadow-sm mb-3"><div class="card-header bg-white fw-semibold">Resumen por usuario</div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>Usuario</th><th class="text-end">Aperturas</th><th class="text-end">Regresos</th><th>Primer acceso</th><th>Último acceso</th><th>Intervalo promedio</th></tr></thead><tbody>{% for row in report.summaries %}<tr><td>{{ row.name }}{% if row.user and row.name!=row.user %}<div class="small text-muted">{{ row.user }}</div>{% endif %}</td><td class="text-end">{{ row.opens }}</td><td class="text-end">{{ row.returns }}</td><td class="text-nowrap">{{ row.first.strftime('%d/%m/%Y %H:%M:%S') }}</td><td class="text-nowrap">{{ row.last.strftime('%d/%m/%Y %H:%M:%S') }}</td><td class="text-nowrap">{{ duration(row.average) }}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted py-3">Sin accesos para estos filtros.</td></tr>{% endfor %}</tbody></table></div></div>
+      <div class="card border-0 shadow-sm"><div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>Historial</strong><span class="text-muted small">{{ total }} registros</span></div><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" id="audit-access-grid"><thead class="table-light"><tr><th>Fecha</th><th>Hora</th><th>Usuario</th><th>Dispositivo</th><th>Evento</th><th class="text-end">N.º del día</th><th>Desde el anterior</th></tr></thead><tbody>{% for row in report.rows %}<tr><td class="text-nowrap">{{ row.at.strftime('%d/%m/%Y') }}</td><td class="text-nowrap">{{ row.at.strftime('%H:%M:%S') }}</td><td>{{ row.display_name }}{% if row.user and row.display_name!=row.user %}<div class="small text-muted">{{ row.user }}</div>{% endif %}</td><td>{{ row.device }}<div class="text-muted small">{{ row.browser }}</div></td><td>{% if row.kind=='apertura' %}<span class="badge text-bg-light border">Apertura</span>{% else %}<span class="badge text-bg-secondary">Regreso</span>{% endif %}</td><td class="text-end">{{ row.ordinal if row.ordinal is not none else '—' }}</td><td class="text-nowrap">{{ duration(row.interval) }}</td></tr>{% else %}<tr><td colspan="7" class="text-center py-4 text-muted">Sin accesos para estos filtros.</td></tr>{% endfor %}</tbody></table></div>
+        <div class="card-footer bg-white d-flex align-items-center justify-content-between gap-2"><span class="small text-muted">Página {{ page }} de {{ pages }}</span><div class="d-flex gap-2">{% if previous_url %}<a class="btn btn-sm btn-outline-secondary" href="{{ previous_url }}">Anterior</a>{% endif %}{% if next_url %}<a class="btn btn-sm btn-outline-secondary" href="{{ next_url }}">Siguiente</a>{% endif %}</div></div>
+      </div>
+      <p class="small text-muted mt-3 mb-1">Intervalos calculados entre accesos del mismo usuario y día, con los filtros seleccionados. No representan tiempo de lectura.</p>
+      <p class="small text-muted">Los regresos son informados por el navegador. Generado: {{ generated_at.strftime('%d/%m/%Y %H:%M:%S') }}.</p>
+    </div>
+  </main>
+</div>
+{% endblock %}
