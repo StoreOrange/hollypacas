@@ -19100,7 +19100,7 @@ def sales_ventas_caliente(
 
     if _is_hollpacas_mode():
         from ..core.hot_sales_audit import record_access
-        record_access(request, user)
+        record_access(request, user, response.context)
     return response
 
 

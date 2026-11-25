@@ -52,6 +52,34 @@ class AuditTests(unittest.TestCase):
   with patch.object(a,'audit_directory',side_effect=OSError('read only')),patch.object(a.LOGGER,'exception'):
    a.record_access(SimpleNamespace(headers={},client=None),SimpleNamespace(email='a',full_name='A'))
 
+class SnapshotTests(AuditTests):
+ def context(self):
+  return {'tasa':36.5,'default_currency':'USD','today_label':'23/11/2026',
+          'total_day_all':100.125,'total_all':200.25,
+          'branch_totals':[{'id':1,'name':'Central','total_day':80.0,'total_month':150.0},
+                           {'id':2,'name':'Esteli','total_day':20.125,'total_month':50.25}]}
+ def test_capture_preserves_each_displayed_card_and_six_decimal_conversion(self):
+  snapshot=a.report_snapshot(self.context());self.assertEqual(snapshot['total_day'],{'usd':'100.13','cs':'3654.56'})
+  self.assertEqual(snapshot['total_month'],{'usd':'200.25','cs':'7309.13'})
+  self.assertEqual([b['name'] for b in snapshot['branches']],['Central','Esteli'])
+  c=self.context();c['total_day_all']=1.1234567
+  self.assertEqual(a.report_snapshot(c)['total_day'],{'usd':'1.12','cs':'41.01'})
+ def test_stored_snapshot_is_immutable_and_legacy_is_not_reconstructed(self):
+  context=self.context();req=Request({'type':'http','method':'GET','path':a.TARGET,'headers':[],'client':('127.0.0.1',1)})
+  with patch.dict(os.environ,{'HOT_SALES_AUDIT_DIR':str(self.folder)}):a.record_access(req,SimpleNamespace(email='a@test',full_name='A'),context)
+  context['total_day_all']=999999;context['branch_totals'][0]['total_day']=999999
+  raw=json.loads(next(self.folder.glob('hot-sales-*')).read_text());self.assertEqual(raw['snapshot']['total_day']['usd'],'100.13')
+  self.assertEqual(raw['snapshot']['branches'][0]['day']['usd'],'80.00')
+  self.write('hot-sales-',[{**raw,'recorded_at':'2026-11-23T09:00:00-06:00'}]);self.write('mobile-',[self.mobile('08:00:00')])
+  report=self.report();self.assertIsNone(report['rows'][0]['snapshot']);self.assertEqual(report['rows'][1]['snapshot']['total_day']['usd'],'100.13')
+ def test_missing_and_invalid_capture_differ_from_true_zero(self):
+  self.assertIsNone(a.read_snapshot(None));self.assertIsNone(a.read_snapshot({'version':1,'total_day':{'usd':'NaN','cs':'0'}}))
+  context=self.context();context['total_day_all']=0
+  self.assertEqual(a.read_snapshot(a.report_snapshot(context))['total_day']['usd'],'0.00')
+ def test_no_scope_expansion_or_database_lookup(self):
+  context=self.context();context['branch_totals']=context['branch_totals'][:1]
+  snapshot=a.report_snapshot(context);self.assertEqual(len(snapshot['branches']),1);self.assertEqual(snapshot['branches'][0]['name'],'Central')
+
 class AuditRouteTests(AuditTests):
  def setUp(self):
   super().setUp();self.user=SimpleNamespace(id=1,email='a@test',full_name='Admin',roles=[SimpleNamespace(name='administrador')],vendedor_id=None)
@@ -68,6 +96,11 @@ class AuditRouteTests(AuditTests):
   self.write('mobile-',[self.mobile(),self.mobile('09:10:00')]);r=self.client.get('/data/audit?start_date=2026-11-23&end_date=2026-11-23')
   self.assertEqual(r.status_code,200);self.assertEqual(r.context['report']['opens'],2);self.assertIn('10 min 0 s',r.text);self.assertIn('no-store',r.headers['cache-control'])
   self.db.commit.assert_not_called()
+ def test_capture_visible_in_grid_and_old_access_stays_missing(self):
+  snapshot=a.report_snapshot({'tasa':36.5,'default_currency':'USD','today_label':'23/11/2026','total_day_all':100,'total_all':200,'branch_totals':[{'id':1,'name':'Central','total_day':100,'total_month':200}]})
+  self.write('hot-sales-',[{'recorded_at':'2026-11-23T09:00:00-06:00','source':'hot_sales_server','status':200,'path':a.TARGET,'user':'a@test','device':'PC','snapshot':snapshot}])
+  self.write('mobile-',[self.mobile('08:00:00')]);response=self.client.get('/data/audit?start_date=2026-11-23&end_date=2026-11-23')
+  self.assertEqual(response.status_code,200);self.assertIn('No capturado',response.text);self.assertIn('3,650.00 equivalente',response.text);self.assertIn('data-snapshot=',response.text)
  def test_explicit_admin_company_and_input_limits(self):
   self.user.roles=[SimpleNamespace(name='vendedor')];self.assertEqual(self.client.get('/data/audit').status_code,403)
   self.user.roles=[SimpleNamespace(name='administrador')]

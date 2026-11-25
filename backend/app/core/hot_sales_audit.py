@@ -4,6 +4,7 @@ import hashlib,hmac,json,logging,os,re,secrets
 from bisect import bisect_left
 from collections import defaultdict
 from datetime import date,datetime,timedelta
+from decimal import Decimal,InvalidOperation,ROUND_HALF_UP
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -31,7 +32,43 @@ def browser_name(agent):
             else 'Chrome' if re.search(r'Chrome|CriOS',agent) else 'Safari' if 'Safari' in agent else 'Otro')
 
 
-def record_access(request,user):
+def report_snapshot(context):
+    """Copy the rendered report values; do not query or recalculate invoices later.
+
+    Cards put USD values in six-decimal data attributes. Their C$ equivalent uses
+    that exact value and the displayed exchange rate in sales_caliente.html.
+    """
+    rate=float(context.get('tasa') or 0)
+    def amounts(value):
+        usd=float(format(float(value or 0), '.6f'))
+        def rounded(amount):
+            value=Decimal(str(amount))
+            if not value.is_finite():raise ValueError('Invalid report amount')
+            return str(value.quantize(Decimal('0.01'),rounding=ROUND_HALF_UP))
+        return {'usd':rounded(usd),'cs':rounded(usd*rate if rate else 0)}
+    return {'version':1,'report_date':str(context.get('today_label') or ''),
+            'initial_currency':context.get('default_currency') or 'USD','rate':str(rate),
+            'total_day':amounts(context.get('total_day_all')),'total_month':amounts(context.get('total_all')),
+            'branches':[{'id':row['id'],'name':str(row['name']),
+                         'day':amounts(row.get('total_day')),'month':amounts(row.get('total_month'))}
+                        for row in context.get('branch_totals',[])]}
+
+
+def read_snapshot(raw):
+    """Missing/invalid old captures stay missing; zero is a valid captured amount."""
+    if not isinstance(raw,dict) or raw.get('version')!=1:return None
+    try:
+        def valid_amounts(value):
+            return isinstance(value,dict) and all(Decimal(str(value[key])).is_finite() for key in ('usd','cs'))
+        if not valid_amounts(raw['total_day']) or not valid_amounts(raw['total_month']):return None
+        if not isinstance(raw['branches'],list) or len(raw['branches'])>100:return None
+        if not all(isinstance(row,dict) and isinstance(row.get('name'),str) and valid_amounts(row.get('day')) and valid_amounts(row.get('month')) for row in raw['branches']):return None
+        if raw.get('initial_currency') not in {'USD','CS'} or not Decimal(str(raw['rate'])).is_finite():return None
+        return raw
+    except (KeyError,TypeError,ValueError,InvalidOperation):return None
+
+
+def record_access(request,user,context=None):
     """Call only after a successful, authenticated report render. Failure never blocks sales."""
     try:
         now=datetime.now(TZ);agent=request.headers.get('user-agent','')[:400]
@@ -39,11 +76,12 @@ def record_access(request,user):
              'path':TARGET,'access_id':secrets.token_hex(12),'user':user.email,'name':user.full_name or user.email,
              'device':'Móvil' if mobile_agent(agent) or request.headers.get('sec-ch-ua-mobile')=='?1' else 'PC',
              'browser':browser_name(agent),'correlation':correlation(request.client.host if request.client else '',agent)}
+        if context is not None:row['snapshot']=report_snapshot(context)
         folder=audit_directory();folder.mkdir(mode=0o700,parents=True,exist_ok=True)
         fd=os.open(folder/('hot-sales-'+now.date().isoformat()+'.jsonl'),os.O_APPEND|os.O_CREAT|os.O_WRONLY,0o600)
         try:os.write(fd,(json.dumps(row,ensure_ascii=False,separators=(',',':'))+'\n').encode())
         finally:os.close(fd)
-    except (OSError,TypeError,ValueError):
+    except (OSError,TypeError,ValueError,InvalidOperation,OverflowError):
         LOGGER.exception('No se pudo registrar el acceso al informe de ventas en caliente')
 
 
@@ -76,7 +114,8 @@ def _read_file(filename,modified,size):
                     device='Móvil';key=correlation(raw.get('ip'),raw.get('device_declared',''))
                 result.append({'at':stamp,'user':str(raw.get('user') or '').strip().lower(),
                     'name':str(raw.get('name') or ''),'device':device,'browser':raw.get('browser') or raw.get('browser_declared') or '',
-                    'kind':kind,'source':source,'key':key,'id':raw.get('access_id') or raw.get('request_id') or str(len(result))})
+                    'kind':kind,'source':source,'key':key,
+                    'snapshot':read_snapshot(raw.get('snapshot')) if source=='hot_sales_server' else None,'id':raw.get('access_id') or raw.get('request_id') or str(len(result))})
             except (ValueError,TypeError,AttributeError):continue
     return tuple(result)
 
