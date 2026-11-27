@@ -89,9 +89,26 @@ class AuditRouteTests(AuditTests):
   self.patches=[patch.object(w,'_is_hollpacas_mode',return_value=True),patch.object(w,'_enforce_permission'),patch.object(a,'audit_directory',return_value=self.folder)]
   for p in self.patches:p.start()
   self.client=TestClient(app)
+  from app.core.audit_access import COOKIE, session_id
+  from app.core.security import create_access_token
+  self.client.cookies.set(COOKIE,create_access_token({"sub":session_id(self.user.id,""),"purpose":"holl-audit"}))
  def tearDown(self):
   for p in reversed(self.patches):p.stop()
   self.client.close();super().tearDown()
+ def test_password_gate_blocks_direct_report(self):
+  self.client.cookies.clear()
+  response=self.client.get('/data/audit')
+  self.assertEqual(response.status_code,200)
+  self.assertIn('Contraseña de acceso',response.text)
+  self.assertNotIn('report',response.context)
+  response=self.client.post('/data/audit/unlock',data={'password':'incorrect'},follow_redirects=False)
+  self.assertEqual(response.status_code,403)
+  self.assertIn('Contraseña incorrecta',response.text)
+  with patch('app.core.audit_access.unlock',return_value=('signed-test-token','')):
+   response=self.client.post('/data/audit/unlock',data={'password':'test'},follow_redirects=False)
+  self.assertEqual(response.status_code,303)
+  cookie=response.headers['set-cookie']
+  self.assertIn('HttpOnly',cookie);self.assertIn('SameSite=strict',cookie);self.assertIn('Max-Age=900',cookie)
  def test_admin_report_filters_and_private_cache(self):
   self.write('mobile-',[self.mobile(),self.mobile('09:10:00')]);r=self.client.get('/data/audit?start_date=2026-11-23&end_date=2026-11-23')
   self.assertEqual(r.status_code,200);self.assertEqual(r.context['report']['opens'],2);self.assertIn('10 min 0 s',r.text);self.assertIn('no-store',r.headers['cache-control'])

@@ -27775,11 +27775,31 @@ async def shoe_label_design_action(action: str, request: Request, user: User = D
     return Response(content=content, media_type="application/pdf")
 
 
+@router.post("/data/audit/unlock")
+def data_sales_access_audit_unlock(request: Request, password: str = Form(""), user: User = Depends(_require_admin_web)):
+    _enforce_permission(request, user, "access.data")
+    if not _is_hollpacas_mode() or not any((role.name or "").lower() == "administrador" for role in user.roles or []):
+        raise HTTPException(403, "Audit está disponible únicamente para administradores de Pacas Holl")
+    origin = request.headers.get("origin")
+    if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
+        raise HTTPException(403, "Origen no permitido")
+    from ..core.audit_access import COOKIE, unlock
+    token, error = unlock(password, user.id, request.cookies.get("access_token", ""))
+    if not token:
+        return request.app.state.templates.TemplateResponse("data_audit_unlock.html", {"request": request, "user": user, "version": settings.UI_VERSION, "error": error}, status_code=403, headers={"Cache-Control": "no-store, private"})
+    response = RedirectResponse("/data/audit", status_code=303, headers={"Cache-Control": "no-store, private"})
+    response.set_cookie(COOKIE, token, max_age=900, httponly=True, secure=request.url.scheme == "https", samesite="strict", path="/data/audit")
+    return response
+
+
 @router.get("/data/audit")
 def data_sales_access_audit(request: Request, db: Session = Depends(get_db), user: User = Depends(_require_admin_web)):
     _enforce_permission(request, user, "access.data")
     if not _is_hollpacas_mode() or not any((role.name or "").lower() == "administrador" for role in user.roles or []):
         raise HTTPException(403, "Audit está disponible únicamente para administradores de Pacas Holl")
+    from ..core.audit_access import COOKIE, unlocked
+    if not unlocked(request.cookies.get(COOKIE), user.id, request.cookies.get("access_token", "")):
+        return request.app.state.templates.TemplateResponse("data_audit_unlock.html", {"request": request, "user": user, "version": settings.UI_VERSION, "error": ""}, headers={"Cache-Control": "no-store, private"})
     from ..core.hot_sales_audit import TZ, build_report, duration
     today = datetime.now(TZ).date()
     try:
